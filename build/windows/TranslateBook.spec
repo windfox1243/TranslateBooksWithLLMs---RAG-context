@@ -13,6 +13,7 @@ datas_list = [
     ('../../src/web/templates', 'src/web/templates'),
     ('../../src', 'src'),
     ('../../.env.example', '.'),
+    ('../../Custom_Instructions', 'Custom_Instructions'),
 ]
 
 # Add tiktoken_ext if directory exists

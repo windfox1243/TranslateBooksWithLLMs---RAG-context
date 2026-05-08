@@ -27,13 +27,20 @@ def setup_working_directory():
         (app_data_dir / 'checkpoints').mkdir(exist_ok=True)
 
         # Copy .env.example if it doesn't exist and is bundled
+        bundle_dir = Path(sys._MEIPASS)
         env_example_path = app_data_dir / '.env.example'
         if not env_example_path.exists():
-            # Check if .env.example is in the bundle
-            bundle_dir = Path(sys._MEIPASS)
             bundled_env_example = bundle_dir / '.env.example'
             if bundled_env_example.exists():
                 shutil.copy(bundled_env_example, env_example_path)
+
+        # Seed Custom_Instructions folder with bundled examples on first run.
+        # Skip if user already has the folder (preserves their custom files).
+        custom_instructions_path = app_data_dir / 'Custom_Instructions'
+        if not custom_instructions_path.exists():
+            bundled_custom_instructions = bundle_dir / 'Custom_Instructions'
+            if bundled_custom_instructions.exists():
+                shutil.copytree(bundled_custom_instructions, custom_instructions_path)
 
         # Create default .env if it doesn't exist
         env_path = app_data_dir / '.env'
