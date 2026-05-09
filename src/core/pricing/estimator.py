@@ -9,21 +9,22 @@ from typing import Optional
 from src.core.chunking.token_chunker import TokenChunker
 
 
-SYSTEM_PROMPT_TOKENS = 600
-TAGS_OVERHEAD_TOKENS = 40
+SYSTEM_PROMPT_TOKENS = 500
+USER_TEMPLATE_TOKENS = 60
+PREV_TRANSLATION_CONTEXT_TOKENS = 50
 
 LANGUAGE_RATIOS = {
-    ("english", "french"):  (1.10, 1.35),
-    ("english", "spanish"): (1.10, 1.35),
-    ("english", "italian"): (1.10, 1.35),
-    ("english", "portuguese"): (1.10, 1.35),
-    ("english", "german"):  (1.05, 1.30),
-    ("english", "dutch"):   (1.05, 1.25),
-    ("english", "russian"): (1.10, 1.40),
+    ("english", "french"):  (1.15, 1.50),
+    ("english", "spanish"): (1.15, 1.50),
+    ("english", "italian"): (1.15, 1.50),
+    ("english", "portuguese"): (1.15, 1.50),
+    ("english", "german"):  (1.10, 1.40),
+    ("english", "dutch"):   (1.05, 1.30),
+    ("english", "russian"): (1.10, 1.45),
     ("english", "japanese"): (1.30, 1.80),
     ("english", "chinese"): (0.50, 0.80),
     ("english", "korean"):  (1.10, 1.50),
-    ("english", "arabic"):  (1.10, 1.40),
+    ("english", "arabic"):  (1.10, 1.45),
     ("french", "english"):  (0.75, 0.95),
     ("german", "english"):  (0.80, 1.00),
     ("spanish", "english"): (0.80, 1.00),
@@ -88,14 +89,10 @@ class CostEstimator:
             return self._empty_result()
 
         main_tokens = sum(self.chunker.count_tokens(c["main_content"]) for c in chunks)
-        context_tokens = sum(
-            self.chunker.count_tokens(c["context_before"]) +
-            self.chunker.count_tokens(c["context_after"])
-            for c in chunks
-        )
 
-        per_chunk_overhead = SYSTEM_PROMPT_TOKENS + TAGS_OVERHEAD_TOKENS
-        total_input_tokens = main_tokens + context_tokens + n_chunks * per_chunk_overhead
+        per_chunk_overhead = SYSTEM_PROMPT_TOKENS + USER_TEMPLATE_TOKENS
+        prev_context_tokens = max(0, n_chunks - 1) * PREV_TRANSLATION_CONTEXT_TOKENS
+        total_input_tokens = main_tokens + n_chunks * per_chunk_overhead + prev_context_tokens
 
         ratio_min, ratio_max = get_output_ratio(src_lang, tgt_lang)
         output_min = int(main_tokens * ratio_min)
