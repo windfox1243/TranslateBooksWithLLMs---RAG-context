@@ -14,6 +14,157 @@
 
     <!-- Custom Styles -->
     <link rel="stylesheet" href="/static/style.css">
+    <style>
+        /* Top tabs sit flush with the card below. Active tab is marked
+           by an accent stripe on top so it stays visible in light + dark. */
+        #topTabNav { margin-bottom: 0 !important; padding: 0; }
+        .tab-nav .tab-btn {
+            padding: 0.6rem 1.25rem;
+            border: 1px solid var(--border-light);
+            border-bottom: none;
+            border-radius: 10px 10px 0 0;
+            background: transparent;
+            color: var(--text-muted-light);
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 600;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            position: relative;
+        }
+        .tab-nav .tab-btn::before {
+            content: '';
+            position: absolute;
+            left: 0; right: 0; bottom: 0;
+            height: 3px;
+            background: transparent;
+            transition: background 0.15s;
+        }
+        .tab-nav .tab-btn:hover {
+            color: var(--text-dark);
+            border-color: var(--primary-light);
+        }
+        .tab-nav .tab-btn-active {
+            background: var(--background-light);
+            color: var(--text-dark);
+            border-color: var(--border-light);
+            z-index: 2;
+        }
+        .tab-nav .tab-btn-active::before {
+            background: var(--primary-light);
+        }
+        /* Cards directly under the tab nav have flat top corners so they
+           visually merge with the active tab. The Glossaries tab swaps
+           between list and editor cards, so both must be flat-topped. */
+        #tab-translate > .main-card:first-child,
+        #tab-glossaries > .main-card {
+            border-top-left-radius: 0;
+            border-top-right-radius: 0;
+        }
+        /* Compact toolbar buttons used inside the glossary editor card.
+           Override the heavy default .btn (padding, font-weight, shadow). */
+        .glossary-toolbar-btn {
+            padding: 0.45rem 0.9rem !important;
+            font-size: 0.85rem !important;
+            font-weight: 600 !important;
+            border-radius: 0.5rem !important;
+            letter-spacing: 0;
+            gap: 0.35rem;
+        }
+        .glossary-toolbar-btn.btn-primary {
+            box-shadow: 0 4px 10px rgba(54, 118, 216, 0.2);
+        }
+        .glossary-toolbar-btn.btn-secondary {
+            box-shadow: 2px 2px 5px var(--shadow-dark), -2px -2px 5px var(--shadow-light);
+        }
+        .glossary-toolbar-btn .material-symbols-outlined {
+            font-size: 1rem;
+        }
+        /* Glossary tables: fixed layout + full width + identical horizontal
+           padding on th and td so column titles sit directly above their
+           content. */
+        #glossaryListTable,
+        #glossaryTermsTable {
+            table-layout: fixed;
+            width: 100%;
+            display: table;
+        }
+        /* .file-table normally splits thead and tbody into independent
+           display:table blocks (to make tbody scrollable). That breaks
+           <colgroup> column widths because each row computes its own
+           layout. Restore the standard rendering for glossary tables. */
+        #glossaryListTable thead,
+        #glossaryTermsTable thead {
+            display: table-header-group;
+        }
+        #glossaryListTable tbody,
+        #glossaryTermsTable tbody {
+            display: table-row-group;
+            max-height: none;
+            overflow-y: visible;
+        }
+        #glossaryListTable tbody tr,
+        #glossaryTermsTable tbody tr {
+            display: table-row;
+            width: auto;
+        }
+        #glossaryListTable th,
+        #glossaryListTable td,
+        #glossaryTermsTable th,
+        #glossaryTermsTable td {
+            padding: 0.75rem 0.75rem;
+            box-sizing: border-box;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        #glossaryListTable td,
+        #glossaryTermsTable td {
+            padding: 0.6rem 0.75rem;
+        }
+        #glossaryListTable .col-center,
+        #glossaryListTable td.col-center,
+        #glossaryTermsTable .col-center,
+        #glossaryTermsTable td.col-center {
+            text-align: center;
+        }
+        #glossaryListTable .col-right,
+        #glossaryListTable td.col-right,
+        #glossaryTermsTable .col-right,
+        #glossaryTermsTable td.col-right {
+            text-align: right;
+        }
+        .glossary-cell-input {
+            width: 100%;
+            border: 0;
+            background: transparent;
+            padding: 6px 0;
+            font-size: 0.9rem;
+            color: var(--text-dark);
+            border-radius: 0;
+            font-family: inherit;
+            box-shadow: inset 0 -1px 0 transparent;
+            transition: box-shadow 0.15s, background 0.15s;
+        }
+        .glossary-cell-input:hover {
+            box-shadow: inset 0 -1px 0 var(--border-light);
+        }
+        .glossary-cell-input:focus {
+            outline: none;
+            box-shadow: inset 0 -2px 0 var(--primary-light);
+        }
+        .glossary-row-deleted { opacity: 0.3; pointer-events: none; }
+        #ner-modal .modal-content { max-width: 800px; }
+        #ner-candidates-table th, #ner-candidates-table td { padding: 6px 8px; font-size: 0.85rem; }
+        #ner-warnings {
+            color: var(--text-dark);
+            background: var(--info-light-bg);
+            border-left: 3px solid var(--info-light);
+            font-size: 0.85rem;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -39,6 +190,21 @@
                 </button>
             </div>
         </header>
+
+        <!-- Top-level Tab Navigation -->
+        <div class="tab-nav" id="topTabNav" style="display: flex; gap: 8px; margin-bottom: 20px;">
+            <button type="button" class="tab-btn tab-btn-active" data-tab="translate" onclick="switchTopTab('translate')">
+                <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 1.1rem;">translate</span>
+                Translate
+            </button>
+            <button type="button" class="tab-btn" data-tab="glossaries" onclick="switchTopTab('glossaries')">
+                <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 1.1rem;">menu_book</span>
+                Glossaries
+            </button>
+        </div>
+
+        <!-- Tab: Translate -->
+        <div id="tab-translate">
 
         <!-- Main Translation Configuration Card -->
         <div class="main-card">
@@ -412,6 +578,28 @@
                         </label>
                     </div>
 
+                    <!-- Glossary Selector -->
+                    <div class="form-group" style="margin-bottom: 15px; margin-top: 15px;">
+                        <label style="font-weight: 600; color: var(--text-dark); margin-bottom: 5px; display: block;">
+                            Glossary
+                        </label>
+                        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 5px;">
+                            <select id="glossarySelect" class="form-control" style="flex: 1; margin-bottom: 0;">
+                                <option value="">None</option>
+                            </select>
+                            <button type="button" id="glossaryRefreshBtn" class="btn btn-sm" style="padding: 6px 10px; background: var(--background-light); border: 1px solid var(--border-light); border-radius: 6px; cursor: pointer;" title="Refresh list">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+                            </button>
+                            <button type="button" id="glossaryManageBtn" class="btn btn-sm" style="padding: 6px 10px; background: var(--background-light); border: 1px solid var(--border-light); border-radius: 6px; cursor: pointer;" title="Manage glossaries">
+                                <span class="material-symbols-outlined" style="font-size: 16px;">settings</span>
+                            </button>
+                        </div>
+                        <div id="glossaryInfoCard" class="glossary-info-card" style="display: none;"></div>
+                        <p style="margin: 5px 0 0 0; font-size: 0.8125rem; color: var(--text-muted-light);">
+                            Inject a curated source-to-target term list into every chunk's prompt to keep entity translations consistent. Click <strong>Manage</strong> to create, edit or auto-extract terms.
+                        </p>
+                    </div>
+
                     <!-- Custom Instructions -->
                     <div class="form-group" style="margin-bottom: 0; margin-top: 15px;">
                         <label style="font-weight: 600; color: var(--text-dark); margin-bottom: 5px; display: block;">
@@ -631,6 +819,324 @@
                 </div>
             </div>
         </div>
+
+        </div><!-- /#tab-translate -->
+
+        <!-- Tab: Glossaries -->
+        <div id="tab-glossaries" class="hidden">
+
+            <!-- LIST VIEW -->
+            <div class="main-card" id="glossaryListView">
+                <div class="card-header">
+                    <span class="material-symbols-outlined">menu_book</span>
+                    <h2>Glossaries</h2>
+                    <button type="button" class="btn btn-primary" id="glossaryNewBtn" style="margin-left: auto; padding: 0.5rem 1rem;">
+                        <span class="material-symbols-outlined" style="font-size: 1rem;">add</span>
+                        New glossary
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div style="margin-bottom: 15px;">
+                        <p style="color: var(--text-muted-light); font-size: 0.9rem; margin: 0;">
+                            Glossaries are reusable across translation jobs. Pick one on the Translate tab to inject it into every chunk's system prompt.
+                        </p>
+                    </div>
+                    <div id="glossaryListContainer">
+                        <div id="glossaryListLoading" style="text-align: center; padding: 20px;">Loading...</div>
+                        <div id="glossaryListEmpty" class="hidden" style="padding: 40px 20px;">
+                            <div class="glossary-empty-cta">
+                                <p>No glossaries yet. Create one from scratch or import an existing CSV / JSON file.</p>
+                                <div class="glossary-empty-cta-actions">
+                                    <button type="button" class="btn btn-primary glossary-toolbar-btn" id="glossaryEmptyNewBtn">
+                                        <span class="material-symbols-outlined">add</span>
+                                        New glossary
+                                    </button>
+                                    <button type="button" class="btn btn-secondary glossary-toolbar-btn" id="glossaryEmptyListImportBtn">
+                                        <span class="material-symbols-outlined">upload</span>
+                                        Import CSV/JSON
+                                    </button>
+                                    <input type="file" id="glossaryEmptyImportFile" accept=".csv,.json" style="display: none;">
+                                </div>
+                            </div>
+                        </div>
+                        <table id="glossaryListTable" class="file-table hidden">
+                            <colgroup>
+                                <col>
+                                <col style="width: 110px;">
+                                <col style="width: 110px;">
+                                <col style="width: 80px;">
+                                <col style="width: 110px;">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Source</th>
+                                    <th>Target</th>
+                                    <th class="col-center">Terms</th>
+                                    <th class="col-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="glossaryListBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EDITOR VIEW -->
+            <div class="main-card hidden" id="glossaryEditorView">
+                <div class="card-header">
+                    <button type="button" class="btn btn-secondary" id="glossaryEditorBackBtn" title="Back to list" style="padding: 0.5rem;">
+                        <span class="material-symbols-outlined">arrow_back</span>
+                    </button>
+                    <h2 id="glossaryEditorTitle" style="margin: 0;">Edit glossary</h2>
+                    <button type="button" class="btn btn-secondary" id="glossaryEditorDeleteBtn" title="Delete this glossary" style="margin-left: auto; padding: 0.5rem; color: #ef4444;">
+                        <span class="material-symbols-outlined">delete</span>
+                    </button>
+                </div>
+                <div class="card-body">
+                    <!-- Meta -->
+                    <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 15px; margin-bottom: 20px; align-items: start;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Name <span class="glossary-saved-indicator" id="glossaryEditorNameSaved"><span class="material-symbols-outlined">check_circle</span><span class="text">Saved</span></span></label>
+                            <div class="neu-inset-light"><input class="form-control" id="glossaryEditorName" type="text"></div>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Source <span class="glossary-saved-indicator" id="glossaryEditorSourceLangSaved"><span class="material-symbols-outlined">check_circle</span><span class="text">Saved</span></span></label>
+                            <div class="neu-inset-light">
+                                <select class="form-control" id="glossaryEditorSourceLang">
+                                    <option value="">—</option>
+                                    <optgroup label="Most Common">
+                                        <option value="English">English</option>
+                                        <option value="Chinese">Chinese</option>
+                                        <option value="Spanish">Spanish</option>
+                                        <option value="French">French</option>
+                                        <option value="German">German</option>
+                                        <option value="Japanese">Japanese</option>
+                                        <option value="Korean">Korean</option>
+                                        <option value="Portuguese">Portuguese</option>
+                                        <option value="Russian">Russian</option>
+                                        <option value="Arabic">Arabic</option>
+                                    </optgroup>
+                                    <optgroup label="European">
+                                        <option value="Italian">Italian</option>
+                                        <option value="Dutch">Dutch</option>
+                                        <option value="Polish">Polish</option>
+                                        <option value="Swedish">Swedish</option>
+                                        <option value="Norwegian">Norwegian</option>
+                                        <option value="Danish">Danish</option>
+                                        <option value="Finnish">Finnish</option>
+                                        <option value="Greek">Greek</option>
+                                        <option value="Hungarian">Hungarian</option>
+                                        <option value="Czech">Czech</option>
+                                        <option value="Slovak">Slovak</option>
+                                        <option value="Romanian">Romanian</option>
+                                        <option value="Bulgarian">Bulgarian</option>
+                                        <option value="Croatian">Croatian</option>
+                                        <option value="Serbian">Serbian</option>
+                                        <option value="Ukrainian">Ukrainian</option>
+                                        <option value="Catalan">Catalan</option>
+                                    </optgroup>
+                                    <optgroup label="Asian">
+                                        <option value="Hindi">Hindi</option>
+                                        <option value="Bengali">Bengali</option>
+                                        <option value="Urdu">Urdu</option>
+                                        <option value="Punjabi">Punjabi</option>
+                                        <option value="Tamil">Tamil</option>
+                                        <option value="Telugu">Telugu</option>
+                                        <option value="Marathi">Marathi</option>
+                                        <option value="Gujarati">Gujarati</option>
+                                        <option value="Vietnamese">Vietnamese</option>
+                                        <option value="Thai">Thai</option>
+                                        <option value="Indonesian">Indonesian</option>
+                                        <option value="Malay">Malay</option>
+                                        <option value="Tagalog">Tagalog</option>
+                                        <option value="Burmese">Burmese</option>
+                                    </optgroup>
+                                    <optgroup label="Middle East &amp; Africa">
+                                        <option value="Persian">Persian</option>
+                                        <option value="Turkish">Turkish</option>
+                                        <option value="Hebrew">Hebrew</option>
+                                        <option value="Swahili">Swahili</option>
+                                        <option value="Amharic">Amharic</option>
+                                    </optgroup>
+                                    <optgroup label="Custom">
+                                        <option value="Other">Other (Specify)</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+                            <div class="neu-inset-light" style="margin-top: 10px; display: none;" id="glossaryEditorCustomSourceLangContainer">
+                                <input type="text" class="form-control" id="glossaryEditorCustomSourceLang" placeholder="Enter custom source language">
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Target <span class="glossary-saved-indicator" id="glossaryEditorTargetLangSaved"><span class="material-symbols-outlined">check_circle</span><span class="text">Saved</span></span></label>
+                            <div class="neu-inset-light">
+                                <select class="form-control" id="glossaryEditorTargetLang">
+                                    <option value="">—</option>
+                                    <optgroup label="Most Common">
+                                        <option value="Chinese">Chinese</option>
+                                        <option value="English">English</option>
+                                        <option value="Spanish">Spanish</option>
+                                        <option value="French">French</option>
+                                        <option value="German">German</option>
+                                        <option value="Japanese">Japanese</option>
+                                        <option value="Korean">Korean</option>
+                                        <option value="Portuguese">Portuguese</option>
+                                        <option value="Russian">Russian</option>
+                                        <option value="Arabic">Arabic</option>
+                                    </optgroup>
+                                    <optgroup label="European">
+                                        <option value="Italian">Italian</option>
+                                        <option value="Dutch">Dutch</option>
+                                        <option value="Polish">Polish</option>
+                                        <option value="Swedish">Swedish</option>
+                                        <option value="Norwegian">Norwegian</option>
+                                        <option value="Danish">Danish</option>
+                                        <option value="Finnish">Finnish</option>
+                                        <option value="Greek">Greek</option>
+                                        <option value="Hungarian">Hungarian</option>
+                                        <option value="Czech">Czech</option>
+                                        <option value="Slovak">Slovak</option>
+                                        <option value="Romanian">Romanian</option>
+                                        <option value="Bulgarian">Bulgarian</option>
+                                        <option value="Croatian">Croatian</option>
+                                        <option value="Serbian">Serbian</option>
+                                        <option value="Ukrainian">Ukrainian</option>
+                                        <option value="Catalan">Catalan</option>
+                                    </optgroup>
+                                    <optgroup label="Asian">
+                                        <option value="Hindi">Hindi</option>
+                                        <option value="Bengali">Bengali</option>
+                                        <option value="Urdu">Urdu</option>
+                                        <option value="Punjabi">Punjabi</option>
+                                        <option value="Tamil">Tamil</option>
+                                        <option value="Telugu">Telugu</option>
+                                        <option value="Marathi">Marathi</option>
+                                        <option value="Gujarati">Gujarati</option>
+                                        <option value="Vietnamese">Vietnamese</option>
+                                        <option value="Thai">Thai</option>
+                                        <option value="Indonesian">Indonesian</option>
+                                        <option value="Malay">Malay</option>
+                                        <option value="Tagalog">Tagalog</option>
+                                        <option value="Burmese">Burmese</option>
+                                    </optgroup>
+                                    <optgroup label="Middle East &amp; Africa">
+                                        <option value="Persian">Persian</option>
+                                        <option value="Turkish">Turkish</option>
+                                        <option value="Hebrew">Hebrew</option>
+                                        <option value="Swahili">Swahili</option>
+                                        <option value="Amharic">Amharic</option>
+                                    </optgroup>
+                                    <optgroup label="Custom">
+                                        <option value="Other">Other (Specify)</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+                            <div class="neu-inset-light" style="margin-top: 10px; display: none;" id="glossaryEditorCustomTargetLangContainer">
+                                <input type="text" class="form-control" id="glossaryEditorCustomTargetLang" placeholder="Enter custom target language">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Toolbar -->
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px; align-items: center;">
+                        <button type="button" class="btn btn-primary glossary-toolbar-btn" id="glossaryAutoExtractBtn">
+                            <span class="material-symbols-outlined">auto_fix_high</span>
+                            Auto-extract
+                        </button>
+                        <button type="button" class="btn btn-secondary glossary-toolbar-btn" id="glossaryAddRowBtn">
+                            <span class="material-symbols-outlined">add</span>
+                            Add a term
+                        </button>
+                        <button type="button" class="btn btn-secondary glossary-toolbar-btn" id="glossaryPreviewBtn" title="Preview the glossary block as it will be injected into the prompt">
+                            <span class="material-symbols-outlined">visibility</span>
+                            Preview
+                        </button>
+                        <span style="flex: 1;"></span>
+                        <button type="button" class="btn btn-secondary glossary-toolbar-btn" id="glossaryImportBtn" title="Import a CSV or JSON file (replaces current terms)">
+                            <span class="material-symbols-outlined">upload</span>
+                            Import
+                        </button>
+                        <input type="file" id="glossaryImportFile" accept=".csv,.json" style="display: none;">
+                        <button type="button" class="btn btn-secondary glossary-toolbar-btn" id="glossaryExportCsvBtn" title="Export as CSV">
+                            <span class="material-symbols-outlined">download</span>
+                            CSV
+                        </button>
+                        <button type="button" class="btn btn-secondary glossary-toolbar-btn" id="glossaryExportJsonBtn" title="Export as JSON">
+                            <span class="material-symbols-outlined">download</span>
+                            JSON
+                        </button>
+                    </div>
+
+                    <!-- Search/filter row -->
+                    <div class="glossary-search-row">
+                        <input type="search" id="glossaryTermsFilter" placeholder="Filter terms (source, target, category)..." autocomplete="off">
+                        <span class="glossary-search-count" id="glossaryTermsFilterCount" aria-live="polite"></span>
+                    </div>
+
+                    <!-- Inflected-forms hint: source-cell convention -->
+                    <div class="glossary-hint" role="note">
+                        <span class="material-symbols-outlined" aria-hidden="true">info</span>
+                        <span>Inflected forms: separate variants with <code>|</code> in the Source cell — e.g. <code>Москва|Москве|Москвы</code> → <code>Moscou</code>. Any form found in the text triggers the same translation.</span>
+                    </div>
+
+                    <!-- Bulk actions bar (shown only when rows are selected) -->
+                    <div id="glossaryBulkBar" class="glossary-bulk-bar" style="display: none;">
+                        <span class="glossary-bulk-count"><span id="glossaryBulkCount">0</span> selected</span>
+                        <button type="button" class="btn btn-secondary glossary-toolbar-btn" id="glossaryBulkDeleteBtn">
+                            <span class="material-symbols-outlined">delete</span>
+                            Delete
+                        </button>
+                        <label style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem;">
+                            Set category:
+                            <select id="glossaryBulkCategorySelect">
+                                <option value="">—</option>
+                                <option value="character">character</option>
+                                <option value="location">location</option>
+                                <option value="organization">organization</option>
+                                <option value="item">item</option>
+                                <option value="title">title</option>
+                                <option value="other">other</option>
+                            </select>
+                        </label>
+                        <button type="button" class="btn btn-secondary glossary-toolbar-btn" id="glossaryBulkSetCategoryBtn">Apply</button>
+                        <span class="bulk-spacer"></span>
+                        <button type="button" class="btn btn-secondary glossary-toolbar-btn" id="glossaryBulkClearBtn" title="Clear selection">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+
+                    <!-- Terms table -->
+                    <table id="glossaryTermsTable" class="file-table">
+                        <colgroup>
+                            <col style="width: 36px;">
+                            <col>
+                            <col>
+                            <col style="width: 160px;">
+                            <col style="width: 60px;">
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th class="col-center"><input type="checkbox" id="glossaryTermsSelectAll" aria-label="Select all"></th>
+                                <th class="sortable" data-sort-key="source" title="Source term. Use '|' to separate inflected forms (e.g. Москва|Москве|Москвы) — any form will match.">Source <span class="sort-indicator">⇅</span></th>
+                                <th class="sortable" data-sort-key="target">Target <span class="sort-indicator">⇅</span></th>
+                                <th class="sortable" data-sort-key="category">Category <span class="sort-indicator">⇅</span></th>
+                                <th class="col-center"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="glossaryTermsBody"></tbody>
+                    </table>
+                    <div id="glossaryTermsEmpty" class="hidden" style="text-align: center; padding: 30px;">
+                        <p style="color: var(--text-muted-light); margin: 0;">No terms yet. Use the toolbar above to add a term, auto-extract candidates, or import a file.</p>
+                    </div>
+
+                    <p style="color: var(--text-muted-light); font-size: 0.8rem; margin-top: 10px;">
+                        Edits are saved automatically when you leave a field. Empty source rows are dropped on save.
+                    </p>
+                </div>
+            </div>
+        </div><!-- /#tab-glossaries -->
+
     </div>
 
     <!-- Footer -->
@@ -655,8 +1161,121 @@
         </div>
     </footer>
 
+    <!-- NER auto-extract review modal (built lazily) -->
+    <div id="ner-modal" class="modal-overlay hidden">
+        <div class="modal-content ner-modal-content">
+            <div class="modal-header">
+                <h3 class="ner-modal-title">
+                    <span class="material-symbols-outlined" aria-hidden="true">auto_fix_high</span>
+                    Auto-extract candidates
+                </h3>
+                <button class="close-btn" id="ner-modal-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body" id="ner-modal-body">
+                <div id="ner-input-step">
+                    <p class="ner-modal-intro">
+                        Pick a source file (TXT, SRT, EPUB, DOCX). The LLM will scan <strong id="ner-budget-label">6000</strong> characters drawn from <strong id="ner-samples-label">10</strong> evenly-spaced excerpts across the document, and propose recurring named entities. You'll review and edit each candidate before it joins the glossary.
+                    </p>
+                    <input type="file" id="ner-file-input" accept=".txt,.srt,.epub,.docx" style="display: none;">
+                    <div id="ner-drop-zone" class="glossary-ner-dropzone">
+                        <div class="ner-dropzone-primary">
+                            <button type="button" class="btn btn-secondary" id="ner-pick-file-btn">
+                                <span class="material-symbols-outlined">folder_open</span>
+                                Choose file
+                            </button>
+                            <span class="ner-dropzone-or">or drop a file here</span>
+                        </div>
+                        <div class="ner-dropzone-hint">TXT · SRT · EPUB · DOCX</div>
+                    </div>
+                    <div id="ner-file-pill" class="glossary-ner-file-pill hidden">
+                        <span class="material-symbols-outlined" aria-hidden="true">description</span>
+                        <span id="ner-file-pill-name" class="ner-file-pill-name"></span>
+                        <span id="ner-file-pill-size" class="ner-file-pill-size"></span>
+                        <button type="button" id="ner-file-clear-btn" class="ner-file-clear-btn" aria-label="Clear file">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+                    <div class="ner-settings-row">
+                        <div class="ner-settings-field">
+                            <label for="ner-max-chars" class="ner-settings-label">Total chars</label>
+                            <input type="number" id="ner-max-chars" class="ner-settings-input" value="6000" min="500" max="6000">
+                        </div>
+                        <div class="ner-settings-field">
+                            <label for="ner-sample-count" class="ner-settings-label">Samples</label>
+                            <input type="number" id="ner-sample-count" class="ner-settings-input" value="10" min="1" max="50">
+                        </div>
+                        <span id="ner-status" class="ner-status"></span>
+                    </div>
+                </div>
+                <div id="ner-results-step" class="hidden">
+                    <div id="ner-warnings" class="ner-warnings hidden"></div>
+                    <div class="ner-results-header">
+                        <span class="ner-results-count-label">
+                            <strong id="ner-results-count">0</strong> candidates<span id="ner-results-new-count" class="ner-results-new-count"></span>
+                        </span>
+                        <span class="ner-results-hint">Pairs where source = target are dimmed — click to include them.</span>
+                    </div>
+                    <div class="ner-results-table-wrap">
+                        <table id="ner-candidates-table" class="file-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"><input type="checkbox" id="ner-select-all" checked></th>
+                                    <th>Source</th>
+                                    <th>Target (editable)</th>
+                                    <th style="width: 110px;">Category</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ner-candidates-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="ner-modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="ner-extract-btn">
+                    <span class="material-symbols-outlined">play_arrow</span>
+                    Extract
+                </button>
+                <button class="btn btn-primary hidden" id="ner-add-selected-btn">
+                    <span class="material-symbols-outlined">add</span>
+                    Add selected
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Glossary preview-block modal -->
+    <div id="glossary-preview-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width: 760px;">
+            <div class="modal-header">
+                <h3 style="margin: 0;">
+                    <span class="material-symbols-outlined" style="vertical-align: middle;">visibility</span>
+                    Preview prompt block
+                </h3>
+                <button class="close-btn" id="glossary-preview-close" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-top: 0; color: var(--text-muted-light); font-size: 0.9rem;">
+                    Paste a sample chunk to see exactly which glossary terms would be matched and how the block would be inserted into the system prompt.
+                </p>
+                <textarea id="glossary-preview-input" rows="6" style="width: 100%; padding: 8px; font-family: monospace; font-size: 0.85rem; background: var(--background-outer); color: var(--text-dark); border: 1px solid var(--border-light); border-radius: 6px; resize: vertical;" placeholder="Paste a sample chunk here..."></textarea>
+                <div style="display: flex; gap: 12px; margin: 8px 0; align-items: center;">
+                    <button type="button" class="btn btn-primary glossary-toolbar-btn" id="glossary-preview-render">
+                        <span class="material-symbols-outlined">play_arrow</span>
+                        Render
+                    </button>
+                    <span id="glossary-preview-meta" style="color: var(--text-muted-light); font-size: 0.85rem;"></span>
+                </div>
+                <pre id="glossary-preview-output" class="preview-block-output">(Click "Render" to compute the block.)</pre>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="glossary-preview-cancel">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="/static/js/vendor/socket.io.min.js"></script>
-    <script type="module" src="/static/js/index.js?v=20260202-002"></script>
+    <script type="module" src="/static/js/index.js?v=20260509-glossary-ux3"></script>
 </body>
 </html>

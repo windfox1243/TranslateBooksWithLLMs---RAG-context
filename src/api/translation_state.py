@@ -1,13 +1,17 @@
 """
 Thread-safe translation state management
 """
+import atexit
 import threading
 import time
 import copy
 import uuid
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
 from src.persistence.checkpoint_manager import CheckpointManager
+
+if TYPE_CHECKING:
+    from src.core.glossary import GlossaryStore
 
 
 def generate_server_session_id() -> str:
@@ -27,6 +31,8 @@ class TranslationStateManager:
         self.checkpoint_manager = checkpoint_manager or CheckpointManager(
             server_session_id=self.server_session_id
         )
+        self.glossary_store: Optional["GlossaryStore"] = None
+        self._glossary_lock = threading.Lock()
     
     def create_translation(self, translation_id: str, config: Dict[str, Any]) -> None:
         """Create a new translation entry"""
@@ -237,6 +243,32 @@ class TranslationStateManager:
         """Get the checkpoint manager instance"""
         return self.checkpoint_manager
 
+    def get_glossary_store(self) -> "GlossaryStore":
+        """Return the shared GlossaryStore, instantiating it on first use.
+
+        A single store is shared by the glossary blueprint and the translation
+        handler so we don't end up with multiple stores each leaking
+        per-thread SQLite connections.
+        """
+        if self.glossary_store is not None:
+            return self.glossary_store
+        with self._glossary_lock:
+            if self.glossary_store is None:
+                from src.core.glossary import GlossaryStore
+                self.glossary_store = GlossaryStore()
+            return self.glossary_store
+
+    def close_glossary_store(self) -> None:
+        """Close every connection held by the shared GlossaryStore, if any."""
+        with self._glossary_lock:
+            store = self.glossary_store
+            self.glossary_store = None
+        if store is not None:
+            try:
+                store.close_all()
+            except Exception:
+                pass
+
 
 # Global instance
 _state_manager = TranslationStateManager()
@@ -245,3 +277,17 @@ _state_manager = TranslationStateManager()
 def get_state_manager() -> TranslationStateManager:
     """Get the global state manager instance"""
     return _state_manager
+
+
+def get_glossary_store() -> "GlossaryStore":
+    """Return the process-wide shared GlossaryStore."""
+    return _state_manager.get_glossary_store()
+
+
+@atexit.register
+def _shutdown_glossary_store() -> None:
+    """Close all GlossaryStore connections on interpreter shutdown."""
+    try:
+        _state_manager.close_glossary_store()
+    except Exception:
+        pass

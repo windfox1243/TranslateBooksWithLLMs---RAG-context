@@ -475,6 +475,110 @@ export const ApiClient = {
         return await apiRequest(`/api/tts/voice-prompt/${encodeURIComponent(filename)}`, {
             method: 'DELETE'
         });
+    },
+
+    // ========================================
+    // Glossary Management
+    // ========================================
+
+    async getGlossaries() {
+        return await apiRequest('/api/glossaries');
+    },
+
+    async getGlossary(gid) {
+        return await apiRequest(`/api/glossaries/${gid}`);
+    },
+
+    async createGlossary(payload) {
+        return await apiRequest('/api/glossaries', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+    },
+
+    async updateGlossary(gid, payload) {
+        return await apiRequest(`/api/glossaries/${gid}`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+        });
+    },
+
+    async deleteGlossary(gid) {
+        return await apiRequest(`/api/glossaries/${gid}`, {
+            method: 'DELETE'
+        });
+    },
+
+    async addGlossaryTerm(gid, term) {
+        return await apiRequest(`/api/glossaries/${gid}/terms`, {
+            method: 'POST',
+            body: JSON.stringify(term)
+        });
+    },
+
+    async updateGlossaryTerm(gid, tid, term) {
+        return await apiRequest(`/api/glossaries/${gid}/terms/${tid}`, {
+            method: 'PUT',
+            body: JSON.stringify(term)
+        });
+    },
+
+    async deleteGlossaryTerm(gid, tid) {
+        return await apiRequest(`/api/glossaries/${gid}/terms/${tid}`, {
+            method: 'DELETE'
+        });
+    },
+
+    async importGlossaryTerms(gid, file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await fetch(`${API_BASE_URL}/api/glossaries/${gid}/import`, {
+            method: 'POST',
+            body: formData
+        });
+        if (!response.ok) {
+            await handleApiError(response);
+        }
+        return await response.json();
+    },
+
+    getGlossaryExportUrl(gid, format = 'json') {
+        return `${API_BASE_URL}/api/glossaries/${gid}/export?format=${encodeURIComponent(format)}`;
+    },
+
+    async suggestGlossaryTerms(gid, payload) {
+        const url = `${API_BASE_URL}/api/glossaries/${gid}/suggest-terms`;
+        const isFormData = (typeof FormData !== 'undefined') && (payload instanceof FormData);
+        const response = await fetch(url, {
+            method: 'POST',
+            body: isFormData ? payload : JSON.stringify(payload),
+            headers: isFormData ? {} : { 'Content-Type': 'application/json' }
+        });
+        if (!response.ok) {
+            await handleApiError(response);
+        }
+        return await response.json();
+    },
+
+    async duplicateGlossary(gid, payload = {}) {
+        return await apiRequest(`/api/glossaries/${gid}/duplicate`, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+    },
+
+    async bulkGlossaryTerms(gid, payload) {
+        return await apiRequest(`/api/glossaries/${gid}/terms/bulk`, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+    },
+
+    async previewGlossaryBlock(gid, text) {
+        return await apiRequest(`/api/glossaries/${gid}/preview-block`, {
+            method: 'POST',
+            body: JSON.stringify({ text: text || '' })
+        });
     }
 };
 

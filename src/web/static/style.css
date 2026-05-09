@@ -1289,7 +1289,6 @@ html.dark .footer-links .sponsor-btn:hover {
 
 .modal-content {
     background: var(--background-light);
-    box-shadow: 10px 10px 20px var(--shadow-dark), -10px -10px 20px var(--shadow-light);
     border: 1px solid var(--border-light);
     border-radius: 2rem;
     width: 90%;
@@ -1952,4 +1951,573 @@ html.dark .searchable-select-group {
 .searchable-select-option .provider-logo {
     width: 22px;
     height: 22px;
+}
+
+/* ========================================
+   Toast notifications
+   ======================================== */
+
+.app-toast {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    padding: 0.7rem 0.9rem 0.7rem 0.85rem;
+    border-radius: 0.65rem;
+    background: var(--background-outer);
+    color: var(--text-dark);
+    border: 1px solid var(--border-light);
+    box-shadow: 0 8px 22px rgba(15, 25, 45, 0.18);
+    font-size: 0.875rem;
+    line-height: 1.35;
+    min-width: 240px;
+    transform: translateX(120%);
+    opacity: 0;
+    transition: transform 0.18s ease, opacity 0.18s ease;
+    border-left-width: 4px;
+}
+.app-toast.app-toast-show {
+    transform: translateX(0);
+    opacity: 1;
+}
+.app-toast.app-toast-leaving {
+    transform: translateX(40%);
+    opacity: 0;
+}
+.app-toast .app-toast-icon {
+    font-size: 1.15rem;
+    line-height: 1;
+    margin-top: 1px;
+}
+.app-toast .app-toast-text {
+    flex: 1;
+    word-break: break-word;
+    white-space: pre-line;
+}
+.app-toast .app-toast-close {
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    padding: 0;
+    margin-left: 0.25rem;
+    color: var(--text-muted-light);
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+}
+.app-toast .app-toast-close:hover {
+    color: var(--text-dark);
+    background: rgba(127, 127, 127, 0.12);
+}
+.app-toast .app-toast-close .material-symbols-outlined {
+    font-size: 1.05rem;
+}
+
+.app-toast.app-toast-success {
+    border-left-color: var(--success-light);
+}
+.app-toast.app-toast-success .app-toast-icon {
+    color: var(--success-light);
+}
+.app-toast.app-toast-error {
+    border-left-color: #ef4444;
+}
+.app-toast.app-toast-error .app-toast-icon {
+    color: #ef4444;
+}
+.app-toast.app-toast-warn {
+    border-left-color: #f59e0b;
+}
+.app-toast.app-toast-warn .app-toast-icon {
+    color: #f59e0b;
+}
+.app-toast.app-toast-info {
+    border-left-color: var(--info-light);
+}
+.app-toast.app-toast-info .app-toast-icon {
+    color: var(--info-light);
+}
+
+/* ========================================
+   Glossary editor — UX additions
+   ======================================== */
+
+/* Saved indicator next to meta fields (name/source/target/category) */
+.glossary-saved-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    margin-left: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--success-light);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+    user-select: none;
+}
+.glossary-saved-indicator.is-visible {
+    opacity: 1;
+}
+.glossary-saved-indicator .material-symbols-outlined {
+    font-size: 0.95rem;
+}
+.glossary-saved-indicator.is-saving {
+    color: var(--text-muted-light);
+}
+
+/* Search bar above the terms table */
+.glossary-search-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+}
+.glossary-search-row input {
+    flex: 1;
+    padding: 0.45rem 0.7rem;
+    background: var(--background-outer);
+    border: 1px solid var(--border-light);
+    border-radius: 0.5rem;
+    color: var(--text-dark);
+    font-size: 0.875rem;
+}
+.glossary-search-row input:focus {
+    outline: none;
+    border-color: var(--primary-light);
+    box-shadow: 0 0 0 3px rgba(54, 118, 216, 0.15);
+}
+.glossary-search-count {
+    color: var(--text-muted-light);
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+/* Inflected-forms hint shown above the terms table */
+.glossary-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin: 0.75rem 0 0.75rem;
+    padding: 0.55rem 0.75rem;
+    border-radius: 6px;
+    background: var(--background-light);
+    border: 1px solid var(--border-light);
+    color: var(--text-secondary, #555);
+    font-size: 0.82rem;
+    line-height: 1.4;
+}
+.glossary-hint .material-symbols-outlined {
+    font-size: 1.05rem;
+    line-height: 1.4;
+    color: var(--primary-light);
+    flex-shrink: 0;
+}
+.glossary-hint code {
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.05);
+    font-size: 0.85em;
+}
+html.dark .glossary-hint code {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+/* Sortable column headers */
+#glossaryTermsTable th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+#glossaryTermsTable th.sortable:hover {
+    color: var(--primary-light);
+}
+#glossaryTermsTable th.sortable .sort-indicator {
+    display: inline-block;
+    margin-left: 0.2rem;
+    opacity: 0.4;
+    font-size: 0.85rem;
+}
+#glossaryTermsTable th.sortable.sort-active .sort-indicator {
+    opacity: 1;
+    color: var(--primary-light);
+}
+
+/* Bulk actions bar */
+.glossary-bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.75rem;
+    margin-bottom: 0.6rem;
+    background: var(--info-light-bg);
+    border: 1px solid var(--info-light);
+    border-radius: 0.55rem;
+    font-size: 0.85rem;
+}
+.glossary-bulk-bar .glossary-bulk-count {
+    font-weight: 600;
+    color: var(--text-dark);
+}
+.glossary-bulk-bar select {
+    padding: 0.3rem 0.5rem;
+    background: var(--background-outer);
+    border: 1px solid var(--border-light);
+    border-radius: 0.35rem;
+    color: var(--text-dark);
+    font-size: 0.85rem;
+}
+.glossary-bulk-bar .bulk-spacer {
+    flex: 1;
+}
+
+/* Translate-tab glossary info card */
+.glossary-info-card {
+    margin-top: 0.6rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--background-light);
+    border: 1px solid var(--border-light);
+    border-radius: 0.55rem;
+    font-size: 0.85rem;
+    color: var(--text-dark);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.glossary-info-card .glossary-info-meta {
+    color: var(--text-muted-light);
+}
+.glossary-info-card .glossary-info-link {
+    margin-left: auto;
+    color: var(--primary-light);
+    cursor: pointer;
+    text-decoration: none;
+    font-weight: 600;
+}
+.glossary-info-card .glossary-info-link:hover {
+    text-decoration: underline;
+}
+
+#glossaryListTable tbody a {
+    color: var(--primary-light);
+    text-decoration: none;
+    font-weight: 600;
+}
+#glossaryListTable tbody a:hover {
+    text-decoration: underline;
+}
+.glossary-info-card.is-warning {
+    border-left: 4px solid #f59e0b;
+    background: rgba(245, 158, 11, 0.08);
+}
+.glossary-info-card .glossary-info-warn {
+    color: #b45309;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+html.dark .glossary-info-card.is-warning {
+    background: rgba(245, 158, 11, 0.13);
+}
+html.dark .glossary-info-card .glossary-info-warn {
+    color: #fbbf24;
+}
+
+/* Drag & drop overlay */
+.glossary-drop-target {
+    transition: outline 0.15s, background 0.15s;
+}
+.glossary-drop-target.is-drag-over {
+    outline: 2px dashed var(--primary-light);
+    outline-offset: -6px;
+    background: rgba(54, 118, 216, 0.06);
+}
+
+/* NER status dots animation */
+.glossary-ner-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+.glossary-ner-loading .dot {
+    width: 6px;
+    height: 6px;
+    background: var(--primary-light);
+    border-radius: 50%;
+    animation: glossary-ner-bounce 1.2s infinite ease-in-out both;
+}
+.glossary-ner-loading .dot:nth-child(2) { animation-delay: 0.15s; }
+.glossary-ner-loading .dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes glossary-ner-bounce {
+    0%, 80%, 100% { transform: scale(0.5); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+}
+
+/* NER source-file dropzone */
+.glossary-ner-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1.4rem 1rem;
+    background: var(--background-light);
+    border: 1px dashed var(--border-light);
+    border-radius: 0.6rem;
+    color: var(--text-muted-light);
+    transition: background 0.15s, border-color 0.15s;
+    text-align: center;
+}
+.glossary-ner-dropzone.is-drag-over {
+    border-color: var(--primary-light);
+    background: rgba(54, 118, 216, 0.08);
+}
+.glossary-ner-dropzone .ner-dropzone-primary {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+.glossary-ner-dropzone .ner-dropzone-or {
+    font-size: 0.85rem;
+}
+.glossary-ner-dropzone .ner-dropzone-hint {
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    opacity: 0.75;
+}
+
+/* NER candidate row dimmed when source == target — low value for strong models,
+   but the user can still tick it to opt the pair into the glossary. */
+.ner-row-identical {
+    opacity: 0.5;
+    transition: opacity 0.15s;
+}
+.ner-row-identical:hover {
+    opacity: 0.85;
+}
+.ner-row-identical .ner-target-input,
+.ner-row-identical .ner-category-select {
+    background: transparent;
+}
+
+/* NER selected-file pill */
+.glossary-ner-file-pill {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.55rem;
+    padding: 0.5rem 0.65rem;
+    background: var(--background-light);
+    border: 1px solid var(--border-light);
+    border-radius: 0.5rem;
+    font-size: 0.85rem;
+}
+.glossary-ner-file-pill .ner-file-pill-name {
+    flex: 1;
+    font-weight: 500;
+    color: var(--text-dark);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.glossary-ner-file-pill .ner-file-pill-size {
+    color: var(--text-muted-light);
+    font-variant-numeric: tabular-nums;
+}
+.glossary-ner-file-pill .ner-file-clear-btn {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted-light);
+    cursor: pointer;
+    padding: 0.15rem;
+    border-radius: 0.3rem;
+    line-height: 0;
+}
+.glossary-ner-file-pill .ner-file-clear-btn:hover {
+    background: var(--background-outer);
+    color: var(--text-dark);
+}
+
+/* Empty state with action buttons */
+.glossary-empty-cta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 2.2rem 1rem;
+}
+.glossary-empty-cta p {
+    color: var(--text-muted-light);
+    margin: 0;
+}
+.glossary-empty-cta-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+/* Preview-block modal pre */
+#glossary-preview-modal .preview-block-output {
+    white-space: pre-wrap;
+    background: var(--background-light);
+    border: 1px solid var(--border-light);
+    border-radius: 0.5rem;
+    padding: 0.7rem 0.9rem;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8rem;
+    color: var(--text-dark);
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+/* ========================================
+   NER Auto-extract candidates modal
+   ======================================== */
+.ner-modal-content {
+    max-width: 720px;
+}
+.ner-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0;
+    color: var(--text-dark);
+    font-weight: 700;
+}
+.ner-modal-title .material-symbols-outlined {
+    color: var(--primary-light);
+    font-size: 1.4rem;
+}
+.ner-modal-intro {
+    margin: 0 0 1.25rem 0;
+    color: var(--text-muted-light);
+    font-size: 0.9rem;
+    line-height: 1.55;
+}
+.ner-modal-intro strong {
+    color: var(--text-dark);
+    font-weight: 600;
+}
+
+/* Settings row */
+.ner-settings-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 1.25rem;
+    margin-top: 1.1rem;
+    flex-wrap: wrap;
+}
+.ner-settings-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.ner-settings-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted-light);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.ner-settings-input {
+    width: 110px;
+    padding: 0.5rem 0.75rem;
+    background: var(--background-light);
+    border: 1px solid var(--border-light);
+    border-radius: 0.5rem;
+    color: var(--text-dark);
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.ner-settings-input::-webkit-outer-spin-button,
+.ner-settings-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.ner-settings-input:focus {
+    outline: none;
+    border-color: var(--primary-light);
+    box-shadow: 0 0 0 3px rgba(54, 118, 216, 0.12);
+}
+.ner-status {
+    margin-left: auto;
+    align-self: center;
+    font-size: 0.85rem;
+    color: var(--text-muted-light);
+    font-style: italic;
+    min-height: 1.2em;
+}
+.ner-status:empty {
+    display: none;
+}
+
+/* Results step */
+.ner-warnings {
+    margin-bottom: 1rem;
+    padding: 0.7rem 1rem;
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 0.55rem;
+    color: var(--text-dark);
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+html.dark .ner-warnings {
+    background: rgba(245, 158, 11, 0.14);
+    border-color: rgba(245, 158, 11, 0.45);
+    color: #fde68a;
+}
+.ner-warnings ul {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+.ner-warnings li + li {
+    margin-top: 0.25rem;
+}
+.ner-results-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.85rem;
+    flex-wrap: wrap;
+}
+.ner-results-count-label {
+    font-size: 0.95rem;
+    color: var(--text-dark);
+}
+.ner-results-count-label strong {
+    color: var(--primary-light);
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-right: 0.25rem;
+}
+.ner-results-new-count {
+    color: var(--text-muted-light);
+    font-weight: 400;
+    margin-left: 0.35rem;
+}
+.ner-results-hint {
+    font-size: 0.8rem;
+    color: var(--text-muted-light);
+    font-style: italic;
+}
+.ner-results-table-wrap {
+    max-height: 380px;
+    overflow-y: auto;
+    border: 1px solid var(--border-light);
+    border-radius: 0.6rem;
+    background: var(--background-light);
+}
+.ner-results-table-wrap #ner-candidates-table {
+    margin: 0;
+}
+
+/* Footer button icons inside the NER modal */
+#ner-modal .modal-footer .btn .material-symbols-outlined {
+    font-size: 1rem;
+    margin-right: 0.25rem;
+    vertical-align: -2px;
 }

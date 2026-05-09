@@ -45,6 +45,7 @@ if __name__ == "__main__":
     prompt_group = parser.add_argument_group('Prompt Options', 'Optional instructions to include in the translation prompt')
     prompt_group.add_argument("--text-cleanup", action="store_true", help="Enable OCR/typographic cleanup (fix broken lines, spacing, punctuation).")
     prompt_group.add_argument("--refine", action="store_true", help="Enable refinement pass: runs a second pass to polish translation quality and literary style.")
+    prompt_group.add_argument("--glossary", default=None, help="Path to a glossary file (.json or .csv) injected per-chunk to keep entity translations consistent.")
 
     # TTS (Text-to-Speech) arguments
     tts_group = parser.add_argument_group('TTS Options', 'Text-to-Speech audio generation')
@@ -141,6 +142,21 @@ if __name__ == "__main__":
         'text_cleanup': args.text_cleanup,
         'refine': args.refine
     }
+
+    # Load glossary file (JSON or CSV) into prompt_options
+    if args.glossary:
+        try:
+            from src.core.glossary.cli_loader import load_glossary_from_file
+            glossary_terms, glossary_metadata = load_glossary_from_file(args.glossary)
+            if glossary_terms:
+                prompt_options['glossary_terms'] = glossary_terms
+                if glossary_metadata:
+                    prompt_options['glossary_term_metadata'] = glossary_metadata
+                logger.info(f"Glossary loaded: {len(glossary_terms)} terms from {args.glossary}")
+            else:
+                logger.warning(f"Glossary file {args.glossary} contained no usable entries")
+        except Exception as e:
+            parser.error(f"Failed to load glossary {args.glossary}: {e}")
 
     try:
         # Create checkpoint manager for resume capability

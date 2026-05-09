@@ -19,6 +19,7 @@ import { SettingsManager } from './core/settings-manager.js';
 import { DomHelpers } from './ui/dom-helpers.js';
 import { MessageLogger } from './ui/message-logger.js';
 import { FormManager } from './ui/form-manager.js';
+import { GlossaryManager } from './glossary/glossary-manager.js';
 
 // ========================================
 // Provider Modules
@@ -390,6 +391,7 @@ async function initializeModules() {
     initializeThemeManager();
     SettingsManager.initialize();
     FormManager.initialize();
+    GlossaryManager.initialize();
     StatusManager.initialize();
     initializePreviewHeight();
     ProviderManager.initialize();

@@ -64,6 +64,11 @@ function getTranslationConfig(file) {
         custom_instruction_file: DomHelpers.getValue('customInstructionSelect') || ''
     };
 
+    const glossaryId = DomHelpers.getValue('glossarySelect');
+    if (glossaryId) {
+        promptOptions.glossary_id = parseInt(glossaryId, 10);
+    }
+
     // Get TTS configuration
     const ttsEnabled = DomHelpers.getElement('ttsEnabled')?.checked || false;
 

@@ -145,7 +145,8 @@ def generate_translation_prompt(
     translate_tag_out: str = TRANSLATE_TAG_OUT,
     has_placeholders: bool = True,
     prompt_options: dict = None,
-    placeholder_format: Optional[Tuple[str, str]] = None
+    placeholder_format: Optional[Tuple[str, str]] = None,
+    glossary_block: str = "",
 ) -> PromptPair:
     """
     Generate the translation prompt with all contextual elements.
@@ -272,7 +273,12 @@ For consistency and natural flow, here's what came immediately before:
 
 """
 
-    user_prompt = f"""{previous_translation_block_text}# TEXT TO TRANSLATE
+    # Glossary block lives in the user prompt: it changes per chunk, so
+    # keeping it out of the system prompt lets the system prompt stay
+    # stable and cacheable across chunks.
+    glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
+
+    user_prompt = f"""{previous_translation_block_text}{glossary_section}# TEXT TO TRANSLATE
 
 {INPUT_TAG_IN}
 {main_content}
@@ -290,6 +296,79 @@ Provide your translation now:"""
     return PromptPair(system=system_prompt.strip(), user=user_prompt.strip())
 
 
+# ============================================================================
+# GLOSSARY: NER EXTRACTION PROMPT (Phase 2)
+# ============================================================================
+
+NER_TAG_IN = "<NER_JSON>"
+NER_TAG_OUT = "</NER_JSON>"
+
+
+def generate_ner_extraction_prompt(
+    text: str,
+    source_language: str = "Chinese",
+    target_language: str = "English",
+) -> PromptPair:
+    """
+    Build a prompt that asks the LLM to extract recurring proper-noun entities
+    (characters, locations, organizations/sects, items) from a sample of source
+    text, along with a suggested target-language translation for each.
+
+    Output is wrapped in <NER_JSON>...</NER_JSON> with a strict schema. The
+    parser is permissive (handles markdown fences, missing tags, partial JSON).
+    """
+    system_prompt = f"""You are a literary entity extractor. Your job is to read a passage written in {source_language} and identify recurring proper nouns that a translator would want to keep consistent across an entire book.
+
+# CATEGORIES (use exactly these labels)
+
+- "character"     — named persons (李凡, Li Fan, Captain Ahab)
+- "location"      — places, regions, buildings (青玄宗大殿, Mount Tai)
+- "organization"  — sects, schools, clans, factions, companies (青玄宗, Heavenly Sword Gate)
+- "item"          — named artifacts, weapons, treasures, techniques (混沌珠, Excalibur)
+- "title"         — honorifics or named ranks tied to a person (Elder, 长老, Master)
+- "other"         — anything else worth keeping consistent (events, magical formulas)
+
+# RULES
+
+1. Extract ONLY proper nouns or named concepts that look likely to recur. Skip generic words.
+2. Do NOT translate common nouns or descriptive phrases — only named entities.
+3. For each entity, propose ONE canonical {target_language} translation. Use the standard romanization or the most natural literary rendering. Keep the proposal concise.
+4. Deduplicate: if the same entity appears multiple times in the passage, list it once.
+5. If you are unsure about an entry, omit it rather than guessing.
+6. Preserve the original {source_language} form exactly as it appears in the text (no extra spaces, no normalization).
+
+# OUTPUT FORMAT
+
+Return ONLY a JSON array wrapped between {NER_TAG_IN} and {NER_TAG_OUT}. No prose, no explanations.
+
+Each array element MUST be an object with these keys:
+  - "source"   (string, required) — the entity in {source_language}
+  - "target"   (string, required) — the proposed {target_language} translation
+  - "category" (string, required) — one of the labels listed above
+
+Example:
+{NER_TAG_IN}
+[
+  {{"source": "李凡", "target": "Li Fan", "category": "character"}},
+  {{"source": "青玄宗", "target": "Qingxuan Sect", "category": "organization"}}
+]
+{NER_TAG_OUT}
+
+If no entities are found, return an empty array: {NER_TAG_IN}[]{NER_TAG_OUT}.
+
+Do NOT wrap the JSON in markdown code fences. Do NOT add commentary before or after the tags."""
+
+    user_prompt = f"""# SOURCE TEXT ({source_language})
+
+{INPUT_TAG_IN}
+{text}
+{INPUT_TAG_OUT}
+
+Extract the recurring named entities now. Output the JSON array between {NER_TAG_IN} and {NER_TAG_OUT}, nothing else."""
+
+    return PromptPair(system=system_prompt.strip(), user=user_prompt.strip())
+
+
 def generate_refinement_prompt(
     draft_translation: str,
     context_before: str = "",
@@ -301,7 +380,8 @@ def generate_refinement_prompt(
     has_placeholders: bool = True,
     prompt_options: dict = None,
     placeholder_format: Optional[Tuple[str, str]] = None,
-    additional_instructions: str = ""
+    additional_instructions: str = "",
+    glossary_block: str = "",
 ) -> PromptPair:
     """
     Generate a refinement prompt to polish a draft translation.
@@ -438,7 +518,11 @@ For consistency and natural flow, here's what came immediately before:
 
 """
 
-    user_prompt = f"""{previous_context_block}# DRAFT TO REFINE
+    # Glossary block injected here (per-chunk dynamic) so the system prompt
+    # stays cacheable across chunks.
+    glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
+
+    user_prompt = f"""{previous_context_block}{glossary_section}# DRAFT TO REFINE
 
 The following is a rough {target_language} translation that needs significant improvement.
 Rewrite it with elegant, literary-quality {target_language} prose:
@@ -466,7 +550,8 @@ def generate_subtitle_block_prompt(
     target_language: str = "Chinese",
     translate_tag_in: str = TRANSLATE_TAG_IN,
     translate_tag_out: str = TRANSLATE_TAG_OUT,
-    custom_instructions: str = ""
+    custom_instructions: str = "",
+    glossary_block: str = "",
 ) -> PromptPair:
     """
     Generate translation prompt for multiple subtitle blocks with index markers.
@@ -559,7 +644,10 @@ For continuity and consistency, here's the previous subtitle block:
     # Join subtitles outside f-string to avoid Python 3.11 backslash issues
     formatted_subtitles_text = "\n".join(formatted_subtitles)
 
-    user_prompt = f"""{previous_translation_block_text}# SUBTITLES TO TRANSLATE
+    # Glossary block in user prompt (dynamic per chunk).
+    glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
+
+    user_prompt = f"""{previous_translation_block_text}{glossary_section}# SUBTITLES TO TRANSLATE
 
 {INPUT_TAG_IN}
 {formatted_subtitles_text}
@@ -725,7 +813,8 @@ def generate_post_processing_prompt(
     additional_instructions: str = "",
     has_placeholders: bool = True,
     prompt_options: dict = None,
-    placeholder_format: Optional[Tuple[str, str]] = None
+    placeholder_format: Optional[Tuple[str, str]] = None,
+    glossary_block: str = "",
 ) -> PromptPair:
     """
     Alias for generate_refinement_prompt with parameter name mapping.
@@ -755,5 +844,6 @@ def generate_post_processing_prompt(
         has_placeholders=has_placeholders,
         prompt_options=prompt_options,
         placeholder_format=placeholder_format,
-        additional_instructions=additional_instructions
+        additional_instructions=additional_instructions,
+        glossary_block=glossary_block,
     )

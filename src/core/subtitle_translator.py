@@ -9,7 +9,7 @@ from prompts.prompts import generate_subtitle_block_prompt
 from src.config import TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT
 from .llm_client import create_llm_client
 from .post_processor import clean_translated_text
-from .translator import generate_translation_request
+from .translator import generate_translation_request, _build_chunk_glossary_block
 from .epub import TagPreserver
 
 
@@ -180,6 +180,8 @@ async def _refine_subtitle_translations(
 
     total_subtitles = len(translations)
     refined_translations = {}
+    # Transient per-job state (e.g. glossary cap warning dedupe) — never persisted.
+    runtime_state: dict = {}
 
     if log_callback:
         log_callback("srt_refinement_info", f"Refining {total_subtitles} subtitles...")
@@ -193,6 +195,13 @@ async def _refine_subtitle_translations(
         context_before = translations.get(subtitle_indices[i - 1], "") if i > 0 else ""
         context_after = translations.get(subtitle_indices[i + 1], "") if i < len(subtitle_indices) - 1 else ""
 
+        # Filter the glossary against the draft (target language) so refinement
+        # keeps the same entity renderings the first pass produced.
+        glossary_block = _build_chunk_glossary_block(
+            translated_text, prompt_options, log_callback=log_callback,
+            runtime_state=runtime_state,
+        )
+
         # Generate refinement prompt
         try:
             prompt_pair = generate_post_processing_prompt(
@@ -203,7 +212,8 @@ async def _refine_subtitle_translations(
                 additional_instructions=post_processing_instructions or '',
                 has_placeholders=False,  # SRT doesn't use HTML placeholders
                 placeholder_format=None,
-                prompt_options=prompt_options
+                prompt_options=prompt_options,
+                glossary_block=glossary_block,
             )
 
             # Make refinement request
@@ -289,6 +299,8 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
     completed_blocks_count = 0  # Number of blocks completed
     failed_blocks_count = 0  # Number of blocks failed
     previous_translation_block = ""
+    # Transient per-job state (e.g. glossary cap warning dedupe) — never persisted.
+    runtime_state: dict = {}
 
     # Handle resume: load previously translated blocks
     if checkpoint_manager and translation_id and resume_from_block_index > 0:
@@ -367,6 +379,13 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
             # Create subtitle tuples with local indices for LLM
             local_subtitle_tuples = [(local_idx, text) for local_idx, (_, text) in enumerate(subtitle_tuples)]
 
+            # Build glossary block from the concatenated subtitle text in this block.
+            block_text_for_glossary = "\n".join(text for _, text in local_subtitle_tuples)
+            glossary_block = _build_chunk_glossary_block(
+                block_text_for_glossary, prompt_options, log_callback=log_callback,
+                runtime_state=runtime_state,
+            )
+
             # Generate system and user prompts for this block with local indices
             prompt_pair = generate_subtitle_block_prompt(
                 local_subtitle_tuples,
@@ -375,7 +394,8 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                 target_language,
                 TRANSLATE_TAG_IN,
                 TRANSLATE_TAG_OUT,
-                custom_instructions
+                custom_instructions,
+                glossary_block=glossary_block,
             )
             
             # Make translation request using LLM client with retry mechanism
@@ -446,7 +466,8 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                                         target_language,
                                         TRANSLATE_TAG_IN,
                                         TRANSLATE_TAG_OUT,
-                                        custom_instructions + f"\n\nCRITICAL: You MUST preserve ALL [NUMBER] tags EXACTLY as they appear. Missing tags: {', '.join(missing_tags)}"
+                                        custom_instructions + f"\n\nCRITICAL: You MUST preserve ALL [NUMBER] tags EXACTLY as they appear. Missing tags: {', '.join(missing_tags)}",
+                                        glossary_block=glossary_block,
                                     )
                                     retry_count += 1
                                     continue

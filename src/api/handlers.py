@@ -164,6 +164,32 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
     resume_from_index = config.get('resume_from_index', 0)
     is_resume = config.get('is_resume', False)
 
+    # Snapshot the active glossary into prompt_options BEFORE persisting the
+    # job, so the snapshot survives resume even if the source glossary is
+    # later edited or deleted. On resume, the snapshot is already in the
+    # restored config and we skip the reload.
+    if not is_resume:
+        glossary_id = config.get('prompt_options', {}).get('glossary_id')
+        if glossary_id and not config.get('prompt_options', {}).get('glossary_terms'):
+            try:
+                from src.api.translation_state import get_state_manager
+                store = get_state_manager().get_glossary_store()
+                glossary = store.get_glossary(int(glossary_id))
+                if glossary and glossary.terms:
+                    if 'prompt_options' not in config:
+                        config['prompt_options'] = {}
+                    config['prompt_options']['glossary_terms'] = glossary.terms_dict
+                    config['prompt_options']['glossary_name'] = glossary.name
+                    metadata = {}
+                    for term in glossary.terms:
+                        if term.category:
+                            metadata[term.source_term] = {'category': term.category}
+                    if metadata:
+                        config['prompt_options']['glossary_term_metadata'] = metadata
+            except Exception as e:
+                # Non-fatal: log later once the logger is wired in.
+                config.setdefault('prompt_options', {})['glossary_load_error'] = str(e)
+
     try:
         # Create checkpoint for new jobs (not for resumed jobs)
         if not is_resume:
@@ -255,6 +281,21 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             config['prompt_options']['refinement_instructions'] = custom_instructions_content
             # For translation prompts (new)
             config['prompt_options']['custom_instructions'] = custom_instructions_content
+
+        # Surface glossary load result (snapshot was taken earlier, before start_job).
+        glossary_terms_snapshot = config.get('prompt_options', {}).get('glossary_terms')
+        glossary_load_error = config.get('prompt_options', {}).pop('glossary_load_error', None)
+        if glossary_terms_snapshot:
+            glossary_name = config.get('prompt_options', {}).get('glossary_name', '?')
+            _log_message_callback(
+                "glossary_loaded",
+                f"📖 Loaded glossary '{glossary_name}' ({len(glossary_terms_snapshot)} terms)"
+            )
+        elif glossary_load_error:
+            _log_message_callback(
+                "glossary_error",
+                f"⚠️ Could not load glossary: {glossary_load_error}"
+            )
 
         # Use unified adapter-based translation
         await translate_file(
