@@ -4,12 +4,25 @@ Flask web server for translation API with WebSocket support
 import os
 import sys
 import logging
+import mimetypes
 import webbrowser
 import threading
 from datetime import datetime
 from flask import Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO
+
+# Force-register correct MIME types BEFORE Flask starts serving static files.
+# On Windows, mimetypes.init() reads from HKCR registry, and some installs have
+# .js mapped to text/plain (caused by IIS, antivirus, or other software). That
+# breaks ES module loading in browsers because strict MIME checking is enforced
+# for type="module" scripts. add_type() takes precedence over the registry.
+# (issue #155)
+mimetypes.add_type('text/javascript', '.js')
+mimetypes.add_type('text/javascript', '.mjs')
+mimetypes.add_type('text/css', '.css')
+mimetypes.add_type('application/json', '.json')
+mimetypes.add_type('image/svg+xml', '.svg')
 
 # Configure logging
 logging.basicConfig(
