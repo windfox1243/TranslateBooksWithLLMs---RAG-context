@@ -7,7 +7,7 @@
   "environment": {
     "tbl_version": "git-f25e6a4",
     "prompt_version": "v1",
-    "judge_id": "claude-opus-4-7-rubric-v1"
+    "judge_id": "claude-opus-4-7-rubric-v1-reranked"
   },
   "model": {
     "provider": "ollama",
@@ -25,7 +25,7 @@
         "accuracy": 8.5,
         "fluency": 8.5,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.6,
         "feedback": "'Abuse' omitted from the paired imperative ('abuse and contemn' → 蔑视 only); 'conceits' flattened to 念头, and the gnomic Stoic punch softened by narrative connectives (反而将...). (−0.5 acc, −0.5 sty)"
       }
     },
@@ -40,7 +40,7 @@
         "accuracy": 6.5,
         "fluency": 8.5,
         "style": 7.5,
-        "overall": 6.5,
+        "overall": 6.6,
         "feedback": "Persian saddle-bags → 鞍垫 (saddle pad); subject ambiguity ('他正躺着...而亨利·沃顿勋爵则' reads as two people, source has Lord Henry himself reclining); laburnum → 金合欢 (acacia, not 金链花); pink-flowering thorn → 荆条 (botanical drift). (−1.0/−1.5/−0.5/−0.5 acc)"
       }
     },
@@ -55,7 +55,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.5,
+        "overall": 7.7,
         "feedback": "Adds 狭义 ('special') not in source ('the theory of relativity' generic in original); '(developed in)' weakened to '(见)'. Otherwise clean scientific Chinese with correct chain of conditional reasoning. (−0.3 acc each)"
       }
     },
@@ -70,7 +70,7 @@
         "accuracy": 7.5,
         "fluency": 8.5,
         "style": 7.5,
-        "overall": 6.5,
+        "overall": 5.9,
         "feedback": "Contresens on 'betraying their perception' → 却并未察觉 (= 'yet did not perceive'); Emerson's point inverted — great men reveal their perception, not fail to perceive it. (−2.0 acc on a key sentence)"
       }
     },
@@ -85,7 +85,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 8.0,
+        "overall": 7.7,
         "feedback": "Strong rendering of the famous opening; 钱包 modern for an 1851 'purse' (better 钱袋); 'regulating the circulation' → 调节循环 abstracts the bodily metaphor; 'as soon as I can' urgency partly flattened. (−0.3 sty each)"
       }
     },
@@ -100,7 +100,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.5,
+        "overall": 8.0,
         "feedback": "Solid 19th-c. scientific register in literary Chinese (此摘要、即...者、寄望...). Restructured 'good authorities alone' clause faithfully. No notable errors."
       }
     },
@@ -115,7 +115,7 @@
         "accuracy": 8.0,
         "fluency": 8.5,
         "style": 7.0,
-        "overall": 7.0,
+        "overall": 7.2,
         "feedback": "Reorders Austen's iconic opening (truth-statement at the end), losing the rhetorical hook; '总想' weakens the ironic 'must be in want'; '初次亮相' too modern/theatrical for 1813 register. (−0.5 sty each)"
       }
     },
@@ -130,7 +130,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.6,
         "feedback": "'反问道' (rhetorical question) for 'asked' is wrong — Watson is genuinely asking; 'chuckling to himself' → 自言自语 (talking to himself, not chuckling); 'medico-legal' → 医学法学 should be 法医学. (−0.5 acc each)"
       }
     },
@@ -145,7 +145,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.7,
         "feedback": "'Glory to think' → 欣喜 flattens Twain's mock-pride; the staccato dismissal 'It is nothing—it is of the Renaissance' merged into one verbose Chinese clause, losing the deflationary punch. (−0.5 sty)"
       }
     },
@@ -160,7 +160,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.0,
-        "overall": 8.0,
+        "overall": 7.6,
         "feedback": "'Live deliberately' → 活得深刻 ('deeply' instead of 'with deliberation/intention'); 'practise resignation' → 践行顺从 (顺从 is obedience, not Stoic resignation); 'live deep' → 活得深沉 (moody-deep). (−0.3 acc each)"
       }
     },
@@ -175,7 +175,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.2,
         "feedback": "Grammar break: 'desprecia' lacks pronoun (should be 'despréciate'); 'sin embargo' wrong connector for 'yet a while' (= 'soon', not 'however'); 'leisure' flattened to 'tiempo'. (−1.0 flu, −0.3 acc, −0.3 sty)"
       }
     },
@@ -190,7 +190,7 @@
         "accuracy": 6.5,
         "fluency": 8.5,
         "style": 7.5,
-        "overall": 6.5,
+        "overall": 6.2,
         "feedback": "'Persian saddle-bags' → 'alfombras persas' (carpets, not alforjas); laburnum → 'árbol de la miel' (invented term, should be 'codeso'); 'la diván' wrong gender (el diván); 'lilac' kept English-spelled instead of 'lila'. (−1.5/−1.0/−1.0/−0.5)"
       }
     },
@@ -205,7 +205,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.5,
+        "overall": 8.6,
         "feedback": "Clean technical Spanish; 'in vacuo' → 'en el vacío' standard; conditional logic preserved. Slight restructure of 'the statement of time' is acceptable. No material errors."
       }
     },
@@ -220,7 +220,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.5,
+        "overall": 7.3,
         "feedback": "'Traicionando su percepción' actually works in Spanish (literary 'reveal' sense); 'al sonido de esa cuerda' adds 'sound of' but harmless. Modern 'tú' loses the King-James archaism but reads natively. (−0.3 acc)"
       }
     },
@@ -235,7 +235,7 @@
         "accuracy": 8.5,
         "fluency": 8.5,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.7,
         "feedback": "'Purse' → 'bolsillo' (pocket, not bolsa/monedero); 'little or no' simplified to 'sin'; 'November in my soul' rendered with awkward 'es un noviembre' syntax. Epic register partially preserved. (−0.3 acc, −0.5 sty)"
       }
     },
@@ -250,7 +250,7 @@
         "accuracy": 8.5,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 8.0,
+        "overall": 8.2,
         "feedback": "'Authorities' → 'fuentes' (= sources) flattens 'authoritative experts'; 'confiar en que el lector deposita' indicative where subjunctive 'deposite' would fit better. (−0.3 acc, −0.3 flu)"
       }
     },
@@ -265,7 +265,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.0,
         "feedback": "Preserves Austen's 'It is a truth universally acknowledged' opening syntax; 'debe necesitar una esposa' too direct, ironic 'must' force diluted; 'primera entrada' literalism. (−0.3/−0.3 sty/flu)"
       }
     },
@@ -280,7 +280,7 @@
         "accuracy": 8.5,
         "fluency": 8.5,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.7,
         "feedback": "'I perceive' → 'adivino' (= I divine/guess) shifts Holmes from observation to guesswork; missing inverted '¿' in 'Sin duda usted ve...?'. 'Why, man' lost the exclamation force. (−0.5 acc, −0.3 flu)"
       }
     },
@@ -295,7 +295,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.0,
-        "overall": 8.0,
+        "overall": 8.1,
         "feedback": "'Swelling enthusiasm' → 'creciente entusiasmo' (growing) drifts from 'swelling/exalted'; otherwise faithful, with the deflationary punch line 'No es nada; es del Renacimiento' nicely preserved. (−0.3 sty)"
       }
     },
@@ -310,7 +310,7 @@
         "accuracy": 8.5,
         "fluency": 8.5,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.3,
         "feedback": "'Suck out all the marrow' → 'succionar todo el jugo' — Thoreau's bone-marrow metaphor became 'juice' (should be 'tuétano'); 'y no, al llegar a morir, descubrir' preserves the inverted construction stiffly. (−0.5 sty, −0.3 flu)"
       }
     },
@@ -325,7 +325,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.0,
-        "overall": 8.0,
+        "overall": 7.9,
         "feedback": "Clean French rendering; 'abaisse-toi et méprise-toi' captures the paradoxical imperative; 'vagabonder et t'égarer çà et là' good for 'roving and wandering to and fro'. 'Conceits' → 'opinions' flattens slightly. (−0.3 sty)"
       }
     },
@@ -340,7 +340,7 @@
         "accuracy": 6.0,
         "fluency": 7.0,
         "style": 6.5,
-        "overall": 6.0,
+        "overall": 6.1,
         "feedback": "Multiple lexical errors: 'odorat' (= sense of smell) for 'odeur'; 'délié' (untied) for 'délicat'; 'l'épines fleurie de rose' (article/agreement broken); 'laburnum' untranslated (= cytise); 'studio' → 'pièce' (= room, not atelier); 'saddle-bags' → 'coussins persans'. (−2.0 flu, −1.5 acc untranslated, −1.0 acc)"
       }
     },
@@ -355,7 +355,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 9.0,
-        "overall": 8.5,
+        "overall": 8.6,
         "feedback": "Excellent technical French; 'corps de référence' is the standard term; 'dans le vide' for 'in vacuo' correct; conditional structure ('si nous rejetons... alors') reads natively. Best of the science passages."
       }
     },
@@ -370,7 +370,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 8.0,
-        "overall": 7.5,
+        "overall": 7.3,
         "feedback": "'Iron string' → 'corde d'acier' (steel, not iron = fer); 'toute leur être' agreement error (être m. → 'tout leur être'); 'confiés enfantins' awkward predicate (better 'confiés enfantinement'). 'Trahissant' for 'betraying as revealing' works. (−0.5 acc, −1.0 flu)"
       }
     },
@@ -385,7 +385,7 @@
         "accuracy": 8.5,
         "fluency": 7.5,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.55,
         "feedback": "'N'ayant guère ni même pas d'argent' awkward triple negation; 'rive' (riverbank) misfit for maritime 'shore' (à terre); 'drizzly' → 'pluvieux' loses the bruine; 'dès que...dès que' repetition. (−0.5/−0.3/−0.3 flu, −0.3 acc)"
       }
     },
@@ -400,7 +400,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.0,
+        "overall": 8.15,
         "feedback": "'This Abstract' → 'Cet extrait' (= excerpt; should be 'Résumé'/'Abrégé'); rest is well-rendered formal 19th-c. French scientific prose with appropriate restraint and hedging. (−0.5 acc)"
       }
     },
@@ -415,7 +415,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.0,
-        "overall": 8.0,
+        "overall": 7.7,
         "feedback": "Preserves Austen's opening syntax; 'doit absolument désirer une épouse' too direct — ironic 'must' overstated by 'absolument'. Period vocabulary largely good ('établissement', 'voisinage'). (−0.5 sty)"
       }
     },
@@ -430,7 +430,7 @@
         "accuracy": 8.0,
         "fluency": 7.0,
         "style": 7.5,
-        "overall": 7.0,
+        "overall": 6.7,
         "feedback": "Major: 'N'avez-vous pas, sans aucun doute, la portée de ma découverte?' is missing the verb (saisi/compris); 'je perçois' calque-literal; 'riant pour lui-même' calque (better 'tout bas'). (−1.5 flu, −1.0 acc on missing verb)"
       }
     },
@@ -445,7 +445,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.0,
+        "overall": 8.15,
         "feedback": "Smooth French Twain; tense shift to imperfect ('m'enorgueillissais') natural for habitual past; 'Ce n'est rien — c'est de la Renaissance' deadpan delivery preserved. 'For once' nuance slightly lost. (−0.3 acc)"
       }
     },
@@ -460,7 +460,7 @@
         "accuracy": 9.0,
         "fluency": 8.0,
         "style": 8.0,
-        "overall": 7.5,
+        "overall": 7.7,
         "feedback": "'Ne affronter' missing elision (should be 'n'affronter'); inverted 'ni ne voulais-je' formal but period-appropriate; 'live deep' → 'vivre intensément' captures spirit; 'moelle' correctly preserved. (−0.5 flu)"
       }
     },
@@ -475,7 +475,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.0,
-        "overall": 8.0,
+        "overall": 8.1,
         "feedback": "'Souls and conceits' → 'suy nghĩ và ảo tưởng' drops 'souls' (kept only 'thoughts and illusions'); 'như hiện tại' adds 'as currently' not in source; 'ngươi' archaic 2p form correctly used. (−0.5 acc, −0.3 acc)"
       }
     },
@@ -505,7 +505,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.5,
+        "overall": 8.6,
         "feedback": "Excellent scientific Vietnamese; 'vật làm hệ quy chiếu' precise for 'body of reference'; 'trong chân không' standard; conditional 'nếu...thì' chain reads naturally. Among the best science passages."
       }
     },
@@ -520,7 +520,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.5,
+        "overall": 8.2,
         "feedback": "'Chứng tỏ nhận thức' for 'betraying their perception' is correct (= demonstrate); 'mối quan hệ' (relationship) flattens 'society of contemporaries' to a mere connection. Maxim register reasonably preserved. (−0.3 acc)"
       }
     },
@@ -535,7 +535,7 @@
         "accuracy": 5.5,
         "fluency": 6.5,
         "style": 6.0,
-        "overall": 5.0,
+        "overall": 5.25,
         "feedback": "Mixed scripts: '每当' (Chinese characters in Vietnamese text) + 'whenever' (English untranslated); 'tháng Chín' (September) hallucinated for 'November'; 'thời điểm cao quý' (= noble moment) misreads 'high time' as honorific. Severely broken output. (−2.0 acc Nov→Sep, −1.5 acc untranslated, −1.0 flu mixed scripts)"
       }
     },
@@ -550,7 +550,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.0,
+        "overall": 8.05,
         "feedback": "'Nguồn tin' (= info sources) flattens 'authorities'; 'đoạn tóm tắt' (paragraph summary) for 'Abstract' — bản tóm tắt would fit better. Hedging and first-person epistemic stance well-preserved. (−0.3/−0.3 each)"
       }
     },
@@ -565,7 +565,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.0,
-        "overall": 8.0,
+        "overall": 8.25,
         "feedback": "'ắt phải đang cần' captures the ironic 'must be in want' decently; 'người đàn ông này có thể ít được biết đến' shifts 'feelings/views may be little known' to 'the man may be little known' (semantic drift). (−0.3 acc)"
       }
     },
@@ -580,7 +580,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 8.0,
+        "overall": 8.1,
         "feedback": "'Huyết sắc tố' correct medical term; 'y pháp' correct legal-medical; 'Thưa ông' loses 'Why, man!' exclamation; 'cười cười' reduplication is okay but 'vừa' construction needs a paired clause. (−0.3 sty, −0.3 flu)"
       }
     },
@@ -595,7 +595,7 @@
         "accuracy": 8.5,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 8.0,
+        "overall": 7.9,
         "feedback": "'Venezia' (Italian name) inserted instead of 'Venice'/'Venice' — small cross-language hallucination; 'hơn một lần kể cũng không kể xiết' awkward double 'kể'. Mock-naive Twain voice mostly preserved. (−0.5 acc, −0.3 flu)"
       }
     },
@@ -610,7 +610,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.0,
-        "overall": 8.0,
+        "overall": 8.1,
         "feedback": "'Sống một cách tỉnh táo' (= lucidly/soberly) drifts from 'live deliberately' (with intention); 'tủy của đời người' correctly preserves the marrow metaphor — better than the Spanish version which used 'jugo'. (−0.5 acc)"
       }
     },
@@ -625,7 +625,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.0,
+        "overall": 7.75,
         "feedback": "'Master' for 先生 unconventional (Sensei more common) but defensible; '頭文字' → 'abbreviations' (should be 'initials'). Reflective register intact; 'their' for gender-neutral その人 a modern choice. (−0.3 acc)"
       }
     },
@@ -640,7 +640,7 @@
         "accuracy": 5.0,
         "fluency": 8.5,
         "style": 6.5,
-        "overall": 4.5,
+        "overall": 6.7,
         "feedback": "Currency hallucination: 30/50 전 (jeon) → '30/50 won' (overstating by 100×); '동광학교까지' (TO the school) destination omitted ('a teacher from Dongkwang School' reads as origin); '양복장이' (Western-suited man) lost; 백통화 (white-copper) garbled to 'one ten-won and five-won pieces'. (−2.0 acc currency, −1.0 acc destination, −1.0/−0.5 acc period terms)"
       }
     },
@@ -655,7 +655,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.0,
-        "overall": 8.0,
+        "overall": 8.1,
         "feedback": "Faithful rendering of the eight-point manifesto; '言之有物' → 'have something substantial to say' precise; 'meaningless whining' for '无病之呻吟' too colloquial for the original literary register. (−0.3 sty)"
       }
     },
@@ -670,7 +670,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.5,
+        "overall": 8.2,
         "feedback": "Strong literary English; sensory imagery '苍黄的天/萧索的荒村' rendered as 'grayish-yellow sky/desolate and lifeless villages'; '远近横着' loses 'near and far' breadth ('scattered in the distance'). Mood and reflective tone well-preserved. (−0.3 sty)"
       }
     },
@@ -685,7 +685,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 9.0,
-        "overall": 8.5,
+        "overall": 8.2,
         "feedback": "Excellent literary Chinese rendering; 先生 kept identical (汉日同文 advantage exploited); '顾忌与避嫌' good for '世間を憚る遠慮'; '頭文字' → 代称 drifts slightly (should be 首字母). Register and register-appropriate vocabulary strong. (−0.3 acc)"
       }
     }

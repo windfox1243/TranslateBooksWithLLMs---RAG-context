@@ -25,7 +25,7 @@
         "accuracy": 8.5,
         "fluency": 7.5,
         "style": 6.5,
-        "overall": 6.8,
+        "overall": 6.7,
         "feedback": "Stoic 'conceits' simplified to '虚荣' and gnomic register flattened (-0.5 acc, -1.5 style); 'go do, soul, do' rendered awkwardly as '去做，灵魂，去做' (-0.5 fluency)."
       }
     },
@@ -55,7 +55,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.5,
-        "overall": 8.3,
+        "overall": 8.0,
         "feedback": "Strong scientific rendering; 'in vacuo' and Section VII handled correctly; minor flatness."
       }
     },
@@ -115,7 +115,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 7.0,
-        "overall": 7.2,
+        "overall": 6.9,
         "feedback": "Conveys the sentence; Austen's irony partially intact via '正当财产' but tone leans plain (-1.0 style)."
       }
     },
@@ -145,7 +145,7 @@
         "accuracy": 8.5,
         "fluency": 7.5,
         "style": 6.5,
-        "overall": 6.7,
+        "overall": 6.5,
         "feedback": "Mock-naive irony flattened; 'swelling enthusiasm' → '膨胀的兴奋' is a calque (-1.5 style, -0.5 fluency)."
       }
     },
@@ -205,7 +205,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.5,
-        "overall": 8.4,
+        "overall": 8.3,
         "feedback": "Clean technical Spanish; 'en el vacio' handles 'in vacuo' correctly; logical connectors intact."
       }
     },
@@ -220,7 +220,7 @@
         "accuracy": 7.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.0,
+        "overall": 6.7,
         "feedback": "Same 'traicionando' contresens for 'betraying their perception' (-2.0 acc); otherwise idiomatic Spanish."
       }
     },
@@ -250,7 +250,7 @@
         "accuracy": 8.5,
         "fluency": 7.5,
         "style": 7.0,
-        "overall": 6.9,
+        "overall": 6.7,
         "feedback": "'Confiar al lector en cierta confianza' is a tortured calque (-1.0 fluency); meaning preserved; 19th-c. scientific register flattened."
       }
     },
@@ -265,7 +265,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 7.9,
+        "overall": 7.6,
         "feedback": "Solid Austen rendering in Spanish; 'propiedad legitima' preserves the ironic phrasing."
       }
     },
@@ -295,7 +295,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 7.0,
-        "overall": 7.2,
+        "overall": 6.9,
         "feedback": "Twain's irony partially landed; 'me regocijo de haber descubierto por una vez' is awkward but workable."
       }
     },
@@ -355,7 +355,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.4,
+        "overall": 8.3,
         "feedback": "Excellent technical French; 'tacitement suppose', 'dans le vide' both correct; flows like a published translation."
       }
     },
@@ -385,7 +385,7 @@
         "accuracy": 8.5,
         "fluency": 7.5,
         "style": 7.0,
-        "overall": 6.7,
+        "overall": 6.65,
         "feedback": "'Evacuer la spleen' uses wrong gender ('le spleen' is the loanword) (-0.5 fluency); 'Ishmael' kept English-style instead of 'Ismael' (-0.3 acc)."
       }
     },
@@ -400,7 +400,7 @@
         "accuracy": 9.0,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.7,
+        "overall": 7.55,
         "feedback": "Solid Darwin; epistemic hedging preserved; 'mes plusieurs affirmations' is a mild calque (-0.3 fluency)."
       }
     },
@@ -445,7 +445,7 @@
         "accuracy": 8.5,
         "fluency": 7.5,
         "style": 7.0,
-        "overall": 6.8,
+        "overall": 6.65,
         "feedback": "'Il ne s'agit pas d'un tableau beau' has wrong adjective placement (-0.5 fluency); irony partially landed."
       }
     },
@@ -460,7 +460,7 @@
         "accuracy": 8.0,
         "fluency": 8.0,
         "style": 7.0,
-        "overall": 7.4,
+        "overall": 7.1,
         "feedback": "'Toute la chair de la vie' for 'marrow' is wrong (chair=flesh; should be 'moelle') (-1.0 acc); 'n'afficher que' awkward for 'front'."
       }
     },
@@ -475,7 +475,7 @@
         "accuracy": 8.5,
         "fluency": 7.5,
         "style": 7.0,
-        "overall": 7.3,
+        "overall": 7.2,
         "feedback": "Vietnamese rendering carries the meaning; 'tan duong' (praise) for 'conceits' is a drift (-0.5 acc); gnomic register softened (-1.0 style)."
       }
     },
@@ -505,7 +505,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 8.4,
+        "overall": 8.0,
         "feedback": "Strong technical Vietnamese; 'chan khong' for 'in vacuo' correct; logical flow intact."
       }
     },
@@ -550,7 +550,7 @@
         "accuracy": 9.0,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.8,
+        "overall": 7.75,
         "feedback": "Solid Vietnamese rendering of Darwin's hedged scientific prose; epistemic stance preserved."
       }
     },
@@ -565,7 +565,7 @@
         "accuracy": 8.5,
         "fluency": 7.5,
         "style": 7.5,
-        "overall": 7.2,
+        "overall": 6.75,
         "feedback": "Austen's 'rightful property' kept as 'tai san hop phap'; 'mot hoac nhung co con gai cua ho' is awkward construction (-0.5 fluency)."
       }
     },
@@ -580,7 +580,7 @@
         "accuracy": 8.5,
         "fluency": 7.5,
         "style": 7.0,
-        "overall": 6.8,
+        "overall": 6.6,
         "feedback": "First-line quotes missing; 'y phap ly' (medico-legal) should be 'phap y'; dialogue intent intact."
       }
     },
@@ -610,7 +610,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.3,
+        "overall": 7.2,
         "feedback": "'Phan cot loi cua cuoc doi' for 'marrow' is a metaphor drift (should be 'tuy') (-0.5 acc); contemplative tone reasonable."
       }
     },
@@ -700,7 +700,7 @@
         "accuracy": 8.5,
         "fluency": 7.5,
         "style": 7.0,
-        "overall": 7.5,
+        "overall": 7.4,
         "feedback": "'Begierden' for 'conceits' drifts (-0.5 acc); 'die Zeit, die du dich selbst respektieren kannst, werden enden' has number agreement issue (-0.5 fluency)."
       }
     },
@@ -730,7 +730,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.3,
+        "overall": 8.0,
         "feedback": "Excellent technical German; 'stillschweigend angenommen', 'im Vakuum' both natural; reads professionally."
       }
     },
@@ -790,7 +790,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.2,
         "feedback": "'Einzelganger' (loner) drift for 'single man' (should be 'lediger Mann'/'Junggeselle') (-0.5 acc); 'rechtmassiges Eigentum' preserves Austen's irony."
       }
     },
@@ -820,7 +820,7 @@
         "accuracy": 8.0,
         "fluency": 7.0,
         "style": 6.5,
-        "overall": 6.7,
+        "overall": 6.6,
         "feedback": "'Wie ich nicht nennen kann' is awkward fragment (-0.5 fluency); 'es ist der Renaissance' should be 'aus der Renaissance' (-0.5 fluency); 'aufblahte' wrong form (-0.3)."
       }
     },
@@ -850,7 +850,7 @@
         "accuracy": 8.5,
         "fluency": 7.5,
         "style": 7.0,
-        "overall": 7.5,
+        "overall": 7.2,
         "feedback": "'Desejos' for 'conceits' drift (-0.5 acc); imperative forms work; gnomic register flattened (-1.0 style)."
       }
     },
@@ -865,7 +865,7 @@
         "accuracy": 7.0,
         "fluency": 7.0,
         "style": 7.0,
-        "overall": 7.0,
+        "overall": 6.9,
         "feedback": "Laburnum left in Latin (-1.5 acc); 'flores mel e cor de mel' awkward compound; 'bolsas de selim' loose for saddle-bags (-0.3)."
       }
     },
@@ -880,7 +880,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 8.2,
+        "overall": 7.9,
         "feedback": "Clean technical Portuguese; 'no vacuo' renders 'in vacuo' correctly; PT-EU 'Seccao' consistent."
       }
     },
@@ -940,7 +940,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.2,
         "feedback": "Austen's irony partially preserved via 'propriedade'; 'a procura de uma esposa' simplifies the comic 'must be in want of' (-0.5 acc)."
       }
     },
@@ -1030,7 +1030,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.5,
-        "overall": 8.2,
+        "overall": 7.9,
         "feedback": "Strong technical Japanese; '黙示的に' is unusual ('暗黙に' more idiomatic) (-0.3 fluency); otherwise textbook quality."
       }
     },
@@ -1075,7 +1075,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 8.2,
+        "overall": 7.9,
         "feedback": "Solid Darwin in Japanese; epistemic hedging ('と願っています') preserved consistently."
       }
     },
@@ -1135,7 +1135,7 @@
         "accuracy": 9.0,
         "fluency": 7.5,
         "style": 8.0,
-        "overall": 7.8,
+        "overall": 7.6,
         "feedback": "'非人生' is unnatural compound for 'what was not life' (-0.5 fluency); '髄を吸い尽くし' good for 'marrow'."
       }
     },
@@ -1150,7 +1150,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.2,
+        "overall": 6.9,
         "feedback": "'허영' (vanity) for 'conceits' is a slight drift (-0.5 acc); imperative-archaic tone partially attempted; gnomic flatness."
       }
     },
@@ -1165,7 +1165,7 @@
         "accuracy": 7.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.4,
         "feedback": "'라부르눐' transliteration for laburnum without Korean botanical equivalent (-1.0 acc); '핵크색 꿃이 핌 가시' literal-but-clear; lilac correctly '라일락'."
       }
     },
@@ -1180,7 +1180,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.5,
-        "overall": 8.2,
+        "overall": 7.9,
         "feedback": "Excellent technical Korean; '진공에서의 빛의 전파 법칙' precise; haptic reads professional."
       }
     },
@@ -1270,7 +1270,7 @@
         "accuracy": 8.5,
         "fluency": 7.5,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.4,
         "feedback": "'내의 고조된 열정' uses '내의' instead of '내' (-0.3 fluency); irony partially landed."
       }
     },
@@ -1285,7 +1285,7 @@
         "accuracy": 9.0,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.8,
+        "overall": 7.6,
         "feedback": "Solid Walden; '삶의 모든 골수를 빨아들이고' renders 'marrow' precisely; contemplative tone reasonable."
       }
     },
@@ -1330,7 +1330,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.5,
-        "overall": 8.2,
+        "overall": 7.9,
         "feedback": "Strong technical Russian; logical connectors flow naturally; 'molcha' for 'tacitly' is a mild drift but acceptable."
       }
     },
@@ -1390,7 +1390,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 7.8,
+        "overall": 7.5,
         "feedback": "Solid Austen in Russian; 'законной собственностью' preserves the irony."
       }
     },
@@ -1480,7 +1480,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 7.8,
+        "overall": 7.6,
         "feedback": "Strong technical Italian; 'significativita' is a mild neologism (-0.3 fluency); flow remains crisp."
       }
     },
@@ -1555,7 +1555,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.2,
         "feedback": "'Lo percepisco' renders 'I perceive' acceptably; first quote missing (-0.3); period dialogue OK."
       }
     },
@@ -1585,7 +1585,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 8.0,
+        "overall": 7.9,
         "feedback": "Faithful Walden; 'midollo della vita' renders 'marrow' correctly; 'esporre solo i fatti' for 'front' is a mild calque."
       }
     },
@@ -1630,7 +1630,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.5,
-        "overall": 8.2,
+        "overall": 7.9,
         "feedback": "Excellent technical Arabic; 'في الفراغ' for 'in vacuo' acceptable; logical connectors natural."
       }
     },
@@ -1645,7 +1645,7 @@
         "accuracy": 7.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.0,
+        "overall": 6.7,
         "feedback": "Same 'خانوا' contresens on 'betraying' (-2.0 acc); 'ثِقْ بنفسك' captures the imperative."
       }
     },
@@ -1675,7 +1675,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 8.2,
+        "overall": 7.9,
         "feedback": "Solid Darwin in Arabic; epistemic hedging preserved; 'good authorities alone' → 'السلطات الجيدة وحدها' precise."
       }
     },
@@ -1720,7 +1720,7 @@
         "accuracy": 9.0,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.8,
+        "overall": 7.5,
         "feedback": "Twain's voice mostly landed in Arabic; 'guide crushed enthusiasm' rendered idiomatically."
       }
     },
@@ -1750,7 +1750,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.4,
         "feedback": "'प्रशंसाओं' (praises) drift for 'conceits' (-0.5 acc); imperative 'कर' preserved; gnomic flatness."
       }
     },
@@ -1870,7 +1870,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.4,
         "feedback": "'मुझसे अधिक बार' awkward word order (-0.3 fluency); irony partially landed via 'कुचल दिया'."
       }
     },
@@ -1930,7 +1930,7 @@
         "accuracy": 8.7,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 8.2,
+        "overall": 7.9,
         "feedback": "Clean technical Dutch faithful to Einstein's hedging; 'tacitly' rendered as 'impliciet' which is a slight drift but acceptable; 'in vacuo' → 'in vacuüm' is the standard rendering."
       }
     },
@@ -1990,7 +1990,7 @@
         "accuracy": 7.5,
         "fluency": 7.5,
         "style": 7.0,
-        "overall": 7.2,
+        "overall": 6.9,
         "feedback": "Captures the Austen syllogism; 'rightful property' → 'rechtmatige bezit' works but irony is dampened (-0.5 sty); 'Hoeveel de gevoelens' loses the 'However little known' subordinate flavour."
       }
     },
@@ -2230,7 +2230,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 8.0,
-        "overall": 7.7,
+        "overall": 7.6,
         "feedback": "Clean and faithful scientific Swedish; 'tyst antagits' for 'tacitly assumed' is good; 'tidsutsägelsen' captures 'statement of time' adequately."
       }
     },
@@ -2260,7 +2260,7 @@
         "accuracy": 6.5,
         "fluency": 6.5,
         "style": 6.0,
-        "overall": 6.3,
+        "overall": 6.2,
         "feedback": "'driva bort själen' contresens — should be 'missmodet/spleen' not 'själen' (the soul) (-1.5 acc); 'Varje gång jag känner mig orolig' loses the visceral 'grim about the mouth' image (-0.5 sty)."
       }
     },
@@ -2305,7 +2305,7 @@
         "accuracy": 7.0,
         "fluency": 6.5,
         "style": 6.5,
-        "overall": 6.5,
+        "overall": 6.2,
         "feedback": "'uppfattar jag' for 'I perceive' is awkward (Swedish: 'jag förstår/anar') (-0.5 flu); 'Glöm det' colloquialism wrong for Holmes' clipped dialogue (-0.5 sty); 'käre man' for 'why, man' OK."
       }
     },
@@ -2320,7 +2320,7 @@
         "accuracy": 7.5,
         "fluency": 7.0,
         "style": 7.0,
-        "overall": 7.0,
+        "overall": 6.7,
         "feedback": "Captures Twain's mock-resignation reasonably; 'utsläckt' for 'crushed out' works; 'uppsvällda entusiasm' is awkward Swedish phrasing (-0.5 flu)."
       }
     },
@@ -2440,7 +2440,7 @@
         "accuracy": 7.5,
         "fluency": 7.0,
         "style": 7.0,
-        "overall": 7.0,
+        "overall": 6.9,
         "feedback": "Captures Austen's logical flow; 'fast forankret' for 'well fixed' works; 'retmæssige ejendom' renders 'rightful property' but irony slightly muted (-0.3 sty)."
       }
     },
@@ -2590,7 +2590,7 @@
         "accuracy": 7.5,
         "fluency": 7.0,
         "style": 7.0,
-        "overall": 7.0,
+        "overall": 6.9,
         "feedback": "'στερούμενος μιας γυναίκας' captures 'in want of' adequately; 'δικαιούχος περιουσία' for 'rightful property' is decent; loses some of the irony (-0.3 sty)."
       }
     },
@@ -2650,7 +2650,7 @@
         "accuracy": 8.0,
         "fluency": 7.5,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.4,
         "feedback": "Clean Thai with appropriate gnomic register; 'จงทำเถิดวิญญาณ' captures the imperative-to-soul nicely; 'ทอดทิ้งและดูหมิ่นตนเอง' renders 'abuse and contemn' adequately."
       }
     },
@@ -2680,7 +2680,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 8.0,
-        "overall": 7.8,
+        "overall": 7.5,
         "feedback": "Faithful scientific Thai with Romanized 'simultaneity' kept as gloss; 'โดยปริยาย' for 'tacitly' is the standard rendering; logical flow preserved."
       }
     },
@@ -2725,7 +2725,7 @@
         "accuracy": 8.0,
         "fluency": 7.5,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.2,
         "feedback": "Clean scholarly Thai; 'บทคัดย่อ' is the right register for 'Abstract'; hedging language preserved; 'ผม' as first person works for the Victorian register."
       }
     },
@@ -2740,7 +2740,7 @@
         "accuracy": 7.5,
         "fluency": 7.5,
         "style": 7.5,
-        "overall": 7.3,
+        "overall": 7.2,
         "feedback": "Captures Austen's syllogism in Thai; 'โหยหาภรรยา' for 'in want of a wife' is slightly stronger ('craving') than the original irony (-0.3 acc); 'ทรัพย์สินที่ถูกต้อง' for 'rightful property' OK."
       }
     },
@@ -2755,7 +2755,7 @@
         "accuracy": 7.5,
         "fluency": 7.5,
         "style": 7.0,
-        "overall": 7.3,
+        "overall": 7.2,
         "feedback": "Dialogue rhythm preserved with line breaks; 'ฮีโมโกลบิน' loanword for 'haemoglobin'; 'การทดสอบที่ไม่มีข้อผิดพลาด' for 'infallible test' is verbose (-0.3 sty); Holmes' clipped voice slightly diluted."
       }
     },
@@ -2800,7 +2800,7 @@
         "accuracy": 8.0,
         "fluency": 7.5,
         "style": 7.5,
-        "overall": 7.5,
+        "overall": 7.4,
         "feedback": "Clean Indonesian Stoic voice; 'sakiti dan hina' for 'abuse and contemn' is direct; 'berkelana dan mengembara' renders 'roving and wandering' redundantly but workably."
       }
     },
@@ -2875,7 +2875,7 @@
         "accuracy": 8.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 7.8,
+        "overall": 7.5,
         "feedback": "Clean scholarly Indonesian; 'menaruh kepercayaan pada keakuratan' captures the trust direction; 'tidak diragukan lagi, kesalahan pasti telah masuk' is well-formed."
       }
     },
@@ -2905,7 +2905,7 @@
         "accuracy": 7.5,
         "fluency": 7.5,
         "style": 7.0,
-        "overall": 7.3,
+        "overall": 7.2,
         "feedback": "Holmes/Watson dialogue works; 'Lupakan saja' for 'Never mind' is colloquially right; 'penemuan kedokteran-hukum' rendering for 'medico-legal discovery' is workable."
       }
     },

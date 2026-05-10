@@ -25,7 +25,7 @@
         "accuracy": 8.7,
         "fluency": 8.7,
         "style": 7.5,
-        "overall": 7.1,
+        "overall": 7.0,
         "feedback": "Stoic gnomic register flattened into modern Chinese essay tone; '做吧' is colloquial for the imperative voice and '灵魂' is a literal calque for 'souls' (better: 看法). −0.3 acc, −0.5 style."
       }
     },
@@ -205,7 +205,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.1,
+        "overall": 8.0,
         "feedback": "Standard Spanish physics register (cuerpo de referencia, en el vacío, simultaneidad). All hedges and connectors preserved."
       }
     },
@@ -235,7 +235,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 7.6,
+        "overall": 7.4,
         "feedback": "'Llamadme' (vosotros form) is an apt archaism. 'Ahuyentar el bazo' preserves Melville's humoral medicine register beautifully — period-fidelity is excellent."
       }
     },
@@ -250,7 +250,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 7.8,
+        "overall": 7.6,
         "feedback": "Darwin's hedging preserved ('Sin duda', 'espero', 'debo confiar'). 19th-c. Spanish scientific register reads naturally."
       }
     },
@@ -355,7 +355,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.7,
-        "overall": 8.1,
+        "overall": 8.0,
         "feedback": "Standard French physics register: 'tacitement admis', 'corps de référence', 'dans le vide'. Argument structure preserved with no logical drift."
       }
     },
@@ -385,7 +385,7 @@
         "accuracy": 8.7,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 7.3,
+        "overall": 7.25,
         "feedback": "Archaic French register kept ('peu ou point d'argent dans ma bourse'). 'Chasser la mélancolie' loses Melville's humoral term 'spleen' (canonical French keeps 'spleen'). −0.5 style."
       }
     },
@@ -460,7 +460,7 @@
         "accuracy": 9.0,
         "fluency": 8.7,
         "style": 8.0,
-        "overall": 7.7,
+        "overall": 7.4,
         "feedback": "'Vivre délibérément' is a borderline anglicism — canonical French uses 'à dessein' for Thoreau's 'deliberately'. 'Moelle de la vie' is on point. −0.5 style."
       }
     },
@@ -505,7 +505,7 @@
         "accuracy": 8.7,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 7.8,
+        "overall": 7.7,
         "feedback": "'Hệ quy chiếu' is correct technical Vietnamese. 'Khái niệm thời gian' for 'statement of time' slightly drifts to 'concept of time'. −0.3 acc."
       }
     },
@@ -565,7 +565,7 @@
         "accuracy": 8.7,
         "fluency": 8.5,
         "style": 8.5,
-        "overall": 8.2,
+        "overall": 7.95,
         "feedback": "Quote-marked 'tài sản' captures Austen's ironic distance. 'Hẳn sẽ đang cần' has redundant aspect markers; long subordinate clause is wordy. −0.5 fluency, −0.3 acc."
       }
     },
@@ -610,7 +610,7 @@
         "accuracy": 8.7,
         "fluency": 9.0,
         "style": 8.0,
-        "overall": 7.0,
+        "overall": 6.9,
         "feedback": "'Tinh túy' for 'marrow' loses the visceral metaphor (replaced by 'essence'). Otherwise Thoreau's contemplative register reads beautifully. −0.5 style, −0.3 acc."
       }
     },

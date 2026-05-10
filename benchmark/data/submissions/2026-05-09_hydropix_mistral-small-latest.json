@@ -25,7 +25,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 6.5,
+        "overall": 6.4,
         "feedback": "Opening 'Do, soul, do' rendered as 振作起来 ('cheer up') reverses the sarcastic Stoic self-rebuke into encouragement, weakening the bite (−1.5 acc). Modernizing exclamation 啊！ slightly flattens gnomic register (−0.5 sty)."
       }
     },
@@ -130,7 +130,7 @@
         "accuracy": 8.5,
         "fluency": 7.5,
         "style": 7.5,
-        "overall": 7.4,
+        "overall": 7.3,
         "feedback": "'Why, man' rendered as 什么，老兄 — 什么 (what?) is wrong as exclamation here (−0.5 flu). Pronoun choice oscillates between 你 and 老兄 inconsistently. Final ! marks inflate the dialogue's measured British register."
       }
     },
@@ -145,7 +145,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.0,
-        "overall": 7.3,
+        "overall": 7.1,
         "feedback": "自鸣得意 captures Twain's self-satisfied mock-naivety well. 浇灭 for 'crushed out' is idiomatic. Mock-elevated register slightly flattened — Twain's faux-grandeur not fully landed (−0.5 sty)."
       }
     },
@@ -205,7 +205,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 7.8,
+        "overall": 7.7,
         "feedback": "All physics terminology correct: simultaneidad, vacío, propagación. Logical connectors clean (Ahora, es decir, si...). Einstein's careful argumentation preserved without inflation."
       }
     },
@@ -250,7 +250,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.1,
+        "overall": 7.9,
         "feedback": "Darwin's hedging well-preserved: 'debo confiar en que el lector deposite cierta confianza' mirrors the doubled trust/confidence of the original. 'Hechos ilustrativos' is the standard scientific register."
       }
     },
@@ -280,7 +280,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.0,
-        "overall": 7.6,
+        "overall": 7.4,
         "feedback": "Proper Spanish dialogue formatting (em-dashes). 'Por todos los santos' for 'How on earth' is over-Catholicized for a British detective (−0.3 sty), but otherwise period-faithful. Holmes/Watson 'usted' register correct."
       }
     },
@@ -295,7 +295,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.1,
+        "overall": 7.8,
         "feedback": "Twain's mock-naive irony preserved through dignified Spanish ('me regocijo', 'digno de alabanza'). The dismissive guide's quip lands cleanly with «No es nada... es del Renacimiento»."
       }
     },
@@ -355,7 +355,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 7.8,
+        "overall": 7.7,
         "feedback": "All Einstein terminology correct: simultanéité, vide, propagation, principe de relativité. 'Tacitement admettre' is the standard French calque. Argumentation flows without inflation."
       }
     },
@@ -385,7 +385,7 @@
         "accuracy": 9.0,
         "fluency": 8.0,
         "style": 8.5,
-        "overall": 7.0,
+        "overall": 6.95,
         "feedback": "'Appellez-moi' is misspelled (correct: 'Appelez-moi', single l) — a glaring error in the canonical opening (−0.5 flu). Otherwise excellent: 'que peu ou point d'argent' literary, 'amertume aux lèvres' idiomatic for 'grim about the mouth'."
       }
     },
@@ -400,7 +400,7 @@
         "accuracy": 7.5,
         "fluency": 8.0,
         "style": 8.5,
-        "overall": 7.1,
+        "overall": 6.95,
         "feedback": "'This Abstract' left as 'Cet Abstract' — English source word inside French target (−1.5 acc, −1.0 flu). Should be 'résumé' or 'abrégé'. The rest of the rendering is otherwise excellent in its 19th-c. scientific French register."
       }
     },
@@ -445,7 +445,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.0,
+        "overall": 7.85,
         "feedback": "Twain's mock-self-importance preserved with 'm'enorgueillis'. 'Enthousiasme naissant' shifts 'swelling' to 'nascent' (−0.3 acc). The dismissive 'Ce n'est rien — c'est de la Renaissance' lands the irony cleanly."
       }
     },
@@ -475,7 +475,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 7.6,
+        "overall": 7.5,
         "feedback": "'Hỡi linh hồn ta, hãy hành động đi' — strong archaic vocative + correct imperative. 'Ngươi' archaic 2nd-person fits the Aurelius register. 'Hành hạ' is slightly stronger than 'abuse' (−0.3 acc). Gnomic register held."
       }
     },
@@ -505,7 +505,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 7.5,
+        "overall": 7.4,
         "feedback": "All physics terminology correct: thuyết tương đối, chân không, đồng thời, nguyên lý tương đối. Argumentation logically clean. Vietnamese reads as native scientific prose, not translated."
       }
     },
@@ -550,7 +550,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 7.5,
+        "overall": 7.45,
         "feedback": "'Suffice' as 'đủ thuyết phục' (convincing) drifts from 'be enough' (−0.3 acc). Doubled 'tin tưởng/tin tưởng' nicely mirrors 'trust/confidence' from source. 19th-c scientific Vietnamese register held."
       }
     },
@@ -565,7 +565,7 @@
         "accuracy": 8.5,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 7.9,
+        "overall": 7.65,
         "feedback": "Famous opening preserved. 'Gia sản kếch xù' is colloquial register for the original 'good fortune' (−0.3 sty); 'kiếm vợ' (find a wife) loses 'in want of' irony (−0.3 acc). 'Tài sản chính đáng' preserves the property metaphor."
       }
     },
@@ -580,7 +580,7 @@
         "accuracy": 8.5,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 8.0,
+        "overall": 7.8,
         "feedback": "'You have been in Afghanistan, I perceive' rendered as a question 'Thế ra anh đã từng ở Afghanistan à?' — converts Holmes' assertion into question, undercutting his deductive punch (−0.5 acc). Pronoun mix anh/ông within dialogue is acceptable Vietnamese register."
       }
     },

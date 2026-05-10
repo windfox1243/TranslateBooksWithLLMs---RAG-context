@@ -25,7 +25,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 7.5,
-        "overall": 7.7,
+        "overall": 7.6,
         "feedback": "Drops 'abuse' from doublet 'abuse and contemn' (-0.5 acc); 'conceits' weakened to 念头 (-0.3 acc); 'roving and wandering' parallelism flattened (-0.5 style). Gnomic register decent but slightly modernised."
       }
     },
@@ -40,7 +40,7 @@
         "accuracy": 8.0,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 7.2,
+        "overall": 6.6,
         "feedback": "Botanical errors damning: 'pink-flowering thorn' → 荆条 (chaste tree, -0.5 acc), 'Persian saddle-bags' → 鞍垫 (saddle pad, -0.5 acc), 'laburnum' → 金合欢 (acacia, should be 金链花, -1.0 acc); ornate prose otherwise preserved."
       }
     },
@@ -115,7 +115,7 @@
         "accuracy": 9.5,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.0,
+        "overall": 7.2,
         "feedback": "'Must be in want of a wife' → 总想娶 flattens the mock-formal Austen irony (-1.0 style); 凡是 opening echoes classical translations well; 财产 captured."
       }
     },
@@ -130,7 +130,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 7.7,
+        "overall": 7.6,
         "feedback": "'Chuckling to himself' → 自言自语地笑道 (muttering, not chuckling, -0.5 acc); 'medico-legal' → 医学法学 should be 法医学 (-0.5 acc); dialogue rhythm otherwise natural."
       }
     },
@@ -145,7 +145,7 @@
         "accuracy": 9.5,
         "fluency": 9.5,
         "style": 8.5,
-        "overall": 8.2,
+        "overall": 7.7,
         "feedback": "'Glory to think' weakened to 欣喜 (-0.3 style); 罢了 in '是文艺复兴时期的作品罢了' nicely captures the guide's dismissive tone; idiomatic 泼了个冷水 works."
       }
     },
@@ -160,7 +160,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 7.3,
+        "overall": 7.6,
         "feedback": "'Live deliberately' → 活得深刻 drifts (深刻 = profound, not deliberate, -0.5 acc); 苟活于非生命之境 strong literary phrasing; 精髓 weakens 'marrow' metaphor (-0.3 style)."
       }
     },
@@ -175,7 +175,7 @@
         "accuracy": 8.5,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 7.5,
+        "overall": 7.2,
         "feedback": "'Desprecia' lacks reflexive object — grammar gap (-0.5 flu); 'souls and conceits' → 'parecer y las ideas' loses 'almas' (-0.5 acc); modernised register loses thy/thee distance (-0.5 style)."
       }
     },
@@ -205,7 +205,7 @@
         "accuracy": 9.5,
         "fluency": 9.5,
         "style": 9.0,
-        "overall": 8.7,
+        "overall": 8.6,
         "feedback": "Clean Spanish technical prose; 'in vacuo' → 'en el vacío' correct; tacitamente, simultaneidad, ley de propagación all idiomatic. Best of qwen3.5's en→es batch."
       }
     },
@@ -220,7 +220,7 @@
         "accuracy": 7.9,
         "fluency": 9.0,
         "style": 7.5,
-        "overall": 6.7,
+        "overall": 7.3,
         "feedback": "Same contresens as zh: 'betraying their perception' → 'traicionando su percepción' calques the wrong meaning (-1.8 acc); 'Trust thyself' → modern 'Confía' loses register (-0.5 style). Capped by core meaning error."
       }
     },
@@ -235,7 +235,7 @@
         "accuracy": 9.5,
         "fluency": 9.5,
         "style": 8.5,
-        "overall": 8.2,
+        "overall": 7.7,
         "feedback": "Idiomatic Spanish; 'damp, drizzly November in my soul' → 'noviembre húmedo y lloviznoso' precise; 'amargada' for 'grim about the mouth' is decent but slightly weakens. Solid Melville rendering."
       }
     },
@@ -250,7 +250,7 @@
         "accuracy": 9.5,
         "fluency": 9.5,
         "style": 9.0,
-        "overall": 8.7,
+        "overall": 8.2,
         "feedback": "Excellent 19th-century Spanish scientific register; first-person epistemic stance ('debo confiar', 'espero') preserved precisely. Cleanest Spanish output of the run."
       }
     },
@@ -280,7 +280,7 @@
         "accuracy": 9.5,
         "fluency": 9.5,
         "style": 8.5,
-        "overall": 7.9,
+        "overall": 7.7,
         "feedback": "'I perceive' → 'adivino' (I guess) drifts slightly (-0.5 acc); rest of dialogue natural with '¿Cómo diablos lo supo?' capturing the period exclamation; medico-legal/hemoglobina correct."
       }
     },
@@ -295,7 +295,7 @@
         "accuracy": 9.5,
         "fluency": 9.5,
         "style": 9.0,
-        "overall": 8.7,
+        "overall": 8.1,
         "feedback": "Twain's mock-naive enthusiasm ('me enorgullezco al pensar que, por fin, he descubierto') and the guide's deflation rendered cleanly; '¡aplastado mi creciente entusiasmo!' idiomatic. Top tier en→es."
       }
     },
@@ -340,7 +340,7 @@
         "accuracy": 6.5,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 6.2,
+        "overall": 6.1,
         "feedback": "Severe: 'odorat riche' is a category error (sense of smell, not the smell, -1.0 flu); 'studio' → 'pièce' (-0.5 acc); 'épines fleurie de rose' grammar break + wrong botanical (-1.0 acc); 'laburnum' left untranslated (FR = cytise, -1.5 acc); 'saddle-bags' → 'coussins'. Multiple compounding errors."
       }
     },
@@ -355,7 +355,7 @@
         "accuracy": 9.8,
         "fluency": 9.5,
         "style": 9.0,
-        "overall": 8.7,
+        "overall": 8.6,
         "feedback": "Excellent French; 'tacitement admis', 'dans le vide', 'simultanéité' all conventionally correct; logical connectors flow naturally. Cleanest output of the run."
       }
     },
@@ -385,7 +385,7 @@
         "accuracy": 9.0,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 7.6,
+        "overall": 7.55,
         "feedback": "'N'ayant guère ni même pas d'argent' is awkward double-negative (-0.5 flu); adds 'mon visage se rembrunit' (face darkens, mild paraphrase, -0.3 acc); 'drizzly' weakened to 'pluvieux' (-0.3 style)."
       }
     },
@@ -400,7 +400,7 @@
         "accuracy": 9.5,
         "fluency": 9.5,
         "style": 9.0,
-        "overall": 8.3,
+        "overall": 8.15,
         "feedback": "'Abstract' → 'extrait' (excerpt; should be 'résumé/abrégé', -0.5 acc); rest is excellent 19th-century French scientific register, hedging preserved."
       }
     },
@@ -445,7 +445,7 @@
         "accuracy": 9.5,
         "fluency": 9.5,
         "style": 9.0,
-        "overall": 8.3,
+        "overall": 8.15,
         "feedback": "Twain's voice rendered well in past-tense imperfect; 'éteint mon enthousiasme débordant' captures 'crushed out my swelling enthusiasm'; minor tense shift on 'glory' (-0.3 acc)."
       }
     },
@@ -460,7 +460,7 @@
         "accuracy": 9.5,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.3,
+        "overall": 7.7,
         "feedback": "'Ne affronter que' missing elision (n'affronter, -0.5 flu); 'sucer la moelle de la vie' preserves the marrow metaphor exactly; 'ni ne voulais-je' literary inversion."
       }
     },
@@ -475,7 +475,7 @@
         "accuracy": 9.5,
         "fluency": 9.5,
         "style": 9.0,
-        "overall": 8.2,
+        "overall": 8.1,
         "feedback": "Vietnamese 'ngươi' archaic 2nd-person preserves the gnomic distance; 'phiêu bạt' captures 'roving and wandering'; 'như hiện tại' adds slight tail (-0.3 acc) but reads natural."
       }
     },
@@ -490,7 +490,7 @@
         "accuracy": 7.0,
         "fluency": 8.0,
         "style": 7.5,
-        "overall": 6.1,
+        "overall": 5.5,
         "feedback": "Multiple errors: 'lilac' → hoa tử đằng (wisteria, should be tử đinh hương, -0.5 acc); 'saddle-bags' → thảm (rug, -0.5 acc); critical hallucination 'thuốc lào' (water-pipe tobacco) added on top of 'thuốc lá' (cigarettes) (-1.5 acc); 'studio' → 'căn phòng' (-0.5 acc); 'laburnum' kept in Latin (-0.5 flu)."
       }
     },
@@ -505,7 +505,7 @@
         "accuracy": 9.5,
         "fluency": 9.5,
         "style": 9.0,
-        "overall": 8.7,
+        "overall": 8.6,
         "feedback": "Clean Vietnamese scientific prose; 'trong chân không', 'tính đồng thời', 'hệ quy chiếu' all correct technical terms; logical connectors natural."
       }
     },
@@ -535,7 +535,7 @@
         "accuracy": 6.2,
         "fluency": 8.0,
         "style": 6.5,
-        "overall": 5.5,
+        "overall": 5.25,
         "feedback": "Hard fail: stray Chinese 每当 and English 'whenever' left in Vietnamese output (-1.5 acc, -1.0 flu, mixed scripts); 'November' → 'tháng Chín' (September!) is a 2-month hallucination (-2.0 acc); 'grim about the mouth' → 'căng thẳng' (tense) (-0.3 acc). Translation breaks down halfway through."
       }
     },
@@ -550,7 +550,7 @@
         "accuracy": 9.5,
         "fluency": 9.5,
         "style": 9.0,
-        "overall": 8.1,
+        "overall": 8.05,
         "feedback": "Excellent formal Vietnamese; 'tất yếu sẽ còn bất toàn', 'trông cậy', 'uy tín', 'thận trọng' all preserve the 19th-c. scientific hedging; first-person epistemic stance intact."
       }
     },
@@ -565,7 +565,7 @@
         "accuracy": 9.5,
         "fluency": 9.5,
         "style": 9.0,
-        "overall": 8.5,
+        "overall": 8.25,
         "feedback": "'Ắt phải đang cần một người vợ' captures the formal-ironic tone of 'must be in want of'; 'tài sản chính đáng' precise; reads naturally."
       }
     },
@@ -580,7 +580,7 @@
         "accuracy": 9.5,
         "fluency": 9.5,
         "style": 9.0,
-        "overall": 8.7,
+        "overall": 8.1,
         "feedback": "Best dialogue rendering of run; 'huyết sắc tố' (haemoglobin), 'y pháp' (forensic medicine = correct, unlike zh and es which got specialised term wrong) ✓; vừa cười cười captures 'chuckling to himself'."
       }
     },
@@ -610,7 +610,7 @@
         "accuracy": 9.0,
         "fluency": 9.5,
         "style": 8.5,
-        "overall": 8.2,
+        "overall": 8.1,
         "feedback": "'Live deliberately' → 'sống một cách tỉnh táo' (clear-headed; should be 'có chủ đích', -0.5 acc); 'hút cạn hết tủy' preserves the marrow metaphor exactly; reflective tone good."
       }
     },
