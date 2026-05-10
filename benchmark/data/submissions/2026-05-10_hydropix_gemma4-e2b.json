@@ -2,10 +2,10 @@
   "schema_version": "1.0",
   "submission": {
     "submitted_by": "github:hydropix",
-    "submitted_at": "2026-05-10T15:03:07Z"
+    "submitted_at": "2026-05-10T16:01:28Z"
   },
   "environment": {
-    "tbl_version": "git-ea71c80",
+    "tbl_version": "git-a2a38b9",
     "prompt_version": "v1",
     "judge_id": "claude-opus-4-7-rubric-v1-reranked"
   },
@@ -625,7 +625,7 @@
         "accuracy": 8.0,
         "fluency": 7.5,
         "style": 7.0,
-        "overall": 7.15,
+        "overall": 7.45,
         "feedback": "'Unfamiliar initials' for 'よそよそしい頭文字' should be 'impersonal/standoffish' (-0.5 acc); 'It is the same with writing with a pen' awkward (-0.5 fluency)."
       }
     },
@@ -670,7 +670,7 @@
         "accuracy": 8.0,
         "fluency": 7.5,
         "style": 7.0,
-        "overall": 7.0,
+        "overall": 7.3,
         "feedback": "Lu Xun's mood mostly intact; '没有什么好心绪' rendered 'without any particular sentiment' (should be 'in poor spirits') (-0.5 acc); 'porthole' for '蓬隙' acceptable."
       }
     },
@@ -685,7 +685,7 @@
         "accuracy": 8.5,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 7.6,
+        "overall": 7.9,
         "feedback": "Faithful Soseki rendering into Chinese; '頭文字' (initials) rendered as '头衔' (title) is a drift (-1.0 acc)."
       }
     },
@@ -1887,6 +1887,1536 @@
         "style": 7.0,
         "overall": 6.5,
         "feedback": "'प्रत्याशीiation' contains corrupted English suffix mid-Hindi-word (-1.5 fluency); 'जीवन का सारा सार' drift for 'marrow' (-0.5 acc)."
+      }
+    },
+    {
+      "text_id": "aurelius_meditations",
+      "source_lang": "en",
+      "target_lang": "nl",
+      "output": "Doe, ziel, doe; mishandel en beledig jezelf; maar een tijd en de tijd voor jou om jezelf te respecteren, zal voorbij zijn. Ieder mens geluk hangt af van hemzelf, maar kijk, je leven is bijna voorbij, terwijl je jezelf geen respect toont, maak je geluk dan uit de zielen en verlangens van anderen. Waarom zouden al deze externe dingen je zo afleiden? Geef jezelf de tijd om iets goeds te leren, en stop met heen en weer ronddwalen.",
+      "output_hash": "sha256:ec5283244249cd75d7c70c77a35d94aac490edba0420c1e5342690e273517842",
+      "translation_latency_ms": 4184,
+      "scores": {
+        "accuracy": 8.3,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.2,
+        "feedback": "Readable Dutch but archaic register lost (thou/thee → jezelf, neutral) (-0.5 sty); 'Ieder mens geluk' is missing the possessive (-0.5 flu); 'rovingen' simplified to 'ronddwalen'."
+      }
+    },
+    {
+      "text_id": "dorian_gray",
+      "source_lang": "en",
+      "target_lang": "nl",
+      "output": "De studio was gevuld met de rijke geur van rozen, en toen de warme zomerwind door de bomen van de tuin waaide, kwam door de open deur de zware geur van lilak, of de meer delicate geur van de roze bloeiende struik. Van de hoek van de divan van Perzische zadelzakken waarop hij lag, rookend, zoals het zijn gewoonte was, kon Lord Henry Wotton slechts de glans van de honingzoete en honingkleurige bloemen van een laburnum opvangen.",
+      "output_hash": "sha256:c51672ce67139a8b4fde92019b741a0f8fa738650064abe1646aefaa15471dab",
+      "translation_latency_ms": 1704,
+      "scores": {
+        "accuracy": 7.0,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.0,
+        "feedback": "'lilac' rendered as 'lilak' (Anglicism; should be 'sering') (-0.5 acc); 'pink-flowering thorn' flattened to 'roze bloeiende struik' losing 'thorn/hawthorn' (-0.5 acc); 'laburnum' left untranslated (-0.5 acc)."
+      }
+    },
+    {
+      "text_id": "einstein_relativity",
+      "source_lang": "en",
+      "target_lang": "nl",
+      "output": "Voordat de theorie van de relativiteit ontstond, was het altijd impliciet aangenomen in de natuurkunde dat de uitspraak over tijd een absolute betekenis had, d.w.z. dat deze onafhankelijk is van de bewegingsstaat van het referentiekader. Maar we hebben zojuist gezien dat deze aanname onverenigbaar is met de meest natuurlijke definitie van gelijktijdigheid; als we deze aanname verwerpen, verdwijnt dan het conflict tussen de wet van de voortplanting van licht in vacuüm en het principe van relativiteit (ontwikkeld in Sectie VII).",
+      "output_hash": "sha256:ed71760cae1e745c92597dee1edbc5f57b8d15ee5525febe6040b6daf95f1947",
+      "translation_latency_ms": 1031,
+      "scores": {
+        "accuracy": 8.7,
+        "fluency": 8.5,
+        "style": 8.0,
+        "overall": 8.2,
+        "feedback": "Clean technical Dutch faithful to Einstein's hedging; 'tacitly' rendered as 'impliciet' which is a slight drift but acceptable; 'in vacuo' → 'in vacuüm' is the standard rendering."
+      }
+    },
+    {
+      "text_id": "emerson_self_reliance",
+      "source_lang": "en",
+      "target_lang": "nl",
+      "output": "Vertrouw jezelf: elk hart vibreert op die ijzerdraad. Accepteer de plaats die goddelijke voorzienigheid voor jou heeft gevonden, de samenleving van je tijdgenoten, de verbinding van gebeurtenissen. Grote mannen hebben dat altijd gedaan, en hebben zichzelf kindertijdse vertrouwen gegeven aan het genie van hun tijd, en hebben hun perceptie verraden dat het absoluut betrouwbare in hun hart zat, werkend door hun handen, allesoverheersend in al hun zijn.",
+      "output_hash": "sha256:4e451a72e13c8afd281c756d811c74b89058b38759d7477568bc2bb2acba8365",
+      "translation_latency_ms": 816,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 6.5,
+        "style": 6.0,
+        "overall": 6.0,
+        "feedback": "'iron string' → 'ijzerdraad' (iron wire, not 'ijzeren snaar') (-0.5 acc); 'confided themselves childlike' contresensed as 'kindertijdse vertrouwen gegeven' (-1.0 acc); 'betraying their perception' rendered as 'verraden' (treason) instead of 'revealing/showing' — contresens (-1.5 acc)."
+      }
+    },
+    {
+      "text_id": "moby_dick",
+      "source_lang": "en",
+      "target_lang": "nl",
+      "output": "Roep me Ishmael. Sommige jaren geleden—het maakt niet uit hoe lang precies—met weinig of geen geld in mijn portemonnee, en niets specifieks dat mij aan land interesseerde, dacht ik dat ik een beetje zou varen en het waterige deel van de wereld zou zien. Het is een manier om de spleen af te stoten en de circulatie te reguleren. Wanneer ik mezelf bleek boos te voelen; wanneer het een vochtig, regenachtig november in mijn ziel is, reken ik erop dat het tijd is om zo snel mogelijk op zee te gaan.",
+      "output_hash": "sha256:d4aee686fa91b377cd6271ea7ee10eec402d3db8a4fb8527319203faddcf592d",
+      "translation_latency_ms": 918,
+      "scores": {
+        "accuracy": 7.0,
+        "fluency": 6.5,
+        "style": 6.5,
+        "overall": 6.5,
+        "feedback": "'Roep me' wrong (should be 'Noem me') (-0.5 flu); 'spleen' left untranslated where Dutch has 'zwaarmoedigheid' (-1.5 acc); 'Sommige jaren' anglicism for 'Enkele jaren' (-0.5 flu); 'bleek boos' loses 'grim about the mouth' image (-0.5 sty)."
+      }
+    },
+    {
+      "text_id": "origin_species",
+      "source_lang": "en",
+      "target_lang": "nl",
+      "output": "Dit Abstract, dat ik nu publiceer, moet noodzakelijkerwijs onvolmaakt zijn. Ik kan hier geen verwijzingen en autoriteiten geven voor mijn verschillende uitspraken; en ik moet het lezer vertrouwen geven in mijn nauwkeurigheid. Zeker, er zullen fouten zijn binnengekomen, hoewel ik hoop dat ik altijd voorzichtig ben geweest met het vertrouwen op goede autoriteiten alleen. Ik kan hier alleen de algemene conclusies geven waarop ik ben gekomen, met een paar feiten ter illustratie, maar die, ik hoop, in de meeste gevallen volstaan.",
+      "output_hash": "sha256:f7e52015003c38e90cb88c760494242fe350cd88c5d214a7e471fba17f69e8df",
+      "translation_latency_ms": 932,
+      "scores": {
+        "accuracy": 6.8,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 6.8,
+        "feedback": "'I must trust to the reader reposing some confidence' rendered as 'ik moet het lezer vertrouwen geven' inverts the trust direction (-1.0 acc); 'errors will have crept in' → 'zijn binnengekomen' is awkward; otherwise scholarly tone preserved."
+      }
+    },
+    {
+      "text_id": "pride_prejudice",
+      "source_lang": "en",
+      "target_lang": "nl",
+      "output": "Het is een universele waarheid dat een alleenstaande man die een goede fortuin bezit, een vrouw nodig heeft. Hoeveel de gevoelens of meningen van zo'n man ook zijn bij zijn eerste betreden van een buurt, deze waarheid is zo goed verankerd in de gedachten van de omringende families, dat hij als het rechtmatige bezit van een of andere van hun dochters wordt beschouwd.",
+      "output_hash": "sha256:0de956b9cad518a15a0579fe11507135ca591287a085d249225f9dc0c1c34b60",
+      "translation_latency_ms": 709,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.0,
+        "overall": 7.2,
+        "feedback": "Captures the Austen syllogism; 'rightful property' → 'rechtmatige bezit' works but irony is dampened (-0.5 sty); 'Hoeveel de gevoelens' loses the 'However little known' subordinate flavour."
+      }
+    },
+    {
+      "text_id": "study_scarlet",
+      "source_lang": "en",
+      "target_lang": "nl",
+      "output": "U bent in Afghanistan geweest, ik vermoed. \"Hoe kon je dat weten?\" vroeg ik in verbazing. \"Geen zin meer,\" zei hij, terwijl hij tegen zichzelf glimlachte. \"De vraag is nu over hemoglobine. Je ziet de betekenis van deze ontdekking van mij niet?\" \"Het is interessant, chemisch, zonder twijfel,\" antwoordde ik, \"maar praktisch—\" \"Waarom, man, het is de meest praktische medisch-juridische ontdekking van jaren. Zie je niet dat het ons een foutloze test geeft voor bloedvlekken?\"",
+      "output_hash": "sha256:0e38826336864105e64600e872f5c1a16badb70c4c4716efe2944c6b67a20861",
+      "translation_latency_ms": 923,
+      "scores": {
+        "accuracy": 5.5,
+        "fluency": 6.0,
+        "style": 6.0,
+        "overall": 5.5,
+        "feedback": "'Never mind' → 'Geen zin meer' is a contresens ('no more sense/will') (-1.5 acc); 'No doubt you see' inverted to 'Je ziet de betekenis ... niet?' (-1.5 acc); first quotation marks missing on dialogue (-0.5 flu)."
+      }
+    },
+    {
+      "text_id": "twain_innocents",
+      "source_lang": "en",
+      "target_lang": "nl",
+      "output": "Het lijkt mij dat wanneer ik mij glorieert dat ik voor eenmaal een oude schilderij heb ontdekt die mooi en waardig is om geprezen te worden, het plezier dat het mij geeft een onbetwistbaar bewijs is dat het geen mooi schilderij is en in geen geval waardig is om aan te prijzen. Dit is meermaals gebeurd, in Venetië. Bij elk incident heeft de gids mijn opwelling enthousiasme weggeslagen met de opmerking: “Het is niets – het is van de Renaissance.”",
+      "output_hash": "sha256:1c58d21aaa7f78edb392445e9c766efb0f3ea5767ba5de4b1c6c0ce1f11486af",
+      "translation_latency_ms": 925,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 6.0,
+        "style": 6.5,
+        "overall": 6.0,
+        "feedback": "'I glory to think' → 'ik mij glorieert' is grammatically wrong (reflexive misuse) (-1.0 flu); 'every single instance' → 'Bij elk incident' loses the 'guide-encounter' sense (-0.3 acc); irony preserved but rough."
+      }
+    },
+    {
+      "text_id": "walden",
+      "source_lang": "en",
+      "target_lang": "nl",
+      "output": "Ik ging naar het bos omdat ik wilde leven op een bewuste manier, alleen de essentiële feiten van het leven presenteren, en te zien of ik niet kon leren wat het me moest leren, en niet, wanneer ik stierf, ontdekken dat ik niet had geleefd. Ik wilde niet leven wat geen leven was, leven is zo kostbaar; noch wilde ik berusting beoefenen, tenzij het absoluut noodzakelijk was. Ik wilde diep leven en alle merg uit het leven eruit persen.",
+      "output_hash": "sha256:c717aef43f78af499652208d1aa62cdd8fd77abe2578981bf5c44e8118edcd7a",
+      "translation_latency_ms": 792,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 7.0,
+        "feedback": "'front only the essential facts' → 'essentiële feiten van het leven presenteren' loses the 'face/confront' sense of 'front' (-0.5 acc); 'merg eruit persen' renders 'suck out the marrow' adequately."
+      }
+    },
+    {
+      "text_id": "aurelius_meditations",
+      "source_lang": "en",
+      "target_lang": "pl",
+      "output": "Rób, duszo, rób; okrutuj i lekceważ siebie; lecz za chwilę, a czas, byś uszanował siebie, nadejdą. Szczęście każdego człowieka zależy od niego samego, ale spójrz, twoje życie jest prawie zakończone, a mimo że nie okazujesz sobie szacunku, sprawiasz, że twoje szczęście polega na duszach i koncepcjach innych ludzi. Dlaczego te wszystkie rzeczy, które dzieją się na zewnątrz, tak cię rozpraszają? Daj sobie czas, by nauczyć się czegoś dobrego, i przestań błądzić i wędrować.",
+      "output_hash": "sha256:50d8e16b72b4dc7d21d65e2bff64151d5a1844032f47b96f6715e03819cd5f04",
+      "translation_latency_ms": 1048,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 6.0,
+        "style": 6.0,
+        "overall": 6.0,
+        "feedback": "'okrutuj' is non-standard Polish (should be 'znęcaj się') (-1.0 flu); 'koncepcjach' for 'conceits' is a poor cognate (-0.5 acc); imperative register works but archaic flavour absent (-0.5 sty)."
+      }
+    },
+    {
+      "text_id": "dorian_gray",
+      "source_lang": "en",
+      "target_lang": "pl",
+      "output": "Studio wypełniał się bogatym zapachem róż, a gdy letrzany wiatr poruszył się wśród drzew w ogrodzie, przez otwarte drzwi do środka niosło się ciężkie woń lilaku lub bardziej delikatny zapach krzewu różowego. Z rogu kanapy z perskich siedzeń, na której leżał, paląc, jak to bywało jego zwyczajem, niezliczone papierosy, Lord Henry Wotton mógł uchwycić blask miodowo-słodkich i miodowo-barwnych kwiatów laburnum.",
+      "output_hash": "sha256:6b382cd9c81b43ed40ff0f88c93e95da496aa1e97f2155b09eb69bcb94646a13",
+      "translation_latency_ms": 877,
+      "scores": {
+        "accuracy": 5.5,
+        "fluency": 5.5,
+        "style": 5.5,
+        "overall": 5.5,
+        "feedback": "'letrzany' is not Polish (-1.0 flu); 'lilaku' anglicism (should be 'bzu') (-0.5 acc); 'Persian saddle-bags' → 'perskich siedzeń' (Persian seats) is a contresens (-1.5 acc); 'krzewu różowego' loses 'thorn'."
+      }
+    },
+    {
+      "text_id": "einstein_relativity",
+      "source_lang": "en",
+      "target_lang": "pl",
+      "output": "Zanim pojawiła się teoria względności, w fizyce zawsze domniano, że stwierdzenie o czasie ma absolutne znaczenie, tj. jest niezależne od stanu ruchu ciała odniesienia. Ale właśnie zobaczyło się, że to założenie jest niezgodne z najbardziej naturalną definicją jednocześnie; jeśli odrzucimy to założenie, to konflikt między prawem propagacji światła w próżni a zasadą względności (rozwiniętą w Sekcji VII) znika.",
+      "output_hash": "sha256:e3129829e23c5b97ea8e76e2fc9d2980eced7ab311e744927e465f5654abe8c8",
+      "translation_latency_ms": 783,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 7.2,
+        "feedback": "'domniano' non-standard (should be 'zakładano') (-0.5 flu); 'zobaczyło się' impersonal awkward (-0.5 flu); 'definicją jednocześnie' should be 'jednoczesności' (-0.5 acc)."
+      }
+    },
+    {
+      "text_id": "emerson_self_reliance",
+      "source_lang": "en",
+      "target_lang": "pl",
+      "output": "Ufaj sobie: każde serce drży tym żelaznym struną. Przyjmij miejsce, które boska opatrzność dla ciebie znalazła, społeczeństwo twoich współczesnych, powiązanie wydarzeń. Wielcy ludzie zawsze tak robili, i powierzali się dziecięcej geniuszowi swojej epoki, zdradzając swoje przekonanie, że absolutnie godne zaufania siedzi w ich sercu, działając przez ich ręce, dominując w całym ich bycie.",
+      "output_hash": "sha256:9dac7a3abc0b4033373c2c2b241dd55087cdff41a6a6efcae0107e2e745237eb",
+      "translation_latency_ms": 821,
+      "scores": {
+        "accuracy": 6.0,
+        "fluency": 5.5,
+        "style": 6.0,
+        "overall": 5.8,
+        "feedback": "'drży tym żelaznym struną' wrong case (should be instrumental 'tej żelaznej strunie') (-0.5 flu); 'dziecięcej geniuszowi' gender mismatch (-0.5 flu); 'zdradzając' for 'betraying' here is contresens — Emerson means 'revealing' (-1.0 acc)."
+      }
+    },
+    {
+      "text_id": "moby_dick",
+      "source_lang": "en",
+      "target_lang": "pl",
+      "output": "Nazywajcie mnie Ismaele. Niektóre lata temu – niechaj się liczy, jak długo – nie mając w kieszeni ani trochę pieniędzy, i nie mając nic konkretnego, co mnie interesowało na lądzie, pomyślałem, że popłynę trochę i zobaczę wodną część świata. To jest dla mnie sposób na rozładowanie splenu i regulację krążenia. Kiedy czuję, że zbieram się do niego; kiedy w mojej duszy jest wilgotny, mroźny listopad, uważam, że trzeba jak najszybciej udać się na morze.",
+      "output_hash": "sha256:a80c656eef67da538214890d4b4f25eac5306e4a7127a3a4f9671e3e4bf51cbf",
+      "translation_latency_ms": 968,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 6.5,
+        "style": 6.5,
+        "overall": 6.3,
+        "feedback": "'Nazywajcie mnie' is plural where source is impersonal singular (-0.5 flu); 'splenu' untranslated anglicism where Polish has 'śledziona/melancholia' (-1.0 acc); 'mroźny listopad' is 'frosty' rather than 'drizzly' (-0.5 acc)."
+      }
+    },
+    {
+      "text_id": "origin_species",
+      "source_lang": "en",
+      "target_lang": "pl",
+      "output": "Niniejszy abstrakt, który teraz publikuję, musi być koniecznie niedoskonały. Nie mogę tutaj podać odniesień i autorytetów dla moich kilku stwierdzeń; muszę polegać na czytelniku, który powierzy mi pewne zaufanie do mojej dokładności. Bez wątpienia wśliznęły się błędy, choć mam nadzieję, że zawsze byłem ostrożny w zaufaniu tylko dobrym autorytetom. Mogę tutaj podać jedynie ogólne wnioski, do których doszedłem, wraz z kilkoma faktami ilustrującymi, ale które, mam nadzieję, w większości przypadków wystarczą.",
+      "output_hash": "sha256:b962af1e438fd98e1ed9d1697c2d1e4f17bb0d13a65c8e341e35d0445c8ff1e4",
+      "translation_latency_ms": 1128,
+      "scores": {
+        "accuracy": 8.0,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.5,
+        "feedback": "Faithful scholarly Polish; 'wśliznęły się błędy' is acceptable for 'errors crept in'; 'autorytetom' is the right register; 'kilku stwierdzeń' slight loose for 'several statements'."
+      }
+    },
+    {
+      "text_id": "pride_prejudice",
+      "source_lang": "en",
+      "target_lang": "pl",
+      "output": "Jest to prawda powszechnie akceptowana, że samotny mężczyzna posiadający dobre szczęście musi być w potrzebie żony. Jakież nawet mało znane uczucia lub poglądy takiego mężczyzny przy pierwszym wejściu do dzielnicy, ta prawda jest tak dobrze ugruntowana w umysłach otaczających rodzin, że jest on uważany za właściwe mienie jakiejś z ich córek.",
+      "output_hash": "sha256:bbc90b4b6024dd2cf159b27e3c6ee5805e94652abd48615ab975d96b903a1003",
+      "translation_latency_ms": 709,
+      "scores": {
+        "accuracy": 6.0,
+        "fluency": 6.0,
+        "style": 5.5,
+        "overall": 5.8,
+        "feedback": "'dobre szczęście' is a calque from English 'good fortune'; should be 'majątek/fortuna' (-1.0 acc); 'Jakież nawet mało znane' is ungrammatical (-1.0 flu); irony is lost (-0.5 sty)."
+      }
+    },
+    {
+      "text_id": "study_scarlet",
+      "source_lang": "en",
+      "target_lang": "pl",
+      "output": "Byłeś w Afganistanie, rozumiem. \"Skąd ty wiesz?\" zapytałem zdumiony. \"Nie ma sprawy,\" powiedział, śmiejąc się do siebie. \"Pytanie teraz dotyczy hemoglobiny. Nie wątpię, widzisz znaczenie mojego odkrycia?\" \"Jest interesujące, chemicznie, bez wątpienia,\" odpowiedziałem, \"ale praktycznie—\" \"Dlaczego, stary, to jest najbardziej praktyczne medyczno-prawnicze odkrycie przez lata. Nie widzisz, że daje nam to nieomylny test na plamy krwi?\"",
+      "output_hash": "sha256:7f7a156925e27e7a65aef52f4861b4f3314f03ba3d88d3c8c0554ee1369210f5",
+      "translation_latency_ms": 960,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 6.5,
+        "style": 6.0,
+        "overall": 6.3,
+        "feedback": "'Nie ma sprawy' is colloquial in wrong register for Holmes' detective dialogue (-0.5 sty); 'Nie wątpię' inverts agency (Holmes asks the listener if they doubt) (-0.5 acc); 'medyczno-prawnicze' awkward."
+      }
+    },
+    {
+      "text_id": "twain_innocents",
+      "source_lang": "en",
+      "target_lang": "pl",
+      "output": "Wydaje mi się, że za każdym razem, gdy darzę się radością, że ośmielam się pomyśleć, iż raz odkryłem starożytne malarstwo, które jest piękne i godne wszystkich pochwał, przyjemność, jaką mi to daje, jest nieomylnym dowodem na to, że nie jest to piękne obraz i nie zasługuje w żaden sposób na pochwałę. To się zdarzyło więcej razy, niż jestem w stanie wymienić, we Wenecji. W każdej sytuacji przewodnik zniósł moje narastające podekscytowanie następującą uwagą: „To nic – to jest renesans.”",
+      "output_hash": "sha256:8fad82fb06d58f1cdc3e6d4aadb157421bc3e9dd5231ec2c5b74dc6b25bb4df9",
+      "translation_latency_ms": 1017,
+      "scores": {
+        "accuracy": 6.0,
+        "fluency": 5.5,
+        "style": 5.5,
+        "overall": 5.8,
+        "feedback": "'darzę się radością' reflexive misuse for 'glory to think' (-1.0 flu); 'ośmielam się pomyśleć' adds modal not in source (-0.5 acc); irony of Twain's mock-naïve voice flattened (-1.0 sty)."
+      }
+    },
+    {
+      "text_id": "walden",
+      "source_lang": "en",
+      "target_lang": "pl",
+      "output": "Poszedłem do lasu, ponieważ pragnąłem żyć świadomie, przedstawiać tylko esencjonalne fakty życia i sprawdzić, czy nie nauczę się tego, czego życie ma mi dać, i nie odkryję, że nie żyłem, gdy przyjdzie czas umrzeć. Nie chciałem żyć tego, co nie jest życiem; życie jest tak cenne; ani nie chciałem ćwiczyć rezygnację, chyba że było to absolutnie konieczne. Chciałem żyć głęboko i wyczerpać całą esencję życia.",
+      "output_hash": "sha256:a8ad645c4ec166ae62ee2b1e4a5a4a33b3c0fcbcd696a64121376e3d7bbe0e50",
+      "translation_latency_ms": 885,
+      "scores": {
+        "accuracy": 7.0,
+        "fluency": 6.5,
+        "style": 6.5,
+        "overall": 6.7,
+        "feedback": "'esencjonalne' is an anglicism (Polish: 'najistotniejsze') (-0.5 flu); 'wyczerpać całą esencję życia' loses the visceral 'marrow' image (-0.5 acc); 'rezygnację' OK for 'resignation'."
+      }
+    },
+    {
+      "text_id": "aurelius_meditations",
+      "source_lang": "en",
+      "target_lang": "sv",
+      "output": "Gör, själ, gör; mista och förlöj lite dig själv; men en stund och tiden för dig att respektera dig själv, kommer att vara slut. Varans lycka beror på sig själv, men se, ditt liv är nästan slut, samtidigt som du inte ger dig själv respekt, gör du din lycka beroende av andras själar och tankar. Varför ska någon av dessa saker som händer utåt distrahera dig så mycket? Ge dig själv fritid att lära dig något gott, och sluta vandra fram och tillbaka.",
+      "output_hash": "sha256:1d373f495c719595ee29f43cbe9fc28afe93206903a2113a1fc79bb7a7886311",
+      "translation_latency_ms": 905,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 6.0,
+        "style": 6.0,
+        "overall": 6.0,
+        "feedback": "'förlöj' is not Swedish (-1.0 flu); 'Varans lycka' should be 'Varje människas' (every man's) (-1.0 acc); the imperative register survives but is awkward."
+      }
+    },
+    {
+      "text_id": "dorian_gray",
+      "source_lang": "en",
+      "target_lang": "sv",
+      "output": "Studion var fyllt av rosornas rika doft, och när den ljusa sommarvinden rörde sig bland trädens i trädgården, kom genom den öppna dörren den tunga doften av lilja, eller den mer delikata parfymeringen från den rosablommiga tornebusken. Från hörnet av soffan med persiska sadelväskor där han låg, rökande som var hans vana, kunde Lord Henry Wotton knappt fånga glimten av laburnums honungs-söt och honungsfärgade blommor.",
+      "output_hash": "sha256:9c7af5540db8bea67c2360865152c04e229c1dc5bd94dfeb8f4e6db3a437a13c",
+      "translation_latency_ms": 915,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 6.5,
+        "style": 6.5,
+        "overall": 6.3,
+        "feedback": "'lilja' is 'lily' not 'lilac/syren' (-1.0 acc); 'tornebusken' loses 'pink-flowering' (-0.3 acc); 'knappt fånga' wrong sense — Wotton 'just catches' as in 'precisely catches' (-0.3 acc); 'laburnum' kept untranslated."
+      }
+    },
+    {
+      "text_id": "einstein_relativity",
+      "source_lang": "en",
+      "target_lang": "sv",
+      "output": "Innan relativitetsteorin uppstod hade det alltid tyst antagits inom fysiken att tidsutsägelsen hade en absolut betydelse, det vill säga att den är oberoende av referenssystemets rörelse. Men vi har precis sett att denna antagande är oförenlig med den mest naturliga definitionen av simultanitet; om vi förkastar denna antagande försvinner konflikten mellan ljusets utbredningslag i vakuum och relativitetsprincipen (utvecklad i avsnitt VII).",
+      "output_hash": "sha256:1d73256687be16565f5e300ea822983f4659f5353bd23e018c8d495d625e067a",
+      "translation_latency_ms": 849,
+      "scores": {
+        "accuracy": 8.5,
+        "fluency": 8.0,
+        "style": 8.0,
+        "overall": 7.7,
+        "feedback": "Clean and faithful scientific Swedish; 'tyst antagits' for 'tacitly assumed' is good; 'tidsutsägelsen' captures 'statement of time' adequately."
+      }
+    },
+    {
+      "text_id": "emerson_self_reliance",
+      "source_lang": "en",
+      "target_lang": "sv",
+      "output": "Förtroa dig själv: varje hjärta vibrerar mot den järnsträngen. Acceptera platsen som den gudomliga providence har funnit för dig, samhället till dina samtida, händelsernas koppling. Stora män har alltid gjort så, och överlämnat sig barnlikt till sin ålders genidrag, och förrått sin uppfattning att det absolut pålitliga satt i deras hjärta, arbetade genom deras händer, och dominerade i all deras existens.",
+      "output_hash": "sha256:23f538fc0413495ee561c8144f1522f32bf5e4ff37a2852ab8b03f8e21d57269",
+      "translation_latency_ms": 893,
+      "scores": {
+        "accuracy": 6.0,
+        "fluency": 6.0,
+        "style": 6.0,
+        "overall": 5.8,
+        "feedback": "'providence' left untranslated as English (Swedish: 'försyn') (-1.0 acc); 'genidrag' is a coinage not a word (-0.5 flu); 'förrått sin uppfattning' contresens — Emerson means 'revealed' not 'betrayed' (-1.0 acc)."
+      }
+    },
+    {
+      "text_id": "moby_dick",
+      "source_lang": "en",
+      "target_lang": "sv",
+      "output": "Kalla mig Ishmael. För några år sedan – oavsett hur lång tid det var – med lite eller inga pengar i plånboken och inget särskilt som intresserade mig på land, tänkte jag att jag skulle segla lite och se världens vatten. Det är ett sätt jag har att driva bort själen och reglera cirkulationen. Varje gång jag känner mig orolig; varje gång det är en fuktig, regnig november i själen, räknar jag det som dags att ta sig till havet så fort jag kan.",
+      "output_hash": "sha256:80a72c78e27e4c485377993e64e904524b664ca722e9f64985966c8805aac15d",
+      "translation_latency_ms": 886,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 6.5,
+        "style": 6.0,
+        "overall": 6.3,
+        "feedback": "'driva bort själen' contresens — should be 'missmodet/spleen' not 'själen' (the soul) (-1.5 acc); 'Varje gång jag känner mig orolig' loses the visceral 'grim about the mouth' image (-0.5 sty)."
+      }
+    },
+    {
+      "text_id": "origin_species",
+      "source_lang": "en",
+      "target_lang": "sv",
+      "output": "Detta abstrakt, som jag nu publicerar, måste nödvändigtvis vara ofullständigt. Jag kan här inte ge hänvisningar och auktoriteter till mina flera uttalanden; och jag måste lita på läsaren att återge viss tilltro till min korrekthet. Utan tvivel fel har creptt in, även om jag hoppas att jag alltid varit försiktig med att endast lita på goda auktoriteter. Jag kan här endast ge de allmänna slutsatser jag har kommit fram till, med några fakta i illustration, men vilka, jag hoppas, i de flesta fall räcker.",
+      "output_hash": "sha256:693187bb8c22466fe68974c7b4c6f272710befabc11afb743887292e473ccd99",
+      "translation_latency_ms": 1063,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 6.5,
+        "style": 7.0,
+        "overall": 6.8,
+        "feedback": "'creptt' is not Swedish (English mixed in mid-word) (-1.0 flu); 'lita på läsaren att återge' inverts the trust direction (-0.5 acc); otherwise scholarly tone preserved."
+      }
+    },
+    {
+      "text_id": "pride_prejudice",
+      "source_lang": "en",
+      "target_lang": "sv",
+      "output": "Det är en universell sanning att en ensam man i besittning av en god förmögenhet måste vara i behov av en hustru. Så lite som helst om en sådana manns känslor eller åsikter när han först kliver in i ett kvarter, denna sanning är så väl etablerad i de omgivande familjernas sinnen att han anses vara rättmätigt ägodel för någon eller annan av deras döttrar.",
+      "output_hash": "sha256:da879a9f8b8d2e490ee9893143ef668457466934da4ff21f61bbf91bf7b8976a",
+      "translation_latency_ms": 784,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 7.0,
+        "feedback": "'rättmätigt ägodel' is awkward (should be 'rättmätig egendom') (-0.5 flu); 'Så lite som helst' loses 'However little known' subordinate flavour (-0.3 sty); irony partially preserved."
+      }
+    },
+    {
+      "text_id": "study_scarlet",
+      "source_lang": "en",
+      "target_lang": "sv",
+      "output": "Du har varit i Afghanistan, uppfattar jag. \"Hur i hela friden visste du det?\" frågade jag förvånad. \"Glöm det,\" sa han och skrattade åt sig själv. \"Frågan är nu om hemoglobin. Du ser nog betydelsen av min upptäckt?\" \"Det är intressant, kemiskt, utan tvekan,\" svarade jag, \"men praktiskt—\" \"Varför, käre man, det är den mest praktiska medicinskt-juridiska upptäckten på år. Ser du inte att det ger oss ett felfritt test för blodfläckar?\"",
+      "output_hash": "sha256:180b73c43729923194a78e97cfaa9ea539fede473352227887206eddc316d6ea",
+      "translation_latency_ms": 966,
+      "scores": {
+        "accuracy": 7.0,
+        "fluency": 6.5,
+        "style": 6.5,
+        "overall": 6.5,
+        "feedback": "'uppfattar jag' for 'I perceive' is awkward (Swedish: 'jag förstår/anar') (-0.5 flu); 'Glöm det' colloquialism wrong for Holmes' clipped dialogue (-0.5 sty); 'käre man' for 'why, man' OK."
+      }
+    },
+    {
+      "text_id": "twain_innocents",
+      "source_lang": "en",
+      "target_lang": "sv",
+      "output": "Det verkar för mig att varje gång jag gläder mig över att ha upptäckt en antik målning som är vacker och värd all beröm, är njutningen den ger mig ett ofelbart bevis på att det inte är en vacker bild och inte på något sätt värd beröm. Detta har hänt fler gånger än jag kan räkna, i Venedig. Varje gång har guiden utsläckt min uppsvällda entusiasm med kommentar: ”Det är ingenting – det är från renässansen.”",
+      "output_hash": "sha256:8e930850e2b91138d392a6b9eedacd42bd9c7227e65e8af1405ea2ebc8d776b2",
+      "translation_latency_ms": 855,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 7.0,
+        "feedback": "Captures Twain's mock-resignation reasonably; 'utsläckt' for 'crushed out' works; 'uppsvällda entusiasm' is awkward Swedish phrasing (-0.5 flu)."
+      }
+    },
+    {
+      "text_id": "walden",
+      "source_lang": "en",
+      "target_lang": "sv",
+      "output": "Jag gick in i skogen eftersom jag önskade att leva medvetet, att bara ställa fram livets essentiella fakta, och se om jag inte kunde lära mig vad det hade att lära mig, och inte, när jag skulle dö, upptäcka att jag inte hade levt. Jag ville inte leva det som inte var liv, livet är så kärt; och jag ville inte öva på resignation, om det inte var helt nödvändigt. Jag ville leva djupt och suga ut hela livets benmärg.",
+      "output_hash": "sha256:3b68de8134dfa0a306f6c4dc57d997f912b2f7974a7c801a65efe0728de06b79",
+      "translation_latency_ms": 834,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 6.5,
+        "style": 7.0,
+        "overall": 7.0,
+        "feedback": "'ställa fram' for 'to front' is awkward (-0.5 flu); 'suga ut hela livets benmärg' is a good rendering of 'suck out the marrow'; 'kärt' for 'dear' works."
+      }
+    },
+    {
+      "text_id": "aurelius_meditations",
+      "source_lang": "en",
+      "target_lang": "da",
+      "output": "Gør, sjæl, gør; misbrug og forakt dig selv; men snart vil tiden komme, hvor du kan respektere dig selv. Enhver mands lykke afhænger af ham selv, men se, dit liv er næsten forbi, mens du ikke giver dig selv respekt, gør du din lykke af at fokusere på andres sjæle og bedømmelser. Hvorfor skal nogen af disse ting, der sker ydre, så distrahere dig? Giv dig selv fritid til at lære noget godt, og stop med at vandre frem og tilbage.",
+      "output_hash": "sha256:6dabdac72f82921f99566aa6f7071f4f3b4872d289aecaea232da2aafb9014d3",
+      "translation_latency_ms": 960,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.0,
+        "overall": 7.3,
+        "feedback": "Readable Danish; 'fokusere på andres sjæle og bedømmelser' slightly drifts the Stoic anti-vanity sense (-0.5 acc); imperative register preserved."
+      }
+    },
+    {
+      "text_id": "dorian_gray",
+      "source_lang": "en",
+      "target_lang": "da",
+      "output": "Studiet var fyldt med den rige duft af roser, og da den lette sommervind blev til at bevæge sig imellem haveens træer, kom der gennem den åbne dør den tunge duft af lilje, eller den mere delikate parfume af den lyserøde torneblomst. Fra hjørnet af divanen med persiske sadelposer, hvor han lå, rygede, som det var hans skik, utallige cigaretter, kunne Lord Henry Wotton lige fange glimtet af laburnummens honningagtige og honningfarvede blomster.",
+      "output_hash": "sha256:d51c27c4a13dfe05a1e358790c24c2c7233ab90314a998b6fbd2f5e9e486f2d8",
+      "translation_latency_ms": 979,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 6.5,
+        "style": 6.5,
+        "overall": 6.3,
+        "feedback": "'lilje' is 'lily' not 'lilac/syren' (-1.0 acc); 'lyserøde torneblomst' invents a compound losing 'thorn' (-0.5 acc); 'laburnum' untranslated (Danish: 'guldregn') (-0.5 acc)."
+      }
+    },
+    {
+      "text_id": "einstein_relativity",
+      "source_lang": "en",
+      "target_lang": "da",
+      "output": "Før fremkomsten af relativitetsteorien var det altid tavst antaget i fysikken, at udsagnet om tiden havde en absolut betydning, dvs. at det er uafhængigt af et referencelegemes bevægelsesstilstand. Men vi har lige set, at denne antagelse er uforenelig med den mest naturlige definition af samtidighed; hvis vi forkaster denne antagelse, forsvinder konflikten mellem lysets udbredning i vakuum og relativitetsprincippet (udviklet i Sektion VII).",
+      "output_hash": "sha256:8898b929b30ac7d1cd08cad9d896867d17a05335e521f84cdf0abfc210059c6c",
+      "translation_latency_ms": 875,
+      "scores": {
+        "accuracy": 8.5,
+        "fluency": 8.0,
+        "style": 8.0,
+        "overall": 7.9,
+        "feedback": "Clean scientific Danish; 'tavst antaget' for 'tacitly assumed' is good; the conditional structure is preserved."
+      }
+    },
+    {
+      "text_id": "emerson_self_reliance",
+      "source_lang": "en",
+      "target_lang": "da",
+      "output": "Stol på dig selv: hvert hjerte vibrerer mod den jernsnarve. Accepter pladsen, den guddommelige forsyn har fundet for dig, samfundet af dine samtidige, begivenhedernes forbindelse. Store mænd har altid gjort det, og har stillet sig childlike til åndeligheden i deres tidsalder, og afsløret deres opfattelse om, at det absolut troværdige sad i deres hjerte, arbejdede gennem deres hænder, og dominerede i al deres væren.",
+      "output_hash": "sha256:0fb26fbb8cc73dac916608bf922a249736f69774010edb71a9c0d2628e32dd59",
+      "translation_latency_ms": 898,
+      "scores": {
+        "accuracy": 5.5,
+        "fluency": 5.0,
+        "style": 5.5,
+        "overall": 5.3,
+        "feedback": "'jernsnarve' is non-Danish (should be 'jernstreng') (-1.0 flu); 'childlike' English untranslated mid-sentence (-1.0 flu mixed scripts); 'åndeligheden' wrong for 'genius' (-0.5 acc); 'afsløret' contresens for 'betraying' (-1.0 acc)."
+      }
+    },
+    {
+      "text_id": "moby_dick",
+      "source_lang": "en",
+      "target_lang": "da",
+      "output": "Kalder mig Ishmael. For nogle år siden – uden at bekymre mig om præcis hvor længe – med lidt eller ingen penge i lommen og intet særligt, der interesserede mig på land, tænkte jeg, at jeg skulle sejle lidt og se verdens vanddel. Det er en måde, jeg har på at drive spleen væk og regulere blodcirkulationen. Hver gang jeg finder mig selv i at blive grimm om munden; hver gang det er en fugtig, regnfuld november i min sjæl, regner jeg med, at det er tid til at komme til søen så snart jeg kan.",
+      "output_hash": "sha256:f6f05ee5650cfa00ad9567b249087861a13bda627a3e2a13dfd89bca1f47b58f",
+      "translation_latency_ms": 1079,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 6.5,
+        "style": 6.5,
+        "overall": 6.3,
+        "feedback": "'Kalder mig' is wrong tense ('I am calling myself' instead of imperative 'Kald mig') (-0.5 flu); 'spleen' left untranslated (-1.0 acc); 'grimm om munden' anglicism for the idiom (-0.5 sty)."
+      }
+    },
+    {
+      "text_id": "origin_species",
+      "source_lang": "en",
+      "target_lang": "da",
+      "output": "Dette resumé, som jeg nu offentliggør, må nødvendigvis være ufuldstændigt. Jeg kan ikke her give henvisninger og autoriteter til mine flere udsagn; og jeg må stole på læseren for at hvile en vis tillid til min nøjagtighed. Intet tvivl, fejl vil være snigende ind, selvom jeg håber, jeg altid har været forsigtig med kun at stole på gode autoriteter. Jeg kan kun her give de generelle konklusioner, jeg er nået frem til, med et par fakta til illustration, men som jeg håber, i de fleste tilfælde vil være tilstrækkelige.",
+      "output_hash": "sha256:07f0b438a4f76df4009f3583d5f1c084b1439121128253299c51a554f821f60e",
+      "translation_latency_ms": 1088,
+      "scores": {
+        "accuracy": 7.0,
+        "fluency": 6.5,
+        "style": 7.0,
+        "overall": 6.8,
+        "feedback": "'Intet tvivl' should be 'Uden tvivl' (-0.5 flu); 'snigende ind' for 'crept in' is workable but awkward (-0.3 flu); 'stole på læseren for at hvile' contorted construction (-0.5 flu)."
+      }
+    },
+    {
+      "text_id": "pride_prejudice",
+      "source_lang": "en",
+      "target_lang": "da",
+      "output": "Det er en universelt anerkendt sandhed, at en enkelt mand i besiddelse af en god formue, må have brug for en kone. Hvor lidt man kender om sådan en mands følelser eller meninger ved hans første indtræden i et nabolag, denne sandhed er så fast forankret i tankerne hos de omkringliggende familier, at han betragtes som den retmæssige ejendom for en eller anden af deres døtre.",
+      "output_hash": "sha256:667fda5dc60a383b633666947bb8a53d626b2ec826e795cec0009205c08e82fa",
+      "translation_latency_ms": 729,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 7.0,
+        "feedback": "Captures Austen's logical flow; 'fast forankret' for 'well fixed' works; 'retmæssige ejendom' renders 'rightful property' but irony slightly muted (-0.3 sty)."
+      }
+    },
+    {
+      "text_id": "study_scarlet",
+      "source_lang": "en",
+      "target_lang": "da",
+      "output": "Du har været i Afghanistan, forstår jeg. \"Hvordan i alverden vidste du det?\" spurgte jeg i forundring. \"Lad det være,\" sagde han og fnisede til sig selv. \"Spørgsmålet er nu om hemoglobin. Du ser ikke sikkert betydningen af min opdagelse?\" \"Det er interessant, kemisk, uden tvivl,\" svarede jeg, \"men praktisk set—\" \"Hvorfor, mand, det er den mest praktiske medicinsk-juridiske opdagelse i årevis. Ser du ikke, at det giver os en fejlfri test for blodpletter?\"",
+      "output_hash": "sha256:2fdfa547ab3a8e3fce778abb6569a233e0d18e44cbda6745751ae5d5f08f8d17",
+      "translation_latency_ms": 963,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 6.5,
+        "style": 6.5,
+        "overall": 6.3,
+        "feedback": "'Lad det være' for 'Never mind' is a bit literal (-0.3 flu); 'Du ser ikke sikkert betydningen' inverts polarity (-1.0 acc); 'fejlfri test' is fine for 'infallible test'."
+      }
+    },
+    {
+      "text_id": "twain_innocents",
+      "source_lang": "en",
+      "target_lang": "da",
+      "output": "Det synes for mig, at hver gang jeg glæder mig over at have opdaget et ældgammelt maleri, der er smukt og fortjener al ros, er fornøjelsen, det giver mig, et ufejlbarligt bevis på, at det ikke er et smukt billede og intet mindre fortjener ros. Dette er sket flere gange, som jeg ikke kan nævne, i Venedig. I hver eneste tilfælde har guiden knust min svulmende entusiasme med bemærkningen: ”Det er intet – det er fra renæssancen.”",
+      "output_hash": "sha256:b64f4e35707e0810aebb7bd4fe8c0fdebed272c6604498f83b7140c31120d98a",
+      "translation_latency_ms": 908,
+      "scores": {
+        "accuracy": 6.0,
+        "fluency": 7.0,
+        "style": 6.5,
+        "overall": 6.3,
+        "feedback": "'intet mindre fortjener ros' is a contresens — source says 'not in any wise worthy of commendation' (no, not at all worthy), translation says 'no less worthy' which inverts the meaning (-1.5 acc); 'Det synes for mig' awkward; 'knust' for 'crushed out' is good."
+      }
+    },
+    {
+      "text_id": "walden",
+      "source_lang": "en",
+      "target_lang": "da",
+      "output": "Jeg gik i skoven, fordi jeg ønskede at leve bevidst, kun præsentere livets essentielle fakta, og se, om jeg ikke kunne lære, hvad det havde at lære, og ikke, når jeg kom til at dø, opdage, at jeg ikke havde levet. Jeg ønskede ikke at leve det, der ikke var liv; livet er så værd; og jeg ønskede heller ikke at praktisere resignation, medmindre det var helt nødvendigt. Jeg ville leve dybt og suge al livets knoglemarv ud af det.",
+      "output_hash": "sha256:8d0b0eec8f0edd023d3325563ffd0b93d60bb722439338b11da89856e6ab9731",
+      "translation_latency_ms": 863,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 6.5,
+        "style": 7.0,
+        "overall": 6.8,
+        "feedback": "'kun præsentere' for 'to front' loses the confrontational sense (-0.3 acc); 'suge al livets knoglemarv ud af det' is awkward Danish word order (-0.5 flu); resignation rendered as 'resignation' (English) instead of 'opgivelse' (-0.3 acc)."
+      }
+    },
+    {
+      "text_id": "aurelius_meditations",
+      "source_lang": "en",
+      "target_lang": "el",
+      "output": "Κάνε, ψυχή, κάνε· βασάλεψέ σε και κατέξεφτε σε· αλλά μια στιγμή και η ώρα που θα σε τιμήσουν, θα τελειώσει. Η ευτυχία κάθε ανθρώπου εξαρτάται από τον εαυτό του, αλλά κοίτα, η ζωή σου είναι σχεδόν στο τέλος, ενώ δεν σε τιμάς, κάνεις την ευτυχία σου να αποτελείται από τις ψυχές και τις επιθυμίες των άλλων. Γιατί πρέπει να σε αποσπείει οτιδήποτε εξωτερικό συμβαίνει, τόσο πολύ; Δώσε στον εαυτό σου χρόνο να μάθει κάτι καλό, και σταμάτα το περιπλανώμενο και το παίρνοντας.",
+      "output_hash": "sha256:8a1fd467a190a7f4c0e272efc84d38153aed4e50c17013eb9d8c3e525d819cd6",
+      "translation_latency_ms": 1126,
+      "scores": {
+        "accuracy": 5.5,
+        "fluency": 5.0,
+        "style": 5.5,
+        "overall": 5.0,
+        "feedback": "'βασάλεψέ σε' is a non-word (-1.0 flu); 'κατέξεφτε' is invented (-1.0 flu); ending 'σταμάτα το περιπλανώμενο και το παίρνοντας' is grammatically broken (-1.0 flu); imperative register preserved but vocabulary fails."
+      }
+    },
+    {
+      "text_id": "dorian_gray",
+      "source_lang": "en",
+      "target_lang": "el",
+      "output": "Τοสตูดіо ήταν γεμάτο με την πλούσια μυρωδιά των λουλουδιών, και όταν ο ζεστός άνεμος του καλοκαιριού αναδύθηκε ανάμεσα στους δέντρους του κήπου, από την ανοιχτή πόρτα έφτασε η βαριά μυρωδιά του λiléκου, ή το πιο απαλό άρωμα του κόκκινου荆δρού. Από την γωνία του καναπέ των περσικών τσάντσαων πάνω στα οποία στέρεফে, καπνίζοντας, όπως ήταν η συνήθειά του, άπειρες σιγάροδες, ο ลόρδος Henry Wotton μπορούσε απλώς να συλλάβει το λάμψη των μελιτοωρών και μελιτοχρωμίων λουλουδιών του laburnum.",
+      "output_hash": "sha256:e4ba8135d64d77e9df8bc9a296a4e36688aacf184ab9831f5bf3aab32b0a6138",
+      "translation_latency_ms": 1253,
+      "scores": {
+        "accuracy": 4.5,
+        "fluency": 3.0,
+        "style": 4.0,
+        "overall": 4.0,
+        "feedback": "Heavy script mixing: 'Τοสตูดіо' (Thai+Cyrillic+Greek), 'lilа́κου' (Latin), '荆δρού' (Hanzi+Greek), 'ลόρδος' (Thai+Greek), 'σιγάροδες' (non-word) (-3.0+ flu mixed scripts); the description is unreadable as Greek."
+      }
+    },
+    {
+      "text_id": "einstein_relativity",
+      "source_lang": "en",
+      "target_lang": "el",
+      "output": "Πριν την άποψη της θεωρίας της σχετικότητας, στην φυσική υπονοούνταν πάντα ότι η δήλωση του χρόνου είχε απόλυτη σημασία, δηλαδή ότι είναι ανεξάρτητη από την κίνηση του σώματος αναφοράς. Αλλά μόλις είδαμε ότι αυτή η υπόθεση είναι ασυμβατή με την πιο φυσική ορισμό της ταυτόχρονης, εάν αγνοήσουμε αυτή την υπόθεση, τότε ο συγκρουόμενος μεταξύ του νόμου της διάδοσης του φωτός στο κενό και του αρχείου της σχετικότητας (αναπτυχισμένο στο Τμήμα VII) εξαφανίζεται.",
+      "output_hash": "sha256:7663d35c4bdd62015178eaa1ffc682d39b00f3019049b5d2490cacdf18a80150",
+      "translation_latency_ms": 956,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 7.0,
+        "feedback": "Mostly clean Greek for the physics passage; 'αναπτυχισμένο' is non-standard (should be 'που αναπτύχθηκε') (-0.5 flu); 'φυσική ορισμό' should be in the genitive 'φυσικό ορισμό της ταυτόχρονης' (-0.5 flu)."
+      }
+    },
+    {
+      "text_id": "emerson_self_reliance",
+      "source_lang": "en",
+      "target_lang": "el",
+      "output": "Πίστησε στον εαυτό σου: κάθε καρδιά τρέμει σε αυτή τηเหล็กιτή. Αποδέξου τη θέση που η θεϊκή πρόνοια σου βρήκε, την κοινωνία των σύ contemporáneoων σου, τη σύνδεση των γεγονότων. Οι велиροί πάντα έτσι, και παραδίδονταν παιδικά στον GÉNIO της εποχής τους, παραμερίζοντας την αντίληψή τους ότι το απόλυτα αξιόπιστο ήταν καθισμένο στο κέντρο τους, δουλεύοντας με τα χέρια τους, κυριαρχώντας σε όλο το ύψος τους.",
+      "output_hash": "sha256:3ba7e4d1cf9ddf3a8564b42d83e1d1bc81870a0e79e205e32457ded5e22b0021",
+      "translation_latency_ms": 975,
+      "scores": {
+        "accuracy": 4.0,
+        "fluency": 3.5,
+        "style": 4.0,
+        "overall": 4.0,
+        "feedback": "Multi-script artefacts: 'τηเหล็กιτή' (Thai+Greek), 'GÉNIO' (Latin), 'велиροί' (Cyrillic+Greek), 'σύ contemporáneoων' (Spanish+Greek) (-3.0+ flu); meaning is mostly inferable but Greek-as-language fails."
+      }
+    },
+    {
+      "text_id": "moby_dick",
+      "source_lang": "en",
+      "target_lang": "el",
+      "output": "Μελετε με. Πριν από μερικά χρόνια—δεν με νοιάζει πόσο ακριβώς—όταν είχα λίγα ή καθόλου χρήματα στην τσέπη μου, και τίποτα ιδιαίτερο που με ενδιαίρεε στην ακτή, σκέψα ότι θα έκανα μια μικρή πλοήγηση και θα δω την υδάτινη μέρη του κόσμου. Είναι ένας τρόπος να απομακρύνω την σπλεονόπατη και να ρυθμίζω την κυκুলেশন. Όποτε βρισκόμαι με αγανακτιστό για το στόμα μου· όταν η ψυχή μου είναι ένας υγρός, βροχερός Νοέμβριος, θεωρώ ότι είναι ώρα να πάω στη θάλασσα όσο το δυνατόν νωρίτερα.",
+      "output_hash": "sha256:cf1ee0cce2254143dcde04120c065b6bb8f462927ce37da78a3ffb5c7f219461",
+      "translation_latency_ms": 1204,
+      "scores": {
+        "accuracy": 5.0,
+        "fluency": 4.5,
+        "style": 5.0,
+        "overall": 4.5,
+        "feedback": "'Μελετε με' wrong (means 'study me', not 'call me') (-1.5 acc); 'σπλεονόπατη' is a non-word (-1.0 flu); 'κυκುলেশন' Bengali characters mid-Greek (-1.0 flu); meaning partially recoverable."
+      }
+    },
+    {
+      "text_id": "origin_species",
+      "source_lang": "en",
+      "target_lang": "el",
+      "output": "Αυτή η περίληψη, που δημοσιεύω τώρα, πρέπει αναγκαστικά να είναι ατελής. Δεν μπορώ να δώσω εδώ αναφορές και αξιώματα για τις αρκετές μου δηλώσεις· και πρέπει να εμπιστευτώ τον αναγνώστη να έχει κάποια εμπιστοσύνη στην ακρίβειά μου. Φυσικά, θα έχουν εισχωρήσει σφάλματα, αν και ελπίζω να είχα πάντα προσεκτικό στην εμπιστοσύνη μόνο στις καλές πηγές. Μπορώ να δώσω μόνο τις γενικές συμπεράσματα στα οποία ήμουν φτάσει, με μερικά στοιχεία για τον εξήγηση, αλλά που, ελπίζω, σε περισσότερες περιπτώσεις θα αρκήσουν.",
+      "output_hash": "sha256:6b85dd855da7a71c15c0939a47c17b5b928901e352fd1c87ad30bd4cfd5e3985",
+      "translation_latency_ms": 1245,
+      "scores": {
+        "accuracy": 7.0,
+        "fluency": 6.5,
+        "style": 7.0,
+        "overall": 6.8,
+        "feedback": "'εμπιστευτώ τον αναγνώστη να έχει' awkward construction (-0.5 flu); 'γενικές συμπεράσματα' should be neuter agreement 'γενικά συμπεράσματα' (-0.5 flu); scholarly tone holds."
+      }
+    },
+    {
+      "text_id": "pride_prejudice",
+      "source_lang": "en",
+      "target_lang": "el",
+      "output": "Είναι μια αδιαμφισβήτητη αλήθεια ότι ένας άντρας που κατέχει μια καλή περιουσία, πρέπει να είναι στερούμενος μιας γυναίκας. όσο λίγα κι αν είναι γνωστά τα συναισθήματα ή οι απόψεις ενός τέτοιου άνδρα όταν εισέρχεται σε ένα νέο περιβάλλον, αυτή η αλήθεια είναι τόσο καλά διατυπωμένη στις σκέψεις των γύρω οικογενειών, ώστε να θεωρείται ως η δικαιούχος περιουσία κάποιου ή άλλης κόρης τους.",
+      "output_hash": "sha256:698bef185e6832bbb552147768812972e3170ee5dcbb1d04255799d3c42a0916",
+      "translation_latency_ms": 935,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 7.0,
+        "feedback": "'στερούμενος μιας γυναίκας' captures 'in want of' adequately; 'δικαιούχος περιουσία' for 'rightful property' is decent; loses some of the irony (-0.3 sty)."
+      }
+    },
+    {
+      "text_id": "study_scarlet",
+      "source_lang": "en",
+      "target_lang": "el",
+      "output": "Βρισκόνταν στην Αφγανιστάν, πιστεύω. «Πώς θα ήσουν σίγουρος για αυτό;» ρώτησα με έκπληξη. «Αδιάφορο,» είπε, γελάγοντας στον εαυτό του. «Η ερώτηση είναι τώρα για το αιμοグλόбин. Δεν υπάρχει αμφιβολία ότι βλέπεις τη σημασία αυτής της ανακάλυψης μου;» «Είναι ενδιαφέρον, χημικά, αμφιβάνιστο,» απάντησα, «αλλά πρακτικά—» «Γιατί, φίλε, είναι η πιο πρακτική μεđικονομική ανακάλυψη για χρόνια. Δεν βλέπεις ότι μας δίνει έναν αμετάκλητο ελέγχος για τις τρεις αίματιες απορρίμματα;»",
+      "output_hash": "sha256:760dbb2f84cbd0a2e780e795aa9c16ff5f42b6fe4f70362044be7686533565a9",
+      "translation_latency_ms": 1212,
+      "scores": {
+        "accuracy": 4.5,
+        "fluency": 4.5,
+        "style": 5.0,
+        "overall": 4.5,
+        "feedback": "'αιμοグλόбин' mixes Latin+Katakana+Cyrillic in one word (-2.0 flu); 'τρεις αίματιες απορρίμματα' is nonsense (literally 'three bloodish refuse') (-1.5 acc); 'μεđικονομική' contains Vietnamese-style đ (-0.5 flu)."
+      }
+    },
+    {
+      "text_id": "twain_innocents",
+      "source_lang": "en",
+      "target_lang": "el",
+      "output": "Με την άποψη μου, κάθε φορά που τιμώ το να έχω ανακαλύψει μια αρχαία πανοрама που είναι όμορφη και αξίζει όλες τις λαμπάδες, η ευχαρίστηση που μου δίνει είναι μια αμετάκλητη απόδειξη ότι δεν είναι ένα όμορφο έργο και ούτε καμία φορά αξίζει επαιδωγη. Αυτό έχει συμβεί περισσότερες φορές από όσες μπορώ να πω, στη Βενέτια. Σε κάθε περίπτωση, ο οδηγός σβήνει την εκρηκτική μου ενθουσιασμό με τη φράση: «Είναι τίποτα – είναι της Αναγέννησης.»",
+      "output_hash": "sha256:06036efd45f5f6d5b9bbf14eb4b9a82ad8445067dd26dd6adabf8943e4a25818",
+      "translation_latency_ms": 1041,
+      "scores": {
+        "accuracy": 6.0,
+        "fluency": 5.5,
+        "style": 6.0,
+        "overall": 5.8,
+        "feedback": "'πανοрама' (Cyrillic mixed) (-0.5 flu); 'ευχαρίστηση' awkward for 'pleasure' here (-0.3 sty); 'σβήνει' present where past needed (-0.5 flu); irony partially carries."
+      }
+    },
+    {
+      "text_id": "walden",
+      "source_lang": "en",
+      "target_lang": "el",
+      "output": "Πήгам στα δάση επειδή ήθελα να ζήσω με συνείδηση, να παρουσιάσω μόνο τα ουσιαστικά γεγονότα της ζωής, και να δω αν μπορούσα να μάθω όσα έπρεπε να μου διδάξει, και όχι, όταν έρθει η ώρα να πεθάνω, να ανακαλύψω ότι δεν είχα ζήσει. Δεν ήθελα να ζήσω αυτό που δεν ήταν ζωή, η ζωή είναι τόσο αγαρή· ούτε ήθελα να εξασκήσω την απο chấp aceptación, εκτός αν ήταν απολύτως απαραίτητο. Ήθελα να ζήσω βαθιά και να σωρώσω όλο το σάρκα της ζωής.",
+      "output_hash": "sha256:6b71f755ce34a6052b2194ee0ecfb76220e484e0a93995757fde3bb21e184aca",
+      "translation_latency_ms": 1067,
+      "scores": {
+        "accuracy": 5.0,
+        "fluency": 4.5,
+        "style": 5.0,
+        "overall": 4.8,
+        "feedback": "'Πήгам' Cyrillic γ inside Greek (-0.5 flu); 'απο chấp aceptación' Vietnamese+Spanish chars in Greek (-1.5 flu); 'σάρκα' wrong (flesh, not 'μυελό' marrow) (-1.0 acc); 'αγαρή' non-word (-0.5 flu)."
+      }
+    },
+    {
+      "text_id": "aurelius_meditations",
+      "source_lang": "en",
+      "target_lang": "th",
+      "output": "จงทำเถิดวิญญาณ จงทำเถิด จงทอดทิ้งและดูหมิ่นตนเอง แต่ไม่นานนัก เวลาที่เจ้าจะได้ให้ความเคารพแก่ตนเองก็จะมาถึง ทุกความสุขของคนขึ้นอยู่กับตนเอง แต่จงดูสิ ชีวิตของเจ้านั้นใกล้จะสิ้นสุดแล้ว ในขณะที่เจ้าไม่ให้ความเคารพแก่ตนเอง เจ้าทำให้ความสุขของเจ้าประกอบขึ้นจากจิตวิญญาณและความปรารถนาของผู้อื่น เหตุใดสิ่งต่างๆ ที่เกิดขึ้นภายนอกเหล่านี้จึงมาทำให้เจ้าไขว้เขว? จงให้เวลาแก่ตนเองเพื่อเรียนรู้สิ่งที่ดี และหยุดท่องไปมาไปมา",
+      "output_hash": "sha256:0ca7543fcc52973602d5140da03575a7fd8a1cbcdab3fb42099e15e792f8f9e7",
+      "translation_latency_ms": 962,
+      "scores": {
+        "accuracy": 8.0,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.5,
+        "feedback": "Clean Thai with appropriate gnomic register; 'จงทำเถิดวิญญาณ' captures the imperative-to-soul nicely; 'ทอดทิ้งและดูหมิ่นตนเอง' renders 'abuse and contemn' adequately."
+      }
+    },
+    {
+      "text_id": "dorian_gray",
+      "source_lang": "en",
+      "target_lang": "th",
+      "output": "สตูดิโอเต็มไปด้วยกลิ่นหอมหวานของกุหลาบ และเมื่อสายลมฤดูร้อนพัดผ่านท่ามกลางต้นไม้ในสวน กลิ่นหอมของดอกไลแลค หรือกลิ่นหอมอ่อนโยนของหนามสีชมพูก็ลอยผ่านประตูเปิดเข้ามา จากมุมของโซฟาที่วางกระเป๋าสามัคกะเปอร์เซียซึ่งเขานอนพิงอยู่ กำลังสูบบุหรี่ตามนิสัยของเขา บุรุษแห่งลอร์ดเฮนรี่ วอตตันก็สามารถจับแสงระยิบระยับของดอกลาเบอร์นัมที่หอมหวานและมีสีน้ำผึ้งได้",
+      "output_hash": "sha256:a4f32dafa439bf5652dc440c4a9d2bc3cefe7d8c06456ce86db91e855d408072",
+      "translation_latency_ms": 974,
+      "scores": {
+        "accuracy": 7.0,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 6.7,
+        "feedback": "'หนามสีชมพู' loses 'pink-flowering thorn' specificity (hawthorn) (-0.3 acc); 'บุรุษแห่งลอร์ดเฮนรี่' adds redundant 'man-of-Lord' (-0.5 flu); 'สามัคกะเปอร์เซีย' typo for 'Persian saddle-bags' (-0.3 acc)."
+      }
+    },
+    {
+      "text_id": "einstein_relativity",
+      "source_lang": "en",
+      "target_lang": "th",
+      "output": "ก่อนการเกิดขึ้นของทฤษฎีสัมพัทธภาพนั้น ในวิชาฟิสิกส์ได้มีการสันนิษฐานโดยปริยายเสมอว่า ข้อความเกี่ยวกับเวลามีความสำคัญสัมบูรณ์ กล่าวคือ เวลาเป็นอิสระจากสถานะการเคลื่อนที่ของวัตถุอ้างอิง แต่เราเพิ่งจะเห็นว่าข้อสมมติฐานนี้ไม่เข้ากันได้กับคำจำกัดความของความเป็นพร้อมกัน (simultaneity) ที่เป็นธรรมชาติที่สุด หากเราละทิ้งข้อสมมติฐานนี้ ความขัดแย้งระหว่างกฎการแพร่กระจายของแสงในสุญญากาศกับหลักสัมพัทธภาพ (ที่พัฒนาในส่วนที่ VII) ก็จะหายไป",
+      "output_hash": "sha256:095d7ddbfb37a200243f62813229ec3faf0fe7253c0454686f57574de8a249b8",
+      "translation_latency_ms": 997,
+      "scores": {
+        "accuracy": 8.5,
+        "fluency": 8.0,
+        "style": 8.0,
+        "overall": 7.8,
+        "feedback": "Faithful scientific Thai with Romanized 'simultaneity' kept as gloss; 'โดยปริยาย' for 'tacitly' is the standard rendering; logical flow preserved."
+      }
+    },
+    {
+      "text_id": "emerson_self_reliance",
+      "source_lang": "en",
+      "target_lang": "th",
+      "output": "จงเชื่อมั่นในตัวเอง: ทุกหัวใจสั่นสะเทือนไปตามสายเหล็กนั้น ยอมรับที่ที่พระประสงค์ของสวรรค์ได้กำหนดไว้สำหรับคุณ สังคมของคนร่วมสมัย การเชื่อมโยงของเหตุการณ์ ผู้ยิ่งใหญ่ในอดีตได้ทำเช่นนี้เสมอ และมอบความไว้วางใจตนเองให้กับอัจฉริยภาพของยุคสมัย โดยทรยศต่อการรับรู้ของพวกเขาที่ว่าสิ่งที่น่าเชื่อถืออย่างที่สุดนั้นนั่งอยู่ในหัวใจของพวกเขา ทำงานผ่านมือของพวกเขา และครอบงำทุกสิ่งในตัวพวกเขา",
+      "output_hash": "sha256:2a53e3a80bf2c3cdcab87c9738047ec2ef9a1aca84db4f9e4405c98ea5054522",
+      "translation_latency_ms": 889,
+      "scores": {
+        "accuracy": 8.0,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.5,
+        "feedback": "'อัจฉริยภาพ' for 'genius' captures the Romantic register; 'ทรยศ' for 'betraying' is contresens — Emerson means 'revealing' (-1.0 acc); otherwise rhetorical sweep preserved."
+      }
+    },
+    {
+      "text_id": "moby_dick",
+      "source_lang": "en",
+      "target_lang": "th",
+      "output": "เรียกฉันว่าอิชมาเอล เมื่อหลายปีก่อน—ไม่ว่านานเท่าไหร่กันแน่—เมื่อฉันมีเงินในกระเป๋าเล็กน้อยหรือไม่มีเลย และไม่มีอะไรเป็นพิเศษที่ทำให้ฉันสนใจอยู่บนบก ฉันคิดว่าจะล่องเรือไปสักหน่อยเพื่อดูส่วนที่เป็นน้ำของโลก มันเป็นวิธีที่ฉันใช้ระบายความคับข้องใจและควบคุมการไหลเวียนของเลือด เมื่อใดก็ตามที่ฉันรู้สึกหงุดหงิดกับปากของฉัน เมื่อจิตวิญญาณของฉันเป็นเดือนพฤศจิกายนที่ชื้นและมีฝนตก ฉันก็คิดว่าถึงเวลาแล้วที่จะต้องออกสู่ทะเลให้เร็วที่สุดเท่าที่จะทำได้",
+      "output_hash": "sha256:96d9147ac42e71eb0130cc8ada23c75e1f1a5556d0002897e045dc2b5dc0469a",
+      "translation_latency_ms": 958,
+      "scores": {
+        "accuracy": 8.0,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.5,
+        "feedback": "Solid Thai narrative voice; 'ระบายความคับข้องใจ' renders 'driving off the spleen' idiomatically; 'หงุดหงิดกับปาก' partially captures 'grim about the mouth'."
+      }
+    },
+    {
+      "text_id": "origin_species",
+      "source_lang": "en",
+      "target_lang": "th",
+      "output": "บทคัดย่อนี้ที่ผมกำลังจะตีพิมพ์นั้น ย่อมไม่สมบูรณ์อย่างแน่นอน ผมไม่สามารถให้การอ้างอิงและแหล่งที่มาสำหรับข้อความหลายประโยคของผมได้ และผมต้องไว้วางใจให้ผู้อ่านมีความเชื่อมั่นในความถูกต้องของผม ไม่ต้องสงสัยเลยว่าข้อผิดพลาดจะต้องเข้ามาปะปน แม้ว่าผมจะหวังว่าผมจะระมัดระวังในการเชื่อถือเพียงแหล่งข้อมูลที่ดีเท่านั้น ผมสามารถให้ได้เพียงข้อสรุปโดยทั่วไปที่ผมได้มา พร้อมด้วยข้อเท็จจริงบางส่วนเพื่อเป็นตัวอย่าง แต่ผมหวังว่าในกรณีส่วนใหญ่สิ่งเหล่านี้จะเพียงพอ",
+      "output_hash": "sha256:f6743c51aaf621e5807d0f0297ccfe1e0559010842772f0aad6b74a2eea58611",
+      "translation_latency_ms": 963,
+      "scores": {
+        "accuracy": 8.0,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.5,
+        "feedback": "Clean scholarly Thai; 'บทคัดย่อ' is the right register for 'Abstract'; hedging language preserved; 'ผม' as first person works for the Victorian register."
+      }
+    },
+    {
+      "text_id": "pride_prejudice",
+      "source_lang": "en",
+      "target_lang": "th",
+      "output": "เป็นความจริงที่ทุกคนยอมรับกันโดยทั่วไปว่า ผู้ชายคนหนึ่งที่มีโชคลาภดีจะต้องโหยหาภรรยา อย่างไรก็ตาม ไม่ว่าความรู้สึกหรือความคิดของผู้ชายเช่นนั้นจะถูกรับรู้มากน้อยเพียงใดเมื่อเขาเข้าไปในละแวกบ้านนั้น ความจริงนี้ถูกฝังแน่นอยู่ในความคิดของครอบครัวโดยรอบมากเสียจนเขาถูกมองว่าเป็นทรัพย์สินที่ถูกต้องของลูกสาวของใครบางคนหรือบางคน",
+      "output_hash": "sha256:0d14dea3e1d2a41ca3a900a6e4352bb236f3adb00827e71a8e13e80724a33a6f",
+      "translation_latency_ms": 765,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.3,
+        "feedback": "Captures Austen's syllogism in Thai; 'โหยหาภรรยา' for 'in want of a wife' is slightly stronger ('craving') than the original irony (-0.3 acc); 'ทรัพย์สินที่ถูกต้อง' for 'rightful property' OK."
+      }
+    },
+    {
+      "text_id": "study_scarlet",
+      "source_lang": "en",
+      "target_lang": "th",
+      "output": "คุณเคยอยู่ในอัฟกานิสถาน ผมรับรู้ได้\n\"คุณรู้เรื่องนั้นได้ยังไง?\" ผมถามด้วยความประหลาดใจ\n\"ช่างเถอะ\" เขาพูดพลางหัวเราะกับตัวเอง \"คำถามตอนนี้คือเกี่ยวกับฮีโมโกลบิน ไม่ต้องสงสัยเลยว่าคุณเห็นความสำคัญของการค้นพบของผมไหม?\"\n\"มันน่าสนใจทางเคมี ไม่ต้องสงสัยเลย\" ผมตอบ \"แต่ในทางปฏิบัติ—\"\n\"ทำไมล่ะเพื่อน มันเป็นการค้นพบทางแพทย์และกฎหมายที่เป็นประโยชน์มากที่สุดมาหลายปีแล้ว คุณไม่เห็นหรือว่ามันให้การทดสอบที่ไม่มีข้อผิดพลาดสำหรับรอยเปื้อนเลือดของเรา?\"",
+      "output_hash": "sha256:59e5fd6d062f216a9e59021970d6459ee97e2f420f35375450e0828caff3f9e2",
+      "translation_latency_ms": 1029,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.0,
+        "overall": 7.3,
+        "feedback": "Dialogue rhythm preserved with line breaks; 'ฮีโมโกลบิน' loanword for 'haemoglobin'; 'การทดสอบที่ไม่มีข้อผิดพลาด' for 'infallible test' is verbose (-0.3 sty); Holmes' clipped voice slightly diluted."
+      }
+    },
+    {
+      "text_id": "twain_innocents",
+      "source_lang": "en",
+      "target_lang": "th",
+      "output": "ดูเหมือนว่าทุกครั้งที่ฉันภูมิใจที่จะคิดว่าครั้งนี้ฉันได้ค้นพบภาพวาดโบราณที่งดงามและคู่ควรแก่การสรรเสริญ ความสุขที่ฉันได้รับนั้นเป็นข้อพิสูจน์ที่ไม่อาจโต้แย้งได้ว่ามันไม่ใช่ภาพที่สวยงามและไม่คู่ควรแก่การยกย่องเลย สิ่งนี้เกิดขึ้นมากกว่าที่ฉันจะนึกออก ในเมืองเวนิส ทุกครั้งที่เกิดเหตุการณ์ ผู้แนะนำก็ดับความตื่นเต้นของฉันด้วยคำพูดว่า “มันไม่มีอะไรหรอก—มันเป็นของยุคเรเนซองส์”",
+      "output_hash": "sha256:09c2f17e31878269666cdf6f4a7696afa147030483091091b65c4b5c6711ade5",
+      "translation_latency_ms": 877,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 7.0,
+        "feedback": "Captures Twain's mock-naïve voice adequately; 'ดับความตื่นเต้น' for 'crushed out enthusiasm' works; 'ยุคเรเนซองส์' for 'the Renaissance' standard."
+      }
+    },
+    {
+      "text_id": "walden",
+      "source_lang": "en",
+      "target_lang": "th",
+      "output": "ฉันเข้าไปในป่าเพราะฉันปรารถนาที่จะใช้ชีวิตอย่างตั้งใจ เพื่อเผชิญกับข้อเท็จจริงที่จำเป็นของชีวิต และดูว่าฉันจะเรียนรู้สิ่งที่ชีวิตต้องสอนหรือไม่ และไม่ใช่เมื่อฉันมาตายแล้วถึงค้นพบว่าฉันไม่ได้มีชีวิตอยู่\nฉันไม่ต้องการที่จะใช้ชีวิตที่ไม่ใช่ชีวิต การมีชีวิตอยู่เป็นสิ่งที่ล้ำค่ามาก และฉันก็ไม่ต้องการที่จะฝึกฝนการยอมจำนน เว้นแต่จะจำเป็นจริงๆ ฉันต้องการที่จะใช้ชีวิตให้ลึกซึ้งและดูดเอาแก่นแท้ของชีวิตออกมาให้หมด",
+      "output_hash": "sha256:c09e14e68324a0dd76ccc7046fa1e227170a1047747b526540b9b75b349fa6a1",
+      "translation_latency_ms": 884,
+      "scores": {
+        "accuracy": 8.0,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.2,
+        "feedback": "'ดูดเอาแก่นแท้ของชีวิตออกมาให้หมด' is a strong rendering of 'suck out all the marrow of life'; 'ใช้ชีวิตอย่างตั้งใจ' for 'live deliberately' captures the intentionality."
+      }
+    },
+    {
+      "text_id": "aurelius_meditations",
+      "source_lang": "en",
+      "target_lang": "id",
+      "output": "Lakukanlah, jiwa, lakukanlah; sakiti dan hina dirimu sendiri; namun sebentar lagi dan waktu bagimu untuk menghormati dirimu sendiri, akan berakhir. Kebahagiaan setiap orang bergantung pada dirinya sendiri, tetapi lihatlah hidupmu hampir berakhir, sementara kamu tidak memberikan rasa hormat pada dirimu, kamu membuat kebahagiaanmu terdiri dari jiwa dan keinginan orang lain. Mengapa hal-hal eksternal ini yang terjadi, begitu mengalihkan perhatianmu? Beri dirimu waktu luang untuk mempelajari sesuatu yang baik, dan hentikan berkelana dan mengembara ke sana kemari.",
+      "output_hash": "sha256:eb877800009b864336b88eac79e9713769602779f486b2ee9cc3e49663bf2220",
+      "translation_latency_ms": 978,
+      "scores": {
+        "accuracy": 8.0,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.5,
+        "feedback": "Clean Indonesian Stoic voice; 'sakiti dan hina' for 'abuse and contemn' is direct; 'berkelana dan mengembara' renders 'roving and wandering' redundantly but workably."
+      }
+    },
+    {
+      "text_id": "dorian_gray",
+      "source_lang": "en",
+      "target_lang": "id",
+      "output": "Studio itu dipenuhi dengan aroma mawar yang kaya, dan ketika angin musim panas yang ringan menggerakkan di antara pepohonan taman, aroma lilac yang berat, atau parfum lebih lembut dari duri berbunga merah muda, datang melalui pintu terbuka. Dari sudut divan tas punggung Persia tempat dia berbaring, merokok, seperti kebiasaannya, tak terhitung rokok, Lord Henry Wotton hanya bisa menangkap kilau bunga laburnum yang manis seperti madu dan berwarna madu.",
+      "output_hash": "sha256:167cc6cabf72aa6120b3e0da00cfdbf14c5a1e53fd72fd0115e8f96b3244b246",
+      "translation_latency_ms": 766,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 6.8,
+        "feedback": "'tas punggung Persia' is 'Persian backpacks' not 'saddle-bags' (-1.0 acc); 'duri berbunga merah muda' loses 'thorn'/hawthorn (-0.5 acc); 'laburnum' untranslated (Indonesian has 'pohon emas/laburnum') (-0.3 acc)."
+      }
+    },
+    {
+      "text_id": "einstein_relativity",
+      "source_lang": "en",
+      "target_lang": "id",
+      "output": "Sebelum munculnya teori relativitas, secara diam-diam selalu diasumsikan dalam fisika bahwa pernyataan waktu memiliki signifikansi absolut, yaitu bahwa waktu itu independen dari keadaan gerak benda acuan. Namun, kita baru saja melihat bahwa asumsi ini tidak kompatibel dengan definisi simultanitas yang paling alami; jika kita membuang asumsi ini, maka konflik antara hukum propagasi cahaya dalam ruang hampa dan prinsip relativitas (yang dikembangkan di Bagian VII) menghilang.",
+      "output_hash": "sha256:5a6a1ee7287a4bef75d3ea891bb4931376b306e14e5dec165e430cf9fc3f34fd",
+      "translation_latency_ms": 841,
+      "scores": {
+        "accuracy": 8.5,
+        "fluency": 8.0,
+        "style": 8.0,
+        "overall": 7.8,
+        "feedback": "Clean scientific Indonesian; 'secara diam-diam' for 'tacitly' is standard; 'ruang hampa' for 'in vacuo' is the established term; conditional logic preserved."
+      }
+    },
+    {
+      "text_id": "emerson_self_reliance",
+      "source_lang": "en",
+      "target_lang": "id",
+      "output": "Percayalah pada dirimu sendiri: setiap hati bergetar pada tali besi itu. Terima tempat yang telah ditemukan oleh providensi ilahi untukmu, masyarakat kontemporarmu, koneksi peristiwa. Orang-orang besar selalu melakukannya, dan mempercayakan diri mereka kepada kejeniusan zaman mereka, mengkhianati persepsi mereka bahwa yang mutlak dapat dipercaya duduk di hati mereka, bekerja melalui tangan mereka, mendominasi seluruh keberadaan mereka.",
+      "output_hash": "sha256:30a57d7150f93d7b5df08f5edca40fe36abe5c3fe52dfd41f18a22449eb2d952",
+      "translation_latency_ms": 803,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.0,
+        "overall": 7.3,
+        "feedback": "'tali besi' for 'iron string' is literal but works; 'mengkhianati persepsi mereka' contresens — Emerson means 'revealing' (-1.0 acc); 'kontemporarmu' is awkward (should be 'kontemporer/sezamanmu') (-0.3 flu)."
+      }
+    },
+    {
+      "text_id": "moby_dick",
+      "source_lang": "en",
+      "target_lang": "id",
+      "output": "Panggil aku Ishmael. Beberapa tahun yang lalu—tidak peduli berapa lama tepatnya—dengan sedikit atau tanpa uang di sakuku, dan tidak ada yang secara khusus menarik perhatianku di darat, aku berpikir aku akan berlayar sedikit dan melihat bagian dunia yang berair. Itu adalah cara bagiku untuk menyingkirkan splen dan mengatur sirkulasi. Setiap kali aku mendapati diriku menjadi muram; setiap kali itu adalah bulan November yang lembap dan gerimis dalam jiwaku, aku menganggapnya sudah waktunya untuk segera berlayar sesegera mungkin.",
+      "output_hash": "sha256:f59f6f00fab8063f3d59cda81b563cc560f87df0138f10e90398a570140d4180",
+      "translation_latency_ms": 886,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.0,
+        "overall": 7.3,
+        "feedback": "'splen' left untranslated (Indonesian has 'kemurungan/melancholia') (-1.0 acc); 'mendapati diriku menjadi muram' captures the introspective mood; 'sesegera mungkin' is fine."
+      }
+    },
+    {
+      "text_id": "origin_species",
+      "source_lang": "en",
+      "target_lang": "id",
+      "output": "Abstrak ini, yang kini saya terbitkan, pasti tidak sempurna. Saya tidak dapat memberikan rujukan dan otoritas untuk beberapa pernyataan saya di sini; dan saya harus mengandalkan pembaca untuk menaruh kepercayaan pada keakuratan saya. Tidak diragukan lagi, kesalahan pasti telah masuk, meskipun saya berharap saya selalu berhati-hati dalam hanya mempercayai otoritas yang baik. Saya hanya dapat memberikan kesimpulan umum yang telah saya capai, dengan beberapa fakta sebagai ilustrasi, tetapi yang saya harap, dalam sebagian besar kasus, akan mencukupi.",
+      "output_hash": "sha256:dee9959bc439199d1ca99cd0aafe395c2d8bacc16fdc286a9ab28ec83da7be6f",
+      "translation_latency_ms": 854,
+      "scores": {
+        "accuracy": 8.5,
+        "fluency": 8.0,
+        "style": 7.5,
+        "overall": 7.8,
+        "feedback": "Clean scholarly Indonesian; 'menaruh kepercayaan pada keakuratan' captures the trust direction; 'tidak diragukan lagi, kesalahan pasti telah masuk' is well-formed."
+      }
+    },
+    {
+      "text_id": "pride_prejudice",
+      "source_lang": "en",
+      "target_lang": "id",
+      "output": "Sudah menjadi kebenaran yang diakui secara universal, bahwa seorang pria yang memiliki kekayaan, pasti menginginkan seorang istri. Betapapun sedikitnya perasaan atau pandangan pria seperti itu saat pertama kali memasuki suatu lingkungan, kebenaran ini begitu tertanam kuat dalam benak keluarga-keluarga di sekitarnya, sehingga ia dianggap sebagai milik sah dari salah satu putrinya.",
+      "output_hash": "sha256:7023c0f24d3c7164083179cca1f5ac167dcf435ea88feefa926a5af049b4caf8",
+      "translation_latency_ms": 692,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.5,
+        "feedback": "'kebenaran yang diakui secara universal' captures Austen's mock-formal register; 'milik sah' for 'rightful property' works; loses some irony in 'kebenaran ini begitu tertanam kuat'."
+      }
+    },
+    {
+      "text_id": "study_scarlet",
+      "source_lang": "en",
+      "target_lang": "id",
+      "output": "Anda pernah berada di Afghanistan, saya perhatikan. \"Bagaimana Anda tahu itu?\" tanya saya karena tercengang. \"Lupakan saja,\" katanya sambil terkekeh pada dirinya sendiri. \"Pertanyaannya sekarang adalah tentang hemoglobin. Tidak diragukan lagi Anda melihat signifikansi penemuan saya ini?\" \"Menarik, secara kimiawi, tidak diragukan lagi,\" jawab saya, \"tetapi secara praktis—\" \"Kenapa, kawan, ini adalah penemuan kedokteran-hukum yang paling praktis selama bertahun-tahun. Tidakkah Anda lihat bahwa ini memberi kita tes yang tak salah untuk noda darah?\"",
+      "output_hash": "sha256:e1999afbbff95eb84f99ff07537838bff0ce7dc4cb657e4392d15fb819a6d7ad",
+      "translation_latency_ms": 918,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.0,
+        "overall": 7.3,
+        "feedback": "Holmes/Watson dialogue works; 'Lupakan saja' for 'Never mind' is colloquially right; 'penemuan kedokteran-hukum' rendering for 'medico-legal discovery' is workable."
+      }
+    },
+    {
+      "text_id": "twain_innocents",
+      "source_lang": "en",
+      "target_lang": "id",
+      "output": "Sepertinya bagi saya, setiap kali saya bersukacita karena sekali ini saya telah menemukan lukisan kuno yang indah dan layak dipuji, kesenangan yang saya rasakan adalah bukti yang tak terbantahkan bahwa itu bukanlah gambar yang indah dan sama sekali tidak pantas dipuji. Hal ini telah terjadi lebih dari yang bisa saya sebutkan, di Venesia. Dalam setiap kejadian, pemandu itu telah meredam antusiasme saya dengan perkataan: “Itu tidak ada apa-apanya—itu adalah karya Renaisans.”",
+      "output_hash": "sha256:dda5782baecc4a58ed6580acacd81c99954da42a216fd31a3b7714243b84644c",
+      "translation_latency_ms": 808,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.3,
+        "feedback": "Twain's irony partially preserved; 'bersukacita' adequate for 'glory'; 'meredam antusiasme' captures 'crushed out'; 'kuno' for 'ancient' is fine."
+      }
+    },
+    {
+      "text_id": "walden",
+      "source_lang": "en",
+      "target_lang": "id",
+      "output": "Saya pergi ke hutan karena saya ingin hidup secara sadar, hanya menampilkan fakta-fakta esensial kehidupan, dan melihat apakah saya tidak dapat belajar apa yang harus diajarkan, dan tidak, ketika saya mati, menemukan bahwa saya tidak pernah hidup. Saya tidak ingin hidup apa yang bukan hidup, hidup sangat berharga; dan saya juga tidak ingin mempraktikkan kepasrahan, kecuali jika itu benar-benar diperlukan. Saya ingin hidup dalam dan menyerap semua sari pati kehidupan.",
+      "output_hash": "sha256:4afb3c13b15f3727ca962fc39bcd9c040c6b5e616b02dd2b90905a245663a63e",
+      "translation_latency_ms": 737,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 7.0,
+        "feedback": "'menyerap semua sari pati kehidupan' for 'suck out all the marrow' works idiomatically; 'kepasrahan' for 'resignation' fine; the imperative register is somewhat softened (-0.3 sty)."
+      }
+    },
+    {
+      "text_id": "aurelius_meditations",
+      "source_lang": "en",
+      "target_lang": "bn",
+      "output": "কর, আত্মা, করো; নিজেকে অপব্যবহার ও অবজ্ঞা কর; তবুও এক সময় আসবে, যখন তোমার নিজেকে সম্মান করার সময় হবে। প্রত্যেক মানুষের সুখ তার নিজের উপর নির্ভর করে, কিন্তু দেখো তোমার জীবন প্রায় শেষ, অথচ নিজেকে কোনো সম্মান দিচ্ছ না, তুমি তোমার সুখকে অন্যের আত্মা এবং প্রশংসাগুলিতে নিবিষ্ট করছ। বাহ্যিক এই জিনিসগুলি কেন তোমাকে এত বিভ্রান্ত করবে? নিজেকে কিছু ভালো জিনিস শেখার অবকাশ দাও, এবং আনাগোনা ও ঘুরে বেড়ানো বন্ধ কর।",
+      "output_hash": "sha256:e9fd3f5e50ee5a5fe4c3efd5948a51bb85add40c2e85c152ade8e316352be1eb",
+      "translation_latency_ms": 793,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.3,
+        "feedback": "Clean Bengali imperative; 'অপব্যবহার ও অবজ্ঞা' for 'abuse and contemn' is direct; 'প্রশংসাগুলিতে' for 'conceits' is a slight drift (-0.3 acc)."
+      }
+    },
+    {
+      "text_id": "dorian_gray",
+      "source_lang": "en",
+      "target_lang": "bn",
+      "output": "स्टूडियोটি গোলাপের সুবাসে ভরে ছিল, আর যখন গ্রীষ্মের বাতাস বাগানের গাছের মধ্যে দোলা দিত, তখন খোলা দরজা দিয়ে লিলি বা গোলাপি রঙের কাঁটাঝোপের আরও কোমল সুগন্ধ ভেসে আসত। যেখানে সে শুয়ে, তার প্রথা অনুযায়ী ধূমপান করছিল, সেই পারসিয়ান স্যাডল-ব্যাগগুলোর সোфыের কোণে রাখা অসংখ্য সিগারেটের মধ্যে, লর্ড হেনরি વોটটন ল্যাবারনামের মধুমাখা এবং মধুর রঙের ফুলের ঝলকটি দেখতে পেত।",
+      "output_hash": "sha256:52aa6e97552f4d97fe4b8b184fc468ceb7b0a8611306ef7a70731a0e1852df67",
+      "translation_latency_ms": 838,
+      "scores": {
+        "accuracy": 5.5,
+        "fluency": 4.5,
+        "style": 5.0,
+        "overall": 4.8,
+        "feedback": "Multi-script artefacts: 'स्टूडियोটি' (Devanagari ष + Bengali টি), 'पारस्यান' (Devanagari+Bengali), 'વોટટন' (Gujarati), 'ल্যাবারনামের' (Devanagari + Bengali) (-2.0 flu); 'লিলি' is 'lily' not 'lilac' (-0.5 acc)."
+      }
+    },
+    {
+      "text_id": "einstein_relativity",
+      "source_lang": "en",
+      "target_lang": "bn",
+      "output": "আপেক্ষic তত্ত্বে আসার আগে পদার্থবিজ্ঞানে সর্বদা নিহিতভাবে ধরে নেওয়া হতো যে সময়ের বিবৃতিটির একটি পরম তাৎপর্য আছে, অর্থাৎ এটি প্রসঙ্গ বস্তুর গতির অবস্থা থেকে স্বাধীন। কিন্তু আমরা এইমাত্র দেখেছি যে এই অনুমানটি সমকালীনতার সবচেয়ে স্বাভাবিক সংজ্ঞার সাথে অসঙ্গতিপূর্ণ; যদি আমরা এই অনুমানটি বাদ দিই, তবে শূন্যস্থানে আলোর প্রসারণের নিয়ম এবং আপেক্ষিকতার নীতির মধ্যেকার দ্বন্দ্বটি (সপ্তম বিভাগে বিকশিত) অদৃশ্য হয়ে যায়।",
+      "output_hash": "sha256:256a75eaf19945358632f59436bd0b469b629be47ae3f95eb737b8ae7e570cc9",
+      "translation_latency_ms": 823,
+      "scores": {
+        "accuracy": 8.0,
+        "fluency": 7.0,
+        "style": 7.5,
+        "overall": 7.3,
+        "feedback": "'আপেক্ষic' has English 'ic' suffix mid-Bengali (-1.0 flu); otherwise faithful scientific rendering; 'নিহিতভাবে' for 'tacitly' is good; 'সমকালীনতা' is the standard term for 'simultaneity'."
+      }
+    },
+    {
+      "text_id": "emerson_self_reliance",
+      "source_lang": "en",
+      "target_lang": "bn",
+      "output": "নিজেকে বিশ্বাস করো: প্রতিটি হৃদয় সেই লোহার সুতোর প্রতি অনুরণিত হয়। ঐ ঐশ্বরিক প্রজ্ঞা তোমার জন্য যে স্থান খুঁজে পেয়েছে, তোমার সমসাময়িকদের সমাজ, ঘটনার সংযোগ—তা গ্রহণ করো। মহান ব্যক্তিরা সবসময় তা করেছে, এবং তারা তাদের যুগের প্রতিভা-প্রতিভার কাছে শৈশবের মতো নিজেকে সমর্পণ করেছে, তাদের এই উপলব্ধি প্রকাশ করেছে যে পরম বিশ্বস্ত ব্যক্তি তাদের হৃদয়ে বসে আছে, তাদের হাত দিয়ে কাজ করছে, তাদের সমগ্র সত্তায় প্রাধান্য বিস্তার করছে।",
+      "output_hash": "sha256:50b6144d8778fa65fa9bfa3b96293c1f59658305bc6e503dce21c3f8183e905a",
+      "translation_latency_ms": 766,
+      "scores": {
+        "accuracy": 8.0,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.5,
+        "feedback": "'লোহার সুতো' for 'iron string' literal but works; 'প্রতিভা-প্রতিভার' is a redundant doubling (-0.3 flu); 'ঐশ্বরিক প্রজ্ঞা' for 'divine providence' is registers well."
+      }
+    },
+    {
+      "text_id": "moby_dick",
+      "source_lang": "en",
+      "target_lang": "bn",
+      "output": "আমাকে ইসমায়েল বলে ডাকো। কিছু বছর আগে—ঠিক কতদিন—আমার পকেটে সামান্য বা কোনো টাকা ছিল না, আর তীরে আমাকে আকৃষ্ট করার মতো বিশেষ কিছু ছিল না, আমি ভাবলাম আমি একটু ভেসে বেড়াব আর পৃথিবীর জলজ অংশ দেখব। এটা আমার স্প্লিন (বিষণ্ণতা) দূর করার এবং রক্ত সঞ্চালন নিয়ন্ত্রণ করার একটি উপায়। যখনই আমি মুখে গম্ভীর হয়ে যাই; যখন আমার আত্মার মধ্যে একটি স্যাঁতস্যাঁতে, ঝিরঝির নভেম্বরের মতো অবস্থা হয়, আমি মনে করি যত তাড়াতাড়ি সম্ভব সমুদ্রে যেতেই হবে।",
+      "output_hash": "sha256:c44e66b38ca3e55d128e1481856bc9b64b910d0e8c06cd82ba3413d86679490c",
+      "translation_latency_ms": 904,
+      "scores": {
+        "accuracy": 8.0,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.5,
+        "feedback": "Solid narrative Bengali; 'স্প্লিন (বিষণ্ণতা)' is a useful loanword + gloss for 'spleen'; 'ঝিরঝির নভেম্বর' captures 'drizzly November' well."
+      }
+    },
+    {
+      "text_id": "origin_species",
+      "source_lang": "en",
+      "target_lang": "bn",
+      "output": "এই সারসংক্ষেপটি, যা আমি এখন প্রকাশ করছি, অনিবার্যভাবে ত্রুটিপূর্ণ। আমি এখানে আমার বেশ কিছু বিবৃতির জন্য কোনো তথ্যসূত্র বা কর্তৃপক্ষ দিতে পারি না; এবং আমাকে পাঠকের উপর আমার নির্ভুলতার কিছু আস্থা রাখার উপর নির্ভর করতে হবে। কোনো সন্দেহ নেই, কিছু ভুল ঢুকে পড়েছে, যদিও আমি আশা করি আমি সবসময় কেবল ভালো কর্তৃপক্ষের উপর নির্ভর করায় সতর্ক ছিলাম। আমি এখানে কেবল সেই সাধারণ উপসংহারগুলি দিতে পারি যেখানে আমি পৌঁছেছি, কিছু উদাহরণমূলক তথ্য সহ, কিন্তু যা, আমি আশা করি, বেশিরভাগ ক্ষেত্রে যথেষ্ট হবে।",
+      "output_hash": "sha256:1d975659bf33cbd1474f0a27e90c06741644570eeaf721335770204d61e6f94f",
+      "translation_latency_ms": 876,
+      "scores": {
+        "accuracy": 8.0,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.5,
+        "feedback": "Faithful scholarly Bengali; 'অনিবার্যভাবে ত্রুটিপূর্ণ' for 'must necessarily be imperfect' is right register; 'কেবল সেই সাধারণ উপসংহার' captures the modesty."
+      }
+    },
+    {
+      "text_id": "pride_prejudice",
+      "source_lang": "en",
+      "target_lang": "bn",
+      "output": "এটা একটি সর্বজনস্বীকৃত সত্য যে, যে কোনো ধনী পুরুষের একটি স্ত্রী প্রয়োজন। সেই পুরুষের অনুভূতি বা মতামত প্রথম যে কোনো পরিবেশে প্রবেশ করার সময় কতটা অজানা থাকুক না কেন, এই সত্যটি চারপাশের পরিবারগুলির মনে এত সুপ্রতিষ্ঠিত যে তাকে তাদের কোনো না কোনো কন্যার ন্যায্য সম্পত্তি হিসাবে গণ্য করা হয়।",
+      "output_hash": "sha256:8f4869a023dd8e3a0e1fc15403558316d6f2508bc6dd2499932ed81fcef43ae7",
+      "translation_latency_ms": 586,
+      "scores": {
+        "accuracy": 7.0,
+        "fluency": 7.5,
+        "style": 7.0,
+        "overall": 7.0,
+        "feedback": "'যে কোনো ধনী পুরুষের একটি স্ত্রী প্রয়োজন' over-simplifies 'a single man in possession of a good fortune' losing 'single' and 'must be in want' (-1.0 acc); irony muted (-0.3 sty)."
+      }
+    },
+    {
+      "text_id": "study_scarlet",
+      "source_lang": "en",
+      "target_lang": "bn",
+      "output": "তুমি আফগানিস্তানে ছিলে, আমি মনে করি। \"তুমি এটা কিভাবে জানলে?\" আমি বিস্ময়ে জিজ্ঞাসা করলাম। \"উ忘れও,\" সে নিজেকে হাসতে হাসতে বলল। \"প্রশ্ন এখন হিমোগ্লোবিনের। আমার এই আবিষ্কারের তাৎপর্য তুমি কি দেখো না?\" \"এটা রাসায়নিকভাবে, সন্দেহ নেই, আকর্ষণীয়,\" আমি উত্তর দিলাম, \"কিন্তু বাস্তবে—\" \"কেন, মশাই, এটি বছরের পর বছর ধরে সবচেয়ে ব্যবহারিক ডাক্তারি-আইনি আবিষ্কার। তুমি কি দেখো না যে এটি রক্তের দাগের জন্য আমাদের একটি ত্রুটিমুক্ত পরীক্ষা দেয়?\"",
+      "output_hash": "sha256:242acd8d11e30a398d4ccd0c541b059b7aa7c197dff423873df6eb575b955fab",
+      "translation_latency_ms": 861,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 5.5,
+        "style": 6.0,
+        "overall": 6.0,
+        "feedback": "'উ忘れও' Japanese 忘 character mid-Bengali for 'Never mind' (-1.5 flu mixed scripts); 'মশাই' for 'man' has the right register; otherwise dialogue works."
+      }
+    },
+    {
+      "text_id": "twain_innocents",
+      "source_lang": "en",
+      "target_lang": "bn",
+      "output": "আমার মনে হয়, যখনই আমি গর্ব করতে চাই যে আমি একবারের জন্য এমন একটি প্রাচীন চিত্রকলা আবিষ্কার করেছি যা সুন্দর এবং প্রশংসার যোগ্য, তখন যে আনন্দ আমি পাই, তা এক ভুল প্রমাণ যে এটি কোনো সুন্দর ছবি নয় এবং কোনোভাবেই প্রশংসার যোগ্য নয়। এটি ভেনিসে আরও অনেকবার ঘটেছে, যেগুলি আমি বলতে পারব না। প্রতিটি ক্ষেত্রেই গাইড আমার এই অতিরিক্ত উৎসাহকে নিবারণ করে এই মন্তব্য করে: “এটা কিছুই না—এটা রেনেসাঁসের।”",
+      "output_hash": "sha256:770540569ba6aba19cde7bb7a0d698c2394c16cb3d27509802e92442de858d77",
+      "translation_latency_ms": 834,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 7.0,
+        "style": 6.5,
+        "overall": 6.5,
+        "feedback": "'ভুল প্রমাণ' for 'infallible proof' is a contresens — should be 'অভ্রান্ত প্রমাণ' (infallible) (-1.5 acc); 'অতিরিক্ত উৎসাহ' for 'swelling enthusiasm' loses the 'crushed out' contrast (-0.3 sty)."
+      }
+    },
+    {
+      "text_id": "walden",
+      "source_lang": "en",
+      "target_lang": "bn",
+      "output": "আমি বনে গিয়েছিলাম কারণ আমি ইচ্ছাকৃতভাবে বাঁচতে চেয়েছিলাম, জীবনের কেবল অপরিহার্য সত্যগুলি সামনে নিয়ে আসতে চেয়েছিলাম, এবং দেখতে চেয়েছিলাম যে আমি যা শিখতে পারতাম তা কি শিখতে পারিনি, এবং যখন আমি মরতে আসব, তখন আবিষ্কার করব যে আমি বেঁচে ছিলাম না। আমি এমন কিছু বাঁচতে চাইনি যা জীবন নয়, জীবন এত প্রিয়; আর আমি আত্মসমর্পণ অনুশীলন করতে চাইনি, যদি না তা একেবারেই প্রয়োজন হয়। আমি গভীরভাবে বাঁচতে চেয়েছিলাম এবং জীবনের সমস্ত মজ্জা শোষণ করতে চেয়েছিলাম।",
+      "output_hash": "sha256:f8ad173e79c5b450b037a37d0eb1168e5b4b300fc4031b82e945f103eb88872f",
+      "translation_latency_ms": 823,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.0,
+        "overall": 7.3,
+        "feedback": "'ইচ্ছাকৃতভাবে বাঁচতে' for 'live deliberately' adequate; 'জীবনের সমস্ত মজ্জা শোষণ করতে' faithfully renders 'suck out all the marrow of life'; the flow is contemplative."
+      }
+    },
+    {
+      "text_id": "aurelius_meditations",
+      "source_lang": "en",
+      "target_lang": "ta",
+      "output": "செய், ஆன்மா, செய்; உன்னை நாமே துன்புறுத்து, அவமதிசெய்; ஆனாலும் சிறிது காலமும் உன்னை மதிப்பதற்கான நேரம் வந்து சேரும். ஒவ்வொரு மனிதனின் மகிழ்ச்சியும் அவனிடமே உள்ளது, ஆனால் உன் வாழ்க்கை கிட்டத்தட்ட முடிவுக்கு வந்துவிட்டது, உனக்கு மரியாதை அளிக்காமல் இருக்கும்போது, நீ உன் மகிழ்ச்சியை மற்றவர்களின் ஆசைகள் மற்றும் எண்ணங்களில் வைத்து கொள்கிறாய். இந்த வெளிப்புறமாக நடக்கும் விஷயங்களில் ஏன் நீ உன் கவனத்தைத் திசை திருப்புகிறாய்? உனக்கு ஒரு நல்ல விஷயத்தைக் கற்றுக்கொள்ள ஓய்வை அளித்து, வந்து போவதைத் நிறுத்து.",
+      "output_hash": "sha256:8d1136e7ccbaf5c1ec9b09dd5264cfd73bb93f9d03f1951e78f79350d4f26540",
+      "translation_latency_ms": 970,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.3,
+        "feedback": "Clean Tamil imperative voice; 'மற்றவர்களின் ஆசைகள் மற்றும் எண்ணங்கள்' for 'souls and conceits' loses 'souls' specifically (-0.3 acc); the gnomic register holds."
+      }
+    },
+    {
+      "text_id": "dorian_gray",
+      "source_lang": "en",
+      "target_lang": "ta",
+      "output": "அறையில் ரோஜாக்களின் செறிவான வாசம் நிரம்பியிருந்தது, கோடை காற்றின் அசைவில் தோப்புகளுக்கு நடுவே மெல்ல அசைந்தபோது, திறந்த கதவு வழியாக லிலாக் அல்லது இளஞ்சிவப்புப் பூத்த முள்செடியின் மேலும் மென்மையான நறுமணம் வந்தது. அவர் அமர்ந்திருந்த பாரசீக சவாரிப் பைகளில் உள்ள திண்ணையின் மூலையில், தனது வழக்கம் போல் புகைத்தபடி, எண்ணற்ற / புகையிலை கருகிகளிலிருந்து, லார்ட் ஹென்ரி வொட்டன் ஒரு லபர்னம் மலர்களின் தேன் போன்ற மற்றும் தேன் நிறப் பூக்களின் பளபளப்பை மட்டுமே உணர முடிந்தது.",
+      "output_hash": "sha256:ba20eaba4e39bbce00a21f2b51b551e85b51f0454273b37c14cdca6684a565c2",
+      "translation_latency_ms": 982,
+      "scores": {
+        "accuracy": 5.5,
+        "fluency": 5.0,
+        "style": 5.5,
+        "overall": 5.3,
+        "feedback": "'புகையிலை கருகிகள்' for 'cigarettes' is wrong (cigarettes ≠ tobacco-burnt-things) (-1.5 acc); '/ புகையிலை' has a stray slash (-0.5 flu); 'திண்ணை' is 'verandah/porch' not 'corner' (-0.5 acc); 'laburnum' untranslated."
+      }
+    },
+    {
+      "text_id": "einstein_relativity",
+      "source_lang": "en",
+      "target_lang": "ta",
+      "output": "சமன்பாட்டுத் தியரியத்திற்கு முன், இயற்பியலில் நேரத்தின் கூற்று ஒரு முழுமையான முக்கியத்துவத்தைக் கொண்டுள்ளது என்று எப்போதும் மறைமுகமாக அனுமானிக்கப்பட்டது, அதாவது அது குறிப்புப் பொருளின் இயக்க நிலைமைக்குச் சாராதது. ஆனால் நாம் இப்போது பார்த்தது என்னவென்றால், இந்த அனுமானம் ஒரே நேரத்தில் என்பதன் மிகவும் இயல்பான வரையறையுடன் ஒத்துப்போகவில்லை; இந்த அனுமானத்தை நாம் தள்ளாவிட்டால், வெற்றிடத்தில் ஒளியின் பரவுதலின் விதிக்கும் சார்பியல் கொள்கைக்கும் (பிரிவு VII இல் உருவாக்கப்பட்டது) இடையிலான முரண்பாடு நீங்கிவிடும்.",
+      "output_hash": "sha256:485f0961ab278dc0269cf9fea26da587988e722855618dc2d029a1c568099999",
+      "translation_latency_ms": 987,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.3,
+        "feedback": "'சமன்பாட்டுத் தியரியம்' is non-standard (Tamil: 'சார்பியல் கோட்பாடு') (-0.5 acc); 'வெற்றிடத்தில்' for 'in vacuo' is correct; otherwise scientific clarity preserved."
+      }
+    },
+    {
+      "text_id": "emerson_self_reliance",
+      "source_lang": "en",
+      "target_lang": "ta",
+      "output": "உன்னை நம்பு: ஒவ்வொரு இதயமும் அந்த இரும்பு நா대에 ஒலிக்கிறது. தெய்வீக கிருபையியால் உனக்காகக் கண்டுபிடிக்கப்பட்ட இடத்தை, உன் சமகாலத்தவர்களின் சமூகத்தை, நிகழ்வுகளின் இணைப்பை ஏற்றுக்கொள். மாபெரும் மனிதர்கள் எப்போதும் அவ்வாறே செய்தார்கள், மேலும் தங்கள் யுகத்தின் புத்திசாலித்தனத்தில் குழந்தைப் பருவத்தோடு வெளிப்படுத்தினார்கள், முற்றிலும் நம்பகமானவர் தங்கள் இதயத்தில் அமர்ந்து, தங்கள் கைகள் வழியாக வேலை செய்து, தங்கள் இருப்பு அனைத்திலும் ஆதிக்கம் செலுத்துகிறார் என்ற அவர்களின் பார்வையை துரோகிகொண்டார்கள்.",
+      "output_hash": "sha256:ee4fe2b177e73f134b802ef426952356fe0eb55dabe26bc0f066758a20fa8999",
+      "translation_latency_ms": 986,
+      "scores": {
+        "accuracy": 5.0,
+        "fluency": 4.5,
+        "style": 5.0,
+        "overall": 4.8,
+        "feedback": "'நா대에' contains Korean Hangul character (-1.5 flu); 'குழந்தைப் பருவத்தோடு வெளிப்படுத்தினார்கள்' loses 'confided themselves childlike' (-1.0 acc); 'துரோகிகொண்டார்கள்' is contresens for 'betraying' (revealing) (-1.0 acc)."
+      }
+    },
+    {
+      "text_id": "moby_dick",
+      "source_lang": "en",
+      "target_lang": "ta",
+      "output": "என்னை இஷ்மேல் என்று அழைங்கள். சில வருடங்களுக்கு முன்பு—சரியாக எவ்வளவு காலம் என்று கவலை வேண்டாம்—என் வாலட்டில் மிகக் குறைந்த அல்லது அற்ற பணம், மேலும் எனக்குக் கரையோரத்தில் எதற்கும் particulière ஆர்வம் இல்லாதபோது, நான் சிறிது சுற்றி வந்து உலகின் நீர்ப் பகுதியை பார்க்க வேண்டும் என்று நினைத்தேன். இது என் மன அழுத்தத்தை நீக்கி இரத்த ஓட்டத்தை ஒழுங்குபடுத்த எனக்கு ஒரு வழி. என் வாயை கவலை கொள்ளும்போது; என் ஆன்மாவிற்கு ஒரு ஈரமான, மழை பொழிந்த நவம்பர் மாதமாக இருக்கும்போது, நான் கூடிய விரைவில் கடலுக்குச் செல்ல வேண்டிய நேரம் என்று நான் கணக்கிடுகிறேன்.",
+      "output_hash": "sha256:e37e251acc9fe5e05542d38b8b5c9c9b8fedf256dcad557f89d7eaab9a317398",
+      "translation_latency_ms": 972,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 6.0,
+        "style": 6.5,
+        "overall": 6.3,
+        "feedback": "'particulière' is French mid-Tamil (-1.0 flu mixed scripts); 'வாலட்டில்' anglicism (Tamil: 'பணப்பையில்') (-0.5 flu); 'spleen' became 'மன அழுத்தம்' (mental pressure) — slight drift (-0.3 acc)."
+      }
+    },
+    {
+      "text_id": "origin_species",
+      "source_lang": "en",
+      "target_lang": "ta",
+      "output": "நான் இப்போது வெளியிடும் இந்த சுருக்கம் கட்டாயம் குறைபாடுடையதாக இருக்க வேண்டும். எனது பல கூற்றுகளுக்கு இங்கே மேற்கோள்கள் மற்றும் அதிகாரங்களை என்னால் வழங்க முடியாது; மேலும் எனது துல்லியத்தில் வாசகர்கள்Some நம்பிக்கையை வைப்பார் என்று நான் நம்ப வேண்டும். நிச்சயமாக பிழைகள் புகுந்திருக்கும், இருப்பினும் நல்ல அதிகாரிகளை மட்டுமே நம்பி நான் எப்போதும் எச்சரிக்கையாக இருந்தேன் என்று நம்புகிறேன். நான் இங்கே நான் அடைந்த பொதுவான முடிவுகளையும், சில உண்மைகளுடன் விளக்கங்களையும் மட்டுமே வழங்க முடியும், அவை பெரும்பாலான சந்தர்ப்பங்களில் போதுமானதாக இருக்கும் என்று நான் நம்புகிறேன்.",
+      "output_hash": "sha256:f2af1f178b0fdcc3be4e1f1c0fb527502e09712b3db5121a4df5dd4d0c9b3812",
+      "translation_latency_ms": 908,
+      "scores": {
+        "accuracy": 7.0,
+        "fluency": 6.5,
+        "style": 7.0,
+        "overall": 6.8,
+        "feedback": "'வாசகர்கள்Some' has English 'Some' attached to Tamil noun (-1.0 flu); 'நம்பி நான் எப்போதும் எச்சரிக்கையாக' word order is awkward (-0.3 flu); scholarly tone holds otherwise."
+      }
+    },
+    {
+      "text_id": "pride_prejudice",
+      "source_lang": "en",
+      "target_lang": "ta",
+      "output": "ஒரு நல்ல அதிர்ஷ்டம் உடையவன் ஒருவன், ஒரு மனைவியைத் தேடி ஏங்குவான் என்பதே உலகளவில் ஏற்றுக்கொள்ளப்பட்ட உண்மை. ஒரு மனிதனின் உணர்வுகளோ அல்லது கருத்துகளோ முதல்முறையாக ஒரு பகுதியில் நுழைந்தாலும் எவ்வளவு அறியப்படாமல் இருக்கலாம், இந்த உண்மை சுற்றியுள்ள குடும்பங்களின் மனதில் மிகவும் உறுதியாக பதிந்துவிடுகிறது, எனவே அவன் அவர்களில் ஒருவரின் மகளின் சட்டப்பூர்வ சொத்தாகக் கருதப்படுகிறான்.",
+      "output_hash": "sha256:123d41ce8e4fbef16c10bd7ea99e85bdbce07c862183def1e76acfc73b83607f",
+      "translation_latency_ms": 677,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.0,
+        "overall": 7.2,
+        "feedback": "Captures Austen's syllogism in Tamil; 'நல்ல அதிர்ஷ்டம்' for 'good fortune' is fine; 'சட்டப்பூர்வ சொத்து' for 'rightful property' is accurate; irony slightly muted (-0.3 sty)."
+      }
+    },
+    {
+      "text_id": "study_scarlet",
+      "source_lang": "en",
+      "target_lang": "ta",
+      "output": "நீங்கள் ஆப்கானிஸ்தானில் இருந்திருக்கிறீர்கள், நான் உணர்கிறேன். \"நீங்கள் எப்படி அதை அறிந்தீர்கள்?\" என்று நான் ஆச்சரியத்துடன் கேட்டேன். \"அதெல்லாம் வேண்டாம்,\" என்று அவர் தனக்குள்ளேயே சிரித்துக் கொண்டார். \"கேள்வி இப்போது ஹீமோகுளோபினைப் பற்றியது. என் கண்டுபிடிப்பின் முக்கியத்துவத்தை நீங்கள் பார்க்கிறீர்கள் என்று சந்தேகமில்லை?\" \"வேதியியல் ரீதியாக அது சுவாரஸ்யமானது, சந்தேகமின்றி,\" என்று நான் பதிலளித்தேன், \"ஆனால் நடைமுறையில்—\" \"ஏன் மனிதரே, இது பல ஆண்டுகளாக மிகவும் நடைமுறைக்குரிய மருத்துவ-சட்ட கண்டுபிடிப்பு. இரத்தக் கறைகளுக்கு நமக்கு ஒரு தவறாத சோதனையை இது கொடுக்கவில்லை என்பதை நீங்கள் பார்க்கவில்லையா?\"",
+      "output_hash": "sha256:1cdc0f05a8c873ae16969b8bff5b5a50543acf426521ab8cb74cad8d79026e90",
+      "translation_latency_ms": 1011,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.0,
+        "overall": 7.3,
+        "feedback": "Holmes/Watson dialogue rhythm preserved; 'ஆச்சரியத்துடன்' for 'in astonishment' works; 'மருத்துவ-சட்ட கண்டுபிடிப்பு' is a workable rendering of 'medico-legal discovery'."
+      }
+    },
+    {
+      "text_id": "twain_innocents",
+      "source_lang": "en",
+      "target_lang": "ta",
+      "output": "ஒருமுறை நான் அற்புதமான மற்றும் அனைவராலும் போற்றப்பட வேண்டிய ஒரு பழங்கால ஓவியத்தைக் கண்டுபிடித்ததாக நான் பெருமை கொள்ளும் ஒவ்வொரு முறையும், அது எனக்கு அளிக்கும் இன்பமே அது அழகான படம் அல்ல, பாராட்டப்பட வேண்டிய ஒன்றல்ல என்பதற்கான தவறாத ஆதாரம் என்று எனக்குத் தோன்றுகிறது. இது வெனிஸில் பலமுறை நடந்துள்ளது, நான் குறிப்பிட முடியாத அளவுக்கு. ஒவ்வொரு முறையும் வழிகாட்டி என் அதீத உற்சாகத்தை \"அது ஒன்றும் இல்லை – அது மறுமலர்ச்சிக் காலத்தின் ஒன்றாகும்\" என்று கூறி தணித்திருக்கிறான்.",
+      "output_hash": "sha256:a0d51093c74268c9b8ad980cf4197208ab2abadc3c43efb1f9ca222278918e66",
+      "translation_latency_ms": 850,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.3,
+        "feedback": "Twain's irony reasonably preserved in Tamil; 'மறுமலர்ச்சிக் காலம்' for 'the Renaissance' is the standard; 'பெருமை கொள்ளும் ஒவ்வொரு முறையும்' captures the recurring frustration."
+      }
+    },
+    {
+      "text_id": "walden",
+      "source_lang": "en",
+      "target_lang": "ta",
+      "output": "நான் காட்டிற்குச் சென்றேன், ஏனெனில் நான் திட்டமிட்டு வாழ விரும்பினேன், வாழ்க்கையின் அத்தியாவசிய உண்மைகளை மட்டுமே வெளிப்படுத்த விரும்பினேன், மேலும் அது என்ன கற்றுக்கொடுக்க வேண்டும் என்பதை நான் கற்றுக்கொள்ள முடியுமா என்று பார்க்க விரும்பினேன், நான் இறக்கும்போது நான் வாழ்வில்லை என்று கண்டடையாமல் இருக்க விரும்பினேன். நான் வாழ்க்கையாக இல்லாததை வாழ விரும்பவில்லை, வாழ்க்கை மிகவும் விலைமதிப்பற்றது; மேலும் நான் முற்றிலும் அவசியமானால் தவிர, தற்கொலை மனப்பான்மையை கடைப்பிடிக்க விரும்பவில்லை. நான் ஆழமாக வாழ விரும்பினேன், வாழ்க்கையின் முழு நரம்புகளையும் உறிஞ்சு விரும்பினேன்.",
+      "output_hash": "sha256:d890aff9ec49176b206fffdc5d2c83d4bd53b5e33819a2632fec38b6bf65c14d",
+      "translation_latency_ms": 933,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 7.0,
+        "style": 6.5,
+        "overall": 6.5,
+        "feedback": "'தற்கொலை மனப்பான்மை' is a contresens for 'resignation' — translates as 'suicidal mindset' (-1.5 acc); 'வாழ்க்கையின் முழு நரம்புகளையும்' renders 'marrow' as 'nerves' (-0.5 acc)."
+      }
+    },
+    {
+      "text_id": "aurelius_meditations",
+      "source_lang": "en",
+      "target_lang": "he",
+      "output": "עשה, נשמה, עשי; התעלל והתייחס לעצמך בחוסר כבוד; אך זמן וזמן שיכבדת את עצמך, יגיע לסיומו. אושר כל אדם תלוי בו, אך הנה חייך כמעט בסוף, בעוד שאינך מעניק לעצמך כבוד, אתה הופך את אושרך להיות מורכב נשמות והתעניינים של אחרים. מדוע כל הדברים האלה שקורים מבחוץ מסיחים אותך כל כך? תן לעצמך מנוחה ללמוד משהו טוב, והפסק להסתובב ולתהלל הלוך ושוב.",
+      "output_hash": "sha256:0415d9bf938e8f77db6ca23e3d291bc4ba661a075d0068d36270b296f0ecf6d9",
+      "translation_latency_ms": 1057,
+      "scores": {
+        "accuracy": 6.0,
+        "fluency": 5.5,
+        "style": 5.5,
+        "overall": 5.5,
+        "feedback": "'התעניינים' is non-Hebrew (-0.5 flu); 'תהלל' wrong (means 'praise' not 'wander') (-1.0 acc); 'עשי' uses feminine imperative inconsistently with masculine context (-0.5 flu); register flat (-0.5 sty)."
+      }
+    },
+    {
+      "text_id": "dorian_gray",
+      "source_lang": "en",
+      "target_lang": "he",
+      "output": "הסטודיו היה מלא בריח העשיר של ורדים, וכש הרוח הקיצית השתוללה בין עצי הגן, נכנס דרך הדלת הפתוחה הריח הכבד של לילי, או הניחוח העדין יותר של השורש הפורח וורוד. מפינה הסאד-באגים הפרסיים, עליה הוא שכב, כשהוא מעשן, כפי שהיה המנהגו שלו, ניתן היה ללכוד את הברק של הפריחות הממתיקות והצבעוניות של לאבורנום.",
+      "output_hash": "sha256:7a38545e0fa9e9ba1a807ce5bbef16e4816a3f61effa16079267b8ab7970885d",
+      "translation_latency_ms": 928,
+      "scores": {
+        "accuracy": 5.0,
+        "fluency": 4.5,
+        "style": 5.0,
+        "overall": 4.8,
+        "feedback": "'השורש' is 'root' not 'thorn/hawthorn' (-1.0 acc); 'השתוללה' is 'raged' not 'stirred' (-0.5 acc); 'הסאד-באגים' is Latin 'sad-bags' transliterated mid-Hebrew (-1.0 flu); 'הממתיקות' is non-word (-0.5 flu)."
+      }
+    },
+    {
+      "text_id": "einstein_relativity",
+      "source_lang": "en",
+      "target_lang": "he",
+      "output": "לפני הופעת תורת היחסות, תמיד הניח בהיסוס פיזיקה שהטענה על הזמן בעלת משמעות מוחלטת, כלומר, שהיא בלתי תלויה במצב התנועה של גוף הייחוס. אך ראינו זה עתה שההנחה הזו אינה תואמת את ההגדרה הטבעית ביותר של סימולטניות; אם נדחה הנחה זו, אז הקונפליקט בין חוק התפשטות האור בוואקום לעקרון היחסות (פותח בסעיף שבע) נעלם.",
+      "output_hash": "sha256:461e88a2a4cd037f250a997626ac09b440606ea34b2bf59c660e7636e5bda33e",
+      "translation_latency_ms": 980,
+      "scores": {
+        "accuracy": 7.5,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.3,
+        "feedback": "'הניח בהיסוס' is a slight drift — 'tacitly' ≠ 'hesitantly' (-0.5 acc); 'סימולטניות' as transliteration is acceptable; logical structure preserved."
+      }
+    },
+    {
+      "text_id": "emerson_self_reliance",
+      "source_lang": "en",
+      "target_lang": "he",
+      "output": "האמן את עצמך: כל לב מתהדהד עם חוט הברזל הזה. קבל את המקום שבו ההתגלות האלוהית מצאה עבורך, החברה של עממיתיך, הקשר של האירועים. גדולי התרבות תמיד עשו זאת, והפקידו את עצמם כילדים בגיאנס עידניהם, מפרים את תפיסתם שמהאמין לחלוטין ישב בלבם, עובד דרך ידיהם, דומיננטי בכל תהומם.",
+      "output_hash": "sha256:ba98d83536957f24e162d9ecc26444d189f4b1d8070e6aacc612ddd794247d18",
+      "translation_latency_ms": 930,
+      "scores": {
+        "accuracy": 4.5,
+        "fluency": 4.0,
+        "style": 4.5,
+        "overall": 4.0,
+        "feedback": "'עממיתיך' is a non-word (-0.5 flu); 'בגיאנס' (Latin script + Hebrew suffix) (-1.0 flu); 'מהאמין' is broken construction (-0.5 flu); 'תהומם' means 'their abyss' not 'their being' (-1.0 acc); 'מפרים' contresens for 'betraying'/'revealing' (-1.0 acc)."
+      }
+    },
+    {
+      "text_id": "moby_dick",
+      "source_lang": "en",
+      "target_lang": "he",
+      "output": "קראו לי אישמייל. לפני כמה שנים – אין טעם לדעת כמה זמן בדיוק – כשאפשרו מעט או לא שום כסף בכיסיי, ולא משהו ספציפי שמעניין אותי על היבשה, חשבתי שאנסע קצת ואראה את החלק המימי של העולם. זו דרך יש לי להרחיק את הספלן ולהסדיר את המחזור הדם. בכל פעם שאני מתחיל להיראות קשה ונרגש; בכל פעם שנובמבר לח, לח ומחוסר לחות נמצא בנשמתי, אני סופר שזה הזמן לצאת לים ככל שאני יכול.",
+      "output_hash": "sha256:669fa25861abc9335a9bf9d3c1af569490efc66188f693159315823b7cbc4168",
+      "translation_latency_ms": 1036,
+      "scores": {
+        "accuracy": 6.0,
+        "fluency": 5.5,
+        "style": 6.0,
+        "overall": 5.8,
+        "feedback": "'נובמבר לח, לח ומחוסר לחות' is internally contradictory ('humid, humid and lacking moisture') (-1.0 flu); 'סופר שזה הזמן' wrong word ('sofer' ≠ 'consider') (-0.5 acc); 'קשה ונרגש' loses 'grim about the mouth' image."
+      }
+    },
+    {
+      "text_id": "origin_species",
+      "source_lang": "en",
+      "target_lang": "he",
+      "output": "תקציר זה, שאני מפרסם כעת, חייב להיות פגום. איני יכול להציע כאן הפניות וסמכויות למספר המאמרים שלי; ואני חייב לסמוך על הקורא, המ đặt קצת אמון בדיוקי. אין ספק שהטעויות נשבטו, אף על פי שאני מקווה שהייתי תמיד זהיר בהסתמכות על סמכויות טובות בלבד. אני יכול להציע כאן רק את המסקנות הכלליות אליהן הגעתי, עם כמה עובדות להמחשה, אך שאני מקווה שיספיקו ברוב המקרים.",
+      "output_hash": "sha256:76d7cebaf6bdd10b9099345bcaa3e8cf2a29c93955d8dfa860755dc40e820042",
+      "translation_latency_ms": 1011,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 5.5,
+        "style": 6.5,
+        "overall": 6.0,
+        "feedback": "'המ đặt' contains Vietnamese characters mid-Hebrew (-1.5 flu); 'נשבטו' wrong tense/form (should be 'נשתרבבו' or 'התגנבו' for 'crept in') (-0.5 flu); scholarly tone otherwise holds."
+      }
+    },
+    {
+      "text_id": "pride_prejudice",
+      "source_lang": "en",
+      "target_lang": "he",
+      "output": "זוהי אמת המוכרת באופן אוניברסלי, שאיש זכר שבבעלות עושר, חייב להיות מחפש אשתו. לא משנה כמה ידועים הרגשות או הדעות של איש כזה בעת כניסתו לסביבה, אמת זו ממוסדת כל כך במוחות המשפחות המקיפות, עד שהוא נחשב לרכוש הראוי של אחת או אחרות בנותיהן.",
+      "output_hash": "sha256:f97877196a8989efd100b104e0fe7b55708d79659cb2f49201d6bf5e8d111d41",
+      "translation_latency_ms": 824,
+      "scores": {
+        "accuracy": 6.5,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 6.5,
+        "feedback": "'מחפש אשתו' has the wrong possessive (his wife instead of a wife) (-1.0 acc); 'ממוסדת' is 'institutionalized' not 'fixed' (-0.5 acc); 'איש זכר' is redundant ('man male')."
+      }
+    },
+    {
+      "text_id": "study_scarlet",
+      "source_lang": "en",
+      "target_lang": "he",
+      "output": "היית באפגניסטן, אני מבין. \"איך בכלל ידעת את זה?\" שאלתי בהפתעה. \"אין שום בעיה,\" אמר, צוחק לעצמו. \"השאלה עכשיו היא על ה emoglobin. אין ספק שאתה רואה את המשמעות של גילוי שלי?\" \"זה מעניין, כימית, אין ספק,\" עניתי, \"אבל בפועל—\" \"איך, אחי, זה הגילוי הרפקודי-משפטי המעשי ביותר בשנים האחרונות. אתה לא רואה שזה נותן לנו בדיקה בלתי-שגויה לכתמי דם?\"",
+      "output_hash": "sha256:990dbf3efd6ce6e08bec4eea48290a6e4a5a575884b91135f963261852378218",
+      "translation_latency_ms": 1014,
+      "scores": {
+        "accuracy": 5.5,
+        "fluency": 5.0,
+        "style": 5.5,
+        "overall": 5.3,
+        "feedback": "'ה emoglobin' has Latin chars and a missing 'h' (-1.0 flu); 'הרפקודי-משפטי' for 'medico-legal' is non-Hebrew (-1.0 flu); 'אין שום בעיה' is wrong register for 'Never mind' (-0.5 sty); 'בלתי-שגויה' for 'infallible' OK."
+      }
+    },
+    {
+      "text_id": "twain_innocents",
+      "source_lang": "en",
+      "target_lang": "he",
+      "output": "נראה לי שכל פעם שאני מתמלא גאווה שפעם אחת גיליתי ציור עתיק שנעים וראוי לכל שבח, ההנאה שנותן לי היא הוכחה בלתי ניתנת להכחשה שהוא אינו תמונה יפה ולא ראוי כלל לשבח. הדבר הזה קרה יותר מפעם אחת שאיני יכול לציין, בוונציה. בכל מקרה, המדריך רסן את ההתלהבות שלי בהערה: \"זה כלום – זה מהרנסנס.\"",
+      "output_hash": "sha256:4972299d1a0996acf2ef4d91ffe9c9c9095a8e85fa0ef731ea0a58382c4a5378",
+      "translation_latency_ms": 879,
+      "scores": {
+        "accuracy": 7.0,
+        "fluency": 7.0,
+        "style": 7.0,
+        "overall": 6.8,
+        "feedback": "'מתמלא גאווה' for 'glory to think' is reasonable; 'יותר מפעם אחת שאיני יכול לציין' awkward construction (-0.5 flu); 'רסן' for 'crushed' works; irony preserved."
+      }
+    },
+    {
+      "text_id": "walden",
+      "source_lang": "en",
+      "target_lang": "he",
+      "output": "הלכתי אל היערות כי רציתי לחיות באופן מכוון, להציג רק את העובדות הבסיסיות של החיים, ולראות אם אוכל ללמוד מהם, ולא, כשאני מת, לגלות שלא חיו. לא רציתי לחיות את מה שלא הוא חיים, חיים יקרים כל כך; ולא רציתי לתרגל נשואה, אלא אם היה זה הכרחי לחלוטין. רציתי לחיות עמוק ולשאוב את כל מרמרי החיים.",
+      "output_hash": "sha256:977e47303496d7032acacff88199021540b23485a43ffda4a81357378534983b",
+      "translation_latency_ms": 961,
+      "scores": {
+        "accuracy": 5.0,
+        "fluency": 5.0,
+        "style": 5.5,
+        "overall": 5.0,
+        "feedback": "'שלא חיו' is 3rd-person plural where source is 1st-person singular (-1.0 acc); 'נשואה' means 'marriage' not 'resignation' — contresens (-1.5 acc); 'מרמרי' is non-word (should be 'מח' for marrow) (-1.0 flu); 'להציג' for 'to front' loses confrontational sense (-0.3 acc)."
+      }
+    },
+    {
+      "text_id": "hu_shi_reform",
+      "source_lang": "en",
+      "target_lang": "ja",
+      "output": "今、談文学改良者は多くいるが、記者は末学を記さず、何がこれを語るに足るのか。しかし、近年、この事柄について四方して思索し、友朋と議論を交わしたその結果は、議論の価値を少なくしていない。そこで、所持する見解を総括し、八事として列挙し、それぞれを述べ、当世の文学改良者に研究の対象としたいと思う。私は、今日においては文学改良は八事から入るべきだと考える。八事とは何か？一つには、物をもって言わねばならない。二には、古人を模倣してはならない。三には、文法を求めねばならない。四には、病のない呻吟をしない。五には、濫調の套語を去らねばならない。六には、典を用いず。七には、対仗を論じない。八には、俗字俗語を避ける。",
+      "output_hash": "sha256:70c83511bb1f1bd20a8855b2dfd4dd6f63533e0d615f4a0e7cb3a855f28e80b2",
+      "translation_latency_ms": 1308,
+      "scores": {
+        "accuracy": 7.0,
+        "fluency": 7.5,
+        "style": 7.5,
+        "overall": 7.0,
+        "feedback": "Preserves the eight-point parallelism with a Sino-Japanese register; '末学を記さず' misreads source ('記者末学不文' = the writer is unlettered, not 'the writer doesn't record') (-1.0 acc); '物をもって言わねばならない' for 言之有物 captures the principle."
+      }
+    },
+    {
+      "text_id": "lu_xun_guxiang",
+      "source_lang": "en",
+      "target_lang": "ja",
+      "output": "私は厳寒の中、二千余里離れた故郷へ、二十余年ぶりに帰った。時が真冬で、故郷に近づくにつれ天気はさらに陰鬱になり、冷たい風が船室に吹き込み、船倉の隙間から外を眺めると、蒼黄の空の下に遠近にいくつかの寂しい村々があり、活気がない。私の心は悲しみに耐えられなくなった。ああ！これは私が二十年間ずっと覚えている故郷ではないのか？私が覚えている故郷はこれではない。私の故郷はもっと良い。しかし、その美しさや良いところを思い出し、言葉で表現しようとしても、像も言葉もなかった。まるでそれだけだった。そこで私は自分で説明した。故郷は元来そうである、つまり、進歩がないだけでなく、私が感じるような悲哀も持っていない。これはただ私自身の気持ちの変化によるもので、なぜなら今回の帰郷には、私には特に良い感情がなかったからだ。",
+      "output_hash": "sha256:6ba034d7bbe05f6b7a427a861e5d5043794d398810bec3e74703903970a9940a",
+      "translation_latency_ms": 1336,
+      "scores": {
+        "accuracy": 8.0,
+        "fluency": 8.0,
+        "style": 7.5,
+        "overall": 7.7,
+        "feedback": "Strong Japanese rendering of Lu Xun; '蒼黄の空' preserves the unusual color compound; 'ああ！' carries the exclamation; 'まるでそれだけだった' for '仿佛也就如此' slightly drifts to 'as if that's all there was' (-0.3 sty)."
       }
     }
   ]

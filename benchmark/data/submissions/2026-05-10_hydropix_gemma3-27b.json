@@ -685,7 +685,7 @@
         "accuracy": 9.0,
         "fluency": 9.0,
         "style": 8.0,
-        "overall": 7.3,
+        "overall": 7.0,
         "feedback": "Strong Lu Xun rendering, somber return-home mood preserved; '苍黄的天' loses its 'pale-yellow' specificity to bland 'drab', and the '阿！' exclamation particle is dissolved into the rhetorical question. (-0.8 style)"
       }
     },
@@ -1930,7 +1930,7 @@
         "accuracy": 8.5,
         "fluency": 9.0,
         "style": 8.5,
-        "overall": 8.1,
+        "overall": 7.9,
         "feedback": "Clean scientific Dutch Einstein; 'referentiekader' precise."
       }
     },
@@ -2380,7 +2380,7 @@
         "accuracy": 8.0,
         "fluency": 8.5,
         "style": 8.0,
-        "overall": 7.8,
+        "overall": 7.6,
         "feedback": "Solid Einstein DA; 'referencens' is mildly ambiguous for 'body of reference'."
       }
     },
