@@ -260,11 +260,15 @@ class BenchmarkRunner:
         if not self._texts:
             self.load_reference_texts()
 
-        # Resolve pairs: explicit list wins, else build from language_codes assuming English source.
+        # Resolve pairs: explicit list wins, else build from language_codes assuming
+        # English source. When neither is provided, fall back to the canonical QUICK
+        # pair set (8 bidirectional pairs) — keeps the default comparable across runs.
         if pairs is None:
             if language_codes is None:
-                language_codes = self.config.quick_languages
-            pairs = [("en", code) for code in language_codes]
+                from benchmark.canonical_pairs import get_pair_set
+                pairs = get_pair_set("quick")
+            else:
+                pairs = [("en", code) for code in language_codes]
 
         # Drop pairs whose target language is unknown.
         validated_pairs: list[tuple[str, str]] = []

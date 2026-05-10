@@ -181,14 +181,24 @@ def cmd_run(args: argparse.Namespace) -> int:
             pairs.append((src.strip(), tgt.strip()))
         print(colored(f"Running benchmark on {len(pairs)} pair(s): {', '.join(args.pairs)}", Colors.CYAN))
     elif args.full:
-        language_codes = None
-        print(colored("Running FULL benchmark with all 40+ languages (English source)", Colors.YELLOW))
+        from benchmark.canonical_pairs import get_pair_set
+        pairs = get_pair_set("full")
+        print(colored(
+            f"Running canonical 'full' set ({len(pairs)} pair(s)): "
+            f"{', '.join(f'{s}:{t}' for s, t in pairs)}",
+            Colors.YELLOW,
+        ))
     elif args.languages:
         language_codes = args.languages
         print(colored(f"Running benchmark with languages: {', '.join(language_codes)} (English source)", Colors.CYAN))
     else:
-        language_codes = config.quick_languages
-        print(colored(f"Running QUICK benchmark with {len(language_codes)} languages (English source)", Colors.CYAN))
+        from benchmark.canonical_pairs import get_pair_set
+        pairs = get_pair_set("quick")
+        print(colored(
+            f"Running canonical 'quick' set ({len(pairs)} pair(s)): "
+            f"{', '.join(f'{s}:{t}' for s, t in pairs)}",
+            Colors.CYAN,
+        ))
 
     evaluate = not getattr(args, "no_evaluate", False)
     if not evaluate:

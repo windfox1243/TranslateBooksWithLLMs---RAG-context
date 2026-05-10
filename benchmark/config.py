@@ -17,34 +17,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-# Default languages for quick benchmark (representative sample)
-DEFAULT_QUICK_LANGUAGES = [
-    # European
-    "fr",       # French
-    "de",       # German
-    "es",       # Spanish
-    "it",       # Italian
-    "pt",       # Portuguese
-    "pl",       # Polish
-    # Asian
-    "zh-Hans",  # Chinese (Simplified)
-    "zh-Hant",  # Chinese (Traditional)
-    "ja",       # Japanese
-    "ko",       # Korean
-    "vi",       # Vietnamese
-    "th",       # Thai
-    # South Asian
-    "hi",       # Hindi
-    "bn",       # Bengali
-    "ta",       # Tamil
-    # Cyrillic
-    "ru",       # Russian
-    "uk",       # Ukrainian
-    # Semitic (RTL)
-    "ar",       # Arabic
-    "he",       # Hebrew
-]
-
 # Default evaluator model
 DEFAULT_EVALUATOR_MODEL = "google/gemini-3-flash-preview"
 
@@ -186,7 +158,6 @@ class BenchmarkConfig:
 
     # Benchmark settings
     source_language: str = "English"
-    quick_languages: list = field(default_factory=lambda: DEFAULT_QUICK_LANGUAGES.copy())
 
     # Translation provider ("ollama", "openai", or "openrouter")
     translation_provider: str = "ollama"

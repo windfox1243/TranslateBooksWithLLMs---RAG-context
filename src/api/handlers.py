@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src.utils.unified_logger import setup_web_logger, LogType
-from src.utils.file_utils import get_unique_output_path, generate_tts_for_translation
+from src.utils.file_utils import get_unique_output_path, find_partial_output_paths, generate_tts_for_translation
 from src.core.llm import OpenRouterProvider
 from src.core.llm.exceptions import RateLimitError
 from src.config import AUTO_PAUSE_ON_RATE_LIMIT, RATE_LIMIT_AUTO_RESUME_DELAY
@@ -325,6 +325,21 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             prompt_options=config.get('prompt_options', {}),
             bilingual_output=config.get('bilingual_output', False)
         )
+
+        # If an EPUB translation was paused, the file was saved with a `[partial NN%]`
+        # prefix. Re-point the tracking variables to the actual file on disk so the
+        # download endpoint and UI list the right name.
+        if (config['file_type'] == 'epub'
+                and state_manager.get_translation_field(translation_id, 'interrupted')
+                and not os.path.exists(output_filepath_on_server)):
+            candidates = find_partial_output_paths(output_filepath_on_server)
+            if candidates:
+                # Pick the most recently written one if several exist
+                actual = max(candidates, key=lambda p: os.path.getmtime(p))
+                output_filepath_on_server = actual
+                config['output_filename'] = os.path.basename(actual)
+                _log_message_callback("output_marked_partial",
+                    f"💾 Partial EPUB saved as: {config['output_filename']}")
 
         # Set result message based on file type
         file_type_upper = config['file_type'].upper()

@@ -238,11 +238,34 @@ async def translate_epub_file(
                 temp_dir, target_language, log_callback=log_callback
             )
 
-            # 7. Repackage EPUB
+            # 7. Repackage EPUB. If translation was paused, write to a `[partial] `
+            # filename so users can tell partial outputs from completed ones at a glance.
+            from src.utils.file_utils import get_partial_output_path, find_partial_output_paths
+            if results.get('was_interrupted'):
+                partial_path = get_partial_output_path(output_filepath)
+                if log_callback:
+                    log_callback("epub_partial_output_marked",
+                                 f"💾 Partial EPUB will be saved as: {os.path.basename(partial_path)}")
+                output_filepath = partial_path
+
             _repackage_epub(
                 temp_dir=temp_dir,
                 output_filepath=output_filepath,
                 log_callback=log_callback)
+
+            # On successful (non-interrupted) save, remove any leftover [partial ...]
+            # siblings from previous interrupted runs targeting this same output.
+            if not results.get('was_interrupted'):
+                for stale in find_partial_output_paths(output_filepath):
+                    try:
+                        os.remove(stale)
+                        if log_callback:
+                            log_callback("epub_partial_cleanup",
+                                         f"🗑️ Removed stale partial: {os.path.basename(stale)}")
+                    except OSError as e:
+                        if log_callback:
+                            log_callback("epub_partial_cleanup_failed",
+                                         f"⚠️ Could not remove stale partial {os.path.basename(stale)}: {e}")
 
             # 7. Final summary
             if log_callback:
@@ -734,6 +757,7 @@ async def _process_all_content_files(
     total_files = len(content_files)
     completed_files = len(parsed_xhtml_docs)
     failed_files = 0
+    was_interrupted = False
 
     # Accumulate translation statistics
     accumulated_stats = TranslationMetrics()
@@ -756,6 +780,7 @@ async def _process_all_content_files(
     for file_idx, content_href in enumerate(content_files):
         # Check for interruption
         if check_interruption_callback and check_interruption_callback():
+            was_interrupted = True
             if log_callback:
                 log_callback("epub_translation_interrupted",
                              f"Translation interrupted at file {file_idx + 1}/{total_files}")
@@ -880,7 +905,8 @@ async def _process_all_content_files(
         'total_chunks': effective_total_chunks,
         'completed_chunks': completed_chunks_global,
         'failed_chunks': accumulated_stats.failed_chunks,
-        'translation_stats': accumulated_stats
+        'translation_stats': accumulated_stats,
+        'was_interrupted': was_interrupted
     }
 
 

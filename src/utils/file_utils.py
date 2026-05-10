@@ -17,6 +17,33 @@ from src.core.srt_processor import SRTProcessor
 from src.config import DEFAULT_MODEL, API_ENDPOINT, SRT_LINES_PER_BLOCK, SRT_MAX_CHARS_PER_BLOCK
 
 
+PARTIAL_PREFIX = "[partial] "
+# Accept both the current `[partial] ` form and the legacy `[partial NN%] ` form
+# so cleanup also catches files left behind by older versions.
+_PARTIAL_RE = re.compile(r'^\[partial(?:\s+\d+%)?\]\s+')
+
+
+def get_partial_output_path(output_path):
+    """Return the path with a `[partial] ` prefix on the basename, used to mark
+    an interrupted EPUB output so it cannot be confused with a completed file."""
+    p = Path(output_path)
+    base = _PARTIAL_RE.sub('', p.name)
+    return str(p.parent / f"{PARTIAL_PREFIX}{base}")
+
+
+def find_partial_output_paths(output_path):
+    """Return all sibling files in the same directory that match the partial
+    naming convention for ``output_path`` (current and legacy formats)."""
+    p = Path(output_path)
+    parent = p.parent if str(p.parent) else Path('.')
+    if not parent.exists():
+        return []
+    target = _PARTIAL_RE.sub('', p.name)
+    pattern = re.compile(r'^\[partial(?:\s+\d+%)?\]\s+' + re.escape(target) + r'$')
+    return [str(entry) for entry in parent.iterdir()
+            if entry.is_file() and pattern.match(entry.name)]
+
+
 def get_unique_output_path(output_path):
     """
     Generate a unique output path by adding a number suffix if the file already exists.
