@@ -182,18 +182,44 @@ class GlossaryStore:
         """Copy glossary tables from data/jobs.db on first start (idempotent).
 
         Only runs against the default DB path so tests passing a custom path
-        stay isolated.
+        stay isolated. A `_migration_state` flag prevents re-importing legacy
+        rows after the user has deleted them — without it, deleting the last
+        glossary would resurrect everything on the next restart.
         """
         if os.path.abspath(self.db_path) != os.path.abspath(DEFAULT_DB_PATH):
-            return
-        if not os.path.exists(LEGACY_DB_PATH):
             return
 
         with self._lock:
             conn = self._get_connection()
             cursor = conn.cursor()
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS _migration_state (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+            cursor.execute(
+                "SELECT 1 FROM _migration_state WHERE key = 'legacy_migration_done'"
+            )
+            if cursor.fetchone():
+                return
+
             cursor.execute("SELECT COUNT(*) FROM glossaries")
             if (cursor.fetchone()[0] or 0) > 0:
+                cursor.execute(
+                    "INSERT OR REPLACE INTO _migration_state (key, value) VALUES (?, ?)",
+                    ("legacy_migration_done", "1"),
+                )
+                conn.commit()
+                return
+
+            if not os.path.exists(LEGACY_DB_PATH):
+                cursor.execute(
+                    "INSERT OR REPLACE INTO _migration_state (key, value) VALUES (?, ?)",
+                    ("legacy_migration_done", "1"),
+                )
+                conn.commit()
                 return
 
             try:
@@ -206,6 +232,11 @@ class GlossaryStore:
                         "WHERE type='table' AND name='glossaries'"
                     )
                     if legacy_cur.fetchone() is None:
+                        cursor.execute(
+                            "INSERT OR REPLACE INTO _migration_state (key, value) VALUES (?, ?)",
+                            ("legacy_migration_done", "1"),
+                        )
+                        conn.commit()
                         return
                     legacy_cur.execute(
                         "SELECT id, name, source_language, target_language, "
@@ -213,6 +244,11 @@ class GlossaryStore:
                     )
                     glossary_rows = legacy_cur.fetchall()
                     if not glossary_rows:
+                        cursor.execute(
+                            "INSERT OR REPLACE INTO _migration_state (key, value) VALUES (?, ?)",
+                            ("legacy_migration_done", "1"),
+                        )
+                        conn.commit()
                         return
 
                     legacy_cur.execute(
@@ -258,6 +294,10 @@ class GlossaryStore:
                             row["category"],
                         ),
                     )
+                cursor.execute(
+                    "INSERT OR REPLACE INTO _migration_state (key, value) VALUES (?, ?)",
+                    ("legacy_migration_done", "1"),
+                )
                 conn.commit()
                 logger.info(
                     "Migrated %d glossaries (%d terms) from %s to %s",
