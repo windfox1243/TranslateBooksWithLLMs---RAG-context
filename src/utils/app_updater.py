@@ -109,6 +109,28 @@ def is_git_repo(repo_root: Path) -> bool:
     return (repo_root / ".git").exists()
 
 
+def get_install_kind(repo_root: Path) -> str:
+    """Detect how the app is being run, so the UI can route updates correctly.
+
+    Returns one of:
+        'frozen-windows' / 'frozen-macos' / 'frozen-linux' - PyInstaller bundle:
+            auto-update via git pull is impossible; the UI should point users
+            to the release page so they can download a new binary.
+        'git'    - cloned repo: in-place git pull + restart works.
+        'source' - source tree without .git (e.g. extracted zip): same UX as
+            'frozen' (point to the release page).
+    """
+    if getattr(sys, "frozen", False):
+        if sys.platform == "win32":
+            return "frozen-windows"
+        if sys.platform == "darwin":
+            return "frozen-macos"
+        return "frozen-linux"
+    if is_git_repo(repo_root):
+        return "git"
+    return "source"
+
+
 def _hash_requirements(req_path: Path) -> Optional[str]:
     if not req_path.exists():
         return None

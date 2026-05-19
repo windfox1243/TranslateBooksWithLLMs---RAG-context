@@ -52,16 +52,20 @@ def create_version_blueprint(state_manager):
         force = request.args.get("force", "0") in ("1", "true", "yes")
         try:
             result = version_checker.check_for_update(force=force)
-            result["git_repo"] = app_updater.is_git_repo(_repo_root())
+            repo_root = _repo_root()
+            result["git_repo"] = app_updater.is_git_repo(repo_root)
+            result["install_kind"] = app_updater.get_install_kind(repo_root)
             return jsonify(result)
         except Exception as e:
             logger.exception("Version check failed")
+            repo_root = _repo_root()
             return jsonify({
                 "current": version_checker.get_current_version(),
                 "latest": None,
                 "update_available": False,
                 "error": str(e),
-                "git_repo": app_updater.is_git_repo(_repo_root()),
+                "git_repo": app_updater.is_git_repo(repo_root),
+                "install_kind": app_updater.get_install_kind(repo_root),
             }), 500
 
     @bp.route("/api/version/update/status", methods=["GET"])

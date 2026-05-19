@@ -18,6 +18,7 @@ export const UpdateChecker = {
     _pollTimer: null,
     _restartWaiter: null,
     _initialHealthSessionId: null,
+    _lastCheck: null,
 
     async initialize() {
         this._wireBannerHandlers();
@@ -33,11 +34,29 @@ export const UpdateChecker = {
         const installBtn = document.getElementById('updateBannerInstallBtn');
         const closeBtn = document.getElementById('updateBannerCloseBtn');
         if (installBtn) {
-            installBtn.addEventListener('click', () => this.startUpdate());
+            installBtn.addEventListener('click', () => this.handleInstallClick());
         }
         if (closeBtn) {
             closeBtn.addEventListener('click', () => this.dismissBanner());
         }
+    },
+
+    handleInstallClick() {
+        // For PyInstaller bundles (or source zips without .git), auto-update via
+        // git pull is impossible. Send the user to the GitHub release page so
+        // they can download the new binary; otherwise run the in-place updater.
+        const data = this._lastCheck;
+        const kind = data && data.install_kind;
+        const isFrozen = typeof kind === 'string' && (kind.startsWith('frozen') || kind === 'source');
+        if (isFrozen) {
+            const url = (data && data.release_url) || null;
+            if (url) {
+                window.open(url, '_blank', 'noopener');
+            }
+            this.dismissBanner();
+            return;
+        }
+        this.startUpdate();
     },
 
     _wireOverlayHandlers() {
@@ -56,6 +75,7 @@ export const UpdateChecker = {
     },
 
     _applyCheckResult(data) {
+        this._lastCheck = data || null;
         const banner = document.getElementById('updateBanner');
         if (!banner) return;
 
@@ -81,19 +101,36 @@ export const UpdateChecker = {
             linkEl.href = data.release_url;
         }
         if (installBtn) {
-            // Disable the in-place update button when the install is not a git
-            // checkout (e.g. zip download, PyInstaller bundle). The release-
-            // notes link remains usable so the user can still update manually.
-            if (data.git_repo === false) {
-                installBtn.disabled = true;
-                installBtn.title = 'Auto-update needs a git checkout. Use the release link to update manually.';
+            // For packaged builds (PyInstaller .exe / .app) and source zips
+            // without .git, the in-place updater can't run. Repurpose the
+            // button as a "Download" link that opens the GitHub release page.
+            const kind = data.install_kind || (data.git_repo === false ? 'source' : 'git');
+            const isFrozen = typeof kind === 'string' && (kind.startsWith('frozen') || kind === 'source');
+            if (isFrozen) {
+                installBtn.disabled = false;
+                installBtn.title = 'Opens the GitHub release page so you can download the new build.';
+                this._setInstallBtnText(installBtn, 'Download update');
             } else {
                 installBtn.disabled = false;
                 installBtn.title = '';
+                this._setInstallBtnText(installBtn, 'Update now');
             }
         }
 
         banner.classList.remove('hidden');
+    },
+
+    _setInstallBtnText(btn, text) {
+        // Replace the trailing text node (after the <span> icon) without
+        // touching the icon itself.
+        for (let i = btn.childNodes.length - 1; i >= 0; i--) {
+            const node = btn.childNodes[i];
+            if (node.nodeType === Node.TEXT_NODE) {
+                node.textContent = ` ${text}`;
+                return;
+            }
+        }
+        btn.appendChild(document.createTextNode(` ${text}`));
     },
 
     dismissBanner() {
