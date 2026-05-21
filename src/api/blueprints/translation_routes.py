@@ -85,6 +85,8 @@ def create_translation_blueprint(state_manager, start_translation_job):
             'auto_pause_on_rate_limit': data.get('auto_pause_on_rate_limit', AUTO_PAUSE_ON_RATE_LIMIT),
             # Bilingual output (original + translation interleaved)
             'bilingual_output': data.get('bilingual_output', False),
+            # Refine-only mode (skip translation, run only refinement on input)
+            'refine_only': data.get('refine_only', False),
             # TTS configuration
             'tts_enabled': data.get('tts_enabled', False),
             'tts_config': TTSConfig.from_web_request(data).to_dict() if data.get('tts_enabled') else None

@@ -14,7 +14,7 @@ from src.utils.file_utils import get_unique_output_path, generate_tts_for_transl
 from src.utils.unified_logger import setup_cli_logger, LogType
 from src.tts.tts_config import TTSConfig, TTS_ENABLED, TTS_VOICE, TTS_RATE, TTS_BITRATE, TTS_OUTPUT_FORMAT
 from src.persistence.checkpoint_manager import CheckpointManager
-from src.core.adapters import translate_file
+from src.core.adapters import translate_file, refine_file
 from src.utils.notifier import notify, EVENT_SUCCESS, EVENT_FAILURE
 import time
 import uuid
@@ -47,6 +47,7 @@ if __name__ == "__main__":
     prompt_group = parser.add_argument_group('Prompt Options', 'Optional instructions to include in the translation prompt')
     prompt_group.add_argument("--text-cleanup", action="store_true", help="Enable OCR/typographic cleanup (fix broken lines, spacing, punctuation).")
     prompt_group.add_argument("--refine", action="store_true", help="Enable refinement pass: runs a second pass to polish translation quality and literary style.")
+    prompt_group.add_argument("--refine-only", action="store_true", dest="refine_only", help="Run ONLY a refinement pass on an already-translated file (skips the translation phase). The input file is assumed to already be in the target language.")
     prompt_group.add_argument("--glossary", default=None, help="Path to a glossary file (.json or .csv) injected per-chunk to keep entity translations consistent.")
 
     # TTS (Text-to-Speech) arguments
@@ -82,8 +83,10 @@ if __name__ == "__main__":
             output_ext = '.epub'
         elif args.input.lower().endswith('.srt'):
             output_ext = '.srt'
-        # Use parentheses format: {originalName} ({target_lang}).{ext}
-        args.output = f"{base} ({args.target_lang}){output_ext}"
+        if args.refine_only:
+            args.output = f"{base} (refined){output_ext}"
+        else:
+            args.output = f"{base} ({args.target_lang}){output_ext}"
 
     # Ensure output path is unique (add number suffix if file exists)
     args.output = get_unique_output_path(args.output)
@@ -115,17 +118,38 @@ if __name__ == "__main__":
     if args.provider == "nim" and not args.nim_api_key:
         parser.error("--nim_api_key is required when using nim provider. Get your key at https://build.nvidia.com/")
 
-    # Log translation start
-    logger.info("Translation Started", LogType.TRANSLATION_START, {
-        'source_lang': args.source_lang,
-        'target_lang': args.target_lang,
-        'file_type': file_type,
-        'model': args.model,
-        'input_file': args.input,
-        'output_file': args.output,
-        'api_endpoint': args.api_endpoint,
-        'llm_provider': args.provider
-    })
+    # Refinement is monolingual: mismatched source/target almost always
+    # means the user forgot. Warn but proceed using target_lang.
+    if args.refine_only and args.source_lang != args.target_lang:
+        logger.warning(
+            f"⚠️ --refine-only: source language ({args.source_lang}) differs from "
+            f"target language ({args.target_lang}). Refinement is monolingual; "
+            f"source_lang will be ignored and the file will be polished as "
+            f"{args.target_lang}."
+        )
+
+    if args.refine_only:
+        logger.info("Refine-Only Started", LogType.TRANSLATION_START, {
+            'target_lang': args.target_lang,
+            'file_type': file_type,
+            'model': args.model,
+            'input_file': args.input,
+            'output_file': args.output,
+            'api_endpoint': args.api_endpoint,
+            'llm_provider': args.provider,
+            'mode': 'refine-only',
+        })
+    else:
+        logger.info("Translation Started", LogType.TRANSLATION_START, {
+            'source_lang': args.source_lang,
+            'target_lang': args.target_lang,
+            'file_type': file_type,
+            'model': args.model,
+            'input_file': args.input,
+            'output_file': args.output,
+            'api_endpoint': args.api_endpoint,
+            'llm_provider': args.provider
+        })
 
     # Create legacy callback for backward compatibility
     log_callback = logger.create_legacy_callback()
@@ -138,11 +162,13 @@ if __name__ == "__main__":
             logger.update_progress(completed, total)
 
     # Build prompt_options from CLI arguments
-    # Technical content protection is now always enabled
+    # Technical content protection is now always enabled.
+    # In refine-only mode the refinement pass is implicit, so we force the
+    # `refine` flag off to avoid double-counting in the progress tracker.
     prompt_options = {
         'preserve_technical_content': True,
         'text_cleanup': args.text_cleanup,
-        'refine': args.refine
+        'refine': args.refine and not args.refine_only,
     }
 
     # Load glossary file (JSON or CSV) into prompt_options
@@ -168,34 +194,59 @@ if __name__ == "__main__":
         # Generate unique translation ID
         translation_id = f"cli_{uuid.uuid4().hex[:8]}"
 
-        # Call the new adapter-based translate_file
-        asyncio.run(translate_file(
-            input_filepath=args.input,
-            output_filepath=args.output,
-            source_language=args.source_lang,
-            target_language=args.target_lang,
-            model_name=args.model,
-            llm_provider=args.provider,
-            checkpoint_manager=checkpoint_manager,
-            translation_id=translation_id,
-            log_callback=log_callback,
-            stats_callback=stats_callback,
-            check_interruption_callback=None,
-            llm_api_endpoint=args.api_endpoint,
-            gemini_api_key=args.gemini_api_key,
-            openai_api_key=args.openai_api_key,
-            openrouter_api_key=args.openrouter_api_key,
-            mistral_api_key=args.mistral_api_key,
-            deepseek_api_key=args.deepseek_api_key,
-            poe_api_key=args.poe_api_key,
-            nim_api_key=args.nim_api_key,
-            prompt_options=prompt_options
-        ))
+        if args.refine_only:
+            asyncio.run(refine_file(
+                input_filepath=args.input,
+                output_filepath=args.output,
+                target_language=args.target_lang,
+                model_name=args.model,
+                llm_provider=args.provider,
+                checkpoint_manager=checkpoint_manager,
+                translation_id=translation_id,
+                log_callback=log_callback,
+                stats_callback=stats_callback,
+                check_interruption_callback=None,
+                llm_api_endpoint=args.api_endpoint,
+                gemini_api_key=args.gemini_api_key,
+                openai_api_key=args.openai_api_key,
+                openrouter_api_key=args.openrouter_api_key,
+                mistral_api_key=args.mistral_api_key,
+                deepseek_api_key=args.deepseek_api_key,
+                poe_api_key=args.poe_api_key,
+                nim_api_key=args.nim_api_key,
+                prompt_options=prompt_options,
+            ))
+            logger.info("Refine-Only Completed Successfully", LogType.TRANSLATION_END, {
+                'output_file': args.output,
+                'mode': 'refine-only',
+            })
+        else:
+            asyncio.run(translate_file(
+                input_filepath=args.input,
+                output_filepath=args.output,
+                source_language=args.source_lang,
+                target_language=args.target_lang,
+                model_name=args.model,
+                llm_provider=args.provider,
+                checkpoint_manager=checkpoint_manager,
+                translation_id=translation_id,
+                log_callback=log_callback,
+                stats_callback=stats_callback,
+                check_interruption_callback=None,
+                llm_api_endpoint=args.api_endpoint,
+                gemini_api_key=args.gemini_api_key,
+                openai_api_key=args.openai_api_key,
+                openrouter_api_key=args.openrouter_api_key,
+                mistral_api_key=args.mistral_api_key,
+                deepseek_api_key=args.deepseek_api_key,
+                poe_api_key=args.poe_api_key,
+                nim_api_key=args.nim_api_key,
+                prompt_options=prompt_options
+            ))
 
-        # Log successful completion
-        logger.info("Translation Completed Successfully", LogType.TRANSLATION_END, {
-            'output_file': args.output
-        })
+            logger.info("Translation Completed Successfully", LogType.TRANSLATION_END, {
+                'output_file': args.output
+            })
 
         notify(EVENT_SUCCESS, {
             'file': args.input,
@@ -203,8 +254,9 @@ if __name__ == "__main__":
             'duration_seconds': time.time() - start_time,
             'provider': args.provider,
             'model': args.model,
-            'source_lang': args.source_lang,
+            'source_lang': None if args.refine_only else args.source_lang,
             'target_lang': args.target_lang,
+            'mode': 'refine-only' if args.refine_only else 'translate',
         })
 
         # TTS Generation (if enabled)

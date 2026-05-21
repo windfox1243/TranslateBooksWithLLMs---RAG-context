@@ -15,7 +15,7 @@ from src.utils.file_utils import get_unique_output_path, find_partial_output_pat
 from src.core.llm import OpenRouterProvider
 from src.core.llm.exceptions import RateLimitError
 from src.config import AUTO_PAUSE_ON_RATE_LIMIT, RATE_LIMIT_AUTO_RESUME_DELAY
-from src.core.adapters import translate_file
+from src.core.adapters import translate_file, refine_file
 from src.tts.tts_config import TTSConfig
 from src.utils.notifier import notify, EVENT_SUCCESS, EVENT_FAILURE, EVENT_INTERRUPTION
 from .websocket import emit_update
@@ -333,34 +333,72 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 f"⚠️ Could not load glossary: {glossary_load_error}"
             )
 
-        # Use unified adapter-based translation
-        await translate_file(
-            input_filepath=input_path_for_translate_module,
-            output_filepath=output_filepath_on_server,
-            source_language=config['source_language'],
-            target_language=config['target_language'],
-            model_name=config['model'],
-            llm_provider=config.get('llm_provider', 'ollama'),
-            checkpoint_manager=checkpoint_manager,
-            translation_id=translation_id,
-            log_callback=_log_message_callback,
-            stats_callback=_update_translation_stats_callback,
-            check_interruption_callback=should_interrupt_current_task,
-            resume_from_index=resume_from_index,
-            llm_api_endpoint=config['llm_api_endpoint'],
-            gemini_api_key=config.get('gemini_api_key', ''),
-            openai_api_key=config.get('openai_api_key', ''),
-            openrouter_api_key=config.get('openrouter_api_key', ''),
-            mistral_api_key=config.get('mistral_api_key', ''),
-            deepseek_api_key=config.get('deepseek_api_key', ''),
-            poe_api_key=config.get('poe_api_key', ''),
-            nim_api_key=config.get('nim_api_key', ''),
-            context_window=config.get('context_window', 2048),
-            auto_adjust_context=config.get('auto_adjust_context', True),
-            min_chunk_size=config.get('min_chunk_size', 5),
-            prompt_options=config.get('prompt_options', {}),
-            bilingual_output=config.get('bilingual_output', False)
-        )
+        if config.get('refine_only'):
+            _log_message_callback(
+                "refine_only_mode",
+                "✨ Refine-only mode: skipping translation, polishing the input file as-is."
+            )
+            src_lang = config.get('source_language')
+            tgt_lang = config.get('target_language')
+            if src_lang and tgt_lang and src_lang != tgt_lang:
+                _log_message_callback(
+                    "refine_only_lang_mismatch",
+                    f"⚠️ source_language ({src_lang}) ≠ target_language ({tgt_lang}). "
+                    f"Refinement is monolingual; the file will be polished as {tgt_lang}."
+                )
+            await refine_file(
+                input_filepath=input_path_for_translate_module,
+                output_filepath=output_filepath_on_server,
+                target_language=config['target_language'],
+                model_name=config['model'],
+                llm_provider=config.get('llm_provider', 'ollama'),
+                checkpoint_manager=checkpoint_manager,
+                translation_id=translation_id,
+                log_callback=_log_message_callback,
+                stats_callback=_update_translation_stats_callback,
+                check_interruption_callback=should_interrupt_current_task,
+                resume_from_index=resume_from_index,
+                llm_api_endpoint=config['llm_api_endpoint'],
+                gemini_api_key=config.get('gemini_api_key', ''),
+                openai_api_key=config.get('openai_api_key', ''),
+                openrouter_api_key=config.get('openrouter_api_key', ''),
+                mistral_api_key=config.get('mistral_api_key', ''),
+                deepseek_api_key=config.get('deepseek_api_key', ''),
+                poe_api_key=config.get('poe_api_key', ''),
+                nim_api_key=config.get('nim_api_key', ''),
+                context_window=config.get('context_window', 2048),
+                auto_adjust_context=config.get('auto_adjust_context', True),
+                prompt_options=config.get('prompt_options', {}),
+            )
+        else:
+            # Use unified adapter-based translation
+            await translate_file(
+                input_filepath=input_path_for_translate_module,
+                output_filepath=output_filepath_on_server,
+                source_language=config['source_language'],
+                target_language=config['target_language'],
+                model_name=config['model'],
+                llm_provider=config.get('llm_provider', 'ollama'),
+                checkpoint_manager=checkpoint_manager,
+                translation_id=translation_id,
+                log_callback=_log_message_callback,
+                stats_callback=_update_translation_stats_callback,
+                check_interruption_callback=should_interrupt_current_task,
+                resume_from_index=resume_from_index,
+                llm_api_endpoint=config['llm_api_endpoint'],
+                gemini_api_key=config.get('gemini_api_key', ''),
+                openai_api_key=config.get('openai_api_key', ''),
+                openrouter_api_key=config.get('openrouter_api_key', ''),
+                mistral_api_key=config.get('mistral_api_key', ''),
+                deepseek_api_key=config.get('deepseek_api_key', ''),
+                poe_api_key=config.get('poe_api_key', ''),
+                nim_api_key=config.get('nim_api_key', ''),
+                context_window=config.get('context_window', 2048),
+                auto_adjust_context=config.get('auto_adjust_context', True),
+                min_chunk_size=config.get('min_chunk_size', 5),
+                prompt_options=config.get('prompt_options', {}),
+                bilingual_output=config.get('bilingual_output', False)
+            )
 
         # If an EPUB translation was paused, the file was saved with a `[partial NN%]`
         # prefix. Re-point the tracking variables to the actual file on disk so the

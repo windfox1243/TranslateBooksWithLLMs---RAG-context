@@ -22,6 +22,9 @@ from .epub_adapter import EpubAdapter
 # Unified translation entry point (Phase 6)
 from .translate_file import translate_file, get_file_type_from_path, build_translated_output
 
+# Refine-only entry point
+from .refine_file import refine_file
+
 # Error handling system (Phase 5)
 from .exceptions import (
     TranslationError,
@@ -59,6 +62,9 @@ __all__ = [
     'translate_file',
     'get_file_type_from_path',
     'build_translated_output',
+
+    # Refine-only entry point
+    'refine_file',
 
     # Error handling - Exceptions
     'TranslationError',

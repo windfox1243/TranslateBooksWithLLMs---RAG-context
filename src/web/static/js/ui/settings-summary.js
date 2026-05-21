@@ -29,6 +29,7 @@ const OPTION_STYLES = {
     noPause:      { bg: 'rgba(239, 68, 68, 0.18)',  fg: '#dc2626', border: 'rgba(239, 68, 68, 0.45)' },
     glossary:     { bg: 'rgba(99, 102, 241, 0.18)', fg: '#4f46e5', border: 'rgba(99, 102, 241, 0.45)' },
     instructions: { bg: 'rgba(20, 184, 166, 0.20)', fg: '#0d9488', border: 'rgba(20, 184, 166, 0.45)' },
+    refineOnly:   { bg: 'rgba(34, 197, 94, 0.20)',  fg: '#16a34a', border: 'rgba(34, 197, 94, 0.55)' },
 };
 
 function getSelectText(id) {
@@ -59,11 +60,34 @@ function buildLlmLine() {
     const modelLabel = getSelectText('model') || DomHelpers.getValue('model') || '—';
     const sourceLang = getLanguage('sourceLang', 'customSourceLang') || 'auto-detect';
     const targetLang = getLanguage('targetLang', 'customTargetLang') || '—';
+    if (isChecked('refineOnlyMode')) {
+        return [providerLabel, modelLabel, `Refining in ${targetLang}`];
+    }
     return [providerLabel, modelLabel, `${sourceLang} → ${targetLang}`];
 }
 
 function buildChips() {
     const chips = [];
+
+    // Refine-only is exclusive: show only the prominent chip plus the few
+    // options that still apply (glossary, instructions, auto-pause).
+    if (isChecked('refineOnlyMode')) {
+        chips.push({ key: 'refineOnly', label: 'Refine Only (skips translation)', prominent: true });
+
+        const glossaryText = getSelectText('glossarySelect');
+        if (glossaryText && glossaryText !== 'None') {
+            const name = glossaryText.split('·')[0].trim();
+            chips.push({ key: 'glossary', label: `Glossary: ${name}` });
+        }
+        const instrText = getSelectText('customInstructionSelect');
+        if (instrText && instrText !== 'None') {
+            chips.push({ key: 'instructions', label: `Instructions: ${instrText}` });
+        }
+        if (isChecked('disableAutoPause')) {
+            chips.push({ key: 'noPause', label: 'No auto-pause' });
+        }
+        return chips;
+    }
 
     if (isChecked('refineTranslation')) chips.push({ key: 'polish', label: 'Polish (2nd pass)' });
     if (isChecked('bilingualMode'))     chips.push({ key: 'bilingual', label: 'Bilingual' });
@@ -85,19 +109,19 @@ function buildChips() {
     return chips;
 }
 
-function renderChip({ key, label }) {
+function renderChip({ key, label, prominent }) {
     const s = OPTION_STYLES[key] || OPTION_STYLES.bilingual;
     const style = [
         'display: inline-flex',
         'align-items: center',
-        'padding: 2px 10px',
+        prominent ? 'padding: 6px 18px' : 'padding: 2px 10px',
         'border-radius: 999px',
-        'font-size: 0.75rem',
+        prominent ? 'font-size: 0.8125rem' : 'font-size: 0.75rem',
         'font-weight: 600',
         'line-height: 1.6',
         `background: ${s.bg}`,
         `color: ${s.fg}`,
-        `border: 1px solid ${s.border}`,
+        `border: ${prominent ? '1.5px' : '1px'} solid ${s.border}`,
     ].join('; ');
     return `<span style="${style}">${DomHelpers.escapeHtml(label)}</span>`;
 }
@@ -125,7 +149,7 @@ const WATCHED_IDS = [
     'llmProvider', 'model',
     'sourceLang', 'customSourceLang',
     'targetLang', 'customTargetLang',
-    'refineTranslation', 'bilingualMode', 'draftMode',
+    'refineTranslation', 'refineOnlyMode', 'bilingualMode', 'draftMode',
     'textCleanup', 'disableAutoPause',
     'glossarySelect', 'customInstructionSelect',
 ];

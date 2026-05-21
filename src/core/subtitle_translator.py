@@ -125,7 +125,7 @@ async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: 
                 log_callback("srt_refinement_start", "✨ Starting SRT refinement pass to polish translation quality...")
 
             # Apply refinement to each translated subtitle
-            refined_translations = await _refine_subtitle_translations(
+            refined_translations = await refine_subtitle_translations(
                 translations=translations,
                 target_language=target_language,
                 model_name=model_name,
@@ -150,7 +150,7 @@ async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: 
     return translations
 
 
-async def _refine_subtitle_translations(
+async def refine_subtitle_translations(
     translations: Dict[int, str],
     target_language: str,
     model_name: str,
@@ -630,7 +630,7 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                 log_callback("srt_refinement_start", "✨ Starting SRT refinement pass to polish translation quality...")
 
             # Apply refinement to each translated subtitle
-            refined_translations = await _refine_subtitle_translations(
+            refined_translations = await refine_subtitle_translations(
                 translations=translations,
                 target_language=target_language,
                 model_name=model_name,

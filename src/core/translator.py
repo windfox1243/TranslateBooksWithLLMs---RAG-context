@@ -1026,6 +1026,10 @@ async def refine_chunks(
     gemini_api_key=None,
     openai_api_key=None,
     openrouter_api_key=None,
+    mistral_api_key=None,
+    deepseek_api_key=None,
+    poe_api_key=None,
+    nim_api_key=None,
     context_window=2048,
     auto_adjust_context=True,
     prompt_options=None,
@@ -1101,7 +1105,12 @@ async def refine_chunks(
     # Create LLM client
     llm_client = create_llm_client(
         llm_provider, gemini_api_key, api_endpoint, model_name,
-        openai_api_key, openrouter_api_key,
+        openai_api_key=openai_api_key,
+        openrouter_api_key=openrouter_api_key,
+        mistral_api_key=mistral_api_key,
+        deepseek_api_key=deepseek_api_key,
+        poe_api_key=poe_api_key,
+        nim_api_key=nim_api_key,
         context_window=initial_context, log_callback=log_callback
     )
 
