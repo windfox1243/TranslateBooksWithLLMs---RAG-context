@@ -10,6 +10,7 @@ import { ApiClient } from '../core/api-client.js';
 import { MessageLogger } from '../ui/message-logger.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
 import { StatusManager } from '../utils/status-manager.js';
+import { t } from '../i18n/i18n.js';
 
 const FILE_QUEUE_STORAGE_KEY = 'tbl_file_queue';
 
@@ -254,7 +255,7 @@ export const FileUpload = {
      */
     async _triggerAutoDetection() {
         if (!lastUploadedFileName) {
-            MessageLogger.showMessage('No file uploaded yet. Upload a file to auto-detect its language.', 'info');
+            MessageLogger.showMessage(t('translation:no_file_uploaded_yet'), 'info');
             return;
         }
 
@@ -262,12 +263,12 @@ export const FileUpload = {
         const file = filesToProcess.find(f => f.name === lastUploadedFileName);
 
         if (!file) {
-            MessageLogger.showMessage('File not found in queue.', 'error');
+            MessageLogger.showMessage(t('translation:file_not_in_queue'), 'error');
             return;
         }
 
         if (!file.filePath) {
-            MessageLogger.showMessage('File path not available for language detection.', 'error');
+            MessageLogger.showMessage(t('translation:file_no_path'), 'error');
             return;
         }
 
@@ -276,8 +277,10 @@ export const FileUpload = {
             const success = setLanguageInSelect('sourceLang', file.detectedLanguage);
             if (success) {
                 MessageLogger.showMessage(
-                    `Using previously detected language: ${file.detectedLanguage} ` +
-                    `(${(file.languageConfidence * 100).toFixed(0)}% confidence)`,
+                    t('translation:lang_already_detected', {
+                        lang: file.detectedLanguage,
+                        confidence: (file.languageConfidence * 100).toFixed(0)
+                    }),
                     'success'
                 );
             }
@@ -285,7 +288,7 @@ export const FileUpload = {
         }
 
         // Call the API to detect language
-        MessageLogger.showMessage(`Detecting language for ${file.name}...`, 'info');
+        MessageLogger.showMessage(t('translation:lang_detecting', { name: file.name }), 'info');
 
         try {
             const result = await ApiClient.detectLanguage(file.filePath);
@@ -302,15 +305,16 @@ export const FileUpload = {
 
                     if (!success) {
                         MessageLogger.showMessage(
-                            `Language detected but not in list: ${result.detected_language}`,
+                            t('translation:lang_detected_not_in_list', { lang: result.detected_language }),
                             'info'
                         );
                     }
                 } else {
                     MessageLogger.showMessage(
-                        `Low confidence detection: ${result.detected_language} ` +
-                        `(${(result.language_confidence * 100).toFixed(0)}% confidence). ` +
-                        `Please select the source language manually.`,
+                        t('translation:lang_low_confidence', {
+                            lang: result.detected_language,
+                            confidence: (result.language_confidence * 100).toFixed(0)
+                        }),
                         'warning'
                     );
                 }
@@ -320,10 +324,10 @@ export const FileUpload = {
                 this._saveFileQueue();
                 this.updateFileDisplay();
             } else {
-                MessageLogger.showMessage('Could not detect language from file content.', 'warning');
+                MessageLogger.showMessage(t('translation:lang_detection_no_result'), 'warning');
             }
         } catch (error) {
-            MessageLogger.showMessage(`Language detection failed: ${error.message}`, 'error');
+            MessageLogger.showMessage(t('translation:lang_detection_failed', { error: error.message }), 'error');
         }
     },
 
@@ -357,7 +361,7 @@ export const FileUpload = {
 
         // Only allow setting as active if file is still Queued
         if (file.status !== 'Queued') {
-            MessageLogger.showMessage(`Cannot edit file '${filename}' - it's already being processed.`, 'info');
+            MessageLogger.showMessage(t('translation:cannot_edit_file_processing', { name: filename }), 'info');
             return false;
         }
 
@@ -738,7 +742,7 @@ export const FileUpload = {
 
         // Check for duplicates
         if (filesToProcess.find(f => f.name === file.name)) {
-            MessageLogger.showMessage(`File '${file.name}' is already in the list.`, 'info');
+            MessageLogger.showMessage(t('translation:file_duplicate', { name: file.name }), 'info');
             return;
         }
 
@@ -748,7 +752,7 @@ export const FileUpload = {
         const outputFilename = generateOutputFilename(file, outputPattern);
         const fileExtension = file.name.split('.').pop().toLowerCase();
 
-        MessageLogger.showMessage(`Uploading file: ${file.name}...`, 'info', 4000);
+        MessageLogger.showMessage(t('translation:file_uploading', { name: file.name }), 'info', 4000);
 
         try {
             // Upload file using ApiClient
@@ -800,8 +804,11 @@ export const FileUpload = {
 
                     if (!success) {
                         MessageLogger.showMessage(
-                            `File '${file.name}' (${uploadResult.file_type}) uploaded. ` +
-                            `Language detected but not in list: ${uploadResult.detected_language}`,
+                            t('translation:file_uploaded_lang_not_in_list', {
+                                name: file.name,
+                                type: uploadResult.file_type,
+                                lang: uploadResult.detected_language
+                            }),
                             'info'
                         );
                     }
@@ -810,7 +817,7 @@ export const FileUpload = {
 
         } catch (error) {
             MessageLogger.showMessage(
-                `Failed to upload file '${file.name}': ${error.message}`,
+                t('translation:file_upload_failed', { name: file.name, error: error.message }),
                 'error'
             );
         }
@@ -906,7 +913,7 @@ export const FileUpload = {
                 if (isActiveFile) {
                     const activeBadge = document.createElement('span');
                     activeBadge.className = 'file-active-badge';
-                    activeBadge.innerHTML = '<span class="material-symbols-outlined" style="font-size: 12px;">edit</span> Active';
+                    activeBadge.innerHTML = `<span class="material-symbols-outlined" style="font-size: 12px;">edit</span> ${t('translation:active_badge')}`;
                     infoSpan.appendChild(activeBadge);
                 }
 
@@ -915,7 +922,7 @@ export const FileUpload = {
                 // Remove button
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'file-remove-btn';
-                removeBtn.title = 'Remove file';
+                removeBtn.title = t('translation:remove_file_title');
                 removeBtn.innerHTML = '<span class="material-symbols-outlined">close</span>';
                 removeBtn.onclick = (e) => {
                     e.stopPropagation();

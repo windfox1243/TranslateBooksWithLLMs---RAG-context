@@ -9,40 +9,36 @@
 import { ApiClient } from '../core/api-client.js';
 import { MessageLogger } from '../ui/message-logger.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
+import { t } from '../i18n/i18n.js';
 
 const ACTION_DEFS = {
     open: {
         icon: 'open_in_new',
-        label: 'Open file',
-        title: 'Open file',
+        labelKey: 'files:open_action',
         compactClass: 'open',
         labeledClass: 'btn-secondary'
     },
     reveal: {
         icon: 'folder_open',
-        label: 'Reveal in folder',
-        title: 'Reveal in folder',
+        labelKey: 'files:reveal_action',
         compactClass: 'reveal',
         labeledClass: 'btn-secondary'
     },
     download: {
         icon: 'download',
-        label: 'Download',
-        title: 'Download',
+        labelKey: 'files:download_action',
         compactClass: 'download',
         labeledClass: 'btn-primary'
     },
     delete: {
         icon: 'delete',
-        label: 'Delete',
-        title: 'Delete',
+        labelKey: 'files:delete_action',
         compactClass: 'delete',
         labeledClass: 'btn-danger'
     },
     'files-tab': {
         icon: 'folder',
-        label: 'Go to Files tab',
-        title: 'Go to Files tab',
+        labelKey: 'files:go_to_files_tab',
         compactClass: 'files-tab',
         labeledClass: 'btn-secondary'
     }
@@ -53,9 +49,9 @@ export const FileActions = {
         if (!filename) return;
         try {
             await ApiClient.openLocalFile(filename);
-            MessageLogger.addLog(`📂 Opened file: ${filename}`);
+            MessageLogger.addLog(t('files:open_log', { name: filename }));
         } catch (error) {
-            MessageLogger.showMessage(`Error opening file: ${error.message}`, 'error');
+            MessageLogger.showMessage(t('files:open_error', { error: error.message }), 'error');
         }
     },
 
@@ -63,18 +59,22 @@ export const FileActions = {
         if (!filename) return;
         try {
             await ApiClient.revealLocalFile(filename);
-            MessageLogger.addLog(`📁 Revealed in folder: ${filename}`);
+            MessageLogger.addLog(t('files:reveal_log', { name: filename }));
         } catch (error) {
-            MessageLogger.showMessage(`Error revealing file: ${error.message}`, 'error');
+            MessageLogger.showMessage(t('files:reveal_error', { error: error.message }), 'error');
         }
     },
 
     async openOutputFolder() {
         try {
             const data = await ApiClient.openOutputFolder();
-            MessageLogger.addLog(`📁 Opened translations folder${data.folder_path ? `: ${data.folder_path}` : ''}`);
+            MessageLogger.addLog(
+                data.folder_path
+                    ? t('files:folder_opened_log_with_path', { path: data.folder_path })
+                    : t('files:folder_opened_log')
+            );
         } catch (error) {
-            MessageLogger.showMessage(`Error opening folder: ${error.message}`, 'error');
+            MessageLogger.showMessage(t('files:folder_open_error', { error: error.message }), 'error');
         }
     },
 
@@ -85,16 +85,16 @@ export const FileActions = {
 
     async delete(filename, { confirm: needConfirm = true, onDeleted } = {}) {
         if (!filename) return false;
-        if (needConfirm && !window.confirm(`Are you sure you want to delete "${filename}"?`)) {
+        if (needConfirm && !window.confirm(t('files:confirm_delete_named', { name: filename }))) {
             return false;
         }
         try {
             const data = await ApiClient.deleteFile(filename);
-            MessageLogger.showMessage(data.message || `Deleted ${filename}`, 'success');
+            MessageLogger.showMessage(data.message || t('files:delete_default_msg', { name: filename }), 'success');
             if (typeof onDeleted === 'function') onDeleted(filename);
             return true;
         } catch (error) {
-            MessageLogger.showMessage(`Error deleting file: ${error.message}`, 'error');
+            MessageLogger.showMessage(t('files:delete_failed', { error: error.message }), 'error');
             return false;
         }
     },
@@ -129,18 +129,20 @@ export const FileActions = {
         const def = ACTION_DEFS[action];
         if (!def) throw new Error(`Unknown file action: ${action}`);
 
+        const label = t(def.labelKey);
+
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.dataset.action = action;
         if (filename) btn.dataset.filename = filename;
-        btn.title = def.title;
+        btn.title = label;
 
         if (variant === 'compact') {
             btn.className = `file-action-btn ${def.compactClass}`;
             btn.innerHTML = `<span class="material-symbols-outlined" style="font-size: 0.875rem;">${def.icon}</span>`;
         } else {
             btn.className = `btn ${def.labeledClass}`;
-            btn.innerHTML = `<span class="material-symbols-outlined">${def.icon}</span> ${def.label}`;
+            btn.innerHTML = `<span class="material-symbols-outlined">${def.icon}</span> ${label}`;
         }
 
         btn.addEventListener('click', async () => {

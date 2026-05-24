@@ -12,6 +12,7 @@ import { ApiClient } from '../core/api-client.js';
 import { toast } from '../ui/toast.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
 import { ApiKeyUtils } from '../utils/api-key-utils.js';
+import { t } from '../i18n/i18n.js';
 
 // ========================================
 // Module state
@@ -34,13 +35,13 @@ const _lastMeta = { source_lang: '', target_lang: '' };
 const STORAGE_KEY = 'selected_glossary_id';
 
 const CATEGORY_OPTIONS = [
-    { value: '',             label: '—' },
-    { value: 'character',    label: 'character' },
-    { value: 'location',     label: 'location' },
-    { value: 'organization', label: 'organization' },
-    { value: 'item',         label: 'item' },
-    { value: 'title',        label: 'title' },
-    { value: 'other',        label: 'other' },
+    { value: '',             labelKey: 'glossary:category_none' },
+    { value: 'character',    labelKey: 'glossary:category_character' },
+    { value: 'location',     labelKey: 'glossary:category_location' },
+    { value: 'organization', labelKey: 'glossary:category_organization' },
+    { value: 'item',         labelKey: 'glossary:category_item' },
+    { value: 'title',        labelKey: 'glossary:category_title' },
+    { value: 'other',        labelKey: 'glossary:category_other' },
 ];
 
 // ========================================
@@ -74,7 +75,7 @@ function buildCategorySelect(currentValue) {
     for (const opt of CATEGORY_OPTIONS) {
         const o = document.createElement('option');
         o.value = opt.value;
-        o.textContent = opt.label;
+        o.textContent = t(opt.labelKey);
         if ((currentValue || '') === opt.value) o.selected = true;
         select.appendChild(o);
     }
@@ -105,12 +106,12 @@ function setSavedIndicator(indicatorEl, state) {
     const iconEl = indicatorEl.querySelector('.material-symbols-outlined');
     if (state === 'saving') {
         indicatorEl.classList.add('is-visible', 'is-saving');
-        if (textEl) textEl.textContent = 'Saving…';
+        if (textEl) textEl.textContent = t('glossary:saving_indicator');
         if (iconEl) iconEl.textContent = 'progress_activity';
     } else if (state === 'saved') {
         indicatorEl.classList.add('is-visible');
         indicatorEl.classList.remove('is-saving');
-        if (textEl) textEl.textContent = 'Saved';
+        if (textEl) textEl.textContent = t('glossary:saved_indicator');
         if (iconEl) iconEl.textContent = 'check_circle';
         clearTimeout(indicatorEl._hideTimer);
         indicatorEl._hideTimer = setTimeout(() => {
@@ -238,7 +239,7 @@ async function refreshDropdown() {
 
     const noneOpt = document.createElement('option');
     noneOpt.value = '';
-    noneOpt.textContent = 'None';
+    noneOpt.textContent = t('settings:select_none');
     select.appendChild(noneOpt);
 
     for (const g of glossaries) {
@@ -247,8 +248,8 @@ async function refreshDropdown() {
         const src = g.source_lang || '?';
         const tgt = g.target_lang || '?';
         const count = (g.term_count != null) ? g.term_count : 0;
-        const termWord = count === 1 ? 'term' : 'terms';
-        opt.textContent = `${g.name} · ${count} ${termWord} · ${src} → ${tgt}`;
+        const termWord = count === 1 ? t('glossary:dropdown_term_singular') : t('glossary:dropdown_term_plural');
+        opt.textContent = t('glossary:dropdown_summary', { name: g.name, count, termWord, src, tgt });
         select.appendChild(opt);
     }
 
@@ -280,7 +281,7 @@ function refreshGlossaryInfoCard() {
     }
 
     const count = (g.term_count != null) ? g.term_count : 0;
-    const termWord = count === 1 ? 'term' : 'terms';
+    const termWord = count === 1 ? t('glossary:dropdown_term_singular') : t('glossary:dropdown_term_plural');
     const src = g.source_lang || '?';
     const tgt = g.target_lang || '?';
 
@@ -305,16 +306,16 @@ function refreshGlossaryInfoCard() {
         const warn = document.createElement('span');
         warn.className = 'glossary-info-warn';
         const parts = [];
-        if (srcMismatch) parts.push(`source ${escapeHtml(g.source_lang)} ≠ ${escapeHtml(reqSrc)}`);
-        if (tgtMismatch) parts.push(`target ${escapeHtml(g.target_lang)} ≠ ${escapeHtml(reqTgt)}`);
-        warn.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">warning</span> Language mismatch (${parts.join(', ')})`;
+        if (srcMismatch) parts.push(t('glossary:lang_mismatch_source', { glossary: escapeHtml(g.source_lang), request: escapeHtml(reqSrc) }));
+        if (tgtMismatch) parts.push(t('glossary:lang_mismatch_target', { glossary: escapeHtml(g.target_lang), request: escapeHtml(reqTgt) }));
+        warn.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">warning</span> ${t('glossary:lang_mismatch', { parts: parts.join(', ') })}`;
         card.appendChild(warn);
     }
 
     const link = document.createElement('a');
     link.className = 'glossary-info-link';
     link.href = '#';
-    link.textContent = 'View';
+    link.textContent = t('glossary:info_view_link');
     link.addEventListener('click', (e) => {
         e.preventDefault();
         switchTopTab('glossaries');
@@ -345,7 +346,7 @@ async function loadList() {
         console.error('Failed to load glossary list:', err);
         if (loading) loading.classList.add('hidden');
         if (body) {
-            body.innerHTML = `<tr><td colspan="5" style="color:#ef4444;">Failed to load glossaries: ${escapeHtml(err.message || 'unknown error')}</td></tr>`;
+            body.innerHTML = `<tr><td colspan="5" style="color:#ef4444;">${t('glossary:load_failed_row', { error: escapeHtml(err.message || t('glossary:unknown_error')) })}</td></tr>`;
         }
         if (table) table.classList.remove('hidden');
         return;
@@ -405,7 +406,7 @@ async function loadList() {
 
         const assignBtn = document.createElement('button');
         assignBtn.className = 'file-action-btn download';
-        assignBtn.title = isAssigned ? 'Currently assigned to translation — click to unassign' : 'Assign to translation';
+        assignBtn.title = isAssigned ? t('glossary:unassign_title') : t('glossary:assign_title');
         assignBtn.setAttribute('aria-label', assignBtn.title);
         const assignIcon = isAssigned ? 'bookmark_added' : 'bookmark_add';
         assignBtn.innerHTML = `<span class="material-symbols-outlined" style="font-size: 0.875rem;">${assignIcon}</span>`;
@@ -420,7 +421,7 @@ async function loadList() {
                     select.value = '';
                     select.dispatchEvent(new Event('change', { bubbles: true }));
                 }
-                toast.success(`"${g.name}" unassigned from translation.`);
+                toast.success(t('glossary:unassigned_msg', { name: g.name }));
             } else {
                 localStorage.setItem(STORAGE_KEY, String(g.id));
                 if (select) {
@@ -434,50 +435,50 @@ async function loadList() {
                 } else {
                     await refreshDropdown();
                 }
-                toast.success(`"${g.name}" assigned to translation.`);
+                toast.success(t('glossary:assigned_msg', { name: g.name }));
             }
             await loadList();
         });
 
         const editBtn = document.createElement('button');
         editBtn.className = 'file-action-btn download';
-        editBtn.title = 'Edit glossary';
-        editBtn.setAttribute('aria-label', 'Edit glossary');
+        editBtn.title = t('glossary:edit_glossary_title');
+        editBtn.setAttribute('aria-label', editBtn.title);
         editBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 0.875rem;">edit</span>';
         editBtn.addEventListener('click', () => openEditor(g.id));
 
         const dupBtn = document.createElement('button');
         dupBtn.className = 'file-action-btn download';
-        dupBtn.title = 'Duplicate glossary';
-        dupBtn.setAttribute('aria-label', 'Duplicate glossary');
+        dupBtn.title = t('glossary:duplicate_glossary_title');
+        dupBtn.setAttribute('aria-label', dupBtn.title);
         dupBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 0.875rem;">content_copy</span>';
         dupBtn.addEventListener('click', async () => {
             try {
                 const dup = await ApiClient.duplicateGlossary(g.id);
-                toast.success(`Duplicated as "${dup.name}".`);
+                toast.success(t('glossary:duplicated_as', { name: dup.name }));
                 await loadList();
                 await refreshDropdown();
             } catch (err) {
                 console.error('Duplicate glossary failed:', err);
-                toast.error(`Failed to duplicate glossary: ${err.message || 'unknown error'}`);
+                toast.error(t('glossary:duplicate_failed', { error: err.message || t('glossary:unknown_error') }));
             }
         });
 
         const delBtn = document.createElement('button');
         delBtn.className = 'file-action-btn delete';
-        delBtn.title = 'Delete glossary';
-        delBtn.setAttribute('aria-label', 'Delete glossary');
+        delBtn.title = t('glossary:delete_glossary_btn_title');
+        delBtn.setAttribute('aria-label', delBtn.title);
         delBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 0.875rem;">delete</span>';
         delBtn.addEventListener('click', async () => {
-            if (!confirm(`Delete glossary "${g.name}"? This cannot be undone.`)) return;
+            if (!confirm(t('glossary:confirm_delete_with_undone', { name: g.name }))) return;
             try {
                 await ApiClient.deleteGlossary(g.id);
-                toast.success(`Glossary "${g.name}" deleted.`);
+                toast.success(t('glossary:deleted_glossary', { name: g.name }));
                 await loadList();
                 await refreshDropdown();
             } catch (err) {
                 console.error('Delete glossary failed:', err);
-                toast.error(`Failed to delete glossary: ${err.message || 'unknown error'}`);
+                toast.error(t('glossary:delete_failed', { error: err.message || t('glossary:unknown_error') }));
             }
         });
 
@@ -509,7 +510,7 @@ async function _generateUniqueDefaultName() {
         existing = [];
     }
     const taken = new Set(existing);
-    const base = 'New glossary';
+    const base = t('glossary:new_glossary');
     if (!taken.has(base)) return base;
     for (let i = 2; i < 1000; i++) {
         const candidate = `${base} ${i}`;
@@ -523,7 +524,7 @@ async function handleNewGlossary() {
     try {
         name = await _generateUniqueDefaultName();
     } catch (_) {
-        name = 'New glossary';
+        name = t('glossary:new_glossary');
     }
 
     let created;
@@ -535,7 +536,7 @@ async function handleNewGlossary() {
         });
     } catch (err) {
         console.error('Create glossary failed:', err);
-        toast.error(`Failed to create glossary: ${err.message || 'unknown error'}`);
+        toast.error(t('glossary:create_failed', { error: err.message || t('glossary:unknown_error') }));
         return;
     }
 
@@ -546,7 +547,7 @@ async function handleNewGlossary() {
     const data = (created && created.glossary) ? created.glossary : created;
     const newId = data && data.id;
     if (newId == null) {
-        toast.warn('Glossary created but the server response was unexpected — reloading list.');
+        toast.warn(t('glossary:new_glossary_unexpected_response'));
         await loadList();
         refreshDropdown().catch(() => {});
         return;
@@ -564,7 +565,7 @@ async function handleNewGlossary() {
         nameInput.focus();
         nameInput.select();
     }
-    toast.success('New glossary created.');
+    toast.success(t('glossary:new_glossary_created'));
 }
 
 // ========================================
@@ -577,7 +578,7 @@ async function openEditor(gid) {
         g = await ApiClient.getGlossary(gid);
     } catch (err) {
         console.error('Failed to load glossary:', err);
-        toast.error(`Failed to load glossary: ${err.message || 'unknown error'}`);
+        toast.error(t('glossary:load_failed', { error: err.message || t('glossary:unknown_error') }));
         backToList();
         return;
     }
@@ -719,10 +720,10 @@ function _applyFilter(terms) {
     if (!currentGlossaryId) return terms;
     const q = (getFilterText(currentGlossaryId) || '').trim().toLowerCase();
     if (!q) return terms;
-    return terms.filter((t) => {
-        return (t.source || '').toLowerCase().includes(q)
-            || (t.target || '').toLowerCase().includes(q)
-            || (t.category || '').toLowerCase().includes(q);
+    return terms.filter((term) => {
+        return (term.source || '').toLowerCase().includes(q)
+            || (term.target || '').toLowerCase().includes(q)
+            || (term.category || '').toLowerCase().includes(q);
     });
 }
 
@@ -754,9 +755,11 @@ function rerenderTerms() {
 
     if (countEl) {
         if (visible.length !== total) {
-            countEl.textContent = `${visible.length} of ${total} terms`;
+            countEl.textContent = t('glossary:term_filter_count', { visible: visible.length, total });
         } else {
-            countEl.textContent = `${total} term${total === 1 ? '' : 's'}`;
+            countEl.textContent = total === 1
+                ? t('glossary:term_count_one', { count: total })
+                : t('glossary:term_count_other', { count: total });
         }
     }
 
@@ -834,8 +837,8 @@ function buildTermRow(term) {
         inp.value = value || '';
         inp.dataset.lastValue = inp.value;
         if (field === 'source') {
-            inp.placeholder = 'e.g. Москва|Москве|Москвы';
-            inp.title = "Source term. Use '|' to separate inflected forms — any form will match.";
+            inp.placeholder = t('glossary:term_source_placeholder');
+            inp.title = t('glossary:term_source_title');
         }
         td.appendChild(inp);
         return td;
@@ -854,8 +857,8 @@ function buildTermRow(term) {
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'file-action-btn delete';
-    delBtn.title = 'Delete term';
-    delBtn.setAttribute('aria-label', 'Delete term');
+    delBtn.title = t('glossary:delete_term_title');
+    delBtn.setAttribute('aria-label', delBtn.title);
     delBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 0.875rem;">delete</span>';
     delBtn.addEventListener('click', () => handleDeleteRow(tr));
     tdActions.appendChild(delBtn);
@@ -889,12 +892,12 @@ function _enqueueRowCommit(tr, work) {
 }
 
 function _updateLocalTerm(termId, patch) {
-    const idx = currentTerms.findIndex((t) => t && t.id === termId);
+    const idx = currentTerms.findIndex((term) => term && term.id === termId);
     if (idx >= 0) currentTerms[idx] = Object.assign({}, currentTerms[idx], patch);
 }
 
 function _removeLocalTerm(termId) {
-    currentTerms = currentTerms.filter((t) => !t || t.id !== termId);
+    currentTerms = currentTerms.filter((term) => !term || term.id !== termId);
 }
 
 async function _doFieldCommit(tr, el) {
@@ -942,9 +945,9 @@ async function _doFieldCommit(tr, el) {
                     srcEl.value = '';
                     srcEl.dataset.lastValue = '';
                 }
-                toast.error('A term with that source already exists in this glossary.');
+                toast.error(t('glossary:term_add_conflict'));
             } else {
-                toast.error(`Failed to add term: ${err.message || 'unknown error'}`);
+                toast.error(t('glossary:term_add_failed', { error: err.message || t('glossary:unknown_error') }));
             }
         }
         return;
@@ -961,7 +964,7 @@ async function _doFieldCommit(tr, el) {
             refreshBulkBar();
         } catch (err) {
             console.error('Delete term failed:', err);
-            toast.error(`Failed to delete term: ${err.message || 'unknown error'}`);
+            toast.error(t('glossary:term_delete_failed', { error: err.message || t('glossary:unknown_error') }));
             el.value = oldValue;
         }
         return;
@@ -980,10 +983,10 @@ async function _doFieldCommit(tr, el) {
         if (isConflictError(err)) {
             el.value = oldValue;
             flashRow(tr, 'rgba(239, 68, 68, 0.25)');
-            toast.error('That value conflicts with an existing term.');
+            toast.error(t('glossary:term_update_conflict'));
         } else {
             el.value = oldValue;
-            toast.error(`Failed to update term: ${err.message || 'unknown error'}`);
+            toast.error(t('glossary:term_update_failed', { error: err.message || t('glossary:unknown_error') }));
         }
     }
 }
@@ -999,7 +1002,7 @@ async function handleDeleteRow(tr) {
         checkTermsEmptyState();
         return;
     }
-    if (!confirm('Delete this term?')) return;
+    if (!confirm(t('glossary:delete_term_confirm'))) return;
     return _enqueueRowCommit(tr, async () => {
         try {
             await ApiClient.deleteGlossaryTerm(currentGlossaryId, tid);
@@ -1011,7 +1014,7 @@ async function handleDeleteRow(tr) {
             refreshBulkBar();
         } catch (err) {
             console.error('Delete term failed:', err);
-            toast.error(`Failed to delete term: ${err.message || 'unknown error'}`);
+            toast.error(t('glossary:term_delete_failed', { error: err.message || t('glossary:unknown_error') }));
         }
     });
 }
@@ -1113,9 +1116,9 @@ async function _doEditorMetaCommit(fieldKey) {
         if (isConflictError(err) && fieldKey === 'name') {
             const oldName = (nameInput && nameInput.dataset.lastValue) || '';
             if (nameInput) nameInput.value = oldName;
-            toast.error('A glossary with that name already exists.');
+            toast.error(t('glossary:name_conflict'));
         } else {
-            toast.error(`Failed to save glossary: ${err.message || 'unknown error'}`);
+            toast.error(t('glossary:save_failed', { error: err.message || t('glossary:unknown_error') }));
         }
     }
 }
@@ -1134,14 +1137,14 @@ function backToList() {
 
 async function handleDeleteCurrent() {
     if (currentGlossaryId == null) return;
-    if (!confirm('Delete this glossary? This cannot be undone.')) return;
+    if (!confirm(t('glossary:confirm_delete_current'))) return;
     try {
         await ApiClient.deleteGlossary(currentGlossaryId);
-        toast.success('Glossary deleted.');
+        toast.success(t('glossary:deleted_glossary_simple'));
         backToList();
     } catch (err) {
         console.error('Delete glossary failed:', err);
-        toast.error(`Failed to delete glossary: ${err.message || 'unknown error'}`);
+        toast.error(t('glossary:delete_failed', { error: err.message || t('glossary:unknown_error') }));
     }
 }
 
@@ -1181,7 +1184,10 @@ function handleFilterInput(e) {
 async function handleBulkDelete() {
     const ids = Array.from(_selectedTermIds);
     if (ids.length === 0) return;
-    if (!confirm(`Delete ${ids.length} selected term${ids.length === 1 ? '' : 's'}?`)) return;
+    const confirmMsg = ids.length === 1
+        ? t('glossary:bulk_delete_confirm_one')
+        : t('glossary:bulk_delete_confirm_other', { count: ids.length });
+    if (!confirm(confirmMsg)) return;
     try {
         const resp = await ApiClient.bulkGlossaryTerms(currentGlossaryId, {
             action: 'delete',
@@ -1194,10 +1200,10 @@ async function handleBulkDelete() {
         _selectedTermIds.clear();
         refreshBulkBar();
         rerenderTerms();
-        toast.success(`Deleted ${n} term${n === 1 ? '' : 's'}.`);
+        toast.success(n === 1 ? t('glossary:bulk_deleted_one') : t('glossary:bulk_deleted_other', { count: n }));
     } catch (err) {
         console.error('Bulk delete failed:', err);
-        toast.error(`Bulk delete failed: ${err.message || 'unknown error'}`);
+        toast.error(t('glossary:bulk_delete_failed', { error: err.message || t('glossary:unknown_error') }));
     }
 }
 
@@ -1217,10 +1223,10 @@ async function handleBulkSetCategory() {
             _updateLocalTerm(id, { category: category || '' });
         }
         rerenderTerms();
-        toast.success(`Updated category on ${n} term${n === 1 ? '' : 's'}.`);
+        toast.success(n === 1 ? t('glossary:bulk_category_updated_one') : t('glossary:bulk_category_updated_other', { count: n }));
     } catch (err) {
         console.error('Bulk set-category failed:', err);
-        toast.error(`Bulk set-category failed: ${err.message || 'unknown error'}`);
+        toast.error(t('glossary:bulk_category_failed', { error: err.message || t('glossary:unknown_error') }));
     }
 }
 
@@ -1251,7 +1257,7 @@ async function handleImportFile(file) {
         await openEditor(currentGlossaryId);
     } catch (err) {
         console.error('Import failed:', err);
-        toast.error(`Import failed: ${err.message || 'unknown error'}`);
+        toast.error(t('glossary:import_failed', { error: err.message || t('glossary:unknown_error') }));
     }
 }
 
@@ -1291,7 +1297,7 @@ function _wireDragDropImport(targetEl, onFile) {
         const file = e.dataTransfer.files[0];
         const lower = (file.name || '').toLowerCase();
         if (!lower.endsWith('.csv') && !lower.endsWith('.json')) {
-            toast.warn('Only .csv or .json files are accepted.');
+            toast.warn(t('glossary:drop_only_csv_json'));
             return;
         }
         e.preventDefault();
@@ -1344,7 +1350,7 @@ function _validateNerFile(file) {
     if (!file || !file.name) return false;
     const ext = _fileExt(file.name);
     if (!NER_ACCEPTED_EXTS.includes(ext)) {
-        toast.warn(`Unsupported file type ".${ext}". Accepted: ${NER_ACCEPTED_EXTS.join(', ')}.`);
+        toast.warn(t('glossary:ner_unsupported_ext', { ext, accepted: NER_ACCEPTED_EXTS.join(', ') }));
         return false;
     }
     return true;
@@ -1416,7 +1422,7 @@ function _setNerLoading(active) {
     const status = $('ner-status');
     if (!status) return;
     if (active) {
-        status.innerHTML = '<span class="glossary-ner-loading"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span> Extracting…';
+        status.innerHTML = `<span class="glossary-ner-loading"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span> ${t('glossary:ner_extracting')}`;
     } else {
         status.textContent = '';
     }
@@ -1425,7 +1431,7 @@ function _setNerLoading(active) {
 async function handleNerExtract() {
     if (currentGlossaryId == null) return;
     if (!nerSelectedFile) {
-        toast.warn('Please choose a source file.');
+        toast.warn(t('glossary:ner_no_file_selected'));
         return;
     }
 
@@ -1470,7 +1476,7 @@ async function handleNerExtract() {
         resp = await ApiClient.suggestGlossaryTerms(currentGlossaryId, payload);
     } catch (err) {
         console.error('NER extract failed:', err);
-        toast.error(`Extraction failed: ${err.message || 'unknown error'}`);
+        toast.error(t('glossary:ner_extract_failed', { error: err.message || t('glossary:unknown_error') }));
         if (extractBtn) extractBtn.disabled = false;
         _setNerLoading(false);
         return;
@@ -1496,19 +1502,19 @@ async function handleNerExtract() {
     if (newCountEl) {
         let suffix = '';
         if (count > 0 && newCount < count) {
-            suffix = ` (${newCount} new, ${count - newCount} already in glossary)`;
+            suffix = t('glossary:ner_results_with_new', { new: newCount, existing: count - newCount });
         } else if (count > 0) {
-            suffix = ` (${newCount} new)`;
+            suffix = t('glossary:ner_results_only_new', { count: newCount });
         }
         if (sampleFilename) {
             const samplesPart = respSampleCount > 1
-                ? ` · ${respSampleCount} excerpts`
+                ? t('glossary:ner_results_sample_excerpts', { count: respSampleCount })
                 : '';
             const charsPart = sampleChars
-                ? ` · ${sampleChars.toLocaleString()} chars sent`
+                ? t('glossary:ner_results_sample_chars', { chars: sampleChars.toLocaleString() })
                 : '';
             const fullPart = fullTextChars
-                ? ` · ${fullTextChars.toLocaleString()} chars in document`
+                ? t('glossary:ner_results_full_chars', { chars: fullTextChars.toLocaleString() })
                 : '';
             suffix += ` — ${sampleFilename}${samplesPart}${charsPart}${fullPart}`;
         }
@@ -1583,13 +1589,13 @@ function buildNerRow(candidate) {
     tdSource.textContent = candidate.source || '';
     if (candidate.already_in_glossary) {
         const tag = document.createElement('span');
-        tag.textContent = ' (already in glossary)';
+        tag.textContent = t('glossary:ner_already_in_glossary');
         tag.style.color = 'var(--text-muted-light)';
         tag.style.fontSize = '0.85em';
         tdSource.appendChild(tag);
     } else if (isIdentical) {
         const tag = document.createElement('span');
-        tag.textContent = ' (identical)';
+        tag.textContent = t('glossary:ner_identical_pair');
         tag.style.color = 'var(--text-muted-light)';
         tag.style.fontSize = '0.85em';
         tdSource.appendChild(tag);
@@ -1629,7 +1635,7 @@ async function handleNerAddSelected() {
     });
 
     if (selected.length === 0) {
-        toast.warn('No candidates selected.');
+        toast.warn(t('glossary:ner_no_candidates_selected'));
         return;
     }
 
@@ -1649,7 +1655,9 @@ async function handleNerAddSelected() {
     closeNerModal();
 
     const progress = toast.info(
-        `Adding ${termsToAdd.length} term${termsToAdd.length === 1 ? '' : 's'}…`,
+        termsToAdd.length === 1
+            ? t('glossary:ner_adding_terms_one')
+            : t('glossary:ner_adding_terms_other', { count: termsToAdd.length }),
         { duration: 0 },
     );
 
@@ -1671,13 +1679,15 @@ async function handleNerAddSelected() {
 
     progress.dismiss();
 
-    let summary = `Added ${added} term${added === 1 ? '' : 's'}`;
-    if (conflicts > 0) summary += ` (${conflicts} already existed, skipped)`;
+    let summary = added === 1
+        ? t('glossary:ner_added_summary_one')
+        : t('glossary:ner_added_summary_other', { count: added });
+    if (conflicts > 0) summary += t('glossary:ner_added_with_conflicts', { count: conflicts });
     if (failed > 0) {
-        summary += ` (bulk request failed)`;
+        summary += t('glossary:ner_bulk_request_failed');
         toast.error(summary);
     } else if (added === 0 && conflicts === 0) {
-        toast.warn('No terms were added.');
+        toast.warn(t('glossary:ner_no_terms_added'));
     } else {
         toast.success(summary);
     }
@@ -1697,7 +1707,7 @@ function openPreviewModal() {
     const out = $('glossary-preview-output');
     const meta = $('glossary-preview-meta');
     if (!modal) return;
-    if (out) out.textContent = '(Click "Render" to compute the block.)';
+    if (out) out.textContent = t('glossary:preview_output_placeholder');
     if (meta) meta.textContent = '';
     modal.classList.remove('hidden');
 }
@@ -1714,7 +1724,7 @@ async function handlePreviewRender() {
     const meta = $('glossary-preview-meta');
     const text = input ? input.value : '';
 
-    if (out) out.textContent = 'Loading…';
+    if (out) out.textContent = t('glossary:preview_loading');
     if (meta) meta.textContent = '';
 
     try {
@@ -1725,16 +1735,16 @@ async function handlePreviewRender() {
         const capped = !!(resp && resp.capped);
 
         if (out) {
-            out.textContent = block || '(no terms matched in this sample)';
+            out.textContent = block || t('glossary:preview_no_match');
         }
         if (meta) {
-            const parts = [`${matched} / ${total} terms matched`];
-            if (capped) parts.push('(cap reached)');
+            const parts = [t('glossary:preview_matched', { matched, total })];
+            if (capped) parts.push(t('glossary:preview_capped'));
             meta.textContent = parts.join(' ');
         }
     } catch (err) {
         console.error('Preview block failed:', err);
-        toast.error(`Preview failed: ${err.message || 'unknown error'}`);
+        toast.error(t('glossary:preview_failed', { error: err.message || t('glossary:unknown_error') }));
         if (out) out.textContent = '';
     }
 }
@@ -1788,7 +1798,7 @@ function wireListView() {
                 const created = await ApiClient.createGlossary({ name, source_lang: '', target_lang: '' });
                 const newId = created && (created.id != null ? created.id : (created.glossary && created.glossary.id));
                 if (newId == null) {
-                    toast.error('Could not create glossary for import.');
+                    toast.error(t('glossary:create_for_import_failed'));
                     return;
                 }
                 currentGlossaryId = newId;
@@ -1796,7 +1806,7 @@ function wireListView() {
                 await refreshDropdown();
             } catch (err) {
                 console.error('Empty import failed:', err);
-                toast.error(`Import failed: ${err.message || 'unknown error'}`);
+                toast.error(t('glossary:import_failed', { error: err.message || t('glossary:unknown_error') }));
             } finally {
                 emptyImportFile.value = '';
             }
@@ -1812,7 +1822,7 @@ function wireListView() {
                 const created = await ApiClient.createGlossary({ name, source_lang: '', target_lang: '' });
                 const newId = created && (created.id != null ? created.id : (created.glossary && created.glossary.id));
                 if (newId == null) {
-                    toast.error('Could not create glossary for import.');
+                    toast.error(t('glossary:create_for_import_failed'));
                     return;
                 }
                 currentGlossaryId = newId;
@@ -1820,7 +1830,7 @@ function wireListView() {
                 await refreshDropdown();
             } catch (err) {
                 console.error('Drop import failed:', err);
-                toast.error(`Import failed: ${err.message || 'unknown error'}`);
+                toast.error(t('glossary:import_failed', { error: err.message || t('glossary:unknown_error') }));
             }
         });
     }

@@ -6,6 +6,7 @@
 
 import { MessageLogger } from '../ui/message-logger.js';
 import { ApiClient } from './api-client.js';
+import { t } from '../i18n/i18n.js';
 
 let socket = null;
 const eventHandlers = new Map();
@@ -26,13 +27,13 @@ export const WebSocketManager = {
         socket.on('connect', () => {
             const baseUrl = ApiClient.getBaseUrl();
             console.log('WebSocket connected to:', baseUrl);
-            MessageLogger.addLog('✅ WebSocket connection to server established.');
+            MessageLogger.addLog(t('common:ws_connected_log'));
             this.emit('connect');
         });
 
         socket.on('disconnect', () => {
             console.log('WebSocket disconnected.');
-            MessageLogger.addLog('❌ WebSocket connection lost.');
+            MessageLogger.addLog(t('common:ws_disconnected_log'));
             this.emit('disconnect');
         });
 
@@ -48,7 +49,7 @@ export const WebSocketManager = {
 
         socket.on('checkpoint_created', (data) => {
             console.log('Checkpoint created:', data);
-            MessageLogger.addLog(`⏸️ ${data.message || 'Checkpoint created'}`);
+            MessageLogger.addLog(`⏸️ ${data.message || t('common:checkpoint_created_default')}`);
             this.emit('checkpoint_created', data);
         });
 

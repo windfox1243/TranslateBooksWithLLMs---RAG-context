@@ -6,6 +6,7 @@
  */
 
 import { DomHelpers } from '../ui/dom-helpers.js';
+import { t } from '../i18n/i18n.js';
 
 /**
  * Map of field IDs to their status span IDs
@@ -133,20 +134,20 @@ export const ApiKeyUtils = {
             const count = Math.max(1, keyCount | 0);
             if (count > 1) {
                 field.placeholder = maskedValue
-                    ? `Using ${count} .env keys (last: ${maskedValue})`
-                    : `Using ${count} .env keys`;
+                    ? t('settings:key_using_env_multi_with_masked', { count, masked: maskedValue })
+                    : t('settings:key_using_env_multi', { count });
             } else {
                 field.placeholder = maskedValue
-                    ? `Using .env key (${maskedValue})`
-                    : 'Using .env key';
+                    ? t('settings:key_using_env_single_with_masked', { masked: maskedValue })
+                    : t('settings:key_using_env_single');
             }
             field.dataset.envConfigured = 'true';
             field.dataset.envKeyCount = String(count);
 
             if (statusSpan) {
                 statusSpan.textContent = count > 1
-                    ? `✓ ${count} keys (rotation)`
-                    : '✓ Configured';
+                    ? t('settings:key_status_configured_rotation', { count })
+                    : t('settings:key_status_configured');
                 statusSpan.className = 'key-status configured';
             }
         } else {
@@ -155,7 +156,7 @@ export const ApiKeyUtils = {
             field.dataset.envKeyCount = '0';
 
             if (statusSpan) {
-                statusSpan.textContent = '⚠ Not set';
+                statusSpan.textContent = t('settings:key_status_not_configured_badge');
                 statusSpan.className = 'key-status not-configured';
             }
         }
@@ -178,7 +179,7 @@ export const ApiKeyUtils = {
         const isAvailable = this.isAvailable(fieldId);
 
         if (provider === 'gemini' && !isAvailable) {
-            return { valid: false, message: 'Gemini API key is required when using Gemini provider.' };
+            return { valid: false, message: t('errors:api_key_required_gemini') };
         }
 
         if (provider === 'openai' && !isAvailable) {
@@ -188,28 +189,28 @@ export const ApiKeyUtils = {
             const isOfficialEndpoint = endpoint.includes('api.openai.com');
 
             if (isOfficialEndpoint || !isLocalEndpoint) {
-                return { valid: false, message: 'API key is required when using OpenAI cloud API.' };
+                return { valid: false, message: t('errors:api_key_required_openai') };
             }
         }
 
         if (provider === 'openrouter' && !isAvailable) {
-            return { valid: false, message: 'OpenRouter API key is required when using OpenRouter provider.' };
+            return { valid: false, message: t('errors:api_key_required_openrouter') };
         }
 
         if (provider === 'mistral' && !isAvailable) {
-            return { valid: false, message: 'Mistral API key is required when using Mistral provider.' };
+            return { valid: false, message: t('errors:api_key_required_mistral') };
         }
 
         if (provider === 'deepseek' && !isAvailable) {
-            return { valid: false, message: 'DeepSeek API key is required when using DeepSeek provider.' };
+            return { valid: false, message: t('errors:api_key_required_deepseek') };
         }
 
         if (provider === 'poe' && !isAvailable) {
-            return { valid: false, message: 'Poe API key is required. Get your key at poe.com/api_key' };
+            return { valid: false, message: t('errors:api_key_required_poe') };
         }
 
         if (provider === 'nim' && !isAvailable) {
-            return { valid: false, message: 'NVIDIA NIM API key is required when using NIM provider.' };
+            return { valid: false, message: t('errors:api_key_required_nim') };
         }
 
         return { valid: true, message: '' };

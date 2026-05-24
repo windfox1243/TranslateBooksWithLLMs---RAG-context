@@ -15,6 +15,7 @@ import { StatusManager } from '../utils/status-manager.js';
 import { ProgressManager } from './progress-manager.js';
 import { FileUpload, generateOutputFilename } from '../files/file-upload.js';
 import { TranslationTracker } from './translation-tracker.js';
+import { t } from '../i18n/i18n.js';
 
 /**
  * Validation helper for early failures
@@ -22,7 +23,7 @@ import { TranslationTracker } from './translation-tracker.js';
  */
 function earlyValidationFail(message) {
     MessageLogger.showMessage(message, 'error');
-    MessageLogger.addLog(`❌ Validation failed: ${message}`);
+    MessageLogger.addLog(t('translation:validation_failed_log', { message }));
     return false;
 }
 
@@ -148,7 +149,7 @@ export const BatchController = {
         if (!TranslationTracker.isInitialized || !TranslationTracker.isInitialized()) {
             await new Promise(resolve => setTimeout(resolve, 100));
             if (!TranslationTracker.isInitialized || !TranslationTracker.isInitialized()) {
-                MessageLogger.showMessage('⚠️ System still initializing, please wait...', 'warning');
+                MessageLogger.showMessage(t('translation:system_initializing'), 'warning');
                 return;
             }
         }
@@ -163,7 +164,7 @@ export const BatchController = {
         if (sourceLanguageVal === 'Other') {
             sourceLanguageVal = DomHelpers.getValue('customSourceLang').trim();
             if (!sourceLanguageVal) {
-                return earlyValidationFail('Please specify the custom source language for the batch.');
+                return earlyValidationFail(t('translation:validation_custom_source'));
             }
         }
 
@@ -171,20 +172,20 @@ export const BatchController = {
         if (targetLanguageVal === 'Other') {
             targetLanguageVal = DomHelpers.getValue('customTargetLang').trim();
             if (!targetLanguageVal) {
-                return earlyValidationFail('Please specify the custom target language for the batch.');
+                return earlyValidationFail(t('translation:validation_custom_target'));
             }
         }
 
         const selectedModel = DomHelpers.getValue('model');
         if (!selectedModel) {
-            return earlyValidationFail('Please select an LLM model for the batch.');
+            return earlyValidationFail(t('translation:validation_model'));
         }
 
         const provider = DomHelpers.getValue('llmProvider');
         if (provider === 'ollama') {
             const ollamaApiEndpoint = DomHelpers.getValue('apiEndpoint').trim();
             if (!ollamaApiEndpoint) {
-                return earlyValidationFail('Ollama API Endpoint cannot be empty for the batch.');
+                return earlyValidationFail(t('translation:validation_ollama_endpoint'));
             }
         }
 
@@ -214,7 +215,7 @@ export const BatchController = {
         const translateBtn = DomHelpers.getElement('translateBtn');
         if (translateBtn) {
             translateBtn.disabled = true;
-            translateBtn.innerHTML = '⏳ Batch in Progress...';
+            translateBtn.innerHTML = t('translation:batch_in_progress');
         }
 
         const interruptBtn = DomHelpers.getElement('interruptBtn');
@@ -223,8 +224,8 @@ export const BatchController = {
             interruptBtn.disabled = false;
         }
 
-        MessageLogger.addLog(`🚀 Batch translation started for ${queuedFilesCount} file(s).`);
-        MessageLogger.showMessage(`Batch of ${queuedFilesCount} file(s) initiated.`, 'info');
+        MessageLogger.addLog(t('translation:batch_started_log', { count: queuedFilesCount }));
+        MessageLogger.showMessage(t('translation:batch_initiated', { count: queuedFilesCount }), 'info');
 
         // Start processing queue
         this.processNextFileInQueue();
@@ -247,14 +248,14 @@ export const BatchController = {
             const translateBtn = DomHelpers.getElement('translateBtn');
             if (translateBtn) {
                 translateBtn.disabled = filesToProcess.length === 0 || !StatusManager.isConnected();
-                translateBtn.innerHTML = '▶️ Start Translation Batch';
+                translateBtn.innerHTML = t('translation:start_batch_with_icon');
             }
 
             DomHelpers.hide('interruptBtn');
 
-            MessageLogger.showMessage('✅ Batch translation completed for all files!', 'success');
-            MessageLogger.addLog('🏁 All files in the batch have been processed.');
-            DomHelpers.setText('currentFileProgressTitle', `📊 Batch Completed`);
+            MessageLogger.showMessage(t('translation:batch_completed'), 'success');
+            MessageLogger.addLog(t('translation:batch_completed_log'));
+            DomHelpers.setText('currentFileProgressTitle', t('translation:batch_completed_title'));
             return;
         }
 
@@ -262,7 +263,7 @@ export const BatchController = {
 
         const lastTranslationPreview = DomHelpers.getElement('lastTranslationPreview');
         if (lastTranslationPreview) {
-            lastTranslationPreview.innerHTML = '<div style="color: #6b7280; font-style: italic; padding: 10px;">No translation yet...</div>';
+            lastTranslationPreview.innerHTML = `<div style="color: #6b7280; font-style: italic; padding: 10px;">${t('translation:no_translation_yet')}</div>`;
         }
 
         if (fileToTranslate.fileType === 'epub') {
@@ -273,7 +274,7 @@ export const BatchController = {
 
         this.updateTranslationTitle(fileToTranslate);
         ProgressManager.show();
-        MessageLogger.addLog(`▶️ Starting translation for: ${fileToTranslate.name} (${fileToTranslate.fileType.toUpperCase()})`);
+        MessageLogger.addLog(t('translation:starting_translation_log', { name: fileToTranslate.name, type: fileToTranslate.fileType.toUpperCase() }));
         updateFileStatusInList(fileToTranslate.name, 'Preparing...');
 
         const provider = DomHelpers.getValue('llmProvider');
@@ -281,7 +282,7 @@ export const BatchController = {
         const apiKeyValidation = ApiKeyUtils.validateForProvider(provider, endpoint);
 
         if (!apiKeyValidation.valid) {
-            MessageLogger.addLog(`❌ Error: ${apiKeyValidation.message}`);
+            MessageLogger.addLog(t('translation:api_key_error_log', { message: apiKeyValidation.message }));
             MessageLogger.showMessage(apiKeyValidation.message, 'error');
             updateFileStatusInList(fileToTranslate.name, 'Error: Missing API key');
             StateManager.setState('translation.currentJob', null);
@@ -291,8 +292,8 @@ export const BatchController = {
 
         // Validate file path
         if (!fileToTranslate.filePath && !fileToTranslate.content) {
-            MessageLogger.addLog(`❌ Critical Error: File ${fileToTranslate.name} has no server path or content`);
-            MessageLogger.showMessage(`Cannot process ${fileToTranslate.name}: file path missing.`, 'error');
+            MessageLogger.addLog(t('translation:critical_no_path_log', { name: fileToTranslate.name }));
+            MessageLogger.showMessage(t('translation:critical_no_path_msg', { name: fileToTranslate.name }), 'error');
             updateFileStatusInList(fileToTranslate.name, 'Path Error');
             StateManager.setState('translation.currentJob', null);
             this.processNextFileInQueue();
@@ -323,15 +324,15 @@ export const BatchController = {
             });
 
             this.updateTranslationTitle(fileToTranslate);
-            MessageLogger.addLog(`⏳ Translation submitted for ${fileToTranslate.name}...`);
+            MessageLogger.addLog(t('translation:submitted_log', { name: fileToTranslate.name }));
             this.removeFileFromProcessingList(fileToTranslate.name);
 
             const event = new CustomEvent('translationStarted', { detail: { file: fileToTranslate, translationId: data.translation_id } });
             window.dispatchEvent(event);
 
         } catch (error) {
-            MessageLogger.addLog(`❌ Error initiating translation for ${fileToTranslate.name}: ${error.message}`);
-            MessageLogger.showMessage(`Error starting ${fileToTranslate.name}: ${error.message}`, 'error');
+            MessageLogger.addLog(t('translation:init_error_log', { name: fileToTranslate.name, error: error.message }));
+            MessageLogger.showMessage(t('translation:init_error_msg', { name: fileToTranslate.name, error: error.message }), 'error');
             updateFileStatusInList(fileToTranslate.name, 'Initiation Error');
             StateManager.setState('translation.currentJob', null);
             this.processNextFileInQueue();
@@ -357,7 +358,7 @@ export const BatchController = {
 
         // Add "Translating" text
         const translatingText = document.createElement('div');
-        translatingText.textContent = 'Translating';
+        translatingText.textContent = t('translation:translating');
         translatingText.style.fontWeight = 'bold';
         mainContainer.appendChild(translatingText);
 
@@ -504,13 +505,13 @@ export const BatchController = {
         const filesToProcess = StateManager.getState('files.toProcess') || [];
         if (translateBtn) {
             translateBtn.disabled = filesToProcess.length === 0 || !StatusManager.isConnected();
-            translateBtn.innerHTML = '▶️ Start Translation Batch';
+            translateBtn.innerHTML = t('translation:start_batch_with_icon');
         }
 
         DomHelpers.hide('interruptBtn');
 
-        MessageLogger.addLog('⏹️ Batch translation stopped');
-        MessageLogger.showMessage('Batch translation stopped', 'info');
+        MessageLogger.addLog(t('translation:batch_stopped_log'));
+        MessageLogger.showMessage(t('translation:batch_stopped'), 'info');
     },
 
     /**
@@ -524,7 +525,7 @@ export const BatchController = {
         if (fileIndex !== -1) {
             filesToProcess.splice(fileIndex, 1);
             StateManager.setState('files.toProcess', filesToProcess);
-            MessageLogger.addLog(`🗑️ Removed ${filename} from file list`);
+            MessageLogger.addLog(t('translation:file_removed_log', { name: filename }));
             // Notify file list change to update UI and persist to localStorage
             FileUpload.notifyFileListChanged();
         }

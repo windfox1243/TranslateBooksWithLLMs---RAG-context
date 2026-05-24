@@ -198,8 +198,10 @@ body {
 }
 
 .header #themeToggleBtn {
-    min-width: 3rem;
-    height: 3rem;
+    min-width: 2.25rem;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -207,11 +209,11 @@ body {
 }
 
 .header #themeToggleBtn:hover {
-    transform: scale(1.05) rotate(15deg);
+    transform: scale(1.08) rotate(15deg);
 }
 
 .header #themeToggleBtn .material-symbols-outlined {
-    font-size: 1.5rem;
+    font-size: 1.125rem;
     transition: transform 0.3s ease;
 }
 
@@ -264,18 +266,96 @@ body {
 .header .status-section {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: 0.6rem;
 }
 
 .header .status-indicator {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 0.9rem;
+    height: 2.25rem;
     background: var(--background-light);
     box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
     border: 1px solid var(--border-light);
     border-radius: 9999px;
+}
+
+.header .header-lang-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0 0.55rem 0 0.7rem;
+    height: 2.25rem;
+    background: transparent;
+    border: 1px solid var(--border-light);
+    border-radius: 9999px;
+    color: var(--text-muted-light);
+    transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+    cursor: pointer;
+}
+
+.header .header-lang-wrapper:hover,
+.header .header-lang-wrapper:focus-within {
+    color: var(--text-dark);
+    border-color: var(--primary-light);
+    background: rgba(54, 118, 216, 0.04);
+}
+
+.header .header-lang-icon {
+    font-size: 0.95rem;
+    line-height: 1;
+    pointer-events: none;
+}
+
+.header .header-lang-display {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    pointer-events: none;
+    min-width: 1.1rem;
+    text-align: center;
+}
+
+.header .header-lang-caret {
+    font-size: 0.95rem;
+    line-height: 1;
+    pointer-events: none;
+    opacity: 0.7;
+}
+
+.header .header-lang-select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background: transparent;
+    border: 0;
+    outline: 0;
+    padding: 0;
+    margin: 0;
+    font-family: inherit;
+    font-size: 0.72rem;
+    color: transparent;
+    cursor: pointer;
+    opacity: 0;
+}
+
+.header .header-lang-select:focus-visible + * ,
+.header .header-lang-wrapper:focus-within {
+    outline: none;
+}
+
+.header .header-lang-select option {
+    color: var(--text-dark);
+    background: var(--background-light);
+    font-size: 0.9rem;
+    padding: 0.4rem 0.6rem;
 }
 
 .header .status-indicator .status-dot {

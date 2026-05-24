@@ -14,6 +14,7 @@ import { FileUpload } from '../files/file-upload.js';
 import { FileActions } from '../files/file-actions.js';
 import { ProgressManager, formatElapsedTime } from './progress-manager.js';
 import { LifecycleManager } from '../utils/lifecycle-manager.js';
+import { t } from '../i18n/i18n.js';
 
 // Storage configuration with versioning
 const STORAGE_VERSION = 1;
@@ -82,7 +83,7 @@ export const TranslationTracker = {
             }
         } catch (error) {
             console.error('Failed to initialize translation state:', error);
-            MessageLogger.addLog('⚠️ Could not fully restore previous session state');
+            MessageLogger.addLog(t('translation:session_init_failed'));
 
             // Fallback: restore from localStorage anyway
             this.restoreTranslationStateSync();
@@ -139,7 +140,7 @@ export const TranslationTracker = {
             const savedState = JSON.parse(stored);
 
             if (!validateTranslationState(savedState)) {
-                MessageLogger.addLog('⚠️ Previous session state was corrupted, starting fresh');
+                MessageLogger.addLog(t('translation:session_corrupted_log'));
                 this.initializeDefaultTranslationState();
                 this.clearTranslationState();
                 return;
@@ -163,16 +164,16 @@ export const TranslationTracker = {
                 const translateBtn = DomHelpers.getElement('translateBtn');
                 if (translateBtn) {
                     translateBtn.disabled = true;
-                    translateBtn.innerHTML = '⏳ Batch in Progress...';
+                    translateBtn.innerHTML = t('translation:batch_in_progress');
                 }
 
-                MessageLogger.addLog('🔄 Restored previous translation session');
+                MessageLogger.addLog(t('translation:session_restored_log'));
             } else {
                 this.initializeDefaultTranslationState();
             }
         } catch (error) {
             console.error('Failed to restore translation state from localStorage:', error);
-            MessageLogger.addLog('⚠️ Could not restore previous session, starting fresh');
+            MessageLogger.addLog(t('translation:session_could_not_restore'));
             this.initializeDefaultTranslationState();
         }
     },
@@ -195,7 +196,7 @@ export const TranslationTracker = {
                         serverState.status === 'interrupted' ||
                         serverState.status === 'rate_limited') {
 
-                        MessageLogger.addLog(`🔄 Syncing state: translation ${serverState.status} on server`);
+                        MessageLogger.addLog(t('translation:session_sync_log', { status: serverState.status }));
                         this.resetUIToIdle();
                     } else if (serverState.status === 'running' || serverState.status === 'queued') {
                         // Calculate progress from stats if available
@@ -205,7 +206,7 @@ export const TranslationTracker = {
                     }
                 } catch (error) {
                     if (error.status === 404) {
-                        MessageLogger.addLog('⚠️ Translation job no longer exists, resetting');
+                        MessageLogger.addLog(t('translation:session_job_missing_log'));
                         this.resetUIToIdle();
                     }
                 }
@@ -264,9 +265,9 @@ export const TranslationTracker = {
 
             // Check if it's a quota exceeded error
             if (error.name === 'QuotaExceededError') {
-                MessageLogger.addLog('⚠️ Browser storage full, could not save translation state');
+                MessageLogger.addLog(t('translation:session_state_save_quota'));
             } else {
-                MessageLogger.addLog('⚠️ Failed to save translation state');
+                MessageLogger.addLog(t('translation:session_state_save_failed'));
             }
         }
     },
@@ -350,7 +351,7 @@ export const TranslationTracker = {
                     const translateBtn = DomHelpers.getElement('translateBtn');
                     if (translateBtn) {
                         translateBtn.disabled = true;
-                        translateBtn.innerHTML = '⏳ Batch in Progress...';
+                        translateBtn.innerHTML = t('translation:batch_in_progress');
                     }
                     DomHelpers.show('interruptBtn');
 
@@ -421,7 +422,7 @@ export const TranslationTracker = {
         if (data.status === 'completed') {
             MessageLogger.resetProgressTracking();
             this.finishCurrentFileTranslation(
-                `✅ ${currentFile.name}: Translation completed!`,
+                t('translation:translation_completed_msg', { name: currentFile.name }),
                 'success',
                 data
             );
@@ -429,7 +430,7 @@ export const TranslationTracker = {
         } else if (data.status === 'interrupted') {
             MessageLogger.resetProgressTracking();
             this.finishCurrentFileTranslation(
-                `ℹ️ ${currentFile.name}: Translation interrupted.`,
+                t('translation:translation_interrupted_msg', { name: currentFile.name }),
                 'info',
                 data
             );
@@ -437,7 +438,7 @@ export const TranslationTracker = {
         } else if (data.status === 'rate_limited') {
             MessageLogger.resetProgressTracking();
             this.finishCurrentFileTranslation(
-                `⏸️ ${currentFile.name}: Rate limited, translation auto-paused. Use the Resume button below when ready.`,
+                t('translation:translation_rate_limited_msg', { name: currentFile.name }),
                 'info',
                 data
             );
@@ -445,7 +446,7 @@ export const TranslationTracker = {
         } else if (data.status === 'error') {
             MessageLogger.resetProgressTracking();
             this.finishCurrentFileTranslation(
-                `❌ ${currentFile.name}: Error - ${data.error || 'Unknown error.'}`,
+                t('translation:translation_error_msg', { name: currentFile.name, error: data.error || t('translation:translation_unknown_error') }),
                 'error',
                 data
             );
@@ -457,7 +458,7 @@ export const TranslationTracker = {
             this.updateTranslationTitle(currentFile);
             this.resetOpenRouterCostDisplay();
 
-            MessageLogger.showMessage(`Translation in progress for ${currentFile.name}...`, 'info');
+            MessageLogger.showMessage(t('translation:translation_in_progress', { name: currentFile.name }), 'info');
             this.updateFileStatusInList(currentFile.name, 'Processing');
         }
     },
@@ -481,7 +482,7 @@ export const TranslationTracker = {
 
         // Add "Translating" text
         const translatingText = document.createElement('div');
-        translatingText.textContent = 'Translating';
+        translatingText.textContent = t('translation:translating');
         translatingText.style.fontWeight = 'bold';
         mainContainer.appendChild(translatingText);
 
@@ -722,10 +723,10 @@ export const TranslationTracker = {
         if (resultData.status === 'completed') {
             this.processNextFileInQueue();
         } else if (resultData.status === 'interrupted') {
-            MessageLogger.addLog('🛑 Batch processing stopped by user.');
+            MessageLogger.addLog(t('translation:batch_stopped_user_log'));
             this.resetUIToIdle();
         } else if (resultData.status === 'rate_limited') {
-            MessageLogger.addLog('⏸️ Batch processing paused (rate limited). Resume from the section below.');
+            MessageLogger.addLog(t('translation:batch_paused_log'));
             this.resetUIToIdle();
         } else {
             this.processNextFileInQueue();
@@ -755,13 +756,14 @@ export const TranslationTracker = {
 
         const main = document.createElement('div');
         main.className = 'completion-card__main';
+        const dismissLabel = t('translation:completion_card_dismiss');
         main.innerHTML = `
             <div class="completion-card__header">
                 <h3 class="completion-card__title">
                     <span class="material-symbols-outlined">check_circle</span>
-                    <span>Translation completed${statsHtml}</span>
+                    <span>${t('translation:translation_completed_card_title')}${statsHtml}</span>
                 </h3>
-                <button type="button" class="completion-card__close" title="Dismiss" aria-label="Dismiss">
+                <button type="button" class="completion-card__close" title="${dismissLabel}" aria-label="${dismissLabel}">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
@@ -835,7 +837,7 @@ export const TranslationTracker = {
         }
 
         if (failed > 0) {
-            items.push(`<span class="completion-card__stat--error">${failed} failed</span>`);
+            items.push(`<span class="completion-card__stat--error">${t('translation:completion_failed_chunks', { count: failed })}</span>`);
         }
 
         if (cost > 0 || totalTokens > 0) {
@@ -906,12 +908,12 @@ export const TranslationTracker = {
                 button.disabled = true;
                 button.style.opacity = '0.5';
                 button.style.cursor = 'not-allowed';
-                button.title = '⚠️ Cannot resume: a translation is already in progress';
+                button.title = t('translation:cannot_resume_in_progress_title');
             } else {
                 button.disabled = false;
                 button.style.opacity = '1';
                 button.style.cursor = 'pointer';
-                button.title = 'Resume this translation';
+                button.title = t('translation:resume_btn_title');
             }
         });
 
@@ -931,15 +933,15 @@ export const TranslationTracker = {
         const activeJobs = StateManager.getState('translation.activeJobs');
 
         if (hasActive) {
-            const activeNames = activeJobs.map(t => t.output_filename || 'Unknown').join(', ');
+            const activeNames = activeJobs.map(job => job.output_filename || t('translation:job_card_unknown')).join(', ');
             const bannerHtml = `
                 <div class="active-translation-warning" style="background: #fef3c7; border: 1px solid #f59e0b; padding: 12px; margin-bottom: 15px; border-radius: 6px;">
                     <div style="display: flex; align-items: center; gap: 10px;">
                         <span style="font-size: 20px;">⚠️</span>
                         <div style="flex: 1;">
-                            <strong style="color: #92400e;">Active translation in progress</strong>
+                            <strong style="color: #92400e;">${t('translation:active_translation_warning_title')}</strong>
                             <p style="margin: 5px 0 0 0; font-size: 13px; color: #78350f;">
-                                Resume disabled. Active translation(s): ${DomHelpers.escapeHtml(activeNames)}
+                                ${t('translation:active_translation_warning_desc', { names: DomHelpers.escapeHtml(activeNames) })}
                             </p>
                         </div>
                     </div>
@@ -966,11 +968,11 @@ export const TranslationTracker = {
 
         DomHelpers.hide('interruptBtn');
         DomHelpers.setDisabled('interruptBtn', false);
-        DomHelpers.setText('interruptBtn', '⏹️ Interrupt Current & Stop Batch');
+        DomHelpers.setText('interruptBtn', t('translation:interrupt_batch_with_icon'));
 
         const filesToProcess = StateManager.getState('files.toProcess');
         DomHelpers.setDisabled('translateBtn', filesToProcess.length === 0 || !StatusManager.isConnected());
-        DomHelpers.setText('translateBtn', '▶️ Start Translation Batch');
+        DomHelpers.setText('translateBtn', t('translation:start_batch_with_icon'));
 
         if (filesToProcess.length === 0) {
             DomHelpers.hide('progressSection');

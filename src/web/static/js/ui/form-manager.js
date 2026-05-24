@@ -12,6 +12,7 @@ import { MessageLogger } from './message-logger.js';
 import { ApiKeyUtils } from '../utils/api-key-utils.js';
 import { TranslationTracker } from '../translation/translation-tracker.js';
 import { SettingsManager } from '../core/settings-manager.js';
+import { t } from '../i18n/i18n.js';
 
 /**
  * Set default language in select/input
@@ -547,7 +548,7 @@ export const FormManager = {
 
         } catch (error) {
             console.error('[FormManager] Failed to load default configuration:', error);
-            MessageLogger.showMessage('Failed to load default configuration', 'warning');
+            MessageLogger.showMessage(t('settings:default_config_load_failed'), 'warning');
             // Still dispatch event even on error so other modules aren't blocked
             console.log('[FormManager] Dispatching defaultConfigLoaded event despite error');
             window.dispatchEvent(new CustomEvent('defaultConfigLoaded'));
@@ -573,7 +574,7 @@ export const FormManager = {
             const currentValue = select.value;
 
             // Reset dropdown to default
-            select.innerHTML = '<option value="">None</option>';
+            select.innerHTML = `<option value="">${t('settings:select_none')}</option>`;
 
             // Populate dropdown with available files
             if (data.files && data.files.length > 0) {
@@ -625,11 +626,11 @@ export const FormManager = {
             const response = await ApiClient.openCustomInstructionsFolder();
             if (!response.success) {
                 console.error('[CustomInstructions] Failed to open folder:', response.error);
-                MessageLogger.addLog('Failed to open Custom_Instructions folder');
+                MessageLogger.addLog(t('settings:custom_instructions_load_failed'));
             }
         } catch (error) {
             console.error('[CustomInstructions] Error opening folder:', error);
-            MessageLogger.addLog('Failed to open Custom_Instructions folder');
+            MessageLogger.addLog(t('settings:custom_instructions_load_failed'));
         }
     },
 
@@ -644,7 +645,7 @@ export const FormManager = {
 
         // First, interrupt current translation if active
         if (currentJob && currentJob.translationId && isBatchActive) {
-            MessageLogger.addLog("🛑 Interrupting current translation before clearing files...");
+            MessageLogger.addLog(t('translation:interrupt_before_clear_log'));
             try {
                 await ApiClient.interruptTranslation(currentJob.translationId);
             } catch {
@@ -674,7 +675,7 @@ export const FormManager = {
         DomHelpers.hide('progressSection');
 
         // Reset buttons
-        DomHelpers.setText('translateBtn', '▶️ Start Translation Batch');
+        DomHelpers.setText('translateBtn', t('translation:start_batch_with_icon'));
         DomHelpers.setDisabled('translateBtn', true);
         DomHelpers.hide('interruptBtn');
         DomHelpers.setDisabled('interruptBtn', false);
@@ -694,20 +695,20 @@ export const FormManager = {
 
         // Delete uploaded files from server
         if (uploadedFilePaths.length > 0) {
-            MessageLogger.addLog(`🗑️ Deleting ${uploadedFilePaths.length} uploaded file(s) from server...`);
+            MessageLogger.addLog(t('translation:delete_uploaded_log', { count: uploadedFilePaths.length }));
             try {
                 const result = await ApiClient.clearUploads(uploadedFilePaths);
 
-                MessageLogger.addLog(`✅ Successfully deleted ${result.total_deleted} uploaded file(s).`);
+                MessageLogger.addLog(t('translation:delete_uploaded_success_log', { count: result.total_deleted }));
                 if (result.failed && result.failed.length > 0) {
-                    MessageLogger.addLog(`⚠️ Failed to delete ${result.failed.length} file(s).`);
+                    MessageLogger.addLog(t('translation:delete_uploaded_failed_log', { count: result.failed.length }));
                 }
             } catch {
-                MessageLogger.addLog("⚠️ Error occurred while deleting uploaded files.");
+                MessageLogger.addLog(t('translation:delete_uploaded_error_log'));
             }
         }
 
-        MessageLogger.addLog("Form and file list reset.");
+        MessageLogger.addLog(t('translation:form_reset_log'));
 
         // Trigger UI update
         window.dispatchEvent(new CustomEvent('formReset'));
@@ -800,19 +801,19 @@ export const FormManager = {
         const config = this.getTranslationConfig();
 
         if (!config.source_language) {
-            return { valid: false, message: 'Please specify the source language.' };
+            return { valid: false, message: t('translation:validation_source_required') };
         }
 
         if (!config.target_language) {
-            return { valid: false, message: 'Please specify the target language.' };
+            return { valid: false, message: t('translation:validation_target_required') };
         }
 
         if (!config.model) {
-            return { valid: false, message: 'Please select an LLM model.' };
+            return { valid: false, message: t('translation:validation_model_required') };
         }
 
         if (!config.llm_api_endpoint) {
-            return { valid: false, message: 'API endpoint cannot be empty.' };
+            return { valid: false, message: t('translation:validation_endpoint_empty') };
         }
 
         // Validate API keys for cloud providers using shared utility

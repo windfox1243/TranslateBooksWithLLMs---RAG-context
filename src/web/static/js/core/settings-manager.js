@@ -9,6 +9,7 @@
 import { ApiClient } from './api-client.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
 import { MessageLogger } from '../ui/message-logger.js';
+import { t } from '../i18n/i18n.js';
 
 // Storage configuration with versioning
 const STORAGE_VERSION = 1;
@@ -239,7 +240,7 @@ export const SettingsManager = {
             return parsed;
         } catch (error) {
             console.error('Failed to load preferences from localStorage:', error);
-            MessageLogger.addLog('⚠️ Could not load saved preferences');
+            MessageLogger.addLog(t('translation:preferences_load_failed_log'));
             return {};
         }
     },
@@ -264,9 +265,9 @@ export const SettingsManager = {
 
             // Check if it's a quota exceeded error
             if (error.name === 'QuotaExceededError') {
-                MessageLogger.addLog('⚠️ Browser storage full, could not save preferences');
+                MessageLogger.addLog(t('translation:preferences_save_quota'));
             } else {
-                MessageLogger.addLog('⚠️ Failed to save preferences');
+                MessageLogger.addLog(t('translation:preferences_save_failed_log'));
             }
         }
     },
@@ -703,7 +704,7 @@ export const SettingsManager = {
             window.dispatchEvent(new Event('endpointReset'));
         }
         
-        MessageLogger.addLog(`↺ Endpoint reset to server default`);
+        MessageLogger.addLog(`↺ ${t('common:endpoint_reset_log')}`);
     },
 
     /**

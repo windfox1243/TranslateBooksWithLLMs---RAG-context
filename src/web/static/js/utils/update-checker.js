@@ -9,6 +9,7 @@
  */
 
 import { MessageLogger } from '../ui/message-logger.js';
+import { t } from '../i18n/i18n.js';
 
 const DISMISS_STORAGE_KEY = 'tbl_update_dismissed_version';
 const POLL_INTERVAL_MS = 1500;
@@ -108,12 +109,12 @@ export const UpdateChecker = {
             const isFrozen = typeof kind === 'string' && (kind.startsWith('frozen') || kind === 'source');
             if (isFrozen) {
                 installBtn.disabled = false;
-                installBtn.title = 'Opens the GitHub release page so you can download the new build.';
-                this._setInstallBtnText(installBtn, 'Download update');
+                installBtn.title = t('common:update_download_title');
+                this._setInstallBtnText(installBtn, t('common:update_download'));
             } else {
                 installBtn.disabled = false;
                 installBtn.title = '';
-                this._setInstallBtnText(installBtn, 'Update now');
+                this._setInstallBtnText(installBtn, t('common:update_now'));
             }
         }
 
@@ -150,7 +151,7 @@ export const UpdateChecker = {
         if (installBtn) installBtn.disabled = true;
 
         this.showOverlay();
-        this._setOverlayStep('Sending update request...');
+        this._setOverlayStep(t('common:update_status_send'));
 
         try {
             const resp = await fetch('/api/version/update', {
@@ -164,15 +165,15 @@ export const UpdateChecker = {
                 const reason = data.message || data.error || `HTTP ${resp.status}`;
                 this._setOverlayError(reason);
                 if (installBtn) installBtn.disabled = false;
-                MessageLogger.addLog(`Update refused: ${reason}`);
+                MessageLogger.addLog(t('common:update_refused', { reason }));
                 return;
             }
 
-            MessageLogger.addLog('Update started.');
+            MessageLogger.addLog(t('common:update_started'));
             this._captureCurrentSessionId();
             this._startPolling();
         } catch (e) {
-            this._setOverlayError(`Failed to contact server: ${e.message}`);
+            this._setOverlayError(t('common:update_contact_failed', { error: e.message }));
             if (installBtn) installBtn.disabled = false;
         }
     },
@@ -202,12 +203,12 @@ export const UpdateChecker = {
                 }
                 if (status.state === 'completed') {
                     if (status.requires_restart) {
-                        this._setOverlayStep('Restarting server...');
+                        this._setOverlayStep(t('common:update_status_restart'));
                         this._stopPolling();
                         this._waitForRestart();
                     } else {
                         this._stopPolling();
-                        this._setOverlayStep('Update complete. Restart the app manually to apply.');
+                        this._setOverlayStep(t('common:update_status_complete_manual'));
                         this._showOverlayCloseButton();
                     }
                 }
@@ -235,7 +236,7 @@ export const UpdateChecker = {
                     const j = await r.json();
                     const newSession = String(j.session_id || j.startup_time || '');
                     if (newSession && newSession !== this._initialHealthSessionId) {
-                        this._setOverlayStep(`Server restarted on v${j.version}. Reloading...`);
+                        this._setOverlayStep(t('common:update_status_restarted', { version: j.version }));
                         clearInterval(this._restartWaiter);
                         this._restartWaiter = null;
                         setTimeout(() => window.location.reload(), 700);
@@ -248,10 +249,7 @@ export const UpdateChecker = {
             if (Date.now() > deadline) {
                 clearInterval(this._restartWaiter);
                 this._restartWaiter = null;
-                this._setOverlayError(
-                    'Server did not come back automatically. If you launched the app with start.bat / start.sh ' +
-                    'it should restart on its own; otherwise relaunch it manually.'
-                );
+                this._setOverlayError(t('common:update_status_no_restart'));
                 this._showOverlayCloseButton();
             }
         };
@@ -270,7 +268,7 @@ export const UpdateChecker = {
             log.scrollTop = log.scrollHeight;
         }
         if (status.state === 'failed') {
-            this._setOverlayError(status.error || 'Update failed.');
+            this._setOverlayError(status.error || t('common:update_status_failed'));
             this._showOverlayCloseButton();
         }
     },

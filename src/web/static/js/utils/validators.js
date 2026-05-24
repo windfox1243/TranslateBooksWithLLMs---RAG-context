@@ -6,6 +6,7 @@
 
 import { MessageLogger } from '../ui/message-logger.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
+import { t } from '../i18n/i18n.js';
 
 export const Validators = {
     /**
@@ -20,78 +21,69 @@ export const Validators = {
 
     /**
      * Validate that a value is not empty
-     * @param {string} value - Value to validate
-     * @param {string} fieldName - Field name for error message
-     * @returns {boolean} True if valid
      */
     required(value, fieldName) {
         if (!value || value.trim() === '') {
-            return this.showError(`${fieldName} is required.`);
+            return this.showError(t('errors:field_required', { field: fieldName }));
         }
         return true;
     },
 
     /**
      * Validate language selection
-     * @param {string} sourceLanguage - Source language
-     * @param {string} targetLanguage - Target language
-     * @returns {boolean} True if valid
      */
     validateLanguages(sourceLanguage, targetLanguage) {
-        if (!this.required(sourceLanguage, 'Source language')) return false;
-        if (!this.required(targetLanguage, 'Target language')) return false;
-
-        if (sourceLanguage.toLowerCase() === targetLanguage.toLowerCase()) {
-            return this.showError('Source and target languages must be different.');
+        if (!sourceLanguage || sourceLanguage.trim() === '') {
+            return this.showError(t('errors:no_source_language'));
         }
-
+        if (!targetLanguage || targetLanguage.trim() === '') {
+            return this.showError(t('errors:no_target_language'));
+        }
+        if (sourceLanguage.toLowerCase() === targetLanguage.toLowerCase()) {
+            return this.showError(t('errors:same_source_target_language'));
+        }
         return true;
     },
 
     /**
      * Validate model selection
-     * @param {string} model - Model name
-     * @returns {boolean} True if valid
      */
     validateModel(model) {
-        return this.required(model, 'Model');
+        if (!model || model.trim() === '') {
+            return this.showError(t('errors:no_model_selected'));
+        }
+        return true;
     },
 
     /**
      * Validate API endpoint
-     * @param {string} endpoint - API endpoint URL
-     * @returns {boolean} True if valid
      */
     validateApiEndpoint(endpoint) {
-        if (!this.required(endpoint, 'API Endpoint')) return false;
-
+        if (!endpoint || endpoint.trim() === '') {
+            return this.showError(t('errors:api_endpoint_empty'));
+        }
         try {
             new URL(endpoint);
             return true;
         } catch {
-            return this.showError('API Endpoint must be a valid URL.');
+            return this.showError(t('errors:api_endpoint_invalid'));
         }
     },
 
     /**
      * Validate provider API key
-     * @param {string} provider - Provider name
-     * @param {string} apiKey - API key
-     * @param {string} [endpoint] - API endpoint (for local server detection)
-     * @returns {boolean} True if valid
      */
     validateProviderApiKey(provider, apiKey, endpoint = '') {
         if (provider === 'gemini') {
             if (!apiKey || apiKey.trim() === '') {
-                return this.showError('Gemini API key is required when using Gemini provider.');
+                return this.showError(t('errors:api_key_required_gemini'));
             }
         }
 
         if (provider === 'openai') {
-            // Local endpoints (llama.cpp, LM Studio, vLLM, etc.) don't require an API key
             const isLocalEndpoint = endpoint.includes('localhost') || endpoint.includes('127.0.0.1');
             if (!isLocalEndpoint && (!apiKey || apiKey.trim() === '')) {
-                return this.showError('API key is required when using OpenAI cloud API.');
+                return this.showError(t('errors:api_key_required_openai'));
             }
         }
 
@@ -100,19 +92,14 @@ export const Validators = {
 
     /**
      * Validate number in range
-     * @param {number} value - Value to validate
-     * @param {number} min - Minimum value
-     * @param {number} max - Maximum value
-     * @param {string} fieldName - Field name for error message
-     * @returns {boolean} True if valid
      */
     validateRange(value, min, max, fieldName) {
         if (isNaN(value)) {
-            return this.showError(`${fieldName} must be a number.`);
+            return this.showError(t('errors:value_not_number', { field: fieldName }));
         }
 
         if (value < min || value > max) {
-            return this.showError(`${fieldName} must be between ${min} and ${max}.`);
+            return this.showError(t('errors:value_out_of_range', { field: fieldName, min, max }));
         }
 
         return true;
@@ -120,41 +107,30 @@ export const Validators = {
 
     /**
      * Validate file selection
-     * @param {Array} files - Files array
-     * @returns {boolean} True if valid
      */
     validateFileSelection(files) {
         if (!files || files.length === 0) {
-            return this.showError('Please select at least one file to translate.');
+            return this.showError(t('errors:no_file_selected'));
         }
-
         return true;
     },
 
     /**
      * Validate batch configuration before starting translation
-     * @param {Object} formValues - Form values from FormManager
-     * @param {Array} files - Files to process
-     * @returns {boolean} True if valid
      */
     validateBatchConfig(formValues, files) {
-        // Validate files
         if (!this.validateFileSelection(files)) return false;
 
-        // Validate languages
         if (!this.validateLanguages(formValues.sourceLanguage, formValues.targetLanguage)) {
             return false;
         }
 
-        // Validate model
         if (!this.validateModel(formValues.model)) return false;
 
-        // Validate provider-specific requirements
         if (!this.validateProviderApiKey(formValues.provider, formValues.apiKey)) {
             return false;
         }
 
-        // Validate API endpoint for Ollama and OpenAI
         if (formValues.provider === 'ollama' || formValues.provider === 'openai') {
             if (!this.validateApiEndpoint(formValues.apiEndpoint)) {
                 return false;

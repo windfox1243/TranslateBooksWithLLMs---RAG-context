@@ -10,6 +10,7 @@ import { ApiClient } from '../core/api-client.js';
 import { MessageLogger } from '../ui/message-logger.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
 import { FileActions } from './file-actions.js';
+import { t } from '../i18n/i18n.js';
 
 export const FileManager = {
     /**
@@ -119,7 +120,7 @@ export const FileManager = {
 
         } catch (error) {
             if (loadingDiv) loadingDiv.style.display = 'none';
-            MessageLogger.showMessage(`Error loading file list: ${error.message}`, 'error');
+            MessageLogger.showMessage(t('files:load_failed', { error: error.message }), 'error');
         }
     },
 
@@ -175,7 +176,7 @@ export const FileManager = {
             const audiobookBtn = document.createElement('button');
             audiobookBtn.type = 'button';
             audiobookBtn.className = 'file-action-btn audiobook';
-            audiobookBtn.title = 'Generate Audiobook (TTS)';
+            audiobookBtn.title = t('translation:audiobook_btn_title');
             audiobookBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 0.875rem;">headphones</span>';
             audiobookBtn.addEventListener('click', () => window.createAudiobook(file.filename, file.file_path));
             actionsHost.appendChild(audiobookBtn);
@@ -281,11 +282,11 @@ export const FileManager = {
         const downloadBtn = DomHelpers.getElement('batchDownloadBtn');
         const deleteBtn = DomHelpers.getElement('batchDeleteBtn');
         if (hasSelection) {
-            if (downloadBtn) downloadBtn.innerHTML = `<span class="material-symbols-outlined">download</span> Download Selected (${selectedFiles.size})`;
-            if (deleteBtn) deleteBtn.innerHTML = `<span class="material-symbols-outlined">delete</span> Delete Selected (${selectedFiles.size})`;
+            if (downloadBtn) downloadBtn.innerHTML = `<span class="material-symbols-outlined">download</span> ${t('files:download_selected_with_count', { count: selectedFiles.size })}`;
+            if (deleteBtn) deleteBtn.innerHTML = `<span class="material-symbols-outlined">delete</span> ${t('files:delete_selected_with_count', { count: selectedFiles.size })}`;
         } else {
-            if (downloadBtn) downloadBtn.innerHTML = `<span class="material-symbols-outlined">download</span> Download Selected`;
-            if (deleteBtn) deleteBtn.innerHTML = `<span class="material-symbols-outlined">delete</span> Delete Selected`;
+            if (downloadBtn) downloadBtn.innerHTML = `<span class="material-symbols-outlined">download</span> ${t('files:download_selected')}`;
+            if (deleteBtn) deleteBtn.innerHTML = `<span class="material-symbols-outlined">delete</span> ${t('files:delete_selected')}`;
         }
     },
 
@@ -300,7 +301,7 @@ export const FileManager = {
         const selectedFiles = StateManager.getState('files.selected');
 
         if (selectedFiles.size === 0) {
-            MessageLogger.showMessage('No files selected for download', 'error');
+            MessageLogger.showMessage(t('files:no_selection_download'), 'error');
             return;
         }
 
@@ -328,13 +329,13 @@ export const FileManager = {
                 window.URL.revokeObjectURL(url);
                 document.body.removeChild(a);
 
-                MessageLogger.showMessage(`Downloaded ${selectedFiles.size} files as zip`, 'success');
+                MessageLogger.showMessage(t('files:downloaded_as_zip', { count: selectedFiles.size }), 'success');
             } else {
                 const data = await response.json();
-                MessageLogger.showMessage(data.error || 'Failed to download files', 'error');
+                MessageLogger.showMessage(data.error || t('files:download_failed_default'), 'error');
             }
         } catch (error) {
-            MessageLogger.showMessage(`Error downloading files: ${error.message}`, 'error');
+            MessageLogger.showMessage(t('files:download_error', { error: error.message }), 'error');
         }
     },
 
@@ -345,11 +346,11 @@ export const FileManager = {
         const selectedFiles = StateManager.getState('files.selected');
 
         if (selectedFiles.size === 0) {
-            MessageLogger.showMessage('No files selected for deletion', 'error');
+            MessageLogger.showMessage(t('files:no_selection_delete'), 'error');
             return;
         }
 
-        if (!confirm(`Are you sure you want to delete ${selectedFiles.size} file(s)?`)) {
+        if (!confirm(t('files:confirm_delete_selected', { count: selectedFiles.size }))) {
             return;
         }
 
@@ -367,17 +368,16 @@ export const FileManager = {
             const data = await response.json();
 
             if (response.ok) {
-                let message = `Deleted ${data.total_deleted} file(s)`;
-                if (data.failed.length > 0) {
-                    message += `. Failed to delete ${data.failed.length} file(s)`;
-                }
+                const message = data.failed.length > 0
+                    ? t('files:deleted_summary_with_failed', { count: data.total_deleted, failed: data.failed.length })
+                    : t('files:deleted_summary', { count: data.total_deleted });
                 MessageLogger.showMessage(message, data.failed.length > 0 ? 'info' : 'success');
                 this.refreshFileList();
             } else {
-                MessageLogger.showMessage(data.error || 'Failed to delete files', 'error');
+                MessageLogger.showMessage(data.error || t('files:delete_failed_default'), 'error');
             }
         } catch (error) {
-            MessageLogger.showMessage(`Error deleting files: ${error.message}`, 'error');
+            MessageLogger.showMessage(t('files:delete_error', { error: error.message }), 'error');
         }
     },
 

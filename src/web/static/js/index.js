@@ -60,6 +60,12 @@ import { UpdateChecker } from './utils/update-checker.js';
 import { TTSManager } from './tts/tts-manager.js';
 
 // ========================================
+// i18n
+// ========================================
+import { initI18n, applyToDOM, t } from './i18n/i18n.js';
+import { UiLocaleControl } from './i18n/settings-control.js';
+
+// ========================================
 // TTS Event Handler
 // ========================================
 
@@ -77,7 +83,6 @@ function handleTtsUpdate(data) {
 
     switch (status) {
         case 'started':
-            // Show TTS progress section
             if (ttsProgressSection) {
                 ttsProgressSection.style.display = 'block';
             }
@@ -86,9 +91,9 @@ function handleTtsUpdate(data) {
                 ttsProgressBar.textContent = '0%';
             }
             if (ttsStatusText) {
-                ttsStatusText.textContent = '🔊 Starting audio generation...';
+                ttsStatusText.textContent = t('tts:starting_status');
             }
-            MessageLogger.addLog('🔊 TTS generation started');
+            MessageLogger.addLog(t('tts:starting_log'));
             break;
 
         case 'processing':
@@ -100,7 +105,7 @@ function handleTtsUpdate(data) {
                 const chunkInfo = current_chunk && total_chunks
                     ? ` (${current_chunk}/${total_chunks})`
                     : '';
-                ttsStatusText.textContent = `🔊 ${message || 'Generating audio...'}${chunkInfo}`;
+                ttsStatusText.textContent = `🔊 ${message || t('tts:processing_default')}${chunkInfo}`;
             }
             break;
 
@@ -110,11 +115,10 @@ function handleTtsUpdate(data) {
                 ttsProgressBar.textContent = '100%';
             }
             if (ttsStatusText) {
-                ttsStatusText.textContent = `✅ Audio generated: ${audio_filename || 'audio file'}`;
+                ttsStatusText.textContent = t('tts:completed_status', { name: audio_filename || 'audio file' });
             }
-            MessageLogger.addLog(`✅ TTS completed: ${audio_filename || 'audio file'}`);
+            MessageLogger.addLog(t('tts:completed_log', { name: audio_filename || 'audio file' }));
 
-            // Auto-hide after 5 seconds
             setTimeout(() => {
                 if (ttsProgressSection) {
                     ttsProgressSection.style.display = 'none';
@@ -129,32 +133,31 @@ function handleTtsUpdate(data) {
                 ttsProgressBar.style.background = '#ef4444';
             }
 
-            const errorText = error || message || 'Unknown error';
+            const errorText = error || message || t('errors:unknown_error');
             const isFFmpegError = errorText.toLowerCase().includes('ffmpeg');
 
             if (ttsStatusText) {
                 if (isFFmpegError) {
-                    // Show FFmpeg install button instead of long instructions
                     ttsStatusText.innerHTML = `
-                        <span style="color: #ef4444;">❌ FFmpeg is required for audio encoding</span>
+                        <span style="color: #ef4444;">❌ ${t('tts:ffmpeg_required')}</span>
                         <div style="margin-top: 10px;">
                             <button id="installFFmpegBtn" class="btn btn-primary" style="margin-right: 10px;" onclick="window.installFFmpeg()">
                                 <span class="material-symbols-outlined" style="font-size: 18px; vertical-align: middle;">download</span>
-                                Install FFmpeg (winget)
+                                ${t('tts:ffmpeg_install')}
                             </button>
                             <a href="https://ffmpeg.org/download.html" target="_blank" class="btn btn-secondary" style="text-decoration: none;">
-                                Manual Download
+                                ${t('tts:ffmpeg_manual')}
                             </a>
                         </div>
                         <p style="margin-top: 8px; font-size: 0.8rem; color: var(--text-secondary);">
-                            After installation, restart the application.
+                            ${t('tts:ffmpeg_restart_hint')}
                         </p>
                     `;
                 } else {
-                    ttsStatusText.textContent = `❌ TTS failed: ${errorText}`;
+                    ttsStatusText.textContent = t('tts:failed_status', { error: errorText });
                 }
             }
-            MessageLogger.addLog(`❌ TTS failed: ${errorText}`);
+            MessageLogger.addLog(t('tts:failed_log', { error: errorText }));
             break;
     }
 }
@@ -170,7 +173,7 @@ window.installFFmpeg = async function() {
         btn.disabled = true;
         btn.innerHTML = `
             <span class="material-symbols-outlined rotating" style="font-size: 18px; vertical-align: middle;">sync</span>
-            Installing...
+            ${t('tts:ffmpeg_installing')}
         `;
     }
 
@@ -183,36 +186,36 @@ window.installFFmpeg = async function() {
                 ttsStatusText.innerHTML = `
                     <span style="color: #22c55e;">✅ ${result.message}</span>
                     <p style="margin-top: 8px; font-size: 0.8rem; color: var(--text-secondary);">
-                        Please restart the application to use TTS.
+                        ${t('tts:ffmpeg_restart_needed')}
                     </p>
                 `;
             }
-            MessageLogger.addLog('✅ FFmpeg installed successfully');
+            MessageLogger.addLog(t('tts:ffmpeg_installed_log'));
         } else {
             if (ttsStatusText) {
                 ttsStatusText.innerHTML = `
-                    <span style="color: #ef4444;">❌ Installation failed: ${result.error}</span>
+                    <span style="color: #ef4444;">❌ ${t('tts:ffmpeg_install_failed', { error: result.error })}</span>
                     <div style="margin-top: 10px;">
                         <a href="https://ffmpeg.org/download.html" target="_blank" class="btn btn-secondary" style="text-decoration: none;">
-                            Manual Download
+                            ${t('tts:ffmpeg_manual')}
                         </a>
                     </div>
                 `;
             }
-            MessageLogger.addLog(`❌ FFmpeg installation failed: ${result.error}`);
+            MessageLogger.addLog(t('tts:ffmpeg_install_failed_log', { error: result.error }));
         }
     } catch (err) {
         if (ttsStatusText) {
             ttsStatusText.innerHTML = `
-                <span style="color: #ef4444;">❌ Installation error: ${err.message}</span>
+                <span style="color: #ef4444;">❌ ${t('tts:ffmpeg_install_error', { error: err.message })}</span>
                 <div style="margin-top: 10px;">
                     <a href="https://ffmpeg.org/download.html" target="_blank" class="btn btn-secondary" style="text-decoration: none;">
-                        Manual Download
+                        ${t('tts:ffmpeg_manual')}
                     </a>
                 </div>
             `;
         }
-        MessageLogger.addLog(`❌ FFmpeg installation error: ${err.message}`);
+        MessageLogger.addLog(t('tts:ffmpeg_install_error_log', { error: err.message }));
     }
 }
 
@@ -391,6 +394,17 @@ function wireModuleEvents() {
  *     "LLM: Checking..." indicator gets stuck (issue #155).
  */
 async function initializeModules() {
+    // 0. Boot i18next first so every module that renders text can call t().
+    //    initI18n() resolves to applying data-i18n nodes already in the DOM
+    //    and binding the languageChanged listener. We await it because the
+    //    rest of the init expects translations to be available.
+    try {
+        await initI18n();
+    } catch (e) {
+        console.warn('initI18n failed:', e);
+    }
+    UiLocaleControl.initialize();
+
     // 1. Synchronous state + UI/module init (no awaits).
     initializeState();
     initializeThemeManager();
@@ -447,7 +461,7 @@ window.resetFiles = () => {
     if (fileListContainer) {
         fileListContainer.innerHTML = '';
     }
-    MessageLogger.showMessage('File list cleared', 'info');
+    MessageLogger.showMessage(t('translation:file_list_cleared'), 'info');
 };
 
 // Form Manager
@@ -467,25 +481,25 @@ window.startBatchTranslation = BatchController.startBatchTranslation.bind(BatchC
 window.interruptCurrentTranslation = async () => {
     const currentJob = StateManager.getState('translation.currentJob');
     if (!currentJob) {
-        MessageLogger.showMessage('No active translation to interrupt', 'info');
+        MessageLogger.showMessage(t('translation:no_active_translation'), 'info');
         return;
     }
 
     const interruptBtn = DomHelpers.getElement('interruptBtn');
     if (interruptBtn) {
         interruptBtn.disabled = true;
-        DomHelpers.setText(interruptBtn, '⏳ Interrupting...');
+        DomHelpers.setText(interruptBtn, t('translation:interrupting'));
     }
 
     try {
         await ApiClient.interruptTranslation(currentJob.translationId);
-        MessageLogger.showMessage('Translation interrupt request sent', 'info');
-        MessageLogger.addLog('⏹️ Interrupt request sent to server');
+        MessageLogger.showMessage(t('translation:interrupt_request_sent'), 'info');
+        MessageLogger.addLog(t('translation:interrupt_log'));
     } catch (error) {
-        MessageLogger.showMessage(`Error interrupting translation: ${error.message}`, 'error');
+        MessageLogger.showMessage(t('translation:interrupt_error', { error: error.message }), 'error');
         if (interruptBtn) {
             interruptBtn.disabled = false;
-            DomHelpers.setText(interruptBtn, '⏹️ Interrupt Current & Stop Batch');
+            DomHelpers.setText(interruptBtn, `⏹️ ${t('translation:interrupt_batch')}`);
         }
     }
 };
@@ -502,12 +516,13 @@ window.refreshModels = ProviderManager.refreshModels.bind(ProviderManager);
 window.saveSettings = async () => {
     const result = await SettingsManager.saveAllSettings(true);
     if (result.success && result.savedToEnv && result.savedToEnv.length > 0) {
-        MessageLogger.showMessage(`✅ Settings saved: ${result.savedToEnv.join(', ')}`, 'success');
-        MessageLogger.addLog(`💾 Saved to .env: ${result.savedToEnv.join(', ')}`);
+        const keys = result.savedToEnv.join(', ');
+        MessageLogger.showMessage(t('translation:settings_saved_env', { keys }), 'success');
+        MessageLogger.addLog(t('translation:settings_saved_env_log', { keys }));
     } else if (result.success) {
-        MessageLogger.showMessage('✅ Preferences saved', 'success');
+        MessageLogger.showMessage(t('translation:preferences_saved'), 'success');
     } else {
-        MessageLogger.showMessage(`❌ Failed to save: ${result.error}`, 'error');
+        MessageLogger.showMessage(t('translation:settings_save_failed', { error: result.error }), 'error');
     }
     return result;
 };
@@ -878,22 +893,20 @@ async function showTTSModal(filename, filepath) {
         try {
             const result = await ApiClient.generateTTS(config);
 
-            MessageLogger.showMessage(`TTS generation started for ${filename}`, 'success');
-            MessageLogger.addLog(`🎧 Started audiobook generation (${provider}): ${filename} (Job ID: ${result.job_id})`);
+            MessageLogger.showMessage(t('tts:tts_started', { filename }), 'success');
+            MessageLogger.addLog(t('tts:tts_started_log', { provider, filename, jobId: result.job_id }));
 
-            // Close modal
             closeModal();
 
-            // Show TTS progress section
             const ttsProgressSection = DomHelpers.getElement('ttsProgressSection');
             if (ttsProgressSection) {
                 ttsProgressSection.style.display = 'block';
             }
 
         } catch (error) {
-            MessageLogger.showMessage(`Error starting TTS: ${error.message}`, 'error');
+            MessageLogger.showMessage(t('tts:tts_error', { error: error.message }), 'error');
             generateBtn.disabled = false;
-            generateBtn.textContent = '🎧 Generate Audio';
+            generateBtn.textContent = `🎧 ${t('tts:generate_audio')}`;
         }
     });
 }

@@ -9,6 +9,7 @@ import { StateManager } from '../core/state-manager.js';
 import { ApiClient } from '../core/api-client.js';
 import { WebSocketManager } from '../core/websocket-manager.js';
 import { MessageLogger } from '../ui/message-logger.js';
+import { t } from '../i18n/i18n.js';
 
 // Storage configuration with versioning
 const STORAGE_VERSION = 1;
@@ -71,10 +72,10 @@ export const LifecycleManager = {
         window.addEventListener('load', async () => {
             try {
                 const healthData = await ApiClient.healthCheck();
-                MessageLogger.addLog('Server health check OK.');
+                MessageLogger.addLog(t('common:server_health_ok'));
 
                 if (healthData.supported_formats) {
-                    MessageLogger.addLog(`Supported file formats: ${healthData.supported_formats.join(', ')}`);
+                    MessageLogger.addLog(t('common:supported_formats', { formats: healthData.supported_formats.join(', ') }));
                 }
 
                 if (healthData.version) {
@@ -89,10 +90,10 @@ export const LifecycleManager = {
 
             } catch (error) {
                 MessageLogger.showMessage(
-                    `⚠️ Server unavailable at ${ApiClient.API_BASE_URL}. Ensure Python server is running. ${error.message}`,
+                    t('common:server_unavailable', { url: ApiClient.API_BASE_URL, error: error.message }),
                     'error'
                 );
-                MessageLogger.addLog(`❌ Failed to connect to server or load config: ${error.message}`);
+                MessageLogger.addLog(t('common:server_connect_failed_log', { error: error.message }));
             }
         });
     },
@@ -128,7 +129,7 @@ export const LifecycleManager = {
             const lastSessionId = localStorage.getItem(SERVER_SESSION_KEY);
 
             if (lastSessionId && lastSessionId !== String(serverSessionId)) {
-                MessageLogger.addLog('⚠️ Server restart detected. Clearing active translation state.');
+                MessageLogger.addLog(t('common:server_restart_detected'));
 
                 localStorage.removeItem(TRANSLATION_STATE_STORAGE_KEY);
 
@@ -146,7 +147,7 @@ export const LifecycleManager = {
                     if (interruptBtn) interruptBtn.style.display = 'none';
                     if (translateBtn) {
                         translateBtn.disabled = false;
-                        translateBtn.innerHTML = '▶️ Start Translation Batch';
+                        translateBtn.innerHTML = t('translation:start_batch_with_icon');
                     }
                 } catch (uiError) {
                     console.warn('Could not reset UI elements:', uiError);
@@ -163,7 +164,7 @@ export const LifecycleManager = {
 
         } catch (error) {
             console.error('Error checking server restart:', error);
-            MessageLogger.addLog('⚠️ Could not verify server session state');
+            MessageLogger.addLog(t('common:server_session_check_failed'));
             return false;
         }
     },
@@ -230,7 +231,7 @@ export const LifecycleManager = {
             const serverStatus = data.status;
 
             if (serverStatus === 'completed' || serverStatus === 'error' || serverStatus === 'interrupted' || serverStatus === 'rate_limited') {
-                MessageLogger.addLog(`🔄 Detected state desync: job ${serverStatus} on server but UI still active. Syncing...`);
+                MessageLogger.addLog(t('common:state_desync_syncing', { status: serverStatus }));
 
                 window.dispatchEvent(new CustomEvent('translationUpdate', {
                     detail: {
@@ -243,7 +244,7 @@ export const LifecycleManager = {
             }
         } catch (error) {
             if (error.message && error.message.includes('404')) {
-                MessageLogger.addLog(`⚠️ Translation job no longer exists on server. Resetting UI.`);
+                MessageLogger.addLog(t('common:translation_job_missing'));
                 window.dispatchEvent(new CustomEvent('resetUIToIdle'));
             } else {
                 console.error('Error checking state consistency:', error);

@@ -14,6 +14,7 @@
 import { ApiClient } from '../core/api-client.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
 import { StateManager } from '../core/state-manager.js';
+import { t } from '../i18n/i18n.js';
 
 const STORAGE_KEY = 'tbl_pricing_overrides_v1';
 
@@ -159,16 +160,16 @@ function resolvePricing(provider, model) {
 
 function formatUSD(amount) {
     if (amount === 0) return '$0.00';
-    if (Math.abs(amount) < 0.01) return '<$0.01';
+    if (Math.abs(amount) < 0.01) return t('settings:cost_format_lt_001');
     if (Math.abs(amount) < 1) return `$${amount.toFixed(3)}`;
     return `$${amount.toFixed(2)}`;
 }
 
 function sourceLabel(source, lastUpdated) {
     switch (source) {
-        case 'user_override': return 'Your custom prices';
-        case 'provider_api':  return 'Live prices from provider API';
-        case 'default_table': return `Default prices (updated ${lastUpdated || pricingLastUpdated || ''})`;
+        case 'user_override': return t('settings:cost_source_user_override');
+        case 'provider_api':  return t('settings:cost_source_provider_api');
+        case 'default_table': return t('settings:cost_source_default_table', { date: lastUpdated || pricingLastUpdated || '' });
         default: return '';
     }
 }
@@ -197,7 +198,7 @@ function renderBadge(badge, state) {
         badge.classList.add('cost-free');
         badge.innerHTML = `
             <span class="cost-badge-icon material-symbols-outlined">verified</span>
-            <span class="cost-badge-text">${state.message || 'Free (local)'}</span>
+            <span class="cost-badge-text">${state.message || t('settings:cost_free_local')}</span>
         `;
         badge.title = '';
         return;
@@ -207,7 +208,7 @@ function renderBadge(badge, state) {
         badge.classList.add('cost-loading');
         badge.innerHTML = `
             <span class="cost-badge-icon material-symbols-outlined cost-spinning">progress_activity</span>
-            <span class="cost-badge-text">Estimating cost...</span>
+            <span class="cost-badge-text">${t('settings:cost_estimating')}</span>
         `;
         badge.title = '';
         return;
@@ -219,9 +220,9 @@ function renderBadge(badge, state) {
         const model = state.model || '';
         badge.innerHTML = `
             <span class="cost-badge-icon material-symbols-outlined">help</span>
-            <span class="cost-badge-text">Pricing not set for this model</span>
+            <span class="cost-badge-text">${t('settings:cost_unknown')}</span>
             <button type="button" class="cost-badge-edit" data-action="edit"
-                title="Set custom prices for ${provider}/${model}">Set prices</button>
+                title="${t('settings:cost_set_prices_title', { provider, model })}">${t('settings:cost_set_prices')}</button>
         `;
         badge.title = `${provider} / ${model}`;
         return;
@@ -231,7 +232,7 @@ function renderBadge(badge, state) {
         badge.classList.add('cost-unknown');
         badge.innerHTML = `
             <span class="cost-badge-icon material-symbols-outlined">description</span>
-            <span class="cost-badge-text">File not readable for estimation</span>
+            <span class="cost-badge-text">${t('settings:cost_no_content')}</span>
         `;
         badge.title = '';
         return;
@@ -241,7 +242,7 @@ function renderBadge(badge, state) {
         badge.classList.add('cost-error');
         badge.innerHTML = `
             <span class="cost-badge-icon material-symbols-outlined">error</span>
-            <span class="cost-badge-text">Estimation error</span>
+            <span class="cost-badge-text">${t('settings:cost_error')}</span>
         `;
         badge.title = state.message || '';
         return;
@@ -250,20 +251,22 @@ function renderBadge(badge, state) {
     badge.classList.add('cost-estimated');
     const min = formatUSD(state.total_cost_min);
     const max = formatUSD(state.total_cost_max);
-    const display = (min === max) ? `Estimated: ${min}` : `Estimated: ${min} – ${max}`;
+    const display = (min === max)
+        ? t('settings:cost_estimated', { value: min })
+        : t('settings:cost_estimated_range', { min, max });
 
     const passesNote = state.passes && state.passes > 1
-        ? `, ${state.passes} passes`
+        ? t('settings:cost_passes_suffix', { count: state.passes })
         : '';
     const tokensNote = state.input_tokens
-        ? `${state.input_tokens.toLocaleString()} input tokens, ${state.n_chunks} chunk(s)${passesNote}`
+        ? `${t('settings:cost_tokens_chunks', { tokens: state.input_tokens.toLocaleString(), chunks: state.n_chunks })}${passesNote}`
         : '';
     const sourceNote = sourceLabel(state.pricing_source, state.pricing_last_updated);
 
     badge.innerHTML = `
         <span class="cost-badge-icon material-symbols-outlined">payments</span>
         <span class="cost-badge-text">${display}</span>
-        <button type="button" class="cost-badge-edit" data-action="edit" title="Edit prices">Edit</button>
+        <button type="button" class="cost-badge-edit" data-action="edit" title="${t('settings:cost_edit_title')}">${t('settings:cost_edit_btn')}</button>
     `;
     badge.title = [tokensNote, sourceNote].filter(Boolean).join(' • ');
 }
@@ -403,7 +406,7 @@ export const CostEstimator = {
         }
 
         if (LOCAL_PROVIDERS.has(provider)) {
-            badges.forEach(b => renderBadge(b, { kind: 'free', message: 'Free (local model)' }));
+            badges.forEach(b => renderBadge(b, { kind: 'free', message: t('settings:cost_free_local_model') }));
             return;
         }
 
@@ -456,7 +459,7 @@ export const CostEstimator = {
         modal.innerHTML = `
             <div class="modal-content cost-pricing-modal">
                 <div class="modal-header">
-                    <h3>Edit pricing</h3>
+                    <h3>${t('settings:cost_edit_modal_title')}</h3>
                     <button class="close-btn" data-action="close">&times;</button>
                 </div>
                 <div class="modal-body">
@@ -464,12 +467,11 @@ export const CostEstimator = {
                         ${DomHelpers.escapeHtml(provider)} / <strong>${DomHelpers.escapeHtml(model)}</strong>
                     </p>
                     <p class="cost-pricing-help">
-                        Prices are in USD per 1 million tokens. These values are saved
-                        locally in your browser and only used for the estimation badge.
+                        ${t('settings:cost_edit_modal_help')}
                     </p>
                     <div class="cost-pricing-grid">
                         <div class="form-group">
-                            <label for="costPriceInput">Input ($ / 1M tokens)</label>
+                            <label for="costPriceInput">${t('settings:cost_input_label')}</label>
                             <div class="neu-inset-light">
                                 <input type="number" min="0" step="0.001"
                                     id="costPriceInput" class="form-control"
@@ -477,7 +479,7 @@ export const CostEstimator = {
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="costPriceOutput">Output ($ / 1M tokens)</label>
+                            <label for="costPriceOutput">${t('settings:cost_output_label')}</label>
                             <div class="neu-inset-light">
                                 <input type="number" min="0" step="0.001"
                                     id="costPriceOutput" class="form-control"
@@ -485,12 +487,12 @@ export const CostEstimator = {
                             </div>
                         </div>
                     </div>
-                    ${override ? '<p class="cost-pricing-note">A custom price is currently saved for this model.</p>' : ''}
+                    ${override ? `<p class="cost-pricing-note">${t('settings:cost_override_note')}</p>` : ''}
                 </div>
                 <div class="modal-footer">
-                    ${override ? '<button class="btn btn-secondary" data-action="reset">Reset to default</button>' : ''}
-                    <button class="btn btn-secondary" data-action="close">Cancel</button>
-                    <button class="btn btn-primary" data-action="save">Save</button>
+                    ${override ? `<button class="btn btn-secondary" data-action="reset">${t('settings:cost_reset_default')}</button>` : ''}
+                    <button class="btn btn-secondary" data-action="close">${t('common:cancel')}</button>
+                    <button class="btn btn-primary" data-action="save">${t('common:save')}</button>
                 </div>
             </div>
         `;

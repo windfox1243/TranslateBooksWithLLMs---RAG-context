@@ -9,6 +9,7 @@ import { ApiClient } from '../core/api-client.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
 import { MessageLogger } from '../ui/message-logger.js';
 import { StateManager } from '../core/state-manager.js';
+import { t } from '../i18n/i18n.js';
 
 /**
  * TTS Provider state and configuration
@@ -132,7 +133,7 @@ export const TTSManager = {
         // Update voice selector
         this.updateVoiceSelector(selectedProvider);
 
-        MessageLogger.addLog(`TTS provider changed to: ${selectedProvider}`);
+        MessageLogger.addLog(t('tts:tts_provider_changed_log', { provider: selectedProvider }));
     },
 
     /**
@@ -160,7 +161,7 @@ export const TTSManager = {
             const providerInfo = TTSState.providers['chatterbox'];
             if (providerInfo && !providerInfo.available) {
                 MessageLogger.showMessage(
-                    'Chatterbox TTS is not available. Please install: pip install chatterbox-tts torch torchaudio',
+                    t('tts:chatterbox_not_available'),
                     'error'
                 );
             }
@@ -178,26 +179,26 @@ export const TTSManager = {
 
         if (provider === 'edge-tts') {
             if (voiceInput) {
-                voiceInput.placeholder = 'e.g., zh-CN-XiaoxiaoNeural';
+                voiceInput.placeholder = t('tts:voice_placeholder');
                 voiceInput.disabled = false;
             }
             if (voiceLabel) {
-                voiceLabel.textContent = 'Voice (auto-select if empty)';
+                voiceLabel.textContent = t('tts:voice_auto_select_label');
             }
             if (voiceHelp) {
-                voiceHelp.textContent = 'Leave empty for auto-selection based on target language';
+                voiceHelp.textContent = t('tts:voice_auto_hint_target');
             }
         } else if (provider === 'chatterbox') {
             if (voiceInput) {
-                voiceInput.placeholder = 'Determined by voice prompt';
+                voiceInput.placeholder = t('tts:voice_via_prompt_placeholder');
                 voiceInput.disabled = true;
                 voiceInput.value = '';
             }
             if (voiceLabel) {
-                voiceLabel.textContent = 'Voice (via voice prompt)';
+                voiceLabel.textContent = t('tts:voice_via_prompt_label');
             }
             if (voiceHelp) {
-                voiceHelp.textContent = 'Upload a voice prompt audio file for voice cloning';
+                voiceHelp.textContent = t('tts:voice_via_prompt_hint');
             }
         }
     },
@@ -216,7 +217,7 @@ export const TTSManager = {
             return TTSState.providers;
         } catch (error) {
             console.error('Failed to load TTS providers:', error);
-            MessageLogger.addLog(`Failed to load TTS providers: ${error.message}`);
+            MessageLogger.addLog(t('tts:tts_providers_load_failed', { error: error.message }));
         }
     },
 
@@ -232,10 +233,10 @@ export const TTSManager = {
         if (chatterboxOption) {
             const isAvailable = TTSState.providers['chatterbox']?.available;
             if (!isAvailable) {
-                chatterboxOption.textContent = 'Chatterbox TTS (Not Available)';
+                chatterboxOption.textContent = t('tts:provider_chatterbox_full_unavailable');
                 chatterboxOption.disabled = true;
             } else {
-                chatterboxOption.textContent = 'Chatterbox TTS (Local GPU)';
+                chatterboxOption.textContent = t('tts:provider_chatterbox_full_local');
                 chatterboxOption.disabled = false;
             }
         }
@@ -277,7 +278,7 @@ export const TTSManager = {
                 gpuStatusDot.className = 'status-dot available';
             }
             if (gpuNameElement) {
-                gpuNameElement.textContent = status.gpu_name || 'CUDA GPU';
+                gpuNameElement.textContent = status.gpu_name || t('tts:gpu_cuda');
             }
             if (gpuVramElement && status.vram_total) {
                 const usedGB = (status.vram_used / 1024).toFixed(1);
@@ -292,10 +293,10 @@ export const TTSManager = {
                 gpuStatusDot.className = 'status-dot unavailable';
             }
             if (gpuNameElement) {
-                gpuNameElement.textContent = 'CPU Mode (No CUDA)';
+                gpuNameElement.textContent = t('tts:gpu_cpu_no_cuda');
             }
             if (gpuVramElement) {
-                gpuVramElement.textContent = 'N/A';
+                gpuVramElement.textContent = t('tts:gpu_na');
             }
         }
     },
@@ -352,7 +353,7 @@ export const TTSManager = {
         try {
             if (uploadBtn) {
                 uploadBtn.disabled = true;
-                uploadBtn.textContent = 'Uploading...';
+                uploadBtn.textContent = t('tts:voice_prompt_uploading');
             }
             if (statusSpan) {
                 statusSpan.textContent = '';
@@ -361,8 +362,8 @@ export const TTSManager = {
             const result = await ApiClient.uploadTTSVoicePrompt(file);
 
             if (result.success) {
-                MessageLogger.addLog(`Voice prompt uploaded: ${result.filename}`);
-                MessageLogger.showMessage('Voice prompt uploaded successfully', 'success');
+                MessageLogger.addLog(t('tts:voice_prompt_uploaded_log', { filename: result.filename }));
+                MessageLogger.showMessage(t('tts:voice_prompt_uploaded'), 'success');
 
                 // Reload voice prompts list
                 await this.loadVoicePrompts();
@@ -374,20 +375,20 @@ export const TTSManager = {
                 }
 
                 if (statusSpan) {
-                    statusSpan.textContent = 'Uploaded!';
+                    statusSpan.textContent = t('tts:voice_prompt_uploaded_short');
                     statusSpan.style.color = '#22c55e';
                 }
             }
         } catch (error) {
-            MessageLogger.showMessage(`Failed to upload voice prompt: ${error.message}`, 'error');
+            MessageLogger.showMessage(t('tts:voice_prompt_upload_failed', { error: error.message }), 'error');
             if (statusSpan) {
-                statusSpan.textContent = 'Upload failed';
+                statusSpan.textContent = t('tts:voice_prompt_upload_failed_short');
                 statusSpan.style.color = '#ef4444';
             }
         } finally {
             if (uploadBtn) {
                 uploadBtn.disabled = false;
-                uploadBtn.textContent = 'Upload';
+                uploadBtn.textContent = t('tts:voice_prompt_upload_btn');
             }
             // Reset file input
             event.target.value = '';
@@ -399,7 +400,7 @@ export const TTSManager = {
      * @param {string} filename - Filename to delete
      */
     async deleteVoicePrompt(filename) {
-        if (!confirm(`Delete voice prompt "${filename}"?`)) {
+        if (!confirm(t('tts:voice_prompt_delete_confirm', { filename }))) {
             return;
         }
 
@@ -407,14 +408,14 @@ export const TTSManager = {
             const result = await ApiClient.deleteTTSVoicePrompt(filename);
 
             if (result.success) {
-                MessageLogger.addLog(`Voice prompt deleted: ${filename}`);
-                MessageLogger.showMessage('Voice prompt deleted', 'success');
+                MessageLogger.addLog(t('tts:voice_prompt_deleted_log', { filename }));
+                MessageLogger.showMessage(t('tts:voice_prompt_deleted'), 'success');
 
                 // Reload voice prompts
                 await this.loadVoicePrompts();
             }
         } catch (error) {
-            MessageLogger.showMessage(`Failed to delete voice prompt: ${error.message}`, 'error');
+            MessageLogger.showMessage(t('tts:voice_prompt_delete_failed', { error: error.message }), 'error');
         }
     },
 

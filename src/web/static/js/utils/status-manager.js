@@ -6,33 +6,34 @@
 
 import { DomHelpers } from '../ui/dom-helpers.js';
 import { StateManager } from '../core/state-manager.js';
+import { t } from '../i18n/i18n.js';
 
 /**
  * Status types and their visual representations
  */
 const STATUS_TYPES = {
     checking: {
-        text: 'LLM: Checking...',
+        textKey: 'common:llm_checking',
         dotClass: 'checking',
         color: '#6b7280' // gray
     },
     connected: {
-        text: 'LLM: Connected',
+        textKey: 'common:llm_connected',
         dotClass: 'connected',
         color: '#16a34a' // green
     },
     disconnected: {
-        text: 'LLM: Disconnected',
+        textKey: 'settings:llm_disconnected',
         dotClass: 'disconnected',
         color: '#dc2626' // red
     },
     error: {
-        text: 'LLM: Error',
+        textKey: 'settings:llm_error',
         dotClass: 'error',
         color: '#f59e0b' // orange
     },
     waiting: {
-        text: 'LLM: Waiting...',
+        textKey: 'settings:llm_waiting',
         dotClass: 'waiting',
         color: '#6b7280' // gray
     }
@@ -68,7 +69,7 @@ export const StatusManager = {
         // Update text
         const statusText = DomHelpers.getElement('providerStatusText');
         if (statusText) {
-            statusText.textContent = customText || statusInfo.text;
+            statusText.textContent = customText || t(statusInfo.textKey);
             statusText.style.color = statusInfo.color;
         }
 
@@ -104,7 +105,7 @@ export const StatusManager = {
 
         if (!isConnected) {
             translateBtn.disabled = true;
-            translateBtn.title = 'LLM not connected - check Settings';
+            translateBtn.title = t('settings:llm_not_connected_title');
         } else {
             // Enable if there are files and no batch is active
             translateBtn.disabled = filesToProcess.length === 0 || isBatchActive;
@@ -151,11 +152,15 @@ export const StatusManager = {
      * @param {number} modelCount - Number of models available (optional)
      */
     setConnected(provider = null, modelCount = null) {
-        let text = 'LLM: Connected';
+        let text = t('common:llm_connected');
         if (provider) {
-            text = `LLM: ${provider.charAt(0).toUpperCase() + provider.slice(1)}`;
+            const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
             if (modelCount) {
-                text += ` (${modelCount} model${modelCount !== 1 ? 's' : ''})`;
+                text = modelCount === 1
+                    ? t('settings:llm_with_provider_count_one', { provider: providerName, count: modelCount })
+                    : t('settings:llm_with_provider_count_other', { provider: providerName, count: modelCount });
+            } else {
+                text = t('settings:llm_with_provider', { provider: providerName });
             }
         }
         this.setStatus('connected', text);
@@ -166,7 +171,9 @@ export const StatusManager = {
      * @param {string} reason - Optional reason for disconnection
      */
     setDisconnected(reason = null) {
-        const text = reason ? `LLM: Disconnected (${reason})` : 'LLM: Disconnected';
+        const text = reason
+            ? t('settings:llm_disconnected_with_reason', { reason })
+            : t('settings:llm_disconnected');
         this.setStatus('disconnected', text);
     },
 
@@ -175,7 +182,9 @@ export const StatusManager = {
      * @param {string} message - Optional error message
      */
     setError(message = null) {
-        const text = message ? `LLM: Error (${message})` : 'LLM: Error';
+        const text = message
+            ? t('settings:llm_error_with_msg', { message })
+            : t('settings:llm_error');
         this.setStatus('error', text);
     },
 
@@ -184,7 +193,7 @@ export const StatusManager = {
      * @param {string} message - Optional waiting message
      */
     setWaiting(message = null) {
-        const text = message || 'LLM: Waiting for connection...';
+        const text = message || t('settings:llm_waiting_default');
         this.setStatus('waiting', text);
     },
 

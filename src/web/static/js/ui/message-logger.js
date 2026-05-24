@@ -5,6 +5,7 @@
  */
 
 import { DomHelpers } from './dom-helpers.js';
+import { t } from '../i18n/i18n.js';
 
 /**
  * Log filters - messages containing these strings will be skipped
@@ -288,7 +289,7 @@ export const MessageLogger = {
         if (logContainer) {
             DomHelpers.clearChildren(logContainer);
             this.resetProgressTracking();
-            this.addLog('📝 Activity log cleared by user');
+            this.addLog(`📝 ${t('common:activity_log_cleared')}`);
         }
     },
 
@@ -492,7 +493,7 @@ export const MessageLogger = {
     resetTranslationPreview() {
         const previewElement = DomHelpers.getElement('lastTranslationPreview');
         if (previewElement) {
-            const placeholderHtml = '<div style="color: #6b7280; font-style: italic; padding: 10px;">No translation yet...</div>';
+            const placeholderHtml = `<div style="color: #6b7280; font-style: italic; padding: 10px;">${t('translation:no_translation_yet')}</div>`;
             DomHelpers.setHtml(previewElement, placeholderHtml);
         }
         // Clear language indicator
