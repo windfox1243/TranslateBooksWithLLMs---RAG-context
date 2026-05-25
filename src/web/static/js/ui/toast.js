@@ -15,6 +15,8 @@
  *   - duration (ms): override default. 0 means persistent.
  */
 
+import { t } from '../i18n/i18n.js';
+
 const CONTAINER_ID = '__app_toast_container';
 const DEFAULT_DURATION = {
     success: 4000,
@@ -72,7 +74,7 @@ function buildToast(type, message, options = {}) {
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'app-toast-close';
-    closeBtn.setAttribute('aria-label', 'Dismiss notification');
+    closeBtn.setAttribute('aria-label', t('common:toast_dismiss'));
     closeBtn.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">close</span>';
 
     let timeoutId = null;

@@ -129,7 +129,7 @@ function handleTtsUpdate(data) {
         case 'failed':
             if (ttsProgressBar) {
                 ttsProgressBar.style.width = '0%';
-                ttsProgressBar.textContent = 'Failed';
+                ttsProgressBar.textContent = t('tts:failed_label');
                 ttsProgressBar.style.background = '#ef4444';
             }
 
@@ -888,7 +888,7 @@ async function showTTSModal(filename, filepath) {
 
         // Disable button and show loading
         generateBtn.disabled = true;
-        generateBtn.textContent = '⏳ Starting...';
+        generateBtn.textContent = t('tts:starting');
 
         try {
             const result = await ApiClient.generateTTS(config);
