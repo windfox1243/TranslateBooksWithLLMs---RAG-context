@@ -154,6 +154,9 @@ class TranslationStateManager:
                     # Include stats for UI restoration
                     "total_chunks": stats.get('total_chunks', 0),
                     "completed_chunks": stats.get('completed_chunks', 0),
+                    "progress_percent": stats.get('progress_percent'),
+                    "current_phase": stats.get('current_phase'),
+                    "enable_refinement": stats.get('enable_refinement', False),
                     "last_translation": data.get('last_translation')
                 })
             return sorted(summaries, key=lambda x: x.get('start_time', 0), reverse=True)

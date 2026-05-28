@@ -53,14 +53,10 @@
   "save_settings_help": "将 API 密钥、端点、命名规则和当前模型作为默认值保存到 <code>.env</code> 文件。本区域中的更改 <strong>不会</strong> 自动保存。",
   "settings_summary_placeholder": "—",
 
-  "option_polish_title": "润色翻译（第二轮）",
-  "option_polish_description": "在翻译之后运行第二轮润色。LLM 会重写第一轮翻译，以提升文学品质、自然流畅度和风格优雅度。翻译时间翻倍，但输出质量显著提升。",
-  "option_refine_only_title": "仅润色（跳过翻译）",
-  "option_refine_only_description": "完全跳过翻译，仅对已翻译的文件运行润色。假定输入文件已为目标语言。适合在不重新翻译的前提下润色现有译文（您自己的或来自其他工具的）。支持 TXT、EPUB、DOCX 和 SRT。",
   "option_bilingual_title": "双语输出",
   "option_bilingual_description": "在译文旁同时输出原文。每个分段先显示源文本，再显示其译文，非常适合语言学习或并排对照。",
-  "option_draft_title": "草稿模式（EPUB / DOCX）",
-  "option_draft_description": "非常适合简单小说和纯文本散文，结构不如阅读译文重要。仅段落文本会发送给 LLM，内联样式和复杂标记会被丢弃。标题、列表和引述会保留；图片仍保留在输出中，并重组到其原段落末尾。在难以处理 <code>[id0]</code> 占位符的小型或本地 LLM 上更快、更可靠。不太适合技术书籍、插图指南或任何版式承载意义的内容。仅适用于 EPUB 和 DOCX 文件。",
+  "option_plain_text_title": "纯文本模式（EPUB / DOCX）",
+  "option_plain_text_description": "在将内容发送给 LLM 之前大幅简化格式，以使翻译更快、更可靠 —— 这不是一种质量较低的模式。非常适合简单小说和纯文本散文，结构不如阅读译文重要。仅段落文本会发送给 LLM，内联样式和复杂标记会被丢弃。标题、列表和引述会保留；图片仍保留在输出中，并重组到其原段落末尾。在难以处理 <code>[id0]</code> 占位符的小型或本地 LLM 上特别有用。不太适合技术书籍、插图指南或任何版式承载意义的内容。仅适用于 EPUB 和 DOCX 文件。",
   "option_text_cleanup_title": "文本清理（OCR 校正）",
   "option_text_cleanup_description": "适用于排版较差或 OCR 扫描的文本。指示 LLM 修复：错断的换行、多余空格、标点错误，并合并被错误拆分的段落。",
 
@@ -69,7 +65,7 @@
   "glossary_help": "向每个分段的提示词中注入一份经过整理的源到目标术语列表，使实体翻译保持一致。点击 <strong>管理</strong> 可创建、编辑或自动提取术语。",
 
   "custom_instructions_label": "自定义指令",
-  "custom_instructions_help": "从 <code>Custom_Instructions/</code> 文件夹选择自定义指令。您可以将自己的 <code>.txt</code> 文件加入该文件夹以创建新的指令预设。这些指令会被注入到翻译和润色提示词中，用于引导 LLM 的行为（如正式语气、直译等）。",
+  "custom_instructions_help": "从 <code>Custom_Instructions/</code> 文件夹选择自定义指令。使用包含 <code>translation:</code> 和/或 <code>refinement:</code> 键的 <code>.yaml</code> 文件以按阶段限定预设。原有的 <code>.txt</code> 文件仍可使用，并同时应用于两个阶段。",
   "custom_instructions_load_failed": "无法打开 Custom_Instructions 文件夹",
   "default_config_load_failed": "无法加载默认配置",
 

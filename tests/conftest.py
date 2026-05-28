@@ -69,3 +69,35 @@ def sample_tag_map():
 def sample_text_with_placeholders():
     """Sample text with placeholders for testing."""
     return "[[0]]Hello [[1]]World[[2]][[3]]"
+
+
+# ---------------------------------------------------------------------------
+# Translator's Sampler — canonical EPUB fixture
+# ---------------------------------------------------------------------------
+# Built on demand from scripts/build_test_epub.py so the script itself is the
+# only versioned artifact (the .epub is gitignored under /tests).
+
+_sampler_module = import_module_from_path(
+    'scripts.build_test_epub',
+    project_root / 'scripts' / 'build_test_epub.py',
+)
+
+
+@pytest.fixture(scope="session")
+def sampler_epub_path(tmp_path_factory):
+    """Path to a freshly built Translator's Sampler EPUB, scoped to the session."""
+    out = tmp_path_factory.mktemp("sampler") / "translation_sampler.epub"
+    _sampler_module.build_epub(out)
+    return out
+
+
+@pytest.fixture(scope="session")
+def sampler_epub_bytes(sampler_epub_path):
+    """Raw bytes of the sampler EPUB."""
+    return sampler_epub_path.read_bytes()
+
+
+@pytest.fixture(scope="session")
+def sampler_spine_docs():
+    """Mapping of {href: xhtml_string} for the sampler's spine documents."""
+    return dict(_sampler_module.SPINE_DOCS)

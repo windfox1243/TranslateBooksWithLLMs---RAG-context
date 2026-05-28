@@ -339,7 +339,10 @@ export const TranslationTracker = {
                             total_chunks: job.total_chunks,
                             completed_chunks: job.completed_chunks || 0,
                             failed_chunks: job.failed_chunks || 0,
-                            elapsed_time: job.elapsed_time
+                            elapsed_time: job.elapsed_time,
+                            progress_percent: job.progress_percent,
+                            current_phase: job.current_phase,
+                            enable_refinement: job.enable_refinement || false
                         };
                         this.updateStats(matchingFile.fileType, stats);
                     }
@@ -414,8 +417,9 @@ export const TranslationTracker = {
             this.updateStats(currentFile.fileType, data.stats);
         }
 
-        if (data.log_entry && data.log_entry.type === 'llm_response' &&
-            data.log_entry.data && data.log_entry.data.response) {
+        if (data.log_entry
+            && (data.log_entry.type === 'llm_response' || data.log_entry.type === 'refinement_response')
+            && data.log_entry.data && data.log_entry.data.response) {
             MessageLogger.updateTranslationPreview(data.log_entry.data.response);
         }
 
@@ -480,9 +484,20 @@ export const TranslationTracker = {
         mainContainer.style.flexDirection = 'column';
         mainContainer.style.gap = '8px';
 
-        // Add "Translating" text
+        // Add the operation label ("Translating", "Refining", "Translating (1/2)"…).
+        // ProgressManager.update() later patches the text in place as the workflow
+        // moves between phases, using the id below to locate the element.
         const translatingText = document.createElement('div');
-        translatingText.textContent = t('translation:translating');
+        translatingText.id = 'progressOperationLabel';
+        let titleText;
+        if (file.operation === 'refine') {
+            titleText = t('translation:refining');
+        } else if (file.refineAfter) {
+            titleText = t('translation:translating_step', { step: 1, total: 2, defaultValue: 'Translating (1/2)' });
+        } else {
+            titleText = t('translation:translating');
+        }
+        translatingText.textContent = titleText;
         translatingText.style.fontWeight = 'bold';
         mainContainer.appendChild(translatingText);
 
@@ -619,7 +634,6 @@ export const TranslationTracker = {
      * @param {Object} stats - Statistics object
      */
     updateStats(fileType, stats) {
-        // Use ProgressManager.update() which calculates progress from stats
         ProgressManager.update({ stats: stats }, fileType);
         this.updateOpenRouterCost(stats);
     },
@@ -820,9 +834,8 @@ export const TranslationTracker = {
      */
     _buildCompletionStatsHtml(file, resultData) {
         const stats = resultData.stats || {};
-        const isSrt = file.fileType === 'srt';
 
-        const failed = isSrt ? (stats.failed_subtitles || 0) : (stats.failed_chunks || 0);
+        const failed = stats.failed_chunks || 0;
         const elapsed = stats.elapsed_time;
 
         const cost = stats.openrouter_cost || 0;

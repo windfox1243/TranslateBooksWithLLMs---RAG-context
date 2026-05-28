@@ -53,14 +53,10 @@
   "save_settings_help": "Enregistre les clés API, points d'accès, convention de nommage et modèle actuel comme valeurs par défaut dans le fichier <code>.env</code>. Les changements dans cette section ne sont <strong>pas</strong> enregistrés automatiquement.",
   "settings_summary_placeholder": "—",
 
-  "option_polish_title": "Polissage de la traduction (2ᵉ passe)",
-  "option_polish_description": "Lance une deuxième passe de raffinement après la traduction. Le LLM réécrit la traduction de la première passe pour améliorer la qualité littéraire, la fluidité naturelle et l'élégance stylistique. Double le temps de traduction mais améliore significativement la qualité du résultat.",
-  "option_refine_only_title": "Raffinement uniquement (sans traduction)",
-  "option_refine_only_description": "Ignore complètement la traduction et lance uniquement une passe de raffinement sur un fichier déjà traduit. Le fichier d'entrée est supposé déjà être dans la langue cible. Utile pour polir une traduction existante (la vôtre ou celle d'un autre outil) sans tout retraduire. Fonctionne avec TXT, EPUB, DOCX et SRT.",
   "option_bilingual_title": "Sortie bilingue",
   "option_bilingual_description": "Inclut le texte original à côté de la traduction. Chaque segment affiche le texte source suivi de sa traduction, idéal pour l'apprentissage des langues ou la comparaison côte à côte.",
-  "option_draft_title": "Mode brouillon (EPUB / DOCX)",
-  "option_draft_description": "Très bien adapté aux romans simples et à la prose courante où la structure compte moins que la lecture du texte traduit. Seul le texte des paragraphes est envoyé au LLM, les styles en ligne et le balisage complexe sont supprimés. Les titres, listes et citations sont conservés ; les images restent dans la sortie et sont regroupées à la fin de leur paragraphe d'origine. Plus rapide et bien plus fiable sur les petits LLM ou les LLM locaux qui peinent avec les variables <code>[id0]</code>. Moins adapté aux livres techniques, aux guides illustrés ou à tout document où la mise en page porte du sens. Ne s'applique qu'aux fichiers EPUB et DOCX.",
+  "option_plain_text_title": "Mode texte brut (EPUB / DOCX)",
+  "option_plain_text_description": "Simplifie fortement le formatage avant d'envoyer le contenu au LLM pour rendre la traduction plus rapide et plus fiable — il ne s'agit pas d'un mode de moindre qualité. Très bien adapté aux romans simples et à la prose courante où la structure compte moins que la lecture du texte traduit. Seul le texte des paragraphes est envoyé au LLM, les styles en ligne et le balisage complexe sont supprimés. Les titres, listes et citations sont conservés ; les images restent dans la sortie et sont regroupées à la fin de leur paragraphe d'origine. Particulièrement utile sur les petits LLM ou les LLM locaux qui peinent avec les variables <code>[id0]</code>. Moins adapté aux livres techniques, aux guides illustrés ou à tout document où la mise en page porte du sens. Ne s'applique qu'aux fichiers EPUB et DOCX.",
   "option_text_cleanup_title": "Nettoyage de texte (correction OCR)",
   "option_text_cleanup_description": "Pour les textes mal formatés ou scannés par OCR. Demande au LLM de corriger : sauts de ligne cassés, doubles espaces, erreurs de ponctuation et fusion des paragraphes mal coupés.",
 
@@ -69,7 +65,7 @@
   "glossary_help": "Injecte une liste de termes source-vers-cible dans le prompt de chaque segment pour garantir la cohérence des traductions d'entités. Cliquez sur <strong>Gérer</strong> pour créer, modifier ou extraire automatiquement des termes.",
 
   "custom_instructions_label": "Instructions personnalisées",
-  "custom_instructions_help": "Sélectionnez des instructions personnalisées dans le dossier <code>Custom_Instructions/</code>. Vous pouvez ajouter vos propres fichiers <code>.txt</code> à ce dossier pour créer de nouveaux préréglages. Ces instructions seront injectées dans les prompts de traduction et de raffinement pour orienter le comportement du LLM (ex : ton formel, traduction littérale, etc.).",
+  "custom_instructions_help": "Sélectionnez des instructions personnalisées dans le dossier <code>Custom_Instructions/</code>. Utilisez des fichiers <code>.yaml</code> avec les clés <code>translation:</code> et/ou <code>refinement:</code> pour cibler une phase. Les fichiers <code>.txt</code> hérités fonctionnent toujours et s'appliquent aux deux phases.",
   "custom_instructions_load_failed": "Échec de l'ouverture du dossier Custom_Instructions",
   "default_config_load_failed": "Échec du chargement de la configuration par défaut",
 

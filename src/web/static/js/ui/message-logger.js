@@ -84,6 +84,17 @@ export const MessageLogger = {
     _autoHideToken: 0,
 
     /**
+     * Reset the sticky-alert container. Called at batch start as a clean-slate
+     * hook; the alert rendering itself is currently driven by the Fallbacks
+     * stat card + recommendation panel in progress-manager.js, not by this
+     * module.
+     */
+    clearAlerts() {
+        const container = DomHelpers.getElement('translationAlerts');
+        if (container) container.innerHTML = '';
+    },
+
+    /**
      * Show a user message
      * @param {string} text - Message text
      * @param {string} type - Message type ('success', 'error', 'info', 'warning')
@@ -103,8 +114,32 @@ export const MessageLogger = {
             return;
         }
 
-        const messageHtml = `<div class="message ${type}">${DomHelpers.escapeHtml(text)}</div>`;
-        DomHelpers.setHtml(messagesDiv, messageHtml);
+        DomHelpers.setHtml(messagesDiv, '');
+
+        const messageEl = document.createElement('div');
+        messageEl.className = `message ${type}`;
+
+        const textEl = document.createElement('span');
+        textEl.className = 'message-text';
+        textEl.textContent = text;
+        messageEl.appendChild(textEl);
+
+        const dismissBtn = document.createElement('button');
+        dismissBtn.className = 'message-dismiss';
+        dismissBtn.type = 'button';
+        dismissBtn.setAttribute('aria-label', t('common:toast_dismiss'));
+        dismissBtn.textContent = '×';
+        dismissBtn.addEventListener('click', () => {
+            if (this._autoHideTimer) {
+                clearTimeout(this._autoHideTimer);
+                this._autoHideTimer = null;
+            }
+            this._autoHideToken++;
+            DomHelpers.setHtml(messagesDiv, '');
+        });
+        messageEl.appendChild(dismissBtn);
+
+        messagesDiv.appendChild(messageEl);
 
         if (autoHideMs > 0) {
             const token = ++this._autoHideToken;
@@ -174,7 +209,8 @@ export const MessageLogger = {
         // Check if this is a multi-line summary (contains "=== Translation Summary ===" or "=== Recommendations ===")
         const isMultiLineSummary = message.includes('=== Translation Summary ===') ||
                                    message.includes('=== Placeholder Issues ===') ||
-                                   message.includes('=== Recommendations ===');
+                                   message.includes('=== Recommendations ===') ||
+                                   message.includes('HIGH PLACEHOLDER FAILURE RATE');
 
         let formattedMessage;
         if (isMultiLineSummary) {

@@ -282,13 +282,6 @@ async def translate_epub_file(
                 log_callback("epub_save_success",
                              f"✅ EPUB translation complete: {results['completed_files']} files translated, {results['failed_files']} failed")
 
-                if 'translation_stats' in results and results['translation_stats']:
-                    translation_stats = results['translation_stats']
-                    if translation_stats.total_chunks > 0:
-                        stats_summary = translation_stats.log_summary(log_callback=None)
-                        if stats_summary:
-                            log_callback("epub_translation_stats", stats_summary)
-
                 # Log layout status
                 if is_rtl_language(target_language):
                     log_callback("epub_rtl_complete", 
@@ -647,12 +640,12 @@ async def _precount_chunks(
     opf_dir: str,
     max_tokens_per_chunk: int,
     log_callback: Optional[Callable] = None,
-    draft_mode: bool = False,
+    plain_text_mode: bool = False,
 ) -> Tuple[int, List[int]]:
     """
     Pre-count chunks across all XHTML files for accurate progress tracking.
 
-    When draft_mode is True, counts chunks using the plain-text pipeline (paragraphs
+    When plain_text_mode is True, counts chunks using the plain-text pipeline (paragraphs
     joined by \\n\\n then chunked by TokenChunker) instead of the HTML-aware chunker.
 
     Returns:
@@ -680,8 +673,8 @@ async def _precount_chunks(
             parser = etree.XMLParser(encoding='utf-8', recover=True, remove_blank_text=False)
             doc_root = etree.fromstring(content.encode('utf-8'), parser)
 
-            if draft_mode:
-                chunk_count = _precount_chunks_draft(doc_root, max_tokens_per_chunk)
+            if plain_text_mode:
+                chunk_count = _precount_chunks_plain_text(doc_root, max_tokens_per_chunk)
                 chunks_per_file.append(chunk_count)
                 total_chunks += chunk_count
                 continue
@@ -716,9 +709,9 @@ async def _precount_chunks(
     return total_chunks, chunks_per_file
 
 
-def _precount_chunks_draft(doc_root, max_tokens_per_chunk: int) -> int:
+def _precount_chunks_plain_text(doc_root, max_tokens_per_chunk: int) -> int:
     """
-    Count chunks for one XHTML file using the draft-mode pipeline.
+    Count chunks for one XHTML file using the plain-text-mode pipeline.
     Returns 0 on any failure (matches the normal-path behavior).
     """
     try:
@@ -797,10 +790,10 @@ async def _process_all_content_files(
     from .translation_metrics import TranslationMetrics
 
     # Pre-count chunks for accurate progress tracking
-    draft_mode = bool(prompt_options and prompt_options.get('draft_mode'))
+    plain_text_mode = bool(prompt_options and prompt_options.get('plain_text_mode'))
     total_chunks, chunks_per_file = await _precount_chunks(
         content_files, opf_dir, max_tokens_per_chunk, log_callback,
-        draft_mode=draft_mode,
+        plain_text_mode=plain_text_mode,
     )
 
     # Check if refinement is enabled - this doubles the total work
@@ -861,21 +854,43 @@ async def _process_all_content_files(
                 return
 
             # Calculate global completed chunks:
-            # completed_chunks_global = chunks from previous files (already updated)
-            # current_file_completed = chunks completed in current file (reported by xhtml_translator)
+            # completed_chunks_global = base (translation) chunks from previous files
+            # accumulated_stats.refinement_chunks_completed = refinement chunks from previous files
+            # current_file_completed = chunks completed in current file (already includes
+            #   N + refinement progress when the file is in its refinement phase, per
+            #   TranslationMetrics.to_dict)
             current_file_completed = file_stats_dict.get('completed_chunks', 0)
-            global_completed = completed_chunks_global + current_file_completed
-
-            # Handle refinement mode: when refinement is enabled, the total work doubles
-            # (translation phase + refinement phase), so we need to use the doubled total
             enable_refinement = file_stats_dict.get('enable_refinement', False)
+            if enable_refinement:
+                # Without adding accumulated refinement progress here, every new file
+                # would reset global_completed to its translation-only baseline and the
+                # progress bar would regress at each file boundary by ~N chunks.
+                global_completed = (completed_chunks_global
+                                    + accumulated_stats.refinement_chunks_completed
+                                    + current_file_completed)
+            else:
+                global_completed = completed_chunks_global + current_file_completed
+
+            # When refinement is enabled, total work doubles (translation + refinement)
             effective_total = total_chunks * 2 if enable_refinement else total_chunks
 
-            # Report combined stats (accumulated + current file)
+            # Report combined stats (accumulated + current file). Include the
+            # fallback counters so the Fallbacks stat card on the UI updates
+            # live; without these keys the frontend stays stuck at 0 even when
+            # Phase 2/3 fallbacks are accumulating. processed_chunks +
+            # successful_after_retry + quality_warning_fired are needed so the
+            # UI can derive the critical "high placeholder failure rate"
+            # state from the cumulative payload.
             stats_callback({
                 'total_chunks': effective_total,
                 'completed_chunks': global_completed,
                 'failed_chunks': accumulated_stats.failed_chunks + file_stats_dict.get('failed_chunks', 0),
+                'token_alignment_used': accumulated_stats.token_alignment_used + file_stats_dict.get('token_alignment_used', 0),
+                'fallback_used': accumulated_stats.fallback_used + file_stats_dict.get('fallback_used', 0),
+                'placeholder_errors': accumulated_stats.placeholder_errors + file_stats_dict.get('placeholder_errors', 0),
+                'processed_chunks': accumulated_stats.processed_chunks + file_stats_dict.get('processed_chunks', 0),
+                'successful_after_retry': accumulated_stats.successful_after_retry + file_stats_dict.get('successful_after_retry', 0),
+                'quality_warning_fired': accumulated_stats.quality_warning_fired or file_stats_dict.get('quality_warning_fired', False),
                 'total_tokens': accumulated_stats.total_tokens_processed + accumulated_stats.total_tokens_generated + file_stats_dict.get('total_tokens_processed', 0) + file_stats_dict.get('total_tokens_generated', 0)
             })
 
@@ -925,6 +940,12 @@ async def _process_all_content_files(
                 'total_chunks': effective_total_chunks,
                 'completed_chunks': effective_completed,
                 'failed_chunks': accumulated_stats.failed_chunks,
+                'token_alignment_used': accumulated_stats.token_alignment_used,
+                'fallback_used': accumulated_stats.fallback_used,
+                'placeholder_errors': accumulated_stats.placeholder_errors,
+                'processed_chunks': accumulated_stats.processed_chunks,
+                'successful_after_retry': accumulated_stats.successful_after_retry,
+                'quality_warning_fired': accumulated_stats.quality_warning_fired,
                 'total_tokens': accumulated_stats.total_tokens_processed + accumulated_stats.total_tokens_generated
             })
 

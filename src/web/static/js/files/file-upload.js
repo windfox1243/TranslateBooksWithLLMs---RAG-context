@@ -157,6 +157,8 @@ export const FileUpload = {
         // Restore file queue from localStorage synchronously first
         // This ensures files are available immediately on page load
         this.restoreFileQueueSync();
+        // Reflect any restored operation in the drop-zone locking state.
+        this.refreshZoneLocking();
         // Then verify files exist on server after a delay
         setTimeout(() => this.verifyAndCleanupFileQueue(), 1000);
     },
@@ -492,7 +494,9 @@ export const FileUpload = {
                 translationId: f.translationId,
                 detectedLanguage: f.detectedLanguage,
                 languageConfidence: f.languageConfidence,
-                thumbnail: f.thumbnail
+                thumbnail: f.thumbnail,
+                operation: f.operation || 'translate',
+                refineAfter: !!f.refineAfter
             }));
             localStorage.setItem(FILE_QUEUE_STORAGE_KEY, JSON.stringify(serializableFiles));
         } catch {
@@ -669,28 +673,37 @@ export const FileUpload = {
      * Set up drag and drop event handlers
      */
     setupDragDrop() {
-        const uploadArea = DomHelpers.getElement('fileUpload');
-        if (!uploadArea) {
-            return;
-        }
+        const zones = [
+            { id: 'fileUpload', operation: 'translate' },
+            { id: 'fileUploadRefine', operation: 'refine' }
+        ];
+        zones.forEach(({ id, operation }) => {
+            const uploadArea = DomHelpers.getElement(id);
+            if (!uploadArea) return;
 
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            DomHelpers.addClass(uploadArea, 'dragging');
-        });
-
-        uploadArea.addEventListener('dragleave', () => {
-            DomHelpers.removeClass(uploadArea, 'dragging');
-        });
-
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            DomHelpers.removeClass(uploadArea, 'dragging');
-
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                this.handleFiles(Array.from(files));
-            }
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                if (uploadArea.classList.contains('zone-disabled')) return;
+                DomHelpers.addClass(uploadArea, 'dragging');
+            });
+            uploadArea.addEventListener('dragleave', () => {
+                DomHelpers.removeClass(uploadArea, 'dragging');
+            });
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                DomHelpers.removeClass(uploadArea, 'dragging');
+                if (uploadArea.classList.contains('zone-disabled')) {
+                    MessageLogger.showMessage(
+                        t('translation:zone_locked', { operation }),
+                        'info'
+                    );
+                    return;
+                }
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    this.handleFiles(Array.from(files), operation);
+                }
+            });
         });
     },
 
@@ -704,28 +717,79 @@ export const FileUpload = {
                 this.handleFileSelect(e);
             });
         }
+        const fileInputRefine = DomHelpers.getElement('fileInputRefine');
+        if (fileInputRefine) {
+            fileInputRefine.addEventListener('change', (e) => {
+                this.handleFileSelectRefine(e);
+            });
+        }
     },
 
     /**
-     * Handle file selection from input
+     * Handle file selection from input (Translate zone)
      * @param {Event} event - Change event from file input
      */
     handleFileSelect(event) {
         const files = event.target.files;
         if (files.length > 0) {
-            this.handleFiles(Array.from(files));
-            // Clear input so same file can be selected again
+            this.handleFiles(Array.from(files), 'translate');
             DomHelpers.setValue('fileInput', '');
         }
     },
 
     /**
+     * Handle file selection from input (Refine zone)
+     * @param {Event} event - Change event from file input
+     */
+    handleFileSelectRefine(event) {
+        const files = event.target.files;
+        if (files.length > 0) {
+            this.handleFiles(Array.from(files), 'refine');
+            DomHelpers.setValue('fileInputRefine', '');
+        }
+    },
+
+    /**
+     * Resolve the current queue's operation, or null if the queue is empty.
+     * @returns {string|null}
+     */
+    getQueueOperation() {
+        const filesToProcess = StateManager.getState('files.toProcess') || [];
+        const inFlight = filesToProcess.find(f => f.status === 'Queued' || f.status === 'Preparing...' || f.status === 'Submitted');
+        return inFlight ? (inFlight.operation || 'translate') : null;
+    },
+
+    /**
+     * Apply the zone locking rule: once the queue has a chosen operation,
+     * the opposite drop zone is disabled until the queue empties.
+     */
+    refreshZoneLocking() {
+        const op = this.getQueueOperation();
+        const translateZone = DomHelpers.getElement('fileUpload');
+        const refineZone = DomHelpers.getElement('fileUploadRefine');
+        if (!translateZone || !refineZone) return;
+
+        translateZone.classList.toggle('zone-disabled', op === 'refine');
+        refineZone.classList.toggle('zone-disabled', op === 'translate');
+    },
+
+    /**
      * Handle multiple files (from drag-drop or file input)
      * @param {File[]} files - Array of files
+     * @param {string} operation - 'translate' or 'refine'
      */
-    async handleFiles(files) {
+    async handleFiles(files, operation = 'translate') {
+        const currentOp = this.getQueueOperation();
+        if (currentOp && currentOp !== operation) {
+            MessageLogger.showMessage(
+                t('translation:zone_locked_current', { current: currentOp }),
+                'warning'
+            );
+            return;
+        }
+
         for (const file of files) {
-            await this.addFileToQueue(file);
+            await this.addFileToQueue(file, operation);
         }
 
         // Trigger UI update
@@ -735,8 +799,9 @@ export const FileUpload = {
     /**
      * Add a file to the processing queue
      * @param {File} file - File to add
+     * @param {string} operation - 'translate' or 'refine'
      */
-    async addFileToQueue(file) {
+    async addFileToQueue(file, operation = 'translate') {
         // Get current files from state
         const filesToProcess = StateManager.getState('files.toProcess') || [];
 
@@ -758,14 +823,29 @@ export const FileUpload = {
             // Upload file using ApiClient
             const uploadResult = await ApiClient.uploadFile(file);
 
-            // Determine initial source language:
-            // - Use detected language if confidence >= 70%
-            // - Otherwise use current form value
+            // Determine the file's working language:
+            // - Refine: target = file's own language (auto-detected or current target)
+            // - Translate: source from detection / current value, target from current value
             let initialSourceLanguage;
-            if (uploadResult.detected_language && uploadResult.language_confidence >= 0.7) {
-                initialSourceLanguage = uploadResult.detected_language;
+            let initialTargetLanguage;
+
+            if (operation === 'refine') {
+                // Monolingual refinement: a single language. Prefer detected, else current target.
+                if (uploadResult.detected_language && uploadResult.language_confidence >= 0.7) {
+                    initialTargetLanguage = uploadResult.detected_language;
+                } else {
+                    initialTargetLanguage = this._getCurrentTargetLanguage()
+                        || this._getCurrentSourceLanguage()
+                        || (uploadResult.detected_language || '');
+                }
+                initialSourceLanguage = initialTargetLanguage;
             } else {
-                initialSourceLanguage = this._getCurrentSourceLanguage();
+                if (uploadResult.detected_language && uploadResult.language_confidence >= 0.7) {
+                    initialSourceLanguage = uploadResult.detected_language;
+                } else {
+                    initialSourceLanguage = this._getCurrentSourceLanguage();
+                }
+                initialTargetLanguage = this._getCurrentTargetLanguage();
             }
 
             // Create file object
@@ -778,13 +858,15 @@ export const FileUpload = {
                 outputFilename: outputFilename,
                 size: file.size,
                 sourceLanguage: initialSourceLanguage,
-                targetLanguage: this._getCurrentTargetLanguage(),
+                targetLanguage: initialTargetLanguage,
                 translationId: null,
                 result: null,
                 content: null,
                 detectedLanguage: uploadResult.detected_language || null,
                 languageConfidence: uploadResult.language_confidence || null,
-                thumbnail: uploadResult.thumbnail || null  // EPUB cover thumbnail
+                thumbnail: uploadResult.thumbnail || null,  // EPUB cover thumbnail
+                operation: operation,
+                refineAfter: false
             };
 
             // Add to state
@@ -794,12 +876,15 @@ export const FileUpload = {
             // Track this as the last uploaded file for language sync
             lastUploadedFileName = file.name;
 
-            // Auto-update source language field if detected with good confidence
-            if (uploadResult.detected_language && uploadResult.language_confidence >= 0.7) {
+            // Auto-update top language fields for translate items only; refine
+            // items live with their own single language and don't propagate up
+            // (avoids polluting the source/target dropdowns).
+            if (operation === 'translate'
+                && uploadResult.detected_language
+                && uploadResult.language_confidence >= 0.7) {
                 const sourceLangInput = DomHelpers.getElement('sourceLang');
 
                 if (sourceLangInput) {
-                    // Update the form to match the detected language - silent when successful
                     const success = setLanguageInSelect('sourceLang', uploadResult.detected_language);
 
                     if (!success) {
@@ -893,8 +978,16 @@ export const FileUpload = {
                 const fileNameText = document.createTextNode(`${file.name} (${(file.size / 1024).toFixed(2)} KB) `);
                 infoSpan.appendChild(fileNameText);
 
-                // Add language pair display (read-only)
-                if (file.sourceLanguage && file.targetLanguage) {
+                // Add language pair display (read-only summary)
+                const op = file.operation || 'translate';
+                if (op === 'refine' && file.targetLanguage) {
+                    const langSpan = document.createElement('span');
+                    langSpan.className = 'file-languages';
+                    langSpan.style.fontSize = '0.85em';
+                    langSpan.style.color = '#6b7280';
+                    langSpan.textContent = `[${file.targetLanguage}] `;
+                    infoSpan.appendChild(langSpan);
+                } else if (file.sourceLanguage && file.targetLanguage) {
                     const langSpan = document.createElement('span');
                     langSpan.className = 'file-languages';
                     langSpan.style.fontSize = '0.85em';
@@ -932,6 +1025,12 @@ export const FileUpload = {
 
                 li.appendChild(header);
 
+                // Per-file controls: operation badge, language dropdown(s),
+                // and a "Refine after" toggle for translate items.
+                if (file.status === 'Queued') {
+                    li.appendChild(this._buildFileControls(file));
+                }
+
                 // Cost badge slot — filled by CostEstimator. Identified by file
                 // path (or name as fallback) so the estimator can target it.
                 if (file.status === 'Queued') {
@@ -947,6 +1046,9 @@ export const FileUpload = {
 
                 fileListContainer.appendChild(li);
             });
+
+            // Make sure the inactive drop zone is locked when the queue is busy.
+            this.refreshZoneLocking();
 
             // Show file info section
             DomHelpers.show(fileInfo);
@@ -964,6 +1066,165 @@ export const FileUpload = {
             if (translateBtn) {
                 translateBtn.disabled = true;
             }
+
+            // Empty queue: unlock both drop zones.
+            this.refreshZoneLocking();
+        }
+    },
+
+    /**
+     * Build the per-file controls row.
+     * @param {Object} file - File object
+     * @returns {HTMLElement}
+     * @private
+     */
+    _buildFileControls(file) {
+        const wrap = document.createElement('div');
+        wrap.className = 'file-item-controls';
+
+        const op = file.operation || 'translate';
+
+        // Operation badge
+        const badge = document.createElement('span');
+        badge.className = `file-op-badge op-${op}`;
+        badge.textContent = op === 'refine'
+            ? t('translation:op_badge_refine')
+            : t('translation:op_badge_translate');
+        wrap.appendChild(badge);
+
+        // Build a small language <select> reusing options from the matching
+        // main dropdown so the per-file list stays in sync with the global
+        // one. Cloning the wrong main select (e.g. targetLang for a source
+        // field) would silently drop options that only exist on one side,
+        // most notably "Auto-detect from file..." on #sourceLang.
+        const buildLangSelect = (currentValue, ariaLabel, onChange, mainSelectId) => {
+            const select = document.createElement('select');
+            select.setAttribute('aria-label', ariaLabel);
+            const mainSelect = DomHelpers.getElement(mainSelectId);
+            if (mainSelect) {
+                const cloned = mainSelect.cloneNode(true);
+                select.innerHTML = cloned.innerHTML;
+            }
+
+            // Reset `selected` carried over from the main dropdown: without
+            // this, an empty per-file value silently inherits whatever the
+            // global Source/Target dropdown was set to.
+            for (const option of select.options) {
+                option.selected = false;
+            }
+
+            let matched = false;
+            for (const option of select.options) {
+                if (!option.value || option.value === 'Other') continue;
+                if (currentValue
+                    && option.value.toLowerCase() === currentValue.toLowerCase()) {
+                    option.selected = true;
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched && currentValue) {
+                const opt = document.createElement('option');
+                opt.value = currentValue;
+                opt.textContent = currentValue;
+                opt.selected = true;
+                select.appendChild(opt);
+            }
+
+            select.onclick = (e) => e.stopPropagation();
+            select.onchange = (e) => {
+                e.stopPropagation();
+                onChange(select.value);
+            };
+            return select;
+        };
+
+        if (op === 'translate') {
+            // Source language dropdown
+            const srcLabel = document.createElement('label');
+            srcLabel.textContent = t('translation:per_file_source');
+            const srcSelect = buildLangSelect(
+                file.sourceLanguage,
+                t('translation:per_file_source'),
+                (val) => this._updateFileField(file.name, 'sourceLanguage', val),
+                'sourceLang'
+            );
+            srcLabel.appendChild(srcSelect);
+            wrap.appendChild(srcLabel);
+
+            // Target language dropdown
+            const tgtLabel = document.createElement('label');
+            tgtLabel.textContent = t('translation:per_file_target');
+            const tgtSelect = buildLangSelect(
+                file.targetLanguage,
+                t('translation:per_file_target'),
+                (val) => this._updateFileField(file.name, 'targetLanguage', val),
+                'targetLang'
+            );
+            tgtLabel.appendChild(tgtSelect);
+            wrap.appendChild(tgtLabel);
+
+            // Refine-after toggle
+            const refineLabel = document.createElement('label');
+            refineLabel.title = t('translation:per_file_refine_after_title');
+            const refineCheckbox = document.createElement('input');
+            refineCheckbox.type = 'checkbox';
+            refineCheckbox.checked = !!file.refineAfter;
+            refineCheckbox.onclick = (e) => e.stopPropagation();
+            refineCheckbox.onchange = (e) => {
+                e.stopPropagation();
+                this._updateFileField(file.name, 'refineAfter', refineCheckbox.checked);
+            };
+            refineLabel.appendChild(refineCheckbox);
+            refineLabel.appendChild(
+                document.createTextNode(' ' + t('translation:per_file_refine_after'))
+            );
+            wrap.appendChild(refineLabel);
+        } else {
+            // Refine: single language dropdown (the file's own language)
+            const langLabel = document.createElement('label');
+            langLabel.textContent = t('translation:per_file_language');
+            const langSelect = buildLangSelect(
+                file.targetLanguage,
+                t('translation:per_file_language'),
+                (val) => {
+                    // For refine, source == target (monolingual)
+                    this._updateFileField(file.name, 'targetLanguage', val);
+                    this._updateFileField(file.name, 'sourceLanguage', val);
+                },
+                'targetLang'
+            );
+            langLabel.appendChild(langSelect);
+            wrap.appendChild(langLabel);
+        }
+
+        return wrap;
+    },
+
+    /**
+     * Update a single field on a queued file and persist.
+     * @private
+     */
+    _updateFileField(filename, field, value) {
+        const filesToProcess = StateManager.getState('files.toProcess') || [];
+        const fileIndex = filesToProcess.findIndex(f => f.name === filename);
+        if (fileIndex === -1) return;
+        if (filesToProcess[fileIndex].status !== 'Queued') return;
+        filesToProcess[fileIndex][field] = value;
+        StateManager.setState('files.toProcess', filesToProcess);
+        this._saveFileQueue();
+
+        // Fields that affect cost estimation or the settings summary need to
+        // notify listeners; without this the per-file "Refine after" toggle
+        // would silently double the inference cost without refreshing the
+        // displayed estimate. We dispatch the existing global event rather
+        // than poking the cost estimator directly to keep this module
+        // dependency-free.
+        const costRelevant = new Set([
+            'refineAfter', 'operation', 'sourceLanguage', 'targetLanguage',
+        ]);
+        if (costRelevant.has(field)) {
+            window.dispatchEvent(new CustomEvent('translationOptionsChanged'));
         }
     },
 

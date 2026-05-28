@@ -1,5 +1,5 @@
 """
-Plain-text extraction and rebuild for the draft mode (DOCX).
+Plain-text extraction and rebuild for Plain Text Mode (DOCX).
 
 Reads paragraphs directly via python-docx (skipping mammoth + HTML round-trip),
 collecting:
@@ -36,7 +36,7 @@ class _ImageRef:
 
 @dataclass
 class DocxPlainContent:
-    """Everything we need to rebuild a draft-mode DOCX."""
+    """Everything we need to rebuild a plain-text-mode DOCX."""
     paragraphs_text: List[str] = field(default_factory=list)
     paragraphs_style: List[str] = field(default_factory=list)  # 'heading1'..'heading6', 'list', 'normal', 'quote'
     images_by_paragraph: Dict[int, List[_ImageRef]] = field(default_factory=dict)

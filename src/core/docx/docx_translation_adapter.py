@@ -263,9 +263,9 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
             import os
             file_href = os.path.basename(source_path)
 
-        # Draft mode bypasses mammoth + tag preservation entirely.
-        if prompt_options and prompt_options.get('draft_mode'):
-            return await self._translate_draft(
+        # Plain Text Mode bypasses mammoth + tag preservation entirely.
+        if prompt_options and prompt_options.get('plain_text_mode'):
+            return await self._translate_plain_text(
                 source_path=source_path,
                 source_language=source_language,
                 target_language=target_language,
@@ -393,7 +393,7 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
 
         return docx_bytes, stats
 
-    async def _translate_draft(
+    async def _translate_plain_text(
         self,
         source_path: str,
         source_language: str,
@@ -408,7 +408,7 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
         check_interruption_callback: Optional[Callable],
     ) -> Tuple[bytes, Any]:
         """
-        Draft-mode DOCX translation: skip mammoth + placeholders.
+        Plain-text-mode DOCX translation: skip mammoth + placeholders.
 
         Read paragraphs via python-docx, translate as plain text, rebuild
         a fresh Document with the same page setup. Images are reattached
@@ -427,14 +427,14 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
 
         if log_callback:
             log_callback(
-                "draft_extracted",
-                f"📝 Draft mode (DOCX): {len(content.paragraphs_text)} paragraphs, "
+                "plain_text_extracted",
+                f"📝 Plain Text Mode (DOCX): {len(content.paragraphs_text)} paragraphs, "
                 f"{sum(len(v) for v in content.images_by_paragraph.values())} images anchored"
             )
 
         if not content.paragraphs_text:
             if log_callback:
-                log_callback("draft_empty_docx", "⚠️ No paragraphs found in DOCX")
+                log_callback("plain_text_empty_docx", "⚠️ No paragraphs found in DOCX")
             return b'', TranslationMetrics()
 
         translated, stats, was_interrupted = await translate_paragraphs_plain(
@@ -453,7 +453,7 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
 
         if was_interrupted:
             if log_callback:
-                log_callback("docx_draft_interrupted", "DOCX draft translation interrupted")
+                log_callback("docx_plain_text_interrupted", "DOCX plain-text translation interrupted")
             return b'', stats
 
         with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp:
@@ -476,6 +476,6 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
                     pass
 
         if log_callback:
-            log_callback("docx_draft_rebuilt", f"📄 Draft DOCX rebuilt ({len(docx_bytes)} bytes)")
+            log_callback("docx_plain_text_rebuilt", f"📄 Plain-text DOCX rebuilt ({len(docx_bytes)} bytes)")
 
         return docx_bytes, stats

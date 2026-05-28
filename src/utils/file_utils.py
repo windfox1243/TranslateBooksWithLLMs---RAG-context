@@ -412,12 +412,13 @@ async def translate_srt_file_with_callbacks(input_filepath, output_filepath,
     if log_callback:
         log_callback("srt_parse_complete", f"Parsed {len(subtitles)} subtitles")
     
-    # Update stats
+    # Update stats. SRT shares the chunks vocabulary with txt/epub so the
+    # frontend (which only reads *_chunks) advances uniformly.
     if stats_callback:
         stats_callback({
-            'total_subtitles': len(subtitles),
-            'completed_subtitles': 0,
-            'failed_subtitles': 0
+            'total_chunks': len(subtitles),
+            'completed_chunks': 0,
+            'failed_chunks': 0,
         })
     
     # Group subtitles into blocks for translation

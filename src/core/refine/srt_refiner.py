@@ -68,9 +68,9 @@ async def refine_srt_file(
 
     if stats_callback:
         stats_callback({
-            'total_subtitles': len(subtitles),
-            'completed_subtitles': 0,
-            'failed_subtitles': 0,
+            'total_chunks': len(subtitles),
+            'completed_chunks': 0,
+            'failed_chunks': 0,
         })
 
     translations: Dict[int, str] = {}
@@ -104,6 +104,8 @@ async def refine_srt_file(
                 prompt_options.get('refinement_instructions', '')
                 if prompt_options else ''
             ),
+            stats_callback=stats_callback,
+            check_interruption_callback=check_interruption_callback,
         )
     finally:
         if llm_client:

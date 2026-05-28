@@ -53,14 +53,10 @@
   "save_settings_help": "API キー、エンドポイント、命名規則、現在のモデルをデフォルト値として <code>.env</code> ファイルに保存します。このセクションの変更は<strong>自動保存されません</strong>。",
   "settings_summary_placeholder": "—",
 
-  "option_polish_title": "翻訳を推敲 (第 2 パス)",
-  "option_polish_description": "翻訳後に 2 回目の推敲パスを実行します。LLM が初回翻訳を書き直し、文学的な品質、自然な流れ、文体の優雅さを向上させます。翻訳時間は倍になりますが、出力品質が大幅に向上します。",
-  "option_refine_only_title": "推敲のみ (翻訳をスキップ)",
-  "option_refine_only_description": "翻訳を完全にスキップし、既に翻訳されたファイルに対して推敲パスのみを実行します。入力ファイルは既に翻訳先の言語であると想定されます。既存の翻訳 (自分のものや他のツールで作成したもの) を最初から翻訳し直すことなく推敲できます。TXT、EPUB、DOCX、SRT に対応しています。",
   "option_bilingual_title": "対訳出力",
   "option_bilingual_description": "翻訳と並べて原文を含めます。各チャンクは原文の後に翻訳が表示されるため、語学学習や対訳比較に最適です。",
-  "option_draft_title": "ドラフトモード (EPUB / DOCX)",
-  "option_draft_description": "構造よりも翻訳テキストを読むことが重要な、シンプルな小説や平易な散文に非常に適しています。段落テキストのみが LLM に送信され、インラインスタイルや複雑なマークアップは破棄されます。見出し、リスト、引用ブロックは保持され、画像は出力に残り元の段落の末尾にまとめられます。<code>[id0]</code> プレースホルダーが苦手な小規模またはローカル LLM でも高速かつ確実に動作します。技術書、図解ガイド、レイアウトに意味があるドキュメントには不向きです。EPUB と DOCX ファイルにのみ適用されます。",
+  "option_plain_text_title": "プレーンテキストモード (EPUB / DOCX)",
+  "option_plain_text_description": "LLM に送信する前に書式を大幅に簡略化し、翻訳をより高速かつ信頼性の高いものにします — 品質が低いモードではありません。構造よりも翻訳テキストを読むことが重要な、シンプルな小説や平易な散文に非常に適しています。段落テキストのみが LLM に送信され、インラインスタイルや複雑なマークアップは破棄されます。見出し、リスト、引用ブロックは保持され、画像は出力に残り元の段落の末尾にまとめられます。<code>[id0]</code> プレースホルダーが苦手な小規模またはローカル LLM で特に有用です。技術書、図解ガイド、レイアウトに意味があるドキュメントには不向きです。EPUB と DOCX ファイルにのみ適用されます。",
   "option_text_cleanup_title": "テキストクリーンアップ (OCR 補正)",
   "option_text_cleanup_description": "整形が不十分なテキストや OCR でスキャンされたテキスト向けです。改行の崩れ、二重スペース、句読点のエラーを修正し、誤って分割された段落を結合するよう LLM に指示します。",
 
@@ -69,7 +65,7 @@
   "glossary_help": "厳選された原文と訳文の対訳リストを各チャンクのプロンプトに挿入し、固有名詞の翻訳の一貫性を保ちます。<strong>管理</strong>をクリックして用語を作成、編集、または自動抽出してください。",
 
   "custom_instructions_label": "カスタム指示",
-  "custom_instructions_help": "<code>Custom_Instructions/</code> フォルダからカスタム指示を選択します。このフォルダに独自の <code>.txt</code> ファイルを追加して、新しい指示プリセットを作成できます。これらの指示は翻訳と推敲のプロンプトに挿入され、LLM の動作 (敬体、直訳など) を制御します。",
+  "custom_instructions_help": "<code>Custom_Instructions/</code> フォルダからカスタム指示を選択します。<code>translation:</code> または <code>refinement:</code> キーを持つ <code>.yaml</code> ファイルを使うと、フェーズごとにプリセットを切り分けられます。従来の <code>.txt</code> ファイルもそのまま動作し、両方のフェーズに適用されます。",
   "custom_instructions_load_failed": "Custom_Instructions フォルダを開けませんでした",
   "default_config_load_failed": "デフォルト設定の読み込みに失敗しました",
 

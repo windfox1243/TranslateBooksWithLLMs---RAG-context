@@ -339,7 +339,4 @@ class GenericTranslationOrchestrator(Generic[SourceT, ResultT]):
             reconstructed, source, preservation_context, log_callback
         )
 
-        # 8. Report stats
-        if log_callback:
-            stats.log_summary(log_callback)
         return result, stats

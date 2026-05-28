@@ -23,6 +23,8 @@ class ProgressStats:
     elapsed_seconds: float
     avg_tokens_per_chunk: float
     current_token_rate: float  # tokens/second
+    current_phase: int = 1  # 1 = translation, 2 = refinement
+    enable_refinement: bool = False  # True when this is a two-phase workflow
 
     def to_dict(self) -> dict:
         """Convert to dictionary for backwards compatibility with existing code."""
@@ -36,7 +38,9 @@ class ProgressStats:
             'estimated_remaining_seconds': self.estimated_remaining_seconds,
             'elapsed_seconds': self.elapsed_seconds,
             'avg_tokens_per_chunk': self.avg_tokens_per_chunk,
-            'current_token_rate': self.current_token_rate
+            'current_token_rate': self.current_token_rate,
+            'current_phase': self.current_phase,
+            'enable_refinement': self.enable_refinement
         }
 
 
@@ -226,7 +230,9 @@ class TokenProgressTracker:
             estimated_remaining_seconds=self.get_estimated_remaining_seconds(),
             elapsed_seconds=elapsed,
             avg_tokens_per_chunk=self._total_tokens / self._total_chunks if self._total_chunks > 0 else 0,
-            current_token_rate=self._token_rate
+            current_token_rate=self._token_rate,
+            current_phase=self._current_phase,
+            enable_refinement=self._enable_refinement
         )
 
     def _calibrate_token_rate(self):

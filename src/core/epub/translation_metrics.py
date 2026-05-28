@@ -6,7 +6,7 @@ Extracted from html_chunker.py as part of Phase 2 refactoring.
 
 import time
 from dataclasses import dataclass, field
-from typing import Dict
+from typing import Dict, Optional
 
 
 @dataclass
@@ -45,6 +45,11 @@ class TranslationMetrics:
     # === Retry & Error Tracking ===
     retry_attempts: int = 0  # Total number of retry attempts made
     placeholder_errors: int = 0  # Total placeholder validation errors encountered
+    quality_warning_fired: bool = False  # One-shot flag for the high-failure-rate warning
+    fallback_warning_fired: bool = False  # Set once the first-fallback recommendation has been emitted
+    # Last counts reported by check_fallback_warning, so we re-fire when totals grow
+    _last_reported_token_alignment: int = 0
+    _last_reported_fallback: int = 0
 
     # === Phase 2: Token Alignment Fallback ===
     token_alignment_used: int = 0  # Phase 2: Token alignment fallback used
@@ -159,6 +164,110 @@ class TranslationMetrics:
             return 0.0
         return self.successful_first_try / self.total_chunks
 
+    # === Quality warning thresholds (aggressive: warn early) ===
+    _QUALITY_MIN_PROCESSED = 5
+    _QUALITY_RETRY_RATE_THRESHOLD = 0.30
+    _QUALITY_FALLBACK_RATE_THRESHOLD = 0.10
+    _QUALITY_AVG_ERRORS_THRESHOLD = 1.0
+
+    def check_quality_warning(self) -> Optional[str]:
+        """Detect high placeholder-failure rate and return a one-shot warning.
+
+        Returns a formatted warning string the first time the threshold is crossed,
+        then None on every subsequent call (the metric is mutated to prevent reuse).
+        Returns None until at least _QUALITY_MIN_PROCESSED chunks have been processed
+        so early noise on tiny documents does not trigger a false positive.
+        """
+        if self.quality_warning_fired:
+            return None
+        if self.processed_chunks < self._QUALITY_MIN_PROCESSED:
+            return None
+
+        processed = self.processed_chunks
+        not_first_try = self.successful_after_retry + self.token_alignment_used + self.fallback_used
+        fallback_count = self.token_alignment_used + self.fallback_used
+
+        retry_rate = not_first_try / processed
+        fallback_rate = fallback_count / processed
+        avg_errors = self.placeholder_errors / processed
+
+        triggered = (
+            retry_rate > self._QUALITY_RETRY_RATE_THRESHOLD
+            or fallback_rate > self._QUALITY_FALLBACK_RATE_THRESHOLD
+            or avg_errors > self._QUALITY_AVG_ERRORS_THRESHOLD
+        )
+        if not triggered:
+            return None
+
+        self.quality_warning_fired = True
+
+        retry_pct = round(retry_rate * 100)
+        fallback_pct = round(fallback_rate * 100)
+
+        return (
+            "⚠️ HIGH PLACEHOLDER FAILURE RATE — the LLM is struggling to preserve "
+            f"structural tags. After {processed} chunks: {retry_pct}% needed retries, "
+            f"{fallback_pct}% fell back to alignment/untranslated mode "
+            f"(avg {avg_errors:.1f} placeholder errors per chunk).\n"
+            "   This wastes compute and degrades output quality. "
+            "Consider stopping and adjusting one of:\n"
+            "   • Switch to a more capable LLM (placeholder preservation needs strong "
+            "instruction-following)\n"
+            "   • Reduce MAX_TOKENS_PER_CHUNK in .env (smaller chunks = fewer "
+            "placeholders per call)\n"
+            "   • Enable Plain Text Mode (EPUB / DOCX only) — feeds the LLM near-plain "
+            "text instead of marked-up content, so translations come out much "
+            "cleaner and virtually error-free (trade-off: very limited formatting "
+            "in the output)"
+        )
+
+    def check_fallback_warning(self) -> Optional[str]:
+        """Surface the Recommendations block whenever the fallback counts grow.
+
+        Phase 2 (token alignment) and Phase 3 (untranslated) are quality regressions
+        the user almost always wants to know about live — waiting for the final
+        summary means a long run can be half-degraded before the user sees it.
+        Re-emits whenever either counter increases so the displayed numbers stay
+        current; the final summary still prints the cumulative block.
+        """
+        if self.token_alignment_used == 0 and self.fallback_used == 0:
+            return None
+        if (self.token_alignment_used == self._last_reported_token_alignment
+                and self.fallback_used == self._last_reported_fallback):
+            return None
+
+        self._last_reported_token_alignment = self.token_alignment_used
+        self._last_reported_fallback = self.fallback_used
+        self.fallback_warning_fired = True
+
+        lines = ["=== Recommendations ==="]
+        if self.token_alignment_used > 0:
+            lines.append(
+                f"⚠️ {self.token_alignment_used} chunk(s) used token alignment "
+                "fallback (Phase 2)."
+            )
+            lines.append(
+                "   This can cause minor layout imperfections due to proportional "
+                "tag repositioning."
+            )
+        if self.fallback_used > 0:
+            lines.append(
+                f"⚠️ {self.fallback_used} chunk(s) could not be translated "
+                "(Phase 3 fallback)."
+            )
+            lines.append("   These chunks remain in the source language.")
+        lines.extend([
+            "",
+            "To improve translation quality, consider:",
+            "  • Using a more capable LLM model",
+            "  • Reducing MAX_TOKENS_PER_CHUNK in .env (e.g., from 400 to 150)",
+            "  • Enabling Plain Text Mode (EPUB / DOCX only) — feeds the LLM near-plain "
+            "text instead of marked-up content, so translations come out much "
+            "cleaner and virtually error-free (trade-off: very limited formatting "
+            "in the output)",
+        ])
+        return "\n".join(lines)
+
     def to_dict(self) -> Dict:
         """Convert metrics to dictionary for serialization.
 
@@ -197,6 +306,8 @@ class TranslationMetrics:
             "failed_chunks": self.failed_chunks,
             "retry_attempts": self.retry_attempts,
             "placeholder_errors": self.placeholder_errors,
+            "quality_warning_fired": self.quality_warning_fired,
+            "fallback_warning_fired": self.fallback_warning_fired,
             "token_alignment_used": self.token_alignment_used,
             "token_alignment_success": self.token_alignment_success,
             "correction_attempts": self.correction_attempts,
@@ -244,6 +355,8 @@ class TranslationMetrics:
         # Retry & error tracking
         metrics.retry_attempts = data.get("retry_attempts", 0)
         metrics.placeholder_errors = data.get("placeholder_errors", 0)
+        metrics.quality_warning_fired = data.get("quality_warning_fired", False)
+        metrics.fallback_warning_fired = data.get("fallback_warning_fired", False)
 
         # Phase 2: Token alignment
         metrics.token_alignment_used = data.get("token_alignment_used", 0)
@@ -412,6 +525,9 @@ class TranslationMetrics:
         self.failed_chunks += other.failed_chunks
         self.retry_attempts += other.retry_attempts
         self.placeholder_errors += other.placeholder_errors
+        # If either side already warned the user, don't re-warn after merging.
+        self.quality_warning_fired = self.quality_warning_fired or other.quality_warning_fired
+        self.fallback_warning_fired = self.fallback_warning_fired or other.fallback_warning_fired
         self.token_alignment_used += other.token_alignment_used
         self.token_alignment_success += other.token_alignment_success
         self.correction_attempts += other.correction_attempts

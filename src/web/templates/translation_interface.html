@@ -190,7 +190,7 @@
                     <img src="/static/TBL-Logo-alpha.png" alt="TBL Logo" style="width: 100%; height: 100%; object-fit: contain;">
                 </div>
                 <div class="logo-text">
-                    <h2>TBL <span class="app-version" id="appVersion"></span></h2>
+                    <h2>TBL <span class="app-version" id="appVersion" title="TBL v{{ app_version|default('dev') }}">v{{ app_version|default('dev') }}</span></h2>
                     <p data-i18n="common:app_subtitle">Translate Books with LLMs</p>
                 </div>
             </div>
@@ -417,8 +417,8 @@
                     </div>
                 </div>
 
-                <!-- File Upload Area -->
-                <div class="file-upload" id="fileUpload" onclick="document.getElementById('fileInput').click()">
+                <!-- File Upload Area (Translate) -->
+                <div class="file-upload" id="fileUpload" data-zone="translate" onclick="document.getElementById('fileInput').click()">
                     <div class="upload-icon">
                         <span class="material-symbols-outlined">cloud_upload</span>
                     </div>
@@ -428,6 +428,16 @@
                     <input type="file" id="fileInput" accept=".txt,.epub,.srt,.docx" style="display: none;" onchange="handleFileSelect(event)" multiple>
                 </div>
 
+                <!-- File Upload Area (Refine, secondary) -->
+                <div class="file-upload file-upload-secondary" id="fileUploadRefine" data-zone="refine" onclick="document.getElementById('fileInputRefine').click()">
+                    <div class="upload-icon">
+                        <span class="material-symbols-outlined">auto_fix_high</span>
+                    </div>
+                    <h4 data-i18n="translation:drop_files_refine_title">Drop files to refine (already translated)</h4>
+                    <p data-i18n="translation:drop_files_refine_support">Polish an existing translation — same language in, same language out</p>
+                    <input type="file" id="fileInputRefine" accept=".txt,.epub,.srt,.docx" style="display: none;" onchange="handleFileSelectRefine(event)" multiple>
+                </div>
+
                 <!-- File Info Section (Batch Files) -->
                 <div id="fileInfo" class="hidden" style="margin-bottom: 20px; margin-top: 20px;">
                     <h4 data-i18n="translation:selected_files" style="color: var(--text-dark); font-weight: 700; margin-bottom: 1rem;">Selected Files:</h4>
@@ -435,10 +445,10 @@
                 </div>
 
                 <!-- Action Buttons -->
-                <div style="text-align: center; margin-top: 30px; display: flex; justify-content: center; gap: 15px;">
+                <div style="text-align: center; margin-top: 30px; display: flex; justify-content: center; gap: 15px; align-items: center; flex-wrap: wrap;">
                     <button class="btn btn-primary" id="translateBtn" onclick="startBatchTranslation()" disabled>
                         <span class="material-symbols-outlined">play_circle</span>
-                        <span data-i18n="translation:start_batch">Start Translation Batch</span>
+                        <span data-i18n="translation:start_batch">Start</span>
                     </button>
                     <button class="btn btn-danger hidden" id="interruptBtn" onclick="interruptCurrentTranslation()">
                         <span class="material-symbols-outlined">stop_circle</span>
@@ -452,8 +462,9 @@
                 <!-- Messages (connection status, notifications) -->
                 <div id="messages"></div>
 
-                <!-- Completion cards (one per finished file, stacked until the user dismisses them) -->
-                <div id="completionCardsContainer"></div>
+                <!-- Sticky alerts: high-failure-rate / fallback recommendations
+                     surfaced during translation. Each alert is a dismissible card. -->
+                <div id="translationAlerts"></div>
 
                 <!-- Progress Section -->
                 <div id="progressSection" class="progress-section hidden">
@@ -477,6 +488,11 @@
                             <h3 id="failedChunks">0</h3>
                             <p data-i18n="translation:stat_failed">Failed</p>
                         </div>
+                        <div class="stat-card" id="fallbackStatCard" data-i18n-attr="title:translation:stat_fallbacks_tooltip" title="Phase 2 (token alignment) + Phase 3 (untranslated) chunks. Indicates the LLM struggled with placeholders." aria-expanded="false">
+                            <h3 id="fallbackChunks">0</h3>
+                            <p data-i18n="translation:stat_fallbacks">Fallbacks</p>
+                            <span class="stat-card-chevron material-symbols-outlined" aria-hidden="true">expand_more</span>
+                        </div>
                         <div class="stat-card">
                             <h3 id="elapsedTime">0s</h3>
                             <p data-i18n="translation:stat_time_elapsed">Time Elapsed</p>
@@ -486,6 +502,11 @@
                             <p data-i18n="translation:stat_est_remaining">Est. Remaining</p>
                         </div>
                     </div>
+
+                    <!-- Expandable panel toggled by clicking the Fallbacks card.
+                         Carries the mitigation guidance that used to live in a
+                         sticky alert / tooltip — easier to read inline. -->
+                    <div id="fallbackRecommendationPanel" class="recommendation-panel" hidden></div>
 
                     <!-- OpenRouter Cost Display -->
                     <div class="stats-grid hidden" id="openrouterCostGrid" style="margin-top: 15px;">
@@ -511,6 +532,9 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Completion cards (one per finished file, stacked until the user dismisses them) -->
+                <div id="completionCardsContainer"></div>
 
                 <!-- TTS Progress Section -->
                 <div id="ttsProgressSection" style="display: none; margin-top: 20px; padding: 15px; background: var(--success-light-bg); border: 1px solid var(--success-light); border-radius: 1.5rem;">
@@ -760,32 +784,6 @@
                 </div>
 
                 <div id="promptOptionsSection" class="hidden">
-                    <!-- Polish Translation (Refinement Pass) -->
-                    <div class="option-item">
-                        <label class="option-item__label">
-                            <input type="checkbox" id="refineTranslation">
-                            <div>
-                                <span class="option-item__title" data-i18n="settings:option_polish_title">Polish Translation (2nd Pass)</span>
-                                <p class="option-item__description" data-i18n="settings:option_polish_description">
-                                    Runs a second refinement pass after translation. The LLM rewrites the first-pass translation to improve literary quality, natural flow, and stylistic elegance. Doubles the translation time but significantly improves output quality.
-                                </p>
-                            </div>
-                        </label>
-                    </div>
-
-                    <!-- Refine Only (skip translation entirely) -->
-                    <div class="option-item">
-                        <label class="option-item__label">
-                            <input type="checkbox" id="refineOnlyMode">
-                            <div>
-                                <span class="option-item__title" data-i18n="settings:option_refine_only_title">Refine Only (skip translation)</span>
-                                <p class="option-item__description" data-i18n="settings:option_refine_only_description">
-                                    Skip translation entirely and run only a refinement pass on an already-translated file. The input file is assumed to already be in the target language. Useful to polish an existing translation (yours or from another tool) without re-translating from scratch. Works on TXT, EPUB, DOCX and SRT.
-                                </p>
-                            </div>
-                        </label>
-                    </div>
-
                     <!-- Bilingual Output -->
                     <div class="option-item">
                         <label class="option-item__label">
@@ -799,13 +797,13 @@
                         </label>
                     </div>
 
-                    <!-- Draft Mode (EPUB / DOCX plain translation) -->
+                    <!-- Plain Text Mode (EPUB / DOCX plain translation) -->
                     <div class="option-item">
                         <label class="option-item__label">
-                            <input type="checkbox" id="draftMode">
+                            <input type="checkbox" id="plainTextMode">
                             <div>
-                                <span class="option-item__title" data-i18n="settings:option_draft_title">Draft Mode (EPUB / DOCX)</span>
-                                <p class="option-item__description" data-i18n-html="settings:option_draft_description">
+                                <span class="option-item__title" data-i18n="settings:option_plain_text_title">Plain Text Mode (EPUB / DOCX)</span>
+                                <p class="option-item__description" data-i18n-html="settings:option_plain_text_description">
                                     Very well suited to simple novels and plain prose where structure matters less than reading the translated text. Only paragraph text is sent to the LLM, inline styles and complex markup are dropped. Headings, lists and blockquotes are kept; images stay in the output and are regrouped at the end of their original paragraph. Faster and far more reliable on small or local LLMs that struggle with <code>[id0]</code> placeholders. Less ideal for technical books, illustrated guides or anything where layout carries meaning. Only applies to EPUB and DOCX files.
                                 </p>
                             </div>
@@ -869,7 +867,7 @@
                             </button>
                         </div>
                         <p data-i18n-html="settings:custom_instructions_help" style="margin: 5px 0 0 0; font-size: 0.8125rem; color: var(--text-muted-light);">
-                            Select custom instructions from the <code>Custom_Instructions/</code> folder. You can add your own <code>.txt</code> files to this folder to create new instruction presets. These instructions will be injected into translation and refinement prompts to guide the LLM's behavior (e.g., formal tone, literal translation, etc.).
+                            Select custom instructions from the <code>Custom_Instructions/</code> folder. Use <code>.yaml</code> files with <code>translation:</code> and/or <code>refinement:</code> keys to scope a preset per phase. Legacy <code>.txt</code> files still work and apply to both phases.
                         </p>
                     </div>
                 </div>

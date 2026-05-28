@@ -34,6 +34,7 @@ async def refine_file(
     nim_api_key: Optional[str] = None,
     context_window: Optional[int] = None,
     auto_adjust_context: bool = True,
+    max_tokens_per_chunk: Optional[int] = None,
     prompt_options: Optional[Dict[str, Any]] = None,
     **additional_config,
 ) -> bool:
@@ -46,6 +47,13 @@ async def refine_file(
     """
     if prompt_options is None:
         prompt_options = {}
+
+    # Resolve max_tokens_per_chunk lazily so a reload_config() between calls is
+    # honoured for subsequent runs (the .env value can change at runtime via
+    # the /api/settings endpoint).
+    if max_tokens_per_chunk is None:
+        from src.config import MAX_TOKENS_PER_CHUNK as _DEFAULT_MAX_TOKENS
+        max_tokens_per_chunk = _DEFAULT_MAX_TOKENS
 
     _, ext = os.path.splitext(input_filepath.lower())
     try:
@@ -83,6 +91,7 @@ async def refine_file(
             nim_api_key=nim_api_key,
             context_window=context_window or 2048,
             auto_adjust_context=auto_adjust_context,
+            max_tokens_per_chunk=max_tokens_per_chunk,
             prompt_options=prompt_options,
         )
 
@@ -107,6 +116,7 @@ async def refine_file(
             nim_api_key=nim_api_key,
             context_window=context_window or 2048,
             auto_adjust_context=auto_adjust_context,
+            max_tokens_per_chunk=max_tokens_per_chunk,
             prompt_options=prompt_options,
         )
 
@@ -131,6 +141,7 @@ async def refine_file(
             nim_api_key=nim_api_key,
             context_window=context_window or 2048,
             auto_adjust_context=auto_adjust_context,
+            max_tokens_per_chunk=max_tokens_per_chunk,
             prompt_options=prompt_options,
         )
 

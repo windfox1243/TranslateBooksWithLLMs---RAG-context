@@ -6,6 +6,8 @@
  */
 
 import { DomHelpers } from '../ui/dom-helpers.js';
+import { t } from '../i18n/i18n.js';
+import { navigateToSetting } from '../ui/settings-summary.js';
 
 // State for tracking chunk completion times (for ETA calculation)
 let chunkCompletionTimes = [];
@@ -105,6 +107,242 @@ function updateProgressBar(percent) {
 }
 
 /**
+ * Resolve the localized operation label ("Translating" / "Refining (2/2)" / etc.)
+ * for the current phase of the workflow.
+ *
+ * @param {Object} stats - Server stats. May contain enable_refinement,
+ *   current_phase, refine_only.
+ * @returns {string} Label to show in the progress section title.
+ */
+export function resolveOperationLabel(stats) {
+    if (!stats) return t('translation:translating');
+
+    if (stats.enable_refinement) {
+        return stats.current_phase === 2
+            ? t('translation:refining_step', { step: 2, total: 2, defaultValue: 'Refining (2/2)' })
+            : t('translation:translating_step', { step: 1, total: 2, defaultValue: 'Translating (1/2)' });
+    }
+
+    if (stats.refine_only) {
+        return t('translation:refining');
+    }
+
+    return t('translation:translating');
+}
+
+/**
+ * Update the operation label inside the current-file title without rebuilding
+ * the surrounding DOM (icon, filename, languages). The element is created by
+ * `updateTranslationTitle` in the file controllers and tagged with id
+ * `progressOperationLabel`.
+ *
+ * @param {Object} stats - Server stats
+ */
+function updateOperationLabel(stats) {
+    const labelEl = DomHelpers.getElement('progressOperationLabel');
+    if (!labelEl) return;
+    labelEl.textContent = resolveOperationLabel(stats);
+}
+
+// The Fallbacks card has a single active state — "critical" (red). Any
+// fallback at all is treated as critical because placeholder loss already
+// degrades the output; there is no intermediate "warning" tier any more.
+//   false → nothing to surface (card neutral, panel hidden)
+//   true  → red card + red panel with the full recommendation block
+function isAlertActive(stats, fallbacks) {
+    if (fallbacks > 0) return true;
+    // Backend's one-shot quality flag and our client-side threshold check
+    // are kept as additional ways to flip the card on even when fallbacks
+    // are still 0 but placeholder errors are accumulating fast.
+    if (stats && stats.quality_warning_fired) return true;
+    return exceedsQualityThreshold(stats);
+}
+
+// Mirror of TranslationMetrics._QUALITY_* thresholds, kept here so the UI can
+// detect the failure state from the cumulative stats payload even when no
+// single XHTML file ever reached the per-file 5-chunk minimum (e.g. an EPUB
+// split into many short chapters).
+const QUALITY_MIN_PROCESSED = 5;
+const QUALITY_RETRY_RATE_THRESHOLD = 0.30;
+const QUALITY_FALLBACK_RATE_THRESHOLD = 0.10;
+const QUALITY_AVG_ERRORS_THRESHOLD = 1.0;
+
+function exceedsQualityThreshold(stats) {
+    if (!stats) return false;
+    const processed = stats.processed_chunks || 0;
+    if (processed < QUALITY_MIN_PROCESSED) return false;
+    const fallbackCount = (stats.token_alignment_used || 0) + (stats.fallback_used || 0);
+    const notFirstTry = (stats.successful_after_retry || 0) + fallbackCount;
+    const retryRate = notFirstTry / processed;
+    const fallbackRate = fallbackCount / processed;
+    const avgErrors = (stats.placeholder_errors || 0) / processed;
+    return (
+        retryRate > QUALITY_RETRY_RATE_THRESHOLD
+        || fallbackRate > QUALITY_FALLBACK_RATE_THRESHOLD
+        || avgErrors > QUALITY_AVG_ERRORS_THRESHOLD
+    );
+}
+
+/**
+ * Compute the rate metrics the critical intro line surfaces. We re-derive them
+ * client-side from the cumulative stats payload so the numbers stay in sync
+ * across multi-file EPUB runs (the per-file backend warning text would drift).
+ */
+function deriveRateContext(stats) {
+    const processed = stats.processed_chunks || stats.completed_chunks || 0;
+    if (processed <= 0) {
+        return { retryPct: 0, fallbackPct: 0, avgErrors: '0.0', processed: 0 };
+    }
+    const fallbackCount = (stats.token_alignment_used || 0) + (stats.fallback_used || 0);
+    const notFirstTry = (stats.successful_after_retry || 0) + fallbackCount;
+    const placeholderErrors = stats.placeholder_errors || 0;
+    return {
+        retryPct: Math.round((notFirstTry / processed) * 100),
+        fallbackPct: Math.round((fallbackCount / processed) * 100),
+        avgErrors: (placeholderErrors / processed).toFixed(1),
+        processed,
+    };
+}
+
+/**
+ * Build a list item that interpolates a "{{link}}" placeholder in the given
+ * template with a clickable link that jumps to the matching setting.
+ */
+function buildTipWithLink(template, linkText, action) {
+    const li = document.createElement('li');
+    const idx = template.indexOf('{{link}}');
+    if (idx === -1) {
+        // Defensive: if the i18n string lost its placeholder, fall back to
+        // appending the link at the end so the user still has the affordance.
+        li.appendChild(document.createTextNode(template + ' '));
+    } else {
+        li.appendChild(document.createTextNode(template.slice(0, idx)));
+    }
+    const link = document.createElement('a');
+    link.href = '#';
+    link.className = 'recommendation-link';
+    link.textContent = linkText;
+    link.addEventListener('click', (event) => {
+        event.preventDefault();
+        navigateToSetting(action);
+    });
+    li.appendChild(link);
+    if (idx !== -1) {
+        li.appendChild(document.createTextNode(template.slice(idx + '{{link}}'.length)));
+    }
+    return li;
+}
+
+/**
+ * Render the recommendation content into the inline panel: an intro line in
+ * bold (with live retry / fallback / error rates) followed by a bulleted list
+ * of mitigations, two of which carry clickable links to the matching settings
+ * (chunk size and Plain Text Mode).
+ *
+ * @param {Object} [context] - Numbers used by the intro
+ *   (retryPct, fallbackPct, avgErrors, processed).
+ */
+function renderRecommendationPanel(context) {
+    const panel = DomHelpers.getElement('fallbackRecommendationPanel');
+    if (!panel) return;
+
+    panel.textContent = '';
+
+    const ctx = context || { retryPct: 0, fallbackPct: 0, avgErrors: '0.0', processed: 0 };
+    const intro = document.createElement('strong');
+    intro.textContent = t('translation:fallback_panel_intro_critical', ctx);
+    panel.appendChild(intro);
+
+    const list = document.createElement('ul');
+    list.className = 'recommendation-list';
+
+    const llmTip = document.createElement('li');
+    llmTip.textContent = t('translation:fallback_panel_tip_llm');
+    list.appendChild(llmTip);
+
+    list.appendChild(buildTipWithLink(
+        t('translation:fallback_panel_tip_plain_text_mode'),
+        t('translation:fallback_panel_link_plain_text_mode'),
+        'plainText',
+    ));
+
+    panel.appendChild(list);
+}
+
+/**
+ * Open/close the inline recommendation panel. When opening (or refreshing
+ * while already open) we re-render with the latest context so the rate
+ * numbers in the intro stay live.
+ */
+function toggleRecommendationPanel({ forceState, context } = {}) {
+    const card = DomHelpers.getElement('fallbackStatCard');
+    const panel = DomHelpers.getElement('fallbackRecommendationPanel');
+    if (!card || !panel) return;
+    const willOpen = forceState !== undefined
+        ? forceState
+        : panel.hasAttribute('hidden');
+    if (willOpen) {
+        renderRecommendationPanel(context);
+        panel.removeAttribute('hidden');
+        card.setAttribute('aria-expanded', 'true');
+    } else {
+        panel.setAttribute('hidden', '');
+        card.setAttribute('aria-expanded', 'false');
+    }
+}
+
+// Latest derived rate context (retry %, fallback %, avg errors), so the click
+// handler can re-render the panel without re-receiving the stats payload.
+let _lastSeverityContext = null;
+
+let _fallbackCardClickBound = false;
+
+function bindFallbackCardClick() {
+    if (_fallbackCardClickBound) return;
+    const card = DomHelpers.getElement('fallbackStatCard');
+    if (!card) return;
+    card.addEventListener('click', () => {
+        // Only react when the card is in the alert state.
+        if (!card.classList.contains('stat-card-critical')) return;
+        toggleRecommendationPanel({ context: _lastSeverityContext });
+    });
+    _fallbackCardClickBound = true;
+}
+
+/**
+ * Apply the alert highlight to the Fallbacks card and keep the inline panel
+ * in sync. Only one active state exists ("critical", red palette):
+ *  - inactive → card neutral, panel hidden
+ *  - active   → red card, red panel with live retry/fallback/avg-error rates
+ *
+ * The panel stays open if the user already opened it; we just refresh its
+ * content. When dropping back to inactive, any open panel is closed.
+ */
+function updateFallbackHighlight(count, stats) {
+    const card = DomHelpers.getElement('fallbackStatCard');
+    if (!card) return;
+
+    const active = isAlertActive(stats, count);
+    _lastSeverityContext = active ? deriveRateContext(stats || {}) : null;
+
+    card.classList.toggle('stat-card-critical', active);
+    card.title = t(active
+        ? 'translation:stat_fallbacks_tooltip_critical'
+        : 'translation:stat_fallbacks_tooltip');
+
+    if (!active) {
+        toggleRecommendationPanel({ forceState: false });
+        return;
+    }
+
+    bindFallbackCardClick();
+    const panel = DomHelpers.getElement('fallbackRecommendationPanel');
+    if (panel && !panel.hasAttribute('hidden')) {
+        renderRecommendationPanel(_lastSeverityContext);
+    }
+}
+
+/**
  * Update statistics display based on file type
  * All file types (txt, epub, srt) show stats uniformly
  * @param {Object} stats - Statistics object from server
@@ -115,29 +353,27 @@ function updateStatistics(stats, fileType) {
 
     DomHelpers.show('statsGrid');
 
+    DomHelpers.setText('totalChunks', stats.total_chunks || '0');
+    DomHelpers.setText('completedChunks', stats.completed_chunks || '0');
+    DomHelpers.setText('failedChunks', stats.failed_chunks || '0');
+
     if (fileType === 'srt') {
-        DomHelpers.setText('totalChunks', stats.total_subtitles || '0');
-        DomHelpers.setText('completedChunks', stats.completed_subtitles || '0');
-        DomHelpers.setText('failedChunks', stats.failed_subtitles || '0');
+        // SRT does not use placeholders → Fallbacks stays at 0.
+        DomHelpers.setText('fallbackChunks', '0');
+        updateFallbackHighlight(0, stats);
     } else {
-        // txt and epub use the same chunk-based stats
-        DomHelpers.setText('totalChunks', stats.total_chunks || '0');
-        DomHelpers.setText('completedChunks', stats.completed_chunks || '0');
-        DomHelpers.setText('failedChunks', stats.failed_chunks || '0');
+        const fallbacks = (stats.token_alignment_used || 0) + (stats.fallback_used || 0);
+        DomHelpers.setText('fallbackChunks', String(fallbacks));
+        updateFallbackHighlight(fallbacks, stats);
     }
 
     if (stats.elapsed_time !== undefined) {
         DomHelpers.setText('elapsedTime', formatElapsedTime(stats.elapsed_time));
-
-        // Update ETA based on chunk progress
-        const completed = fileType === 'srt'
-            ? (stats.completed_subtitles || 0)
-            : (stats.completed_chunks || 0);
-        const total = fileType === 'srt'
-            ? (stats.total_subtitles || 0)
-            : (stats.total_chunks || 0);
-
-        updateEstimatedTimeRemaining(completed, total, stats.elapsed_time);
+        updateEstimatedTimeRemaining(
+            stats.completed_chunks || 0,
+            stats.total_chunks || 0,
+            stats.elapsed_time
+        );
     }
 }
 
@@ -166,25 +402,37 @@ export const ProgressManager = {
      * @param {string} fileType - File type ('txt', 'epub', 'srt')
      */
     update(data, fileType) {
-        // Calculate progress from stats (client-side calculation)
-        if (data.stats) {
-            const completed = fileType === 'srt'
-                ? (data.stats.completed_subtitles || 0)
-                : (data.stats.completed_chunks || 0);
-            const total = fileType === 'srt'
-                ? (data.stats.total_subtitles || 0)
-                : (data.stats.total_chunks || 0);
+        if (!data.stats) return;
 
-            // Calculate progress percentage
-            const progress = total > 0 ? (completed / total) * 100 : 0;
-            updateProgressBar(progress);
+        const stats = data.stats;
+        const completed = stats.completed_chunks || 0;
+        const total = stats.total_chunks || 0;
 
-            // Update statistics display
-            updateStatistics(data.stats, fileType);
+        const phasePercent = total > 0 ? (completed / total) * 100 : 0;
+        const enableRefinement = !!stats.enable_refinement;
+
+        // Global bar:
+        //   - refine_after (enable_refinement === true): the backend runs two
+        //     independent progress trackers (translate then refine), so we
+        //     compute the unified 0-100% client-side: phase 1 maps to 0-50%
+        //     and phase 2 maps to 50-100%. This keeps the bar monotonic
+        //     across the phase transition.
+        //   - single-phase runs (plain translation, refine-only): trust the
+        //     backend's progress_percent when present, otherwise fall back to
+        //     chunk-based.
+        let globalPercent;
+        if (enableRefinement) {
+            const phase = stats.current_phase || 1;
+            globalPercent = phase === 2 ? 50 + phasePercent * 0.5 : phasePercent * 0.5;
+        } else if (typeof stats.progress_percent === 'number') {
+            globalPercent = stats.progress_percent;
+        } else {
+            globalPercent = phasePercent;
         }
+        updateProgressBar(globalPercent);
 
-        // Backward compatibility: ignore data.progress if present
-        // (The calculation above takes precedence)
+        updateOperationLabel(stats);
+        updateStatistics(stats, fileType);
     },
 
     /**
@@ -195,6 +443,9 @@ export const ProgressManager = {
         DomHelpers.setText('totalChunks', '0');
         DomHelpers.setText('completedChunks', '0');
         DomHelpers.setText('failedChunks', '0');
+        DomHelpers.setText('fallbackChunks', '0');
+        _lastSeverityContext = null;
+        updateFallbackHighlight(0);
         DomHelpers.setText('elapsedTime', '0s');
         DomHelpers.setText('estimatedTimeRemaining', '--');
         resetEtaTracking();

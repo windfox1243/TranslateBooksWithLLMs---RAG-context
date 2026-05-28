@@ -9,9 +9,14 @@ import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict
 
 from src.utils.unified_logger import setup_web_logger, LogType
 from src.utils.file_utils import get_unique_output_path, find_partial_output_paths, generate_tts_for_translation
+from src.utils.custom_instructions import (
+    load_custom_instructions,
+    is_safe_filename,
+)
 from src.core.llm import OpenRouterProvider
 from src.core.llm.exceptions import RateLimitError
 from src.config import AUTO_PAUSE_ON_RATE_LIMIT, RATE_LIMIT_AUTO_RESUME_DELAY
@@ -146,9 +151,17 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             else:
                 logger.info(message_content)
 
+    # Side-channel that lets handlers.py override workflow metadata in stats
+    # updates. The translate_file → refine_file orchestration runs two
+    # independent progress trackers, so neither knows about the other; we
+    # inject `enable_refinement` / `current_phase` here so the UI can render
+    # a unified two-phase progress bar.
+    _workflow_meta: Dict[str, Any] = {}
+
     def _update_translation_stats_callback(new_stats_dict):
         if state_manager.exists(translation_id):
-            state_manager.update_stats(translation_id, new_stats_dict)
+            merged_update = {**new_stats_dict, **_workflow_meta}
+            state_manager.update_stats(translation_id, merged_update)
             current_stats = state_manager.get_translation_field(translation_id, 'stats') or {}
             current_stats['elapsed_time'] = time.time() - current_stats.get('start_time', time.time())
             state_manager.set_translation_field(translation_id, 'stats', current_stats)
@@ -161,16 +174,17 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 logger.update_progress(completed, total)
 
     def _openrouter_cost_callback(cost_data):
-        """Callback to update OpenRouter cost information in real-time"""
+        """Update OpenRouter cost in state. No emit: this callback runs on the
+        provider's HTTP response thread, and a cross-thread emit can overtake
+        the main loop's stats emit on the wire (showing a stale snapshot and
+        rolling the progress bar backward). The cost is picked up by the next
+        chunk's stats_callback, which is the same thread that owns progress."""
         if state_manager.exists(translation_id):
             state_manager.update_stats(translation_id, {
                 'openrouter_cost': cost_data['session_cost'],
                 'openrouter_prompt_tokens': cost_data['total_prompt_tokens'],
                 'openrouter_completion_tokens': cost_data['total_completion_tokens']
             })
-            current_stats = state_manager.get_translation_field(translation_id, 'stats') or {}
-            current_stats['elapsed_time'] = time.time() - current_stats.get('start_time', time.time())
-            emit_update(socketio, translation_id, {'stats': current_stats}, state_manager)
 
     # Setup OpenRouter cost callback if using OpenRouter provider
     if config.get('llm_provider') == 'openrouter':
@@ -261,62 +275,69 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             raise Exception(f"{config['file_type'].upper()} translation requires a file_path.")
 
         # Read custom instruction file if specified
-        custom_instructions_content = ""
         custom_instruction_file = config.get('prompt_options', {}).get('custom_instruction_file', '')
 
+        translation_instructions = None
+        refinement_instructions = None
+
         if custom_instruction_file:
-            try:
-                project_root = Path(os.getcwd())
-                custom_instructions_dir = project_root / 'Custom_Instructions'
+            project_root = Path(os.getcwd())
+            custom_instructions_dir = project_root / 'Custom_Instructions'
 
-                # Security: validate filename pattern (prevent directory traversal)
-                safe_filename_pattern = r'^[a-zA-Z0-9_\-\.]+\.txt$'
-                if re.match(safe_filename_pattern, custom_instruction_file):
-                    file_path = custom_instructions_dir / custom_instruction_file
-
-                    # Security: ensure file is within Custom_Instructions folder
-                    try:
-                        file_path.resolve().relative_to(custom_instructions_dir.resolve())
-
-                        if file_path.exists() and file_path.is_file():
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                custom_instructions_content = f.read().strip()
-
-                            if custom_instructions_content:
-                                _log_message_callback("custom_instructions", f"📝 Loaded custom instructions: {custom_instruction_file}")
-                        else:
-                            _log_message_callback(
-                                "custom_instructions_missing",
-                                f"⚠️ Custom instructions file '{custom_instruction_file}' was selected "
-                                f"but not found in {custom_instructions_dir}. Translation will proceed "
-                                f"without it."
-                            )
-                    except ValueError:
-                        pass  # Silently ignore invalid paths (security requirement)
-                else:
-                    _log_message_callback(
-                        "custom_instructions_invalid",
-                        f"⚠️ Custom instructions file name '{custom_instruction_file}' is invalid "
-                        f"(allowed: alphanumeric, underscore, hyphen, dot; must end in .txt). "
-                        f"Translation will proceed without it."
-                    )
-            except Exception as e:
+            if not is_safe_filename(custom_instruction_file):
                 _log_message_callback(
-                    "custom_instructions_error",
-                    f"⚠️ Failed to load custom instructions '{custom_instruction_file}': {e}. "
+                    "custom_instructions_invalid",
+                    f"⚠️ Custom instructions file name '{custom_instruction_file}' is invalid "
+                    f"(allowed: alphanumeric, underscore, hyphen, dot; must end in .txt, .yaml, or .yml). "
                     f"Translation will proceed without it."
                 )
+            else:
+                try:
+                    loaded = load_custom_instructions(
+                        custom_instruction_file, custom_instructions_dir
+                    )
+                    translation_instructions = loaded.get('translation')
+                    refinement_instructions = loaded.get('refinement')
 
-        # Inject custom instructions into prompt_options
-        if custom_instructions_content:
-            # Ensure prompt_options exists
+                    if translation_instructions or refinement_instructions:
+                        phases = []
+                        if translation_instructions:
+                            phases.append('translation')
+                        if refinement_instructions:
+                            phases.append('refinement')
+                        _log_message_callback(
+                            "custom_instructions",
+                            f"📝 Loaded custom instructions: {custom_instruction_file} "
+                            f"(phases: {', '.join(phases)})"
+                        )
+                    else:
+                        _log_message_callback(
+                            "custom_instructions_empty",
+                            f"⚠️ Custom instructions file '{custom_instruction_file}' is empty. "
+                            f"Translation will proceed without it."
+                        )
+                except FileNotFoundError:
+                    _log_message_callback(
+                        "custom_instructions_missing",
+                        f"⚠️ Custom instructions file '{custom_instruction_file}' was selected "
+                        f"but not found in {custom_instructions_dir}. Translation will proceed "
+                        f"without it."
+                    )
+                except (ValueError, Exception) as e:
+                    _log_message_callback(
+                        "custom_instructions_error",
+                        f"⚠️ Failed to load custom instructions '{custom_instruction_file}': {e}. "
+                        f"Translation will proceed without it."
+                    )
+
+        # Inject phase-specific custom instructions into prompt_options
+        if translation_instructions or refinement_instructions:
             if 'prompt_options' not in config:
                 config['prompt_options'] = {}
-
-            # For refinement prompts (existing mechanism - already fully supported)
-            config['prompt_options']['refinement_instructions'] = custom_instructions_content
-            # For translation prompts (new)
-            config['prompt_options']['custom_instructions'] = custom_instructions_content
+            if translation_instructions:
+                config['prompt_options']['custom_instructions'] = translation_instructions
+            if refinement_instructions:
+                config['prompt_options']['refinement_instructions'] = refinement_instructions
 
         # Surface glossary load result (snapshot was taken earlier, before start_job).
         glossary_terms_snapshot = config.get('prompt_options', {}).get('glossary_terms')
@@ -334,6 +355,9 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             )
 
         if config.get('refine_only'):
+            _workflow_meta['enable_refinement'] = False
+            _workflow_meta['refine_only'] = True
+            _workflow_meta['current_phase'] = 1
             _log_message_callback(
                 "refine_only_mode",
                 "✨ Refine-only mode: skipping translation, polishing the input file as-is."
@@ -368,9 +392,16 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 nim_api_key=config.get('nim_api_key', ''),
                 context_window=config.get('context_window', 2048),
                 auto_adjust_context=config.get('auto_adjust_context', True),
+                max_tokens_per_chunk=config.get('max_tokens_per_chunk'),
                 prompt_options=config.get('prompt_options', {}),
             )
         else:
+            # If refine_after is requested, advertise the two-phase workflow up-front so
+            # the UI can render the phase bar from the start of phase 1 (translation).
+            if config.get('refine_after'):
+                _workflow_meta['enable_refinement'] = True
+                _workflow_meta['current_phase'] = 1
+
             # Use unified adapter-based translation
             await translate_file(
                 input_filepath=input_path_for_translate_module,
@@ -396,9 +427,60 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 context_window=config.get('context_window', 2048),
                 auto_adjust_context=config.get('auto_adjust_context', True),
                 min_chunk_size=config.get('min_chunk_size', 5),
+                max_tokens_per_chunk=config.get('max_tokens_per_chunk'),
                 prompt_options=config.get('prompt_options', {}),
                 bilingual_output=config.get('bilingual_output', False)
             )
+
+            # Optional chained refinement pass on the translated output.
+            should_refine_after = (
+                config.get('refine_after')
+                and os.path.exists(output_filepath_on_server)
+                and not state_manager.get_translation_field(translation_id, 'interrupted')
+                and state_manager.get_translation_field(translation_id, 'status')
+                    not in ('error', 'partial', 'rate_limited')
+            )
+            if should_refine_after:
+                # Transition the UI to phase 2 before the refinement tracker starts
+                # emitting stats. We also reset completed_chunks/failed_chunks here
+                # because the state still holds end-of-phase-1 counters (cc=N);
+                # without this reset, the merged emit would carry cc=N together with
+                # current_phase=2 and the front-end would briefly show 100% before
+                # the first refinement chunk drops it back to ~50%.
+                _workflow_meta['current_phase'] = 2
+                _update_translation_stats_callback({
+                    'completed_chunks': 0,
+                    'failed_chunks': 0,
+                })
+                _log_message_callback(
+                    "refine_after_start",
+                    "✨ Translation done — running refinement pass on the output."
+                )
+                await refine_file(
+                    input_filepath=output_filepath_on_server,
+                    output_filepath=output_filepath_on_server,
+                    target_language=config['target_language'],
+                    model_name=config['model'],
+                    llm_provider=config.get('llm_provider', 'ollama'),
+                    checkpoint_manager=checkpoint_manager,
+                    translation_id=translation_id,
+                    log_callback=_log_message_callback,
+                    stats_callback=_update_translation_stats_callback,
+                    check_interruption_callback=should_interrupt_current_task,
+                    resume_from_index=0,
+                    llm_api_endpoint=config['llm_api_endpoint'],
+                    gemini_api_key=config.get('gemini_api_key', ''),
+                    openai_api_key=config.get('openai_api_key', ''),
+                    openrouter_api_key=config.get('openrouter_api_key', ''),
+                    mistral_api_key=config.get('mistral_api_key', ''),
+                    deepseek_api_key=config.get('deepseek_api_key', ''),
+                    poe_api_key=config.get('poe_api_key', ''),
+                    nim_api_key=config.get('nim_api_key', ''),
+                    context_window=config.get('context_window', 2048),
+                    auto_adjust_context=config.get('auto_adjust_context', True),
+                    max_tokens_per_chunk=config.get('max_tokens_per_chunk'),
+                    prompt_options=config.get('prompt_options', {}),
+                )
 
         # If an EPUB translation was paused, the file was saved with a `[partial NN%]`
         # prefix. Re-point the tracking variables to the actual file on disk so the
@@ -490,18 +572,13 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             final_stats = stats
             stats_summary = ""
             failed = 0
-            if config['file_type'] == 'txt' or (config['file_type'] == 'epub' and stats.get('total_chunks', 0) > 0):
+            if (config['file_type'] in ('txt', 'srt')
+                    or (config['file_type'] == 'epub' and stats.get('total_chunks', 0) > 0)):
                 completed = final_stats.get('completed_chunks', 0)
                 failed = final_stats.get('failed_chunks', 0)
                 total = final_stats.get('total_chunks', 0)
-                stats_summary = f" | {completed}/{total} chunks"
-                if failed > 0:
-                    stats_summary += f" ({failed} failed)"
-            elif config['file_type'] == 'srt' and stats.get('total_subtitles', 0) > 0:
-                completed = final_stats.get('completed_subtitles', 0)
-                failed = final_stats.get('failed_subtitles', 0)
-                total = final_stats.get('total_subtitles', 0)
-                stats_summary = f" | {completed}/{total} subtitles"
+                unit = 'subtitles' if config['file_type'] == 'srt' else 'chunks'
+                stats_summary = f" | {completed}/{total} {unit}"
                 if failed > 0:
                     stats_summary += f" ({failed} failed)"
 
@@ -579,6 +656,9 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 _log_message_callback
             )
 
+        # Attach final stats so the completion card can render its summary
+        # (cost, tokens, failed chunks…). emit_update no longer auto-attaches.
+        final_status_payload['stats'] = state_manager.get_translation_field(translation_id, 'stats') or {}
         emit_update(socketio, translation_id, final_status_payload, state_manager)
 
         # Trigger file list refresh in the frontend if a file was saved

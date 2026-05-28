@@ -53,14 +53,10 @@
   "save_settings_help": "Saves API keys, endpoints, naming convention, and current model as default values in the <code>.env</code> file. Changes in this section are <strong>not</strong> auto-saved.",
   "settings_summary_placeholder": "—",
 
-  "option_polish_title": "Polish Translation (2nd Pass)",
-  "option_polish_description": "Runs a second refinement pass after translation. The LLM rewrites the first-pass translation to improve literary quality, natural flow, and stylistic elegance. Doubles the translation time but significantly improves output quality.",
-  "option_refine_only_title": "Refine Only (skip translation)",
-  "option_refine_only_description": "Skip translation entirely and run only a refinement pass on an already-translated file. The input file is assumed to already be in the target language. Useful to polish an existing translation (yours or from another tool) without re-translating from scratch. Works on TXT, EPUB, DOCX and SRT.",
   "option_bilingual_title": "Bilingual Output",
   "option_bilingual_description": "Include original text alongside the translation. Each chunk displays the source text followed by its translation, ideal for language learning or side-by-side comparison.",
-  "option_draft_title": "Draft Mode (EPUB / DOCX)",
-  "option_draft_description": "Very well suited to simple novels and plain prose where structure matters less than reading the translated text. Only paragraph text is sent to the LLM, inline styles and complex markup are dropped. Headings, lists and blockquotes are kept; images stay in the output and are regrouped at the end of their original paragraph. Faster and far more reliable on small or local LLMs that struggle with <code>[id0]</code> placeholders. Less ideal for technical books, illustrated guides or anything where layout carries meaning. Only applies to EPUB and DOCX files.",
+  "option_plain_text_title": "Plain Text Mode (EPUB / DOCX)",
+  "option_plain_text_description": "Strips most formatting before sending content to the LLM to make translation faster and more reliable — not a lower-quality mode. Very well suited to simple novels and plain prose where structure matters less than reading the translated text. Only paragraph text is sent to the LLM, inline styles and complex markup are dropped. Headings, lists and blockquotes are kept; images stay in the output and are regrouped at the end of their original paragraph. Especially helpful on small or local LLMs that struggle with <code>[id0]</code> placeholders. Less ideal for technical books, illustrated guides or anything where layout carries meaning. Only applies to EPUB and DOCX files.",
   "option_text_cleanup_title": "Text Cleanup (OCR Correction)",
   "option_text_cleanup_description": "For poorly formatted or OCR-scanned texts. Instructs the LLM to fix: broken line breaks, double spaces, punctuation errors, and merge incorrectly split paragraphs.",
 
@@ -69,7 +65,7 @@
   "glossary_help": "Inject a curated source-to-target term list into every chunk's prompt to keep entity translations consistent. Click <strong>Manage</strong> to create, edit or auto-extract terms.",
 
   "custom_instructions_label": "Custom Instructions",
-  "custom_instructions_help": "Select custom instructions from the <code>Custom_Instructions/</code> folder. You can add your own <code>.txt</code> files to this folder to create new instruction presets. These instructions will be injected into translation and refinement prompts to guide the LLM's behavior (e.g., formal tone, literal translation, etc.).",
+  "custom_instructions_help": "Select custom instructions from the <code>Custom_Instructions/</code> folder. Use <code>.yaml</code> files with <code>translation:</code> and/or <code>refinement:</code> keys to scope a preset per phase. Legacy <code>.txt</code> files still work and apply to both phases.",
   "custom_instructions_load_failed": "Failed to open Custom_Instructions folder",
   "default_config_load_failed": "Failed to load default configuration",
 

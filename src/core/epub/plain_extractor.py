@@ -1,5 +1,5 @@
 """
-Plain-text extraction and rebuild for the draft mode (EPUB).
+Plain-text extraction and rebuild for Plain Text Mode (EPUB).
 
 Walks an XHTML <body> in DOM order, collecting block-level paragraphs as plain
 strings and anchoring any <img> they contain to their parent paragraph index.
@@ -8,7 +8,7 @@ block.
 
 At rebuild time, the body is wiped and reconstructed as a flat sequence of
 block elements (<p>, <h1..h6>, <li>, <blockquote>, <pre>) plus, after each
-block that originally contained images, an extra <p class="draft-images"> wrapper
+block that originally contained images, an extra <p class="plain-text-images"> wrapper
 with the original <img> elements unchanged.
 """
 from typing import Dict, List, Tuple
@@ -20,7 +20,7 @@ from lxml import etree
 BLOCK_TAGS = ("p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "pre")
 # Containers we descend into looking for blocks
 CONTAINER_TAGS = ("div", "section", "article", "main", "header", "footer", "aside", "nav")
-# Subtrees never sent to the LLM in draft mode
+# Subtrees never sent to the LLM in Plain Text Mode
 DROP_TAGS = ("table", "svg", "figure", "picture", "video", "audio", "iframe", "form", "script", "style")
 # List wrappers we descend into (the inner <li> items become individual blocks)
 LIST_WRAPPER_TAGS = ("ul", "ol")
@@ -206,7 +206,7 @@ def replace_body_with_paragraphs(
     for i in range(count):
         text = (translated_paragraphs[i] or "").strip()
         raw_tag = paragraphs_tag[i] if i < len(paragraphs_tag) else "p"
-        # <li> outside <ul>/<ol> is not valid XHTML — flatten to <p> in draft mode.
+        # <li> outside <ul>/<ol> is not valid XHTML — flatten to <p> in Plain Text Mode.
         tag = "p" if raw_tag == "li" else raw_tag
 
         # Bilingual: emit source first when we have it
@@ -214,19 +214,19 @@ def replace_body_with_paragraphs(
             source_text = (source_paragraphs[i] or "").strip()
             if source_text:
                 src_block = etree.SubElement(body_element, tag)
-                src_block.set("class", "draft-source")
+                src_block.set("class", "plain-text-source")
                 src_block.text = source_text
 
         # Emit translated block when there is text
         if text:
             block = etree.SubElement(body_element, tag)
             if bilingual:
-                block.set("class", "draft-target")
+                block.set("class", "plain-text-target")
             block.text = text
 
         # Emit anchored images right after
         if i in images_by_paragraph and images_by_paragraph[i]:
             img_wrapper = etree.SubElement(body_element, "p")
-            img_wrapper.set("class", "draft-images")
+            img_wrapper.set("class", "plain-text-images")
             for img in images_by_paragraph[i]:
                 img_wrapper.append(img)

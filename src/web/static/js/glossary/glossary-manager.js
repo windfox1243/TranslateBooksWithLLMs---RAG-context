@@ -1604,7 +1604,7 @@ function buildNerRow(candidate) {
     const tdTarget = document.createElement('td');
     const targetInput = document.createElement('input');
     targetInput.type = 'text';
-    targetInput.className = 'ner-target-input';
+    targetInput.className = 'glossary-cell-input ner-target-input';
     targetInput.value = candidate.target || '';
     tdTarget.appendChild(targetInput);
 

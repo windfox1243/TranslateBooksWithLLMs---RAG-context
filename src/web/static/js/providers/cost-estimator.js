@@ -34,13 +34,16 @@ const inFlightByBadge = new WeakMap();
 const estimateCache = new Map();
 
 function makeCacheKey(file, ctx) {
+    const op = file.operation || 'translate';
+    const refineAfter = !!file.refineAfter;
     return [
         ctx.provider,
         ctx.model,
         file.filePath,
         ctx.src,
         ctx.tgt,
-        ctx.options.refine ? 1 : 0,
+        op,
+        refineAfter ? 1 : 0,
         ctx.options.text_cleanup ? 1 : 0,
     ].join('|');
 }
@@ -107,9 +110,14 @@ function getLanguagePair() {
 
 function getOptions() {
     return {
-        refine: !!DomHelpers.getElement('refineTranslation')?.checked,
         text_cleanup: !!DomHelpers.getElement('textCleanup')?.checked,
     };
+}
+
+function fileOptions(file, baseOptions) {
+    const op = file.operation || 'translate';
+    const refine = op === 'refine' || !!file.refineAfter;
+    return { ...baseOptions, refine };
 }
 
 function readPricingFromModelOption() {
@@ -311,7 +319,7 @@ async function estimateOne(badge, file, ctx) {
         model: ctx.model,
         src_lang: ctx.src,
         tgt_lang: ctx.tgt,
-        options: ctx.options,
+        options: fileOptions(file, ctx.options),
         pricing: ctx.pricing,
         file_path: file.filePath,
     };
@@ -367,7 +375,7 @@ export const CostEstimator = {
         window.addEventListener('fileListChanged', scheduleRefresh);
         window.addEventListener('translationOptionsChanged', scheduleRefresh);
 
-        ['refineTranslation', 'textCleanup', 'sourceLang', 'targetLang'].forEach((id) => {
+        ['textCleanup', 'sourceLang', 'targetLang'].forEach((id) => {
             const el = DomHelpers.getElement(id);
             if (el) el.addEventListener('change', scheduleRefresh);
         });

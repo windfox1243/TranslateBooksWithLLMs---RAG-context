@@ -20,31 +20,37 @@ def configure_websocket_handlers(socketio, state_manager):
 
 def emit_update(socketio, translation_id, data_to_emit, state_manager):
     """
-    Emit WebSocket update for translation progress
+    Emit WebSocket update for translation progress.
+
+    Stats are NOT auto-attached. Callers that need to send progress stats must
+    include them explicitly via `data_to_emit['stats']`. Auto-attaching stats
+    on every log/status emit used to create races: a log emit on the main loop
+    would read the state snapshot at log time and emit it later, possibly
+    overtaking a fresher stats emit on the wire and rolling the progress bar
+    backward. Now only the dedicated stats callbacks touch the progress bar.
 
     Args:
         socketio: SocketIO instance
         translation_id (str): Translation job ID
-        data_to_emit (dict): Data to send
+        data_to_emit (dict): Data to send (must include 'stats' to push progress)
         state_manager: Translation state manager instance
     """
-    translation_data = state_manager.get_translation(translation_id)
-    if translation_data:
-        data_to_emit['translation_id'] = translation_id
-        try:
-            if 'stats' not in data_to_emit and 'stats' in translation_data:
-                data_to_emit['stats'] = translation_data['stats']
+    if not state_manager.exists(translation_id):
+        return
 
-            # Progress is now calculated client-side from stats, no longer sent from backend
+    data_to_emit['translation_id'] = translation_id
+    try:
+        # Store last translation for UI restoration after browser refresh.
+        # Both the translate path (`llm_response`) and the refine path
+        # (`refinement_response`) produce displayable LLM output — keep the
+        # preview in sync for either.
+        log_entry = data_to_emit.get('log_entry')
+        if (log_entry and log_entry.get('type') in ('llm_response', 'refinement_response') and
+            log_entry.get('data', {}).get('response')):
+            state_manager.set_translation_field(
+                translation_id, 'last_translation', log_entry['data']['response']
+            )
 
-            # Store last translation for UI restoration after browser refresh
-            log_entry = data_to_emit.get('log_entry')
-            if (log_entry and log_entry.get('type') == 'llm_response' and
-                log_entry.get('data', {}).get('response')):
-                state_manager.set_translation_field(
-                    translation_id, 'last_translation', log_entry['data']['response']
-                )
-
-            socketio.emit('translation_update', data_to_emit, namespace='/')
-        except Exception as e:
-            print(f"WebSocket emission error for {translation_id}: {e}")
+        socketio.emit('translation_update', data_to_emit, namespace='/')
+    except Exception as e:
+        print(f"WebSocket emission error for {translation_id}: {e}")

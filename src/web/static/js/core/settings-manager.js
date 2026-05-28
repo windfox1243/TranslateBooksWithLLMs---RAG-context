@@ -30,7 +30,6 @@ function validatePreferences(data) {
     // Validate types for known fields (non-exhaustive, just critical ones)
     if ('ttsEnabled' in data && typeof data.ttsEnabled !== 'boolean') return false;
     if ('textCleanup' in data && typeof data.textCleanup !== 'boolean') return false;
-    if ('refineTranslation' in data && typeof data.refineTranslation !== 'boolean') return false;
 
     return true;
 }
@@ -124,9 +123,8 @@ export const SettingsManager = {
             { id: 'customTargetLang', event: 'change' },
             { id: 'ttsEnabled', event: 'change' },
             { id: 'textCleanup', event: 'change' },
-            { id: 'refineTranslation', event: 'change' },
             { id: 'bilingualMode', event: 'change' },
-            { id: 'draftMode', event: 'change' },
+            { id: 'plainTextMode', event: 'change' },
             { id: 'customInstructionSelect', event: 'change' }
         ];
 
@@ -339,22 +337,16 @@ export const SettingsManager = {
                 cleanupCheckbox.checked = prefs.textCleanup;
             }
         }
-        if (prefs.refineTranslation !== undefined) {
-            const refineCheckbox = DomHelpers.getElement('refineTranslation');
-            if (refineCheckbox) {
-                refineCheckbox.checked = prefs.refineTranslation;
-            }
-        }
         if (prefs.bilingualMode !== undefined) {
             const bilingualCheckbox = DomHelpers.getElement('bilingualMode');
             if (bilingualCheckbox) {
                 bilingualCheckbox.checked = prefs.bilingualMode;
             }
         }
-        if (prefs.draftMode !== undefined) {
-            const draftCheckbox = DomHelpers.getElement('draftMode');
-            if (draftCheckbox) {
-                draftCheckbox.checked = prefs.draftMode;
+        if (prefs.plainTextMode !== undefined) {
+            const plainTextCheckbox = DomHelpers.getElement('plainTextMode');
+            if (plainTextCheckbox) {
+                plainTextCheckbox.checked = prefs.plainTextMode;
             }
         }
         // Note: disableAutoPause is now loaded from .env via /api/config in FormManager,
@@ -367,7 +359,7 @@ export const SettingsManager = {
 
         // Keep Prompt Options section open if any option is active.
         // Note: disableAutoPause now lives in the Provider & Defaults section, not here.
-        const hasAnyPromptOption = prefs.textCleanup || prefs.refineTranslation || prefs.bilingualMode || prefs.draftMode || prefs.customInstructionFile;
+        const hasAnyPromptOption = prefs.textCleanup || prefs.bilingualMode || prefs.plainTextMode || prefs.customInstructionFile;
         if (hasAnyPromptOption) {
             const promptOptionsSection = DomHelpers.getElement('promptOptionsSection');
             const promptOptionsIcon = DomHelpers.getElement('promptOptionsIcon');
@@ -420,9 +412,8 @@ export const SettingsManager = {
     saveCurrentState() {
         const ttsEnabledCheckbox = DomHelpers.getElement('ttsEnabled');
         const textCleanupCheckbox = DomHelpers.getElement('textCleanup');
-        const refineTranslationCheckbox = DomHelpers.getElement('refineTranslation');
         const bilingualModeCheckbox = DomHelpers.getElement('bilingualMode');
-        const draftModeCheckbox = DomHelpers.getElement('draftMode');
+        const plainTextModeCheckbox = DomHelpers.getElement('plainTextMode');
 
         const prefs = {
             lastProvider: DomHelpers.getValue('llmProvider'),
@@ -434,9 +425,8 @@ export const SettingsManager = {
             outputFilenamePattern: DomHelpers.getValue('outputFilenamePattern'),
             ttsEnabled: ttsEnabledCheckbox ? ttsEnabledCheckbox.checked : false,
             textCleanup: textCleanupCheckbox ? textCleanupCheckbox.checked : false,
-            refineTranslation: refineTranslationCheckbox ? refineTranslationCheckbox.checked : false,
             bilingualMode: bilingualModeCheckbox ? bilingualModeCheckbox.checked : false,
-            draftMode: draftModeCheckbox ? draftModeCheckbox.checked : false,
+            plainTextMode: plainTextModeCheckbox ? plainTextModeCheckbox.checked : false,
             customInstructionFile: DomHelpers.getValue('customInstructionSelect') || ''
         };
 

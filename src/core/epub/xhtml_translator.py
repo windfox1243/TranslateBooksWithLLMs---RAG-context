@@ -828,6 +828,14 @@ async def _translate_all_chunks_with_checkpoint(
         )
         translated_chunks.append(translated)
 
+        # === HEALTH CHECK ===
+        # Warn loudly once if the LLM is failing to preserve placeholders at a high
+        # rate. Without this, retries pile up silently — wasting compute and yielding
+        # poor translations the user has no way to diagnose mid-run.
+        quality_warning = stats.check_quality_warning()
+        if quality_warning and log_callback:
+            log_callback("quality_warning", quality_warning)
+
         # === PERIODIC CHECKPOINT ===
         # Save every N chunks (and at the last chunk)
         should_checkpoint = (
@@ -958,6 +966,12 @@ async def _translate_all_chunks(
             prompt_options=prompt_options
         )
         translated_chunks.append(translated)
+
+        # Warn loudly once if placeholder failures are piling up (see
+        # _translate_all_chunks_with_checkpoint for rationale).
+        quality_warning = stats.check_quality_warning()
+        if quality_warning and log_callback:
+            log_callback("quality_warning", quality_warning)
 
         # Report progress after completing each chunk
         # Report stats after completing each chunk
@@ -1122,13 +1136,12 @@ def _report_statistics(
     stats: TranslationMetrics,
     log_callback: Optional[Callable] = None,
 ) -> None:
-    """Report translation statistics.
+    """Signal end of body translation.
 
-    Args:
-        stats: TranslationMetrics instance
-        log_callback: Optional callback for logging    """
-    stats.log_summary(log_callback)
-
+    The detailed Translation Summary block was intentionally dropped from the
+    activity log — only emit the completion marker. Callers can still call
+    stats.log_summary() directly if needed for console debugging.
+    """
     if log_callback:
         log_callback("translation_complete", "Body translation complete")
 

@@ -602,6 +602,14 @@ class TranslationConfig:
     @classmethod
     def from_web_request(cls, request_data: dict) -> 'TranslationConfig':
         """Create config from web request data"""
+        # Clamp chunker budget to the same [50, 1000] window the UI enforces,
+        # falling back to the .env default if the field is absent or malformed.
+        try:
+            requested_max_tokens = int(request_data.get('max_tokens_per_chunk', MAX_TOKENS_PER_CHUNK))
+            clamped_max_tokens = max(50, min(1000, requested_max_tokens))
+        except (TypeError, ValueError):
+            clamped_max_tokens = MAX_TOKENS_PER_CHUNK
+
         return cls(
             source_language=request_data.get('source_language', DEFAULT_SOURCE_LANGUAGE),
             target_language=request_data.get('target_language', DEFAULT_TARGET_LANGUAGE),
@@ -624,7 +632,7 @@ class TranslationConfig:
             deepseek_api_key=request_data.get('deepseek_api_key', DEEPSEEK_API_KEY),
             poe_api_key=request_data.get('poe_api_key', POE_API_KEY),
             nim_api_key=request_data.get('nim_api_key', NIM_API_KEY),
-            max_tokens_per_chunk=request_data.get('max_tokens_per_chunk', MAX_TOKENS_PER_CHUNK),
+            max_tokens_per_chunk=clamped_max_tokens,
             soft_limit_ratio=request_data.get('soft_limit_ratio', SOFT_LIMIT_RATIO)
         )
 

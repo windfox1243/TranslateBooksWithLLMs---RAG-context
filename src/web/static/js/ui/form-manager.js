@@ -100,29 +100,17 @@ export const FormManager = {
 
         // Prompt options checkboxes - keep section open if any is checked
         const textCleanup = DomHelpers.getElement('textCleanup');
-        const refineTranslation = DomHelpers.getElement('refineTranslation');
         const bilingualMode = DomHelpers.getElement('bilingualMode');
         const customInstructionSelect = DomHelpers.getElement('customInstructionSelect');
+        const plainTextMode = DomHelpers.getElement('plainTextMode');
 
-        const refineOnlyMode = DomHelpers.getElement('refineOnlyMode');
-        const draftMode = DomHelpers.getElement('draftMode');
-
-        [textCleanup, refineTranslation, bilingualMode, refineOnlyMode, draftMode].forEach(checkbox => {
+        [textCleanup, bilingualMode, plainTextMode].forEach(checkbox => {
             if (checkbox) {
                 checkbox.addEventListener('change', () => {
                     this.handlePromptOptionChange();
                 });
             }
         });
-
-        // Refine-only is exclusive: disable the other translation-time options
-        // when it is checked. Run once on init in case the state is restored.
-        if (refineOnlyMode) {
-            refineOnlyMode.addEventListener('change', () => {
-                this.applyRefineOnlyExclusivity();
-            });
-            this.applyRefineOnlyExclusivity();
-        }
 
         // Custom instruction select - keep section open if a file is selected
         if (customInstructionSelect) {
@@ -284,18 +272,14 @@ export const FormManager = {
      */
     handlePromptOptionChange() {
         const textCleanup = DomHelpers.getElement('textCleanup');
-        const refineTranslation = DomHelpers.getElement('refineTranslation');
-        const refineOnlyMode = DomHelpers.getElement('refineOnlyMode');
         const bilingualMode = DomHelpers.getElement('bilingualMode');
-        const draftMode = DomHelpers.getElement('draftMode');
+        const plainTextMode = DomHelpers.getElement('plainTextMode');
         const customInstructionSelect = DomHelpers.getElement('customInstructionSelect');
 
         const anyActive = (
             textCleanup?.checked ||
-            refineTranslation?.checked ||
-            refineOnlyMode?.checked ||
             bilingualMode?.checked ||
-            draftMode?.checked ||
+            plainTextMode?.checked ||
             (customInstructionSelect?.value && customInstructionSelect.value !== '')
         );
 
@@ -310,44 +294,6 @@ export const FormManager = {
                 }
                 StateManager.setState('ui.isPromptOptionsOpen', true);
             }
-        }
-    },
-
-    /**
-     * Disable and uncheck the translation-time options when Refine-Only is
-     * active, since they become no-ops without a translation step.
-     * Glossary and Custom Instructions stay enabled (they feed the
-     * refinement prompt too).
-     */
-    applyRefineOnlyExclusivity() {
-        const refineOnlyMode = DomHelpers.getElement('refineOnlyMode');
-        const active = !!(refineOnlyMode && refineOnlyMode.checked);
-
-        const conflictingIds = [
-            'refineTranslation', 'bilingualMode', 'draftMode', 'textCleanup',
-        ];
-
-        for (const id of conflictingIds) {
-            const checkbox = DomHelpers.getElement(id);
-            if (!checkbox) continue;
-
-            if (active && checkbox.checked) {
-                checkbox.checked = false;
-            }
-            checkbox.disabled = active;
-
-            const item = checkbox.closest('.option-item');
-            if (item) {
-                item.style.opacity = active ? '0.45' : '';
-                item.style.pointerEvents = active ? 'none' : '';
-            }
-        }
-
-        const refineOnlyItem = refineOnlyMode?.closest('.option-item');
-        if (refineOnlyItem) {
-            refineOnlyItem.style.borderLeft = active ? '3px solid #16a34a' : '';
-            refineOnlyItem.style.paddingLeft = active ? '8px' : '';
-            refineOnlyItem.style.background = active ? 'rgba(34, 197, 94, 0.07)' : '';
         }
     },
 
@@ -777,7 +723,7 @@ export const FormManager = {
             prompt_options: {
                 preserve_technical_content: true,
                 text_cleanup: DomHelpers.getElement('textCleanup')?.checked || false,
-                refine: DomHelpers.getElement('refineTranslation')?.checked || false,
+                refine: false,
                 custom_instruction_file: DomHelpers.getValue('customInstructionSelect') || ''
             },
             // Bilingual output (original + translation interleaved)

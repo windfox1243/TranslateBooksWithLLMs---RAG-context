@@ -108,9 +108,9 @@ async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: 
             
             if stats_callback and total_subtitles > 0:
                 stats_callback({
-                    'completed_subtitles': completed_count,
-                    'failed_subtitles': failed_count,
-                    'total_subtitles': total_subtitles
+                    'completed_chunks': completed_count,
+                    'failed_chunks': failed_count,
+                    'total_chunks': total_subtitles,
                 })
     
         if log_callback:
@@ -132,7 +132,9 @@ async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: 
                 llm_client=llm_client,
                 log_callback=log_callback,
                 prompt_options=prompt_options,
-                post_processing_instructions=post_processing_instructions
+                post_processing_instructions=post_processing_instructions,
+                stats_callback=stats_callback,
+                check_interruption_callback=check_interruption_callback,
             )
 
             if log_callback:
@@ -157,7 +159,9 @@ async def refine_subtitle_translations(
     llm_client,
     log_callback=None,
     prompt_options=None,
-    post_processing_instructions=""
+    post_processing_instructions="",
+    stats_callback=None,
+    check_interruption_callback=None,
 ) -> Dict[int, str]:
     """
     Refine subtitle translations using a second LLM pass.
@@ -172,6 +176,8 @@ async def refine_subtitle_translations(
         llm_client: LLM client instance
         log_callback: Optional logging callback        prompt_options: Optional prompt options dict
         post_processing_instructions: Additional refinement instructions
+        stats_callback: Optional callback to report per-subtitle progress
+        check_interruption_callback: Optional callback to abort the pass early
 
     Returns:
         Dict mapping subtitle index to refined text
@@ -180,6 +186,8 @@ async def refine_subtitle_translations(
 
     total_subtitles = len(translations)
     refined_translations = {}
+    completed_count = 0
+    failed_count = 0
     # Transient per-job state (e.g. glossary cap warning dedupe) — never persisted.
     runtime_state: dict = {}
 
@@ -189,6 +197,18 @@ async def refine_subtitle_translations(
     subtitle_indices = sorted(translations.keys())
 
     for i, idx in enumerate(subtitle_indices):
+        if check_interruption_callback and check_interruption_callback():
+            if log_callback:
+                log_callback(
+                    "srt_refinement_interrupted",
+                    f"Refinement interrupted at subtitle {i + 1}/{total_subtitles}"
+                )
+            # Carry over any not-yet-refined subtitles unchanged so the output
+            # stays complete (timestamps/indices must not be dropped).
+            for remaining_idx in subtitle_indices[i:]:
+                refined_translations.setdefault(remaining_idx, translations[remaining_idx])
+            break
+
         translated_text = translations[idx]
 
         # Build context from surrounding subtitles
@@ -222,21 +242,33 @@ async def refine_subtitle_translations(
             )
 
             if llm_response and llm_response.content:
+                # Surface the refined output to the UI preview so SRT refine
+                # behaves like txt/epub refine (which already emits this).
+                if log_callback:
+                    log_callback("refinement_response", "Refinement response received", data={
+                        'type': 'refinement_response',
+                        'response': llm_response.content,
+                        'model': model_name,
+                    })
+
                 # Extract refined text
                 refined_text = llm_client.extract_translation(llm_response.content)
 
                 if refined_text:
                     refined_translations[idx] = refined_text
+                    completed_count += 1
                     if log_callback:
                         log_callback("srt_subtitle_refined", f"Subtitle {idx + 1}/{total_subtitles} refined successfully")
                 else:
                     # Fallback to original translation if extraction fails
                     refined_translations[idx] = translated_text
+                    failed_count += 1
                     if log_callback:
                         log_callback("srt_refinement_fallback", f"Subtitle {idx + 1}: using original translation")
             else:
                 # Fallback to original translation if request fails
                 refined_translations[idx] = translated_text
+                failed_count += 1
                 if log_callback:
                     log_callback("srt_refinement_failed", f"Subtitle {idx + 1}: refinement failed, using original")
 
@@ -247,10 +279,18 @@ async def refine_subtitle_translations(
                 raise
             # Fallback to original translation on error
             refined_translations[idx] = translated_text
+            failed_count += 1
             if log_callback:
                 log_callback("srt_refinement_error", f"Subtitle {idx + 1}: error during refinement: {e}")
 
-        # Update progress
+        # Report progress so the UI advances during the refine pass.
+        if stats_callback:
+            stats_callback({
+                'total_chunks': total_subtitles,
+                'completed_chunks': completed_count,
+                'failed_chunks': failed_count,
+            })
+
     return refined_translations
 
 
@@ -611,11 +651,11 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
             
             if stats_callback and total_subtitles > 0:
                 stats_callback({
-                    'completed_subtitles': completed_count,
-                    'failed_subtitles': failed_count,
-                    'total_subtitles': total_subtitles,
+                    'completed_chunks': completed_count,
+                    'failed_chunks': failed_count,
+                    'total_chunks': total_subtitles,
                     'completed_blocks': block_idx + 1,
-                    'total_blocks': total_blocks
+                    'total_blocks': total_blocks,
                 })
         
         if log_callback:
@@ -637,7 +677,9 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                 llm_client=llm_client,
                 log_callback=log_callback,
                 prompt_options=prompt_options,
-                post_processing_instructions=post_processing_instructions
+                post_processing_instructions=post_processing_instructions,
+                stats_callback=stats_callback,
+                check_interruption_callback=check_interruption_callback,
             )
 
             if log_callback:

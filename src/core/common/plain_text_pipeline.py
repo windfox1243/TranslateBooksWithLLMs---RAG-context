@@ -1,11 +1,11 @@
 """
-Plain-text translation pipeline used by the draft mode.
+Plain-text translation pipeline used by Plain Text Mode.
 
 Skips placeholder preservation and HTML chunking entirely. Paragraphs are
 joined, chunked by token count, translated with has_placeholders=False, then
 re-split on the paragraph separator.
 
-Used by the EPUB and DOCX adapters when prompt_options['draft_mode'] is True.
+Used by the EPUB and DOCX adapters when prompt_options['plain_text_mode'] is True.
 """
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -58,8 +58,6 @@ async def translate_paragraphs_plain(
     context_manager: Optional[Any] = None,
     check_interruption_callback: Optional[Callable] = None,
     prompt_options: Optional[Dict] = None,
-    global_total_chunks: Optional[int] = None,
-    global_completed_chunks: Optional[int] = None,
 ) -> Tuple[List[str], TranslationMetrics, bool]:
     """
     Translate a list of plain-text paragraphs without placeholder preservation.
@@ -69,12 +67,13 @@ async def translate_paragraphs_plain(
         source_language, target_language: language names
         model_name, llm_client: LLM config
         max_tokens_per_chunk: chunking budget
-        log_callback, stats_callback: callbacks
+        log_callback, stats_callback: callbacks (stats_callback receives
+            file-local stats via TranslationMetrics.to_dict(); callers that
+            aggregate across files are responsible for adding their global
+            offset to completed_chunks).
         context_manager: AdaptiveContextManager (Ollama)
         check_interruption_callback: returns True to abort
         prompt_options: prompt customization (text_cleanup, glossary, etc.)
-        global_total_chunks, global_completed_chunks: for multi-file stats
-            (EPUB across XHTML files).
 
     Returns:
         (translated_paragraphs, stats, was_interrupted)
@@ -96,15 +95,7 @@ async def translate_paragraphs_plain(
 
     stats.total_chunks = len(chunks)
     if stats_callback:
-        if global_total_chunks is not None:
-            stats_callback({
-                'total_chunks': global_total_chunks,
-                'completed_chunks': global_completed_chunks or 0,
-                'failed_chunks': 0,
-                'total_tokens': 0,
-            })
-        else:
-            stats_callback(stats.to_dict())
+        stats_callback(stats.to_dict())
 
     translated_parts: List[str] = []
     previous_translation_context = ""
@@ -113,8 +104,8 @@ async def translate_paragraphs_plain(
         if check_interruption_callback and check_interruption_callback():
             if log_callback:
                 log_callback(
-                    "draft_translation_interrupted",
-                    f"⏸️ Draft translation interrupted at chunk {i + 1}/{len(chunks)}"
+                    "plain_text_translation_interrupted",
+                    f"⏸️ Plain-text translation interrupted at chunk {i + 1}/{len(chunks)}"
                 )
             for remaining in chunks[i:]:
                 translated_parts.append(remaining.get('main_content', ''))
@@ -124,8 +115,9 @@ async def translate_paragraphs_plain(
         if not main_content.strip():
             translated_parts.append(main_content)
             stats.successful_first_try += 1
+            stats.record_processed()
             if stats_callback:
-                _emit_stats(stats_callback, stats, global_total_chunks, global_completed_chunks)
+                stats_callback(stats.to_dict())
             continue
 
         translated = await generate_translation_request(
@@ -147,7 +139,7 @@ async def translate_paragraphs_plain(
         if translated is None:
             if log_callback:
                 log_callback(
-                    "draft_chunk_failed",
+                    "plain_text_chunk_failed",
                     f"Chunk {i + 1}/{len(chunks)} failed - keeping original text"
                 )
             translated_parts.append(main_content)
@@ -161,29 +153,11 @@ async def translate_paragraphs_plain(
                 " ".join(words[-25:]) if len(words) > 25 else translated
             )
 
+        stats.record_processed()
         if stats_callback:
-            _emit_stats(stats_callback, stats, global_total_chunks, global_completed_chunks)
+            stats_callback(stats.to_dict())
 
     return _finalize(translated_parts, source), stats, False
-
-
-def _emit_stats(
-    stats_callback: Callable,
-    stats: TranslationMetrics,
-    global_total_chunks: Optional[int],
-    global_completed_chunks: Optional[int],
-) -> None:
-    """Emit stats either in global (EPUB multi-file) or local form."""
-    if global_total_chunks is not None:
-        local_done = stats.successful_first_try + stats.successful_after_retry
-        stats_callback({
-            'total_chunks': global_total_chunks,
-            'completed_chunks': (global_completed_chunks or 0) + local_done,
-            'failed_chunks': stats.failed_chunks,
-            'total_tokens': stats.total_tokens_processed + stats.total_tokens_generated,
-        })
-    else:
-        stats_callback(stats.to_dict())
 
 
 def _finalize(translated_parts: List[str], source_paragraphs: List[str]) -> List[str]:

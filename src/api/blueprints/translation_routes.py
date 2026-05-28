@@ -87,6 +87,8 @@ def create_translation_blueprint(state_manager, start_translation_job):
             'bilingual_output': data.get('bilingual_output', False),
             # Refine-only mode (skip translation, run only refinement on input)
             'refine_only': data.get('refine_only', False),
+            # Chained refinement pass after translation
+            'refine_after': data.get('refine_after', False),
             # TTS configuration
             'tts_enabled': data.get('tts_enabled', False),
             'tts_config': TTSConfig.from_web_request(data).to_dict() if data.get('tts_enabled') else None

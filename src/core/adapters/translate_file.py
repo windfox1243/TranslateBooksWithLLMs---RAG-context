@@ -46,6 +46,7 @@ async def translate_file(
     context_window: Optional[int] = None,
     auto_adjust_context: bool = True,
     min_chunk_size: int = 5,
+    max_tokens_per_chunk: Optional[int] = None,
     prompt_options: Optional[Dict[str, Any]] = None,
     bilingual_output: bool = False,
     **additional_config
@@ -113,6 +114,13 @@ async def translate_file(
     if prompt_options is None:
         prompt_options = {}
 
+    # Resolve max_tokens_per_chunk: when the caller passed nothing, read the
+    # current .env-backed default. Doing it here (not at function definition)
+    # means a reload_config() between calls is honoured for subsequent runs.
+    if max_tokens_per_chunk is None:
+        from src.config import MAX_TOKENS_PER_CHUNK as _DEFAULT_MAX_TOKENS
+        max_tokens_per_chunk = _DEFAULT_MAX_TOKENS
+
     # Detect file format - first by extension, then by content for unknown extensions
     _, ext = os.path.splitext(input_filepath.lower())
 
@@ -161,6 +169,7 @@ async def translate_file(
             context_window=context_window or 2048,
             auto_adjust_context=auto_adjust_context,
             min_chunk_size=min_chunk_size,
+            max_tokens_per_chunk=max_tokens_per_chunk,
             checkpoint_manager=checkpoint_manager,
             translation_id=translation_id,
             resume_from_index=resume_from_index,
@@ -197,7 +206,7 @@ async def translate_file(
             target_language=target_language,
             model_name=model_name,
             llm_client=llm_client,
-            max_tokens_per_chunk=context_window or 450,
+            max_tokens_per_chunk=max_tokens_per_chunk,
             log_callback=log_callback,
             stats_callback=stats_callback,
             prompt_options=prompt_options,
@@ -229,6 +238,7 @@ async def translate_file(
         'context_window': context_window,
         'auto_adjust_context': auto_adjust_context,
         'min_chunk_size': min_chunk_size,
+        'max_tokens_per_chunk': max_tokens_per_chunk,
         'prompt_options': prompt_options,
         **additional_config
     }

@@ -231,6 +231,7 @@ def create_config_blueprint(server_session_id=None):
             "poe_api_key_configured": poe_count > 0,
             "nim_api_key_configured": nim_count > 0,
             "output_filename_pattern": _config.OUTPUT_FILENAME_PATTERN,
+            "max_tokens_per_chunk": int(_config.MAX_TOKENS_PER_CHUNK),
             "disable_auto_pause": str(_config.DISABLE_AUTO_PAUSE).strip().lower() == 'true',
             # Webhook notifications — returned as-is for editing. URLs and tokens
             # only ever travel between this server and the same-origin browser
@@ -756,7 +757,14 @@ def create_config_blueprint(server_session_id=None):
 
     @bp.route('/api/custom-instructions', methods=['GET'])
     def get_custom_instructions():
-        """List available custom instruction files from Custom_Instructions/ folder"""
+        """List available custom instruction files from Custom_Instructions/ folder.
+
+        Each entry carries `has_translation` / `has_refinement` so the UI can
+        filter presets per phase. `.txt` files (legacy) apply to both phases;
+        `.yaml`/`.yml` files report the phases actually present in the file.
+        """
+        from src.utils.custom_instructions import list_custom_instructions
+
         try:
             project_root = Path(get_config_path())
             custom_instructions_dir = project_root / 'Custom_Instructions'
@@ -764,21 +772,8 @@ def create_config_blueprint(server_session_id=None):
             if not custom_instructions_dir.exists():
                 return jsonify({"files": [], "count": 0, "status": "folder_not_found"})
 
-            txt_files = []
-            for file_path in custom_instructions_dir.glob('*.txt'):
-                # Security: validate file is within CustomInstructions folder
-                try:
-                    file_path.resolve().relative_to(custom_instructions_dir.resolve())
-                    txt_files.append({
-                        'filename': file_path.name,
-                        'display_name': file_path.stem
-                    })
-                except ValueError:
-                    # Silently skip files outside the directory (security)
-                    continue
-
-            txt_files.sort(key=lambda x: x['display_name'].lower())
-            return jsonify({"files": txt_files, "count": len(txt_files), "status": "ok"})
+            files = list_custom_instructions(custom_instructions_dir)
+            return jsonify({"files": files, "count": len(files), "status": "ok"})
 
         except Exception as e:
             logger.error(f"Error listing custom instructions: {e}")
@@ -935,6 +930,7 @@ def create_config_blueprint(server_session_id=None):
             'OLLAMA_API_ENDPOINT',
             'OPENAI_API_ENDPOINT',
             'OUTPUT_FILENAME_PATTERN',
+            'MAX_TOKENS_PER_CHUNK',
             'DISABLE_AUTO_PAUSE',
             'NOTIFY_WEBHOOK_URL',
             'NOTIFY_WEBHOOK_METHOD',
@@ -957,6 +953,14 @@ def create_config_blueprint(server_session_id=None):
                 if key in allowed_keys:
                     # Sanitize value - remove newlines and dangerous characters
                     safe_value = str(value).replace('\n', '').replace('\r', '')
+                    # Clamp MAX_TOKENS_PER_CHUNK to the same range the UI enforces
+                    # so a hand-crafted POST can't break the chunker.
+                    if key == 'MAX_TOKENS_PER_CHUNK':
+                        try:
+                            n = int(safe_value)
+                        except (TypeError, ValueError):
+                            continue
+                        safe_value = str(max(50, min(1000, n)))
                     updates[key] = safe_value
 
             if not updates:

@@ -53,14 +53,10 @@
   "save_settings_help": "Guarda las claves de API, los endpoints, la convención de nomenclatura y el modelo actual como valores por defecto en el archivo <code>.env</code>. Los cambios en esta sección <strong>no</strong> se guardan automáticamente.",
   "settings_summary_placeholder": "—",
 
-  "option_polish_title": "Pulir traducción (2ª pasada)",
-  "option_polish_description": "Ejecuta una segunda pasada de refinamiento tras la traducción. El LLM reescribe la traducción de la primera pasada para mejorar la calidad literaria, la fluidez natural y la elegancia estilística. Duplica el tiempo de traducción pero mejora notablemente la calidad del resultado.",
-  "option_refine_only_title": "Solo refinar (omitir traducción)",
-  "option_refine_only_description": "Omite la traducción por completo y ejecuta solo una pasada de refinamiento sobre un archivo ya traducido. Se asume que el archivo de entrada ya está en el idioma de destino. Útil para pulir una traducción existente (tuya o de otra herramienta) sin volver a traducirla desde cero. Funciona con TXT, EPUB, DOCX y SRT.",
   "option_bilingual_title": "Salida bilingüe",
   "option_bilingual_description": "Incluye el texto original junto a la traducción. Cada fragmento muestra el texto de origen seguido de su traducción, ideal para aprender idiomas o comparar lado a lado.",
-  "option_draft_title": "Modo borrador (EPUB / DOCX)",
-  "option_draft_description": "Muy adecuado para novelas sencillas y prosa simple, donde la estructura importa menos que leer el texto traducido. Solo se envía al LLM el texto de los párrafos; los estilos en línea y el marcado complejo se descartan. Se conservan títulos, listas y citas; las imágenes permanecen en la salida y se reagrupan al final de su párrafo original. Más rápido y mucho más fiable en LLMs pequeños o locales que tienen dificultades con los marcadores <code>[id0]</code>. Menos ideal para libros técnicos, guías ilustradas o cualquier texto donde el diseño aporta significado. Solo se aplica a archivos EPUB y DOCX.",
+  "option_plain_text_title": "Modo texto plano (EPUB / DOCX)",
+  "option_plain_text_description": "Simplifica en gran medida el formato antes de enviar el contenido al LLM para hacer la traducción más rápida y fiable — no es un modo de menor calidad. Muy adecuado para novelas sencillas y prosa simple, donde la estructura importa menos que leer el texto traducido. Solo se envía al LLM el texto de los párrafos; los estilos en línea y el marcado complejo se descartan. Se conservan títulos, listas y citas; las imágenes permanecen en la salida y se reagrupan al final de su párrafo original. Especialmente útil en LLMs pequeños o locales que tienen dificultades con los marcadores <code>[id0]</code>. Menos ideal para libros técnicos, guías ilustradas o cualquier texto donde el diseño aporta significado. Solo se aplica a archivos EPUB y DOCX.",
   "option_text_cleanup_title": "Limpieza de texto (corrección de OCR)",
   "option_text_cleanup_description": "Para textos mal formateados o escaneados con OCR. Indica al LLM que corrija: saltos de línea rotos, espacios dobles, errores de puntuación y une párrafos divididos incorrectamente.",
 
@@ -69,7 +65,7 @@
   "glossary_help": "Inyecta una lista curada de términos origen-destino en el prompt de cada fragmento para mantener consistentes las traducciones de las entidades. Pulsa <strong>Gestionar</strong> para crear, editar o extraer términos automáticamente.",
 
   "custom_instructions_label": "Instrucciones personalizadas",
-  "custom_instructions_help": "Selecciona instrucciones personalizadas desde la carpeta <code>Custom_Instructions/</code>. Puedes añadir tus propios archivos <code>.txt</code> a esta carpeta para crear nuevos preajustes de instrucciones. Estas instrucciones se inyectarán en los prompts de traducción y refinamiento para guiar el comportamiento del LLM (por ejemplo, tono formal, traducción literal, etc.).",
+  "custom_instructions_help": "Selecciona instrucciones personalizadas desde la carpeta <code>Custom_Instructions/</code>. Usa archivos <code>.yaml</code> con las claves <code>translation:</code> y/o <code>refinement:</code> para acotar un preajuste por fase. Los archivos <code>.txt</code> heredados siguen funcionando y se aplican a ambas fases.",
   "custom_instructions_load_failed": "Error al abrir la carpeta Custom_Instructions",
   "default_config_load_failed": "Error al cargar la configuración por defecto",
 

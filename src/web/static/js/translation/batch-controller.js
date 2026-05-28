@@ -58,11 +58,14 @@ function getTranslationConfig(file) {
         }
     );
 
+    const operation = file.operation || 'translate';
+    const refineAfter = operation === 'translate' && !!file.refineAfter;
+
     const promptOptions = {
         preserve_technical_content: true,
         text_cleanup: DomHelpers.getElement('textCleanup')?.checked || false,
-        refine: DomHelpers.getElement('refineTranslation')?.checked || false,
-        draft_mode: DomHelpers.getElement('draftMode')?.checked || false,
+        refine: refineAfter,
+        plain_text_mode: DomHelpers.getElement('plainTextMode')?.checked || false,
         custom_instruction_file: DomHelpers.getValue('customInstructionSelect') || ''
     };
 
@@ -94,7 +97,8 @@ function getTranslationConfig(file) {
         file_type: file.fileType,
         prompt_options: promptOptions,
         bilingual_output: DomHelpers.getElement('bilingualMode')?.checked || false,
-        refine_only: DomHelpers.getElement('refineOnlyMode')?.checked || false,
+        refine_only: operation === 'refine',
+        refine_after: refineAfter,
         auto_pause_on_rate_limit: !(DomHelpers.getElement('disableAutoPause')?.checked || false),
         tts_enabled: ttsEnabled,
         tts_voice: ttsEnabled ? (DomHelpers.getValue('ttsVoice') || '') : '',
@@ -224,6 +228,7 @@ export const BatchController = {
             interruptBtn.disabled = false;
         }
 
+        MessageLogger.clearAlerts();
         MessageLogger.addLog(t('translation:batch_started_log', { count: queuedFilesCount }));
         MessageLogger.showMessage(t('translation:batch_initiated', { count: queuedFilesCount }), 'info');
 
@@ -356,9 +361,20 @@ export const BatchController = {
         mainContainer.style.flexDirection = 'column';
         mainContainer.style.gap = '8px';
 
-        // Add "Translating" text
+        // Add the operation label ("Translating", "Refining", "Translating (1/2)"…).
+        // ProgressManager.update() later patches the text in place as the workflow
+        // moves between phases, using the id below to locate the element.
         const translatingText = document.createElement('div');
-        translatingText.textContent = t('translation:translating');
+        translatingText.id = 'progressOperationLabel';
+        let titleText;
+        if (file.operation === 'refine') {
+            titleText = t('translation:refining');
+        } else if (file.refineAfter) {
+            titleText = t('translation:translating_step', { step: 1, total: 2, defaultValue: 'Translating (1/2)' });
+        } else {
+            titleText = t('translation:translating');
+        }
+        translatingText.textContent = titleText;
         translatingText.style.fontWeight = 'bold';
         mainContainer.appendChild(translatingText);
 

@@ -235,9 +235,9 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
         # Extract bilingual flag from prompt_options (bug fix #109)
         bilingual_flag = prompt_options.get('bilingual', False) if prompt_options else False
 
-        # Draft mode bypasses the placeholder pipeline entirely.
-        if prompt_options and prompt_options.get('draft_mode'):
-            return await self._translate_draft(
+        # Plain Text Mode bypasses the placeholder pipeline entirely.
+        if prompt_options and prompt_options.get('plain_text_mode'):
+            return await self._translate_plain_text(
                 doc_root=doc_root,
                 source_language=source_language,
                 target_language=target_language,
@@ -250,8 +250,6 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
                 stats_callback=stats_callback,
                 check_interruption_callback=check_interruption_callback,
                 bilingual_flag=bilingual_flag,
-                global_total_chunks=global_total_chunks,
-                global_completed_chunks=global_completed_chunks,
                 file_href=file_href,
             )
 
@@ -280,7 +278,7 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
 
         return success, stats
 
-    async def _translate_draft(
+    async def _translate_plain_text(
         self,
         doc_root: etree._Element,
         source_language: str,
@@ -294,12 +292,10 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
         stats_callback: Optional[Callable],
         check_interruption_callback: Optional[Callable],
         bilingual_flag: bool,
-        global_total_chunks: Optional[int],
-        global_completed_chunks: Optional[int],
         file_href: Optional[str],
     ) -> Tuple[bool, Any]:
         """
-        Draft-mode translation path: skip placeholders entirely.
+        Plain-text-mode translation path: skip placeholders entirely.
 
         Extract body as a list of plain paragraphs (anchoring images), translate
         them via the common plain-text pipeline, then rewrite body with a flat
@@ -316,15 +312,15 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
 
         if body is None:
             if log_callback:
-                log_callback("draft_no_body", f"⚠️ {file_href or 'document'}: no <body> found, skipping")
+                log_callback("plain_text_no_body", f"⚠️ {file_href or 'document'}: no <body> found, skipping")
             return False, TranslationMetrics()
 
         paragraphs_text, paragraphs_tag, images_by_paragraph = extract_plain_paragraphs(body)
 
         if log_callback:
             log_callback(
-                "draft_extracted",
-                f"📝 Draft mode: {len(paragraphs_text)} paragraphs, "
+                "plain_text_extracted",
+                f"📝 Plain Text Mode: {len(paragraphs_text)} paragraphs, "
                 f"{sum(len(v) for v in images_by_paragraph.values())} images anchored"
             )
 
@@ -340,8 +336,6 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
             context_manager=context_manager,
             check_interruption_callback=check_interruption_callback,
             prompt_options=prompt_options,
-            global_total_chunks=global_total_chunks,
-            global_completed_chunks=global_completed_chunks,
         )
 
         if was_interrupted:
