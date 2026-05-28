@@ -55,13 +55,13 @@ That's it. On first launch, you choose a translation provider:
 
 | Provider | Type | Get started |
 |----------|------|-------------|
-| **Ollama** | Local | [ollama.com](https://ollama.com/) |
-| **OpenAI-Compatible** | Local (llama.cpp, LM Studio, vLLM, LocalAI...) | Point to your server's endpoint |
 | **DeepSeek** | Cloud | [platform.deepseek.com](https://platform.deepseek.com/api_keys) |
 | **Gemini** | Cloud | [Google AI Studio](https://aistudio.google.com/apikey) |
 | **Mistral** | Cloud | [console.mistral.ai](https://console.mistral.ai/api-keys) |
 | **NVIDIA NIM** | Cloud | [build.nvidia.com](https://build.nvidia.com/) |
+| **Ollama** | Local | [ollama.com](https://ollama.com/) |
 | **OpenAI** | Cloud | [platform.openai.com](https://platform.openai.com/api-keys) |
+| **OpenAI-Compatible** | Local (llama.cpp, LM Studio, vLLM, LocalAI...) | Point to your server's endpoint |
 | **OpenRouter** | Cloud (200+ models) | [openrouter.ai/keys](https://openrouter.ai/keys) |
 | **Poe** | Cloud (multi-model) | [poe.com/api_key](https://poe.com/api_key) |
 
