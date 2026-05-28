@@ -91,13 +91,13 @@ jobs:
 
         You need at least one LLM provider to translate:
 
-        - Poe (Recommended) - Easy setup, multiple AI models: https://poe.com/api_key
         - Ollama (Local) - Free, runs on your machine: https://ollama.com
-        - OpenRouter - 200+ cloud models: https://openrouter.ai/keys
-        - OpenAI - GPT models: https://platform.openai.com/api-keys
-        - Mistral - French AI lab: https://console.mistral.ai/api-keys
         - DeepSeek - Chinese AI lab: https://platform.deepseek.com/api_keys
         - Gemini - Google AI: https://aistudio.google.com/apikey
+        - Mistral - French AI lab: https://console.mistral.ai/api-keys
+        - OpenAI - GPT models: https://platform.openai.com/api-keys
+        - OpenRouter - 200+ cloud models: https://openrouter.ai/keys
+        - Poe - Multi-model cloud aggregator: https://poe.com/api_key
 
         For local translation with Ollama:
         1. Install Ollama from https://ollama.com
