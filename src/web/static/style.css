@@ -408,6 +408,11 @@ body {
     font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
     color: #16a34a;
     transition: color 0.3s ease;
+    min-width: 0;
+    max-width: 22rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* ========================================

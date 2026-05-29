@@ -69,8 +69,12 @@ export const StatusManager = {
         // Update text
         const statusText = DomHelpers.getElement('providerStatusText');
         if (statusText) {
-            statusText.textContent = customText || t(statusInfo.textKey);
+            const text = customText || t(statusInfo.textKey);
+            statusText.textContent = text;
             statusText.style.color = statusInfo.color;
+            // The pill truncates long text with an ellipsis; expose the full
+            // message on hover so a verbose connection error stays readable.
+            statusText.title = text;
         }
 
         // Update dot
