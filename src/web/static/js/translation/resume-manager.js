@@ -366,6 +366,11 @@ export const ResumeManager = {
             // Mark as batch active
             StateManager.setState('translation.isBatchActive', true);
 
+            // Clear any stale progress/ETA state left over from a previous run
+            // before showing the section, so the resumed job's ETA is not
+            // computed from another job's chunk timings.
+            ProgressManager.reset();
+
             // Show progress section
             ProgressManager.show();
             const progressSection = DomHelpers.getElement('progressSection');
@@ -387,8 +392,13 @@ export const ResumeManager = {
                 interruptBtn.disabled = false;
             }
 
-            // Initialize progress
-            ProgressManager.updateProgress(jobData.progress || 0);
+            // Seed the bar with the canonical percent from the checkpoint when
+            // available, so it doesn't flash 0% before the first live update.
+            // (The legacy top-level `jobData.progress` was always 0.)
+            const resumedPercent = (typeof jobData.stats?.percent === 'number')
+                ? jobData.stats.percent
+                : (jobData.progress || 0);
+            ProgressManager.updateProgress(resumedPercent);
 
             // Emit event for translation started
             const event = new CustomEvent('translationResumed', { detail: { translationId, jobData } });

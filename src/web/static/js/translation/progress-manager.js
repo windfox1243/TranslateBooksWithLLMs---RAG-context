@@ -439,17 +439,17 @@ export const ProgressManager = {
         const phasePercent = total > 0 ? (completed / total) * 100 : 0;
         const enableRefinement = !!stats.enable_refinement;
 
-        // Global bar:
-        //   - refine_after (enable_refinement === true): the backend runs two
-        //     independent progress trackers (translate then refine), so we
-        //     compute the unified 0-100% client-side: phase 1 maps to 0-50%
-        //     and phase 2 maps to 50-100%. This keeps the bar monotonic
-        //     across the phase transition.
-        //   - single-phase runs (plain translation, refine-only): trust the
-        //     backend's progress_percent when present, otherwise fall back to
-        //     chunk-based.
+        // Global bar value is server-authoritative: the backend now emits a
+        // single canonical `percent` (see src/core/progress) computed to match
+        // this client's historical formula exactly, so we display it verbatim
+        // instead of recomputing it. The legacy client-side computation is
+        // kept only as a fallback for payloads that predate the canonical
+        // field (e.g. an in-flight job started before an upgrade).
         let globalPercent;
-        if (enableRefinement) {
+        if (typeof stats.percent === 'number') {
+            globalPercent = stats.percent;
+        } else if (enableRefinement) {
+            // Legacy fallback: phase 1 -> 0-50%, phase 2 -> 50-100%.
             const phase = stats.current_phase || 1;
             globalPercent = phase === 2 ? 50 + phasePercent * 0.5 : phasePercent * 0.5;
         } else if (typeof stats.progress_percent === 'number') {
