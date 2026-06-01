@@ -208,5 +208,22 @@
   "summary_ocr_cleanup": "OCR-Bereinigung",
   "summary_glossary": "Glossar: {{name}}",
   "summary_instructions": "Anweisungen: {{name}}",
-  "summary_lang_auto_detect": "Auto-Erkennung"
+  "summary_lang_auto_detect": "Auto-Erkennung",
+
+  "quicktest_button_title": "Schnelltest: 5 Auszüge mit dem ausgewählten LLM übersetzen",
+  "quicktest_button_label": "Schnelltest",
+  "quicktest_title": "Schneller LLM-Test",
+  "quicktest_intro": "Ein schneller Eindruck davon, wie das ausgewählte LLM 5 Auszüge aus dieser Datei mit deinen aktuellen Optionen übersetzt. Unverbindlich — nur eine Vorschau vor dem vollständigen Durchlauf.",
+  "quicktest_go_settings": "Wähle ein Modell in den Einstellungen",
+  "quicktest_compare": "Vollständiger Test: mehrere LLMs vergleichen",
+  "quicktest_stop": "Stopp",
+  "quicktest_sampling": "Auszüge werden ausgewählt…",
+  "quicktest_chip_glossary": "Glossar",
+  "quicktest_chip_instructions": "Eigene Anweisungen",
+  "quicktest_cell_error": "Übersetzung fehlgeschlagen",
+  "quicktest_error_no_file": "Diese Datei ist noch nicht bereit — versuche es erneut, sobald der Upload abgeschlossen ist.",
+  "quicktest_error_no_model": "Kein Modell ausgewählt. Wähle zuerst einen Anbieter und ein Modell.",
+  "quicktest_error_no_target": "Lege eine Zielsprache für diese Datei fest, bevor du testest.",
+  "quicktest_error_empty": "Diese Datei ist zu klein für eine Stichprobe.",
+  "quicktest_error_run": "Schnelltest fehlgeschlagen: {{error}}"
 }

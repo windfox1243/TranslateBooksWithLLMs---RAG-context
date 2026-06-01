@@ -208,5 +208,22 @@
   "summary_ocr_cleanup": "OCR 清理",
   "summary_glossary": "词汇表：{{name}}",
   "summary_instructions": "指令：{{name}}",
-  "summary_lang_auto_detect": "自动检测"
+  "summary_lang_auto_detect": "自动检测",
+
+  "quicktest_button_title": "快速测试：用所选 LLM 翻译 5 段摘录",
+  "quicktest_button_label": "快速测试",
+  "quicktest_title": "LLM 快速测试",
+  "quicktest_intro": "快速预览所选 LLM 如何使用你当前的选项翻译此文件中的 5 段摘录。无需承诺 — 只是完整翻译前的预览。",
+  "quicktest_go_settings": "在设置中选择一个模型",
+  "quicktest_compare": "完整测试：比较多个 LLM",
+  "quicktest_stop": "停止",
+  "quicktest_sampling": "正在挑选摘录…",
+  "quicktest_chip_glossary": "词汇表",
+  "quicktest_chip_instructions": "自定义指令",
+  "quicktest_cell_error": "翻译失败",
+  "quicktest_error_no_file": "此文件尚未就绪 — 上传完成后请重试。",
+  "quicktest_error_no_model": "未选择模型。请先选择提供方和模型。",
+  "quicktest_error_no_target": "测试前请为此文件设置目标语言。",
+  "quicktest_error_empty": "此文件太小，无法采样。",
+  "quicktest_error_run": "快速测试失败：{{error}}"
 }

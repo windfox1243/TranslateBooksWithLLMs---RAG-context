@@ -208,5 +208,22 @@
   "summary_ocr_cleanup": "OCR クリーンアップ",
   "summary_glossary": "用語集：{{name}}",
   "summary_instructions": "指示：{{name}}",
-  "summary_lang_auto_detect": "自動検出"
+  "summary_lang_auto_detect": "自動検出",
+
+  "quicktest_button_title": "クイックテスト：選択した LLM で 5 つの抜粋を翻訳",
+  "quicktest_button_label": "クイックテスト",
+  "quicktest_title": "LLM クイックテスト",
+  "quicktest_intro": "選択した LLM が現在のオプションでこのファイルの 5 つの抜粋をどう翻訳するかをすばやく確認できます。コミットは不要 — 本番翻訳前のプレビューです。",
+  "quicktest_go_settings": "設定でモデルを選択",
+  "quicktest_compare": "フルテスト：複数の LLM を比較",
+  "quicktest_stop": "停止",
+  "quicktest_sampling": "抜粋を選択中…",
+  "quicktest_chip_glossary": "用語集",
+  "quicktest_chip_instructions": "カスタム指示",
+  "quicktest_cell_error": "翻訳に失敗しました",
+  "quicktest_error_no_file": "このファイルはまだ準備できていません — アップロード完了後に再試行してください。",
+  "quicktest_error_no_model": "モデルが選択されていません。先にプロバイダーとモデルを選択してください。",
+  "quicktest_error_no_target": "テストの前にこのファイルの対象言語を設定してください。",
+  "quicktest_error_empty": "このファイルは小さすぎてサンプリングできません。",
+  "quicktest_error_run": "クイックテストに失敗しました：{{error}}"
 }

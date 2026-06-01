@@ -208,5 +208,22 @@
   "summary_ocr_cleanup": "Limpieza OCR",
   "summary_glossary": "Glosario: {{name}}",
   "summary_instructions": "Instrucciones: {{name}}",
-  "summary_lang_auto_detect": "autodetectar"
+  "summary_lang_auto_detect": "autodetectar",
+
+  "quicktest_button_title": "Prueba rápida: traduce 5 extractos con el LLM seleccionado",
+  "quicktest_button_label": "Prueba rápida",
+  "quicktest_title": "Prueba rápida del LLM",
+  "quicktest_intro": "Un vistazo rápido a cómo el LLM seleccionado traduce 5 extractos de este archivo, con tus opciones actuales. Sin compromiso — solo una vista previa antes de la traducción completa.",
+  "quicktest_go_settings": "Elige un modelo en Ajustes",
+  "quicktest_compare": "Prueba completa: comparar varios LLM",
+  "quicktest_stop": "Detener",
+  "quicktest_sampling": "Seleccionando extractos…",
+  "quicktest_chip_glossary": "Glosario",
+  "quicktest_chip_instructions": "Instrucciones personalizadas",
+  "quicktest_cell_error": "Error de traducción",
+  "quicktest_error_no_file": "Este archivo aún no está listo — inténtalo de nuevo cuando termine de subirse.",
+  "quicktest_error_no_model": "Ningún modelo seleccionado. Elige primero un proveedor y un modelo.",
+  "quicktest_error_no_target": "Define un idioma de destino para este archivo antes de probar.",
+  "quicktest_error_empty": "Este archivo es demasiado pequeño para muestrear.",
+  "quicktest_error_run": "La prueba rápida falló: {{error}}"
 }
