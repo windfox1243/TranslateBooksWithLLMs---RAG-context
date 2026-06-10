@@ -114,19 +114,27 @@ class GenericTranslator:
                 })
 
             # 3. Check for checkpoint and resume
-            resume_from = 0
+            restored_completed = set()
             checkpoint_data = self.checkpoint_manager.load_checkpoint(self.translation_id)
 
             if checkpoint_data:
-                resume_from = await self.adapter.resume_from_checkpoint(checkpoint_data)
+                await self.adapter.resume_from_checkpoint(checkpoint_data)
+                # Pending work is derived from per-chunk statuses, not from the
+                # progress pointer: the pointer advances past failed units, so
+                # resuming from it alone would skip them forever (issue #204).
+                restored_completed = {
+                    c['chunk_index'] for c in checkpoint_data.get('chunks', [])
+                    if c.get('status') == 'completed'
+                    and 0 <= c.get('chunk_index', -1) < total_units
+                }
                 if log_callback:
                     log_callback("checkpoint_resumed",
-                        f"Resuming from unit {resume_from}/{total_units}")
+                        f"Resuming: {len(restored_completed)}/{total_units} units already translated")
                 # Update stats with resumed progress
                 if stats_callback:
                     stats_callback({
                         'total_chunks': total_units,
-                        'completed_chunks': resume_from,
+                        'completed_chunks': len(restored_completed),
                         'failed_chunks': 0
                     })
             else:
@@ -167,6 +175,7 @@ class GenericTranslator:
 
             last_context = ""
             failed_count = 0
+            completed_count = len(restored_completed)
 
             async def _translate_unit(i):
                 """Translate one unit. Reads last_context only in sequential mode
@@ -219,19 +228,22 @@ class GenericTranslator:
                     translated_text=None,
                     chunk_data=unit.metadata,
                     total_chunks=total_units,
-                    failed_chunks=1
+                    failed_chunks=failed_count
                 )
                 if stats_callback:
                     stats_callback({
                         'total_chunks': total_units,
-                        'completed_chunks': i,
+                        'completed_chunks': completed_count,
                         'failed_chunks': failed_count
                     })
 
-            pending = [i for i in range(total_units) if i >= resume_from]
+            # Everything without a committed translation is (re)translated:
+            # never-attempted units AND previously failed ones.
+            pending = [i for i in range(total_units) if i not in restored_completed]
             rate_limit_error = None
-            # First not-yet-committed index; used to resume after an interruption.
-            next_index = resume_from
+            remaining = len(pending)
+            # First not-yet-committed index; used for the pause log message.
+            next_index = pending[0] if pending else total_units
 
             # Continuous concurrency: up to `workers` requests in flight at once,
             # results delivered strictly in index order so checkpoints stay
@@ -246,6 +258,8 @@ class GenericTranslator:
                     # Stop before committing this unit so resume restarts at it.
                     rate_limit_error = result
                     break
+
+                remaining -= 1
 
                 if isinstance(result, Exception):
                     if log_callback:
@@ -268,6 +282,7 @@ class GenericTranslator:
                         next_index = i + 1
                         continue
 
+                    completed_count += 1
                     self.checkpoint_manager.save_checkpoint(
                         translation_id=self.translation_id,
                         chunk_index=i,
@@ -275,12 +290,12 @@ class GenericTranslator:
                         translated_text=translated_content,
                         chunk_data=unit.metadata,
                         total_chunks=total_units,
-                        completed_chunks=i + 1
+                        completed_chunks=completed_count
                     )
                     if stats_callback:
                         stats_callback({
                             'total_chunks': total_units,
-                            'completed_chunks': i + 1,
+                            'completed_chunks': completed_count,
                             'failed_chunks': failed_count
                         })
 
@@ -304,8 +319,8 @@ class GenericTranslator:
                 raise rate_limit_error
 
             # If the scheduler stopped early because interruption was requested,
-            # the committed prefix is persisted; save partial output and pause.
-            if (next_index < total_units
+            # the committed units are persisted; save partial output and pause.
+            if (remaining > 0
                     and check_interruption_callback and check_interruption_callback()):
                 await _save_partial_and_pause(next_index)
                 return False
@@ -334,17 +349,21 @@ class GenericTranslator:
             # 8. Cleanup
             await self.adapter.cleanup()
 
-            # 9. Mark job as completed
-            if failed_count == 0:
+            # 9. Mark job as completed only when every unit is genuinely
+            # translated; otherwise keep the checkpoint resumable so the
+            # failed units can be retried (issue #204).
+            if failed_count == 0 and completed_count == total_units:
                 self.checkpoint_manager.mark_completed(self.translation_id)
                 if log_callback:
                     log_callback("translation_complete",
                         f"Translation completed successfully: {total_units} units")
                 return True
             else:
+                self.checkpoint_manager.mark_partial(self.translation_id)
                 if log_callback:
                     log_callback("translation_partial",
-                        f"Translation completed with {failed_count} failures out of {total_units} units")
+                        f"Translation completed with {failed_count} failures out of "
+                        f"{total_units} units — checkpoint kept for retry")
                 return False
 
         except Exception as e:
