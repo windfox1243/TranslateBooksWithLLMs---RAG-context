@@ -12,6 +12,18 @@ from .format_adapter import FormatAdapter
 from .translation_unit import TranslationUnit
 
 
+class _ValidationFailed:
+    """LLM content that failed adapter validation after all retry attempts.
+
+    Carries the best-effort content so already-valid parts (e.g. the SRT
+    cues whose markers did come back) survive in the output while the unit
+    itself is recorded as failed.
+    """
+
+    def __init__(self, content: str):
+        self.content = content
+
+
 class GenericTranslator:
     """
     Generic orchestrator for translating files using format adapters.
@@ -165,13 +177,14 @@ class GenericTranslator:
             )
 
             # 6. Translate each unit (sequentially, or with continuous concurrency)
-            from src.config import resolve_parallel_workers
+            from src.config import resolve_parallel_workers, UNIT_VALIDATION_RETRIES
             from src.core.common.parallel import iter_ordered_concurrent
             from src.core.llm.exceptions import RateLimitError
 
             workers = resolve_parallel_workers(llm_provider, parallel_workers)
             sequential = workers == 1
             prompt_options = llm_kwargs.get('prompt_options', {})
+            max_validation_attempts = 1 + max(0, UNIT_VALIDATION_RETRIES)
 
             last_context = ""
             failed_count = 0
@@ -179,23 +192,71 @@ class GenericTranslator:
 
             async def _translate_unit(i):
                 """Translate one unit. Reads last_context only in sequential mode
-                (parallel runs have no stable 'previous translation')."""
+                (parallel runs have no stable 'previous translation').
+
+                Results failing adapter validation (e.g. SRT [N] markers
+                dropped by the LLM) are retried with a reinforced prompt up
+                to max_validation_attempts; after exhaustion the best-effort
+                content is returned wrapped in _ValidationFailed."""
                 unit = units[i]
                 if log_callback:
                     log_callback("unit_start",
                         f"Translating unit {i+1}/{total_units} ({unit.unit_id})")
-                return await generate_translation_request(
-                    main_content=unit.content,
-                    context_before=unit.context_before,
-                    context_after=unit.context_after,
-                    previous_translation_context=(last_context if sequential else ""),
-                    source_language=source_language,
-                    target_language=target_language,
-                    model=model_name,
-                    llm_client=llm_client,
-                    log_callback=log_callback,
-                    prompt_options=prompt_options
-                )
+
+                base_instructions = (prompt_options or {}).get('custom_instructions', '')
+                attempt_options = prompt_options
+                result = None
+
+                for attempt in range(max_validation_attempts):
+                    result = await generate_translation_request(
+                        main_content=unit.content,
+                        context_before=unit.context_before,
+                        context_after=unit.context_after,
+                        previous_translation_context=(last_context if sequential else ""),
+                        source_language=source_language,
+                        target_language=target_language,
+                        model=model_name,
+                        llm_client=llm_client,
+                        log_callback=log_callback,
+                        prompt_options=attempt_options
+                    )
+
+                    # API failure / empty result: existing failure semantics.
+                    if not result:
+                        return result
+
+                    feedback = self.adapter.validate_unit_translation(
+                        unit.unit_id, result
+                    )
+                    if feedback is None:
+                        return result
+
+                    if log_callback:
+                        log_callback("unit_validation_failed",
+                            f"Unit {i+1}/{total_units}: {feedback} "
+                            f"(attempt {attempt+1}/{max_validation_attempts})")
+
+                    reinforced = (
+                        f"CRITICAL: Your previous response was structurally "
+                        f"incomplete ({feedback}). You MUST reproduce every "
+                        f"[N] index marker from the input exactly once, in "
+                        f"order, each followed by its translation. Do NOT "
+                        f"merge, drop or renumber markers."
+                    )
+                    attempt_options = {
+                        **(prompt_options or {}),
+                        'custom_instructions': (
+                            f"{base_instructions}\n\n{reinforced}"
+                            if base_instructions else reinforced
+                        ),
+                    }
+
+                if log_callback:
+                    log_callback("unit_validation_exhausted",
+                        f"Unit {i+1}/{total_units} still incomplete after "
+                        f"{max_validation_attempts} attempts — keeping valid "
+                        f"parts and marking the unit failed")
+                return _ValidationFailed(result)
 
             async def _save_partial_and_pause(at_index):
                 if log_callback:
@@ -265,6 +326,18 @@ class GenericTranslator:
                     if log_callback:
                         log_callback("unit_error",
                             f"Error translating unit {i+1}/{total_units}: {str(result)}")
+                    _record_failure(i, unit)
+                    next_index = i + 1
+                    continue
+
+                if isinstance(result, _ValidationFailed):
+                    # Keep whatever parsed (e.g. the cues whose markers came
+                    # back) so the output stays best-effort, but record the
+                    # unit as failed: the job ends 'partial' and the unit is
+                    # fully retranslated on retry (issue #204 mechanics).
+                    await self.adapter.save_unit_translation(
+                        unit.unit_id, result.content
+                    )
                     _record_failure(i, unit)
                     next_index = i + 1
                     continue

@@ -3,6 +3,7 @@ SRT Adapter for the generic translation system.
 Handles SRT subtitle file format with local index renumbering.
 """
 
+import re
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
@@ -112,6 +113,31 @@ class SrtAdapter(FormatAdapter):
 
         self._units = units
         return units
+
+    def validate_unit_translation(self, unit_id: str, translated_content: str) -> Optional[str]:
+        """Check that every expected [N] index marker is present.
+
+        Only markers of subtitles with non-empty source text are required:
+        the LLM legitimately drops markers of empty cues. Returns a feedback
+        message listing the missing markers, or None when complete.
+        """
+        try:
+            block_idx = int(unit_id.split('_')[1])
+            unit = self.get_translation_units()[block_idx]
+        except (IndexError, ValueError):
+            return None
+
+        local_to_global = unit.metadata['local_to_global']
+        expected = {
+            local_idx for local_idx, global_idx in local_to_global.items()
+            if self.subtitles[global_idx].get('text', '').strip()
+        }
+        found = {int(m.group(1)) for m in re.finditer(r'\[(\d+)\]', translated_content)}
+        missing = sorted(expected - found)
+        if missing:
+            markers = ', '.join(f'[{n}]' for n in missing)
+            return f"missing subtitle index markers: {markers}"
+        return None
 
     async def save_unit_translation(self, unit_id: str, translated_content: str) -> bool:
         """Extract translations from block and store by global index."""

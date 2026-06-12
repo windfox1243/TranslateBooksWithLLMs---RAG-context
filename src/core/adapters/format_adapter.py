@@ -67,6 +67,29 @@ class FormatAdapter(ABC):
         """
         pass
 
+    def validate_unit_translation(
+        self,
+        unit_id: str,
+        translated_content: str
+    ) -> Optional[str]:
+        """
+        Validate a translated unit before it is saved.
+
+        Called by the orchestrator on every non-empty LLM result. Adapters
+        with structural requirements (e.g. SRT [N] index markers) override
+        this to detect responses that parse incompletely.
+
+        Args:
+            unit_id: Identifier of the translated unit
+            translated_content: The translated text returned by the LLM
+
+        Returns:
+            None when the content is valid. Otherwise a short feedback
+            message describing the problem; the orchestrator appends it to
+            the prompt of the retry attempt.
+        """
+        return None
+
     @abstractmethod
     async def save_unit_translation(
         self,

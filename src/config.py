@@ -362,6 +362,13 @@ NIM_API_ENDPOINT = os.getenv('NIM_API_ENDPOINT', 'https://integrate.api.nvidia.c
 # for large-context models that handle long structured outputs well.
 SRT_LINES_PER_BLOCK = int(os.getenv('SRT_LINES_PER_BLOCK', '10'))
 
+# Retries when a translated unit fails the adapter's structural validation
+# (e.g. an SRT block whose LLM response is missing [N] index markers).
+# Each retry reinforces the prompt with the exact missing markers.
+# Total attempts = 1 + this value. After exhaustion the unit keeps its
+# best-effort content and is marked failed (job ends 'partial', retryable).
+UNIT_VALIDATION_RETRIES = int(os.getenv('UNIT_VALIDATION_RETRIES', '2'))
+
 # Translation Attribution
 # This adds a discrete attribution to your translations (metadata for EPUB, footer for TXT, comment for SRT)
 # Please consider keeping this enabled to support the project and help others discover this free tool!
