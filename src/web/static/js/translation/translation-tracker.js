@@ -399,7 +399,7 @@ export const TranslationTracker = {
 
         if (!currentJob || data.translation_id !== currentJob.translationId) {
             if (data.translation_id && !currentJob) {
-                if (data.status === 'completed' || data.status === 'error' || data.status === 'interrupted' || data.status === 'rate_limited') {
+                if (data.status === 'completed' || data.status === 'partial' || data.status === 'error' || data.status === 'interrupted' || data.status === 'rate_limited') {
                     this.resetUIToIdle();
                 }
             }
@@ -429,6 +429,17 @@ export const TranslationTracker = {
             this.finishCurrentFileTranslation(
                 t('translation:translation_completed_msg', { name: currentFile.name }),
                 'success',
+                data
+            );
+            this.updateActiveTranslationsState();
+        } else if (data.status === 'partial') {
+            // Finished, but some units stayed failed after the automatic
+            // retries. The output file exists (best effort) and the job is
+            // resumable; the completion card explains and gives advice.
+            MessageLogger.resetProgressTracking();
+            this.finishCurrentFileTranslation(
+                t('translation:translation_partial_msg', { name: currentFile.name }),
+                'info',
                 data
             );
             this.updateActiveTranslationsState();
@@ -560,11 +571,14 @@ export const TranslationTracker = {
         this.updateFileStatusInList(
             currentFile.name,
             resultData.status === 'completed' ? 'Completed' :
+            resultData.status === 'partial' ? 'Partial' :
             resultData.status === 'interrupted' ? 'Interrupted' :
             resultData.status === 'rate_limited' ? 'Rate Limited' : 'Error'
         );
 
-        if (resultData.status === 'completed') {
+        if (resultData.status === 'completed' || resultData.status === 'partial') {
+            // Partial jobs still produced a best-effort output file; the card
+            // surfaces it together with the warning block and its advice.
             this.renderCompletionCard(currentFile, resultData);
         }
 
@@ -617,6 +631,11 @@ export const TranslationTracker = {
         const safeFilename = DomHelpers.escapeHtml(outputFilename);
         const statsHtml = this._buildCompletionStatsHtml(file, resultData);
         const dismissLabel = t('translation:completion_card_dismiss');
+        const isPartial = resultData.status === 'partial';
+        const titleIcon = isPartial ? 'warning' : 'check_circle';
+        const titleText = t(isPartial
+            ? 'translation:translation_partial_card_title'
+            : 'translation:translation_completed_card_title');
 
         card.innerHTML = '';
 
@@ -629,8 +648,8 @@ export const TranslationTracker = {
         main.innerHTML = `
             <div class="completion-card__header">
                 <h3 class="completion-card__title">
-                    <span class="material-symbols-outlined">check_circle</span>
-                    <span>${t('translation:translation_completed_card_title')}${statsHtml}</span>
+                    <span class="material-symbols-outlined">${titleIcon}</span>
+                    <span>${titleText}${statsHtml}</span>
                 </h3>
                 <button type="button" class="completion-card__close" title="${dismissLabel}" aria-label="${dismissLabel}">
                     <span class="material-symbols-outlined">close</span>
@@ -766,7 +785,7 @@ export const TranslationTracker = {
     _buildCompletionWarningBlock(file, resultData) {
         const stats = resultData.stats || {};
         if (file && file.fileType === 'srt') {
-            return null;
+            return this._buildSrtCompletionWarningBlock(stats);
         }
 
         const fallbacks = (stats.token_alignment_used || 0) + (stats.fallback_used || 0);
@@ -832,6 +851,61 @@ export const TranslationTracker = {
             );
             block.appendChild(recommendations);
         }
+
+        return block;
+    },
+
+    /**
+     * SRT variant of the completion warning block. Shown when subtitle
+     * blocks still failed after the automatic marker-validation retries:
+     * the affected cues kept the source-language text. Mirrors the EPUB
+     * fallback panel structure (heading + breakdown + advice list) with
+     * SRT-specific recommendations.
+     *
+     * @param {Object} stats - Final stats payload
+     * @returns {HTMLElement|null} Warning block, or null when nothing failed
+     */
+    _buildSrtCompletionWarningBlock(stats) {
+        const failed = stats.failed_chunks || 0;
+        if (failed === 0) {
+            return null;
+        }
+
+        const block = document.createElement('div');
+        block.className = 'completion-card__warning';
+
+        const heading = document.createElement('div');
+        heading.className = 'completion-card__warning-heading';
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined';
+        icon.textContent = 'warning';
+        heading.appendChild(icon);
+        const headingText = document.createElement('span');
+        headingText.textContent = t('translation:srt_completion_warning_heading');
+        heading.appendChild(headingText);
+        block.appendChild(heading);
+
+        const breakdown = document.createElement('div');
+        breakdown.className = 'completion-card__warning-breakdown';
+        breakdown.textContent = t('translation:srt_completion_warning_blocks', { count: failed });
+        block.appendChild(breakdown);
+
+        const recommendations = document.createElement('div');
+        recommendations.className = 'completion-card__warning-recommendations';
+        const intro = document.createElement('strong');
+        intro.textContent = t('translation:srt_completion_warning_intro');
+        recommendations.appendChild(intro);
+
+        const list = document.createElement('ul');
+        list.className = 'recommendation-list';
+        const llmTip = document.createElement('li');
+        llmTip.textContent = t('translation:fallback_panel_tip_llm');
+        list.appendChild(llmTip);
+        const blockSizeTip = document.createElement('li');
+        blockSizeTip.textContent = t('translation:srt_completion_tip_block_size');
+        list.appendChild(blockSizeTip);
+        recommendations.appendChild(list);
+        block.appendChild(recommendations);
 
         return block;
     },
