@@ -155,6 +155,7 @@ async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: 
                 stats_callback=stats_callback,
                 check_interruption_callback=check_interruption_callback,
                 subtitle_blocks=refine_blocks,
+                subtitle_positions={id(s): i for i, s in enumerate(subtitles)},
             )
 
             if log_callback:
@@ -183,6 +184,7 @@ async def refine_subtitle_translations(
     stats_callback=None,
     check_interruption_callback=None,
     subtitle_blocks: Optional[List[List[Dict[str, str]]]] = None,
+    subtitle_positions: Optional[Dict[int, int]] = None,
 ) -> Dict[int, str]:
     """
     Refine subtitle translations using a second LLM pass.
@@ -206,6 +208,12 @@ async def refine_subtitle_translations(
             the refinement mirrors the translate-pass block structure.
             When None, blocks are derived from the translations dict using
             the configured SRT block size and char cap.
+        subtitle_positions: Optional identity map (id(subtitle dict) ->
+            position in the parsed subtitle list). When provided, blocks
+            are resolved to the same index space the caller keyed
+            `translations` with. Without it the cue number printed in the
+            file is used as a fallback, which is only safe when numbering
+            is exactly 1..N (issue #205).
 
     Returns:
         Dict mapping subtitle index to refined text
@@ -229,10 +237,18 @@ async def refine_subtitle_translations(
         for block in subtitle_blocks:
             group: List[int] = []
             for subtitle in block:
-                try:
-                    g_idx = int(subtitle['number']) - 1
-                except (KeyError, ValueError, TypeError):
-                    continue
+                if subtitle_positions is not None:
+                    g_idx = subtitle_positions.get(id(subtitle))
+                    if g_idx is None:
+                        continue
+                else:
+                    # Fallback: printed cue number. Only correct for files
+                    # numbered exactly 1..N — callers should pass
+                    # subtitle_positions instead (issue #205).
+                    try:
+                        g_idx = int(subtitle['number']) - 1
+                    except (KeyError, ValueError, TypeError):
+                        continue
                 if g_idx in translations and translations[g_idx].strip():
                     group.append(g_idx)
             if group:

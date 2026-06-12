@@ -81,13 +81,13 @@ async def refine_srt_file(
             'failed_chunks': 0,
         })
 
-    translations: Dict[int, str] = {}
-    for sub in subtitles:
-        try:
-            idx = int(sub['number']) - 1
-        except (KeyError, ValueError):
-            continue
-        translations[idx] = sub.get('text', '')
+    # Key translations by list position, NOT by the cue number printed in
+    # the file: update_translated_subtitles applies by position, and real
+    # files have gaps, restarts or 0-based numbering (issue #205).
+    translations: Dict[int, str] = {
+        idx: sub.get('text', '') for idx, sub in enumerate(subtitles)
+    }
+    subtitle_positions = {id(sub): idx for idx, sub in enumerate(subtitles)}
 
     llm_client = create_llm_client(
         llm_provider, gemini_api_key, cli_api_endpoint, model_name,
@@ -122,6 +122,7 @@ async def refine_srt_file(
             stats_callback=stats_callback,
             check_interruption_callback=check_interruption_callback,
             subtitle_blocks=refine_blocks,
+            subtitle_positions=subtitle_positions,
         )
     finally:
         if llm_client:

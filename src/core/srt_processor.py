@@ -68,7 +68,7 @@ class SRTProcessor:
     def update_translated_subtitles(self, subtitles: List[Dict[str, str]],
                                     translations: Dict[int, str]) -> List[Dict[str, str]]:
         for idx, translation in translations.items():
-            if idx < len(subtitles):
+            if 0 <= idx < len(subtitles):
                 subtitles[idx]['text'] = translation
 
         return subtitles
