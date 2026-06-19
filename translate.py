@@ -55,6 +55,8 @@ if __name__ == "__main__":
     prompt_group.add_argument("--refine", action="store_true", help="Enable refinement pass: runs a second pass to polish translation quality and literary style.")
     prompt_group.add_argument("--refine-only", action="store_true", dest="refine_only", help="Run ONLY a refinement pass on an already-translated file (skips the translation phase). The input file is assumed to already be in the target language.")
     prompt_group.add_argument("--glossary", default=None, help="Path to a glossary file (.json or .csv) injected per-chunk to keep entity translations consistent.")
+    prompt_group.add_argument("--novel-context", default=None, dest="novel_context_file", help="Path or name of the novel context file in Novel_Contexts/ (e.g. novel_context.txt).")
+    prompt_group.add_argument("--auto-update-context", action="store_true", dest="auto_update_context", help="Auto-update the novel context file with new characters, genders, and relationships after each chunk translation.")
 
     # TTS (Text-to-Speech) arguments
     tts_group = parser.add_argument_group('TTS Options', 'Text-to-Speech audio generation')
@@ -195,6 +197,8 @@ if __name__ == "__main__":
         'preserve_technical_content': True,
         'text_cleanup': args.text_cleanup,
         'refine': args.refine and not args.refine_only,
+        'novel_context_file': args.novel_context_file,
+        'auto_update_context': args.auto_update_context,
     }
 
     # Load glossary file (JSON or CSV) into prompt_options

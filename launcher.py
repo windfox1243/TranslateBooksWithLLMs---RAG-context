@@ -42,6 +42,15 @@ def setup_working_directory():
             if bundled_custom_instructions.exists():
                 shutil.copytree(bundled_custom_instructions, custom_instructions_path)
 
+        # Seed Novel_Contexts folder with default template if missing.
+        novel_contexts_path = app_data_dir / 'Novel_Contexts'
+        if not novel_contexts_path.exists():
+            bundled_novel_contexts = bundle_dir / 'Novel_Contexts'
+            if bundled_novel_contexts.exists():
+                shutil.copytree(bundled_novel_contexts, novel_contexts_path)
+            else:
+                novel_contexts_path.mkdir(exist_ok=True)
+
         # Create default .env if it doesn't exist
         env_path = app_data_dir / '.env'
         if not env_path.exists():
