@@ -191,6 +191,17 @@ def _log_output_dir_error(path, action, exc, permission_denied):
 _ensure_output_dir_writable(OUTPUT_DIR)
 logger.info(f"Output folder '{OUTPUT_DIR}' is ready")
 
+# Ensure Novel_Contexts directory exists.
+def _ensure_novel_contexts_dir_exists():
+    from pathlib import Path
+    p = Path("Novel_Contexts")
+    try:
+        p.mkdir(exist_ok=True)
+    except Exception as e:
+        logger.warning(f"Unable to create Novel_Contexts directory: {e}")
+
+_ensure_novel_contexts_dir_exists()
+
 # Static files are now handled automatically by Flask
 
 # Wrapper function for starting translation jobs
