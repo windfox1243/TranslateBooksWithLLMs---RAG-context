@@ -193,10 +193,21 @@ logger.info(f"Output folder '{OUTPUT_DIR}' is ready")
 
 # Ensure Novel_Contexts directory exists.
 def _ensure_novel_contexts_dir_exists():
-    from pathlib import Path
-    p = Path("Novel_Contexts")
+    from src.config import NOVEL_CONTEXTS_DIR
+    import shutil
     try:
-        p.mkdir(exist_ok=True)
+        # Seeding Novel_Contexts in dev mode from unbuilt folder if missing
+        if not getattr(sys, 'frozen', False) and not NOVEL_CONTEXTS_DIR.exists():
+            from pathlib import Path
+            unbuilt_contexts = Path(__file__).parent.resolve() / 'Novel_Contexts'
+            if unbuilt_contexts.exists():
+                NOVEL_CONTEXTS_DIR.mkdir(parents=True, exist_ok=True)
+                # Copy existing files if any
+                for item in unbuilt_contexts.glob('*'):
+                    if item.is_file():
+                        shutil.copy2(item, NOVEL_CONTEXTS_DIR)
+        
+        NOVEL_CONTEXTS_DIR.mkdir(parents=True, exist_ok=True)
     except Exception as e:
         logger.warning(f"Unable to create Novel_Contexts directory: {e}")
 
