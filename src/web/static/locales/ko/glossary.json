@@ -172,5 +172,11 @@
   "preview_no_match": "(이 샘플에서 일치하는 용어 없음)",
   "preview_matched": "전체 {{total}}개 중 {{matched}}개 용어 일치",
   "preview_capped": "(상한 도달)",
-  "preview_failed": "미리보기 실패: {{error}}"
+  "preview_failed": "미리보기 실패: {{error}}",
+  "import_success_one": "용어 1개를 가져왔습니다.",
+  "import_success_other": "용어 {{count}}개를 가져왔습니다.",
+  "import_skipped_empty_one": "빈 행 1개 건너뜀",
+  "import_skipped_empty_other": "빈 행 {{count}}개 건너뜀",
+  "import_skipped_duplicate_one": "중복 항목 1개 건너뜀",
+  "import_skipped_duplicate_other": "중복 항목 {{count}}개 건너뜀"
 }

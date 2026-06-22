@@ -45,6 +45,7 @@ function makeCacheKey(file, ctx) {
         op,
         refineAfter ? 1 : 0,
         ctx.options.text_cleanup ? 1 : 0,
+        ctx.options.chapter_mode ? 1 : 0,
     ].join('|');
 }
 
@@ -111,6 +112,7 @@ function getLanguagePair() {
 function getOptions() {
     return {
         text_cleanup: !!DomHelpers.getElement('textCleanup')?.checked,
+        chapter_mode: !!DomHelpers.getElement('chapterMode')?.checked,
     };
 }
 
@@ -378,7 +380,7 @@ export const CostEstimator = {
         // each call, so a plain refresh() (which restores from cache) is enough.
         window.addEventListener('localeChanged', scheduleRefresh);
 
-        ['textCleanup', 'sourceLang', 'targetLang'].forEach((id) => {
+        ['textCleanup', 'chapterMode', 'sourceLang', 'targetLang'].forEach((id) => {
             const el = DomHelpers.getElement(id);
             if (el) el.addEventListener('change', scheduleRefresh);
         });

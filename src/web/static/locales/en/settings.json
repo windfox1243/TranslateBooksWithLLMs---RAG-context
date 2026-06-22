@@ -63,6 +63,8 @@
   "option_bilingual_description": "Include original text alongside the translation. Each chunk displays the source text followed by its translation, ideal for language learning or side-by-side comparison.",
   "option_plain_text_title": "Plain Text Mode (EPUB / DOCX)",
   "option_plain_text_description": "Strips most formatting before sending content to the LLM to make translation faster and more reliable — not a lower-quality mode. Very well suited to simple novels and plain prose where structure matters less than reading the translated text. Only paragraph text is sent to the LLM, inline styles and complex markup are dropped. Headings, lists and blockquotes are kept; images stay in the output and are regrouped at the end of their original paragraph. Especially helpful on small or local LLMs that struggle with <code>[id0]</code> placeholders. Less ideal for technical books, illustrated guides or anything where layout carries meaning. Only applies to EPUB and DOCX files.",
+  "option_chapter_mode_title": "Chapter-aware Translation (TXT / EPUB / DOCX)",
+  "option_chapter_mode_description": "Uses detected chapter headings as stable translation boundaries. A complete chapter is sent in one request when it fits the token budget; oversized chapters are split only inside that chapter. This improves narrative consistency and keeps translation and refinement aligned. Subtitle files keep their normal cue-based grouping.",
   "option_text_cleanup_title": "Text Cleanup (OCR Correction)",
   "option_text_cleanup_description": "For poorly formatted or OCR-scanned texts. Instructs the LLM to fix: broken line breaks, double spaces, punctuation errors, and merge incorrectly split paragraphs.",
 
@@ -220,5 +222,8 @@
   "cost_override_note": "A custom price is currently saved for this model.",
   "cost_reset_default": "Reset to default",
   "cost_format_free": "Free",
-  "cost_format_lt_001": "<$0.01"
+  "cost_format_lt_001": "<$0.01",
+  "novel_context_label": "Novel Context (Genders, Relationships & Glossary)",
+  "auto_update_context_label": "Auto-update context file after translating each chunk",
+  "novel_context_help": "Keep character genders, forms of address (relationships), and glossaries persistent in a <code>.txt</code> file to improve translation consistency. Note: Auto-update forces sequential translation (1 worker)."
 }

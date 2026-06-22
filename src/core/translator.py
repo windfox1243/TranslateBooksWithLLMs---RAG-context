@@ -1,23 +1,19 @@
 """
 Translation module for LLM communication
 """
-import asyncio
 import time
-import re
 from tqdm.auto import tqdm
 
 from src.config import (
     DEFAULT_MODEL, TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT, SENTENCE_TERMINATORS,
     THINKING_MODELS, ADAPTIVE_CONTEXT_INITIAL_THINKING
 )
-from src.prompts.prompts import generate_translation_prompt, generate_subtitle_block_prompt, generate_refinement_prompt
-from src.prompts.examples import ensure_example_ready, has_example_for_pair, PLACEHOLDER_EXAMPLES
-from .llm_client import default_client, LLMClient, create_llm_client, LLMResponse
+from src.prompts.prompts import generate_translation_prompt, generate_refinement_prompt
+from .llm_client import default_client, create_llm_client, LLMResponse
 from .llm import ContextOverflowError, RepetitionLoopError, RateLimitError
 from .post_processor import clean_translated_text
 from .context_optimizer import (
     AdaptiveContextManager,
-    validate_configuration,
     INITIAL_CONTEXT_SIZE,
     CONTEXT_STEP
 )
@@ -490,6 +486,7 @@ async def _make_refinement_request(
     prompt_options: dict = None,
     context_manager: AdaptiveContextManager = None,
     runtime_state: Optional[dict] = None,
+    **kwargs
 ) -> Tuple[Optional[str], Optional[LLMResponse]]:
     """
     Make LLM request for refinement pass.
@@ -508,6 +505,7 @@ async def _make_refinement_request(
         has_placeholders: If True, includes placeholder preservation instructions
         prompt_options: Optional dict with prompt customization options
         context_manager: AdaptiveContextManager for context sizing
+        dynamic_context: Optional decompressed dynamic relationship state snapshot
 
     Returns:
         Tuple of (refined_text or None, LLMResponse)
@@ -522,6 +520,25 @@ async def _make_refinement_request(
         runtime_state=runtime_state,
     )
 
+    # Inject historical/full context if provided.
+    dynamic_context = kwargs.get('dynamic_context')
+    context_content = kwargs.get('context_content')
+    local_prompt_options = dict(prompt_options) if prompt_options else {}
+    if context_content:
+        from src.utils.novel_context import normalize_refinement_context
+        local_prompt_options['novel_context'] = normalize_refinement_context(
+            context_content,
+            local_prompt_options.get('novel_context', ''),
+        )
+    elif dynamic_context:
+        base_context = local_prompt_options.get('novel_context', '')
+        if base_context:
+            from src.utils.novel_context import normalize_refinement_context
+            local_prompt_options['novel_context'] = normalize_refinement_context(
+                dynamic_context,
+                base_context,
+            )
+
     # Generate refinement prompts
     prompt_pair = generate_refinement_prompt(
         draft_translation=draft_translation,
@@ -530,7 +547,7 @@ async def _make_refinement_request(
         previous_refined_context=previous_refined_context,
         target_language=target_language,
         has_placeholders=False,
-        prompt_options=prompt_options,
+        prompt_options=local_prompt_options,
         additional_instructions=refinement_instructions,
         glossary_block=glossary_block,
     )
@@ -667,6 +684,8 @@ async def refine_chunks(
     context_window=2048,
     auto_adjust_context=True,
     prompt_options=None,
+    dynamic_contexts=None,
+    context_tracker=None,
 ) -> List[str]:
     """
     Refine translated chunks with a second pass for literary quality improvement.
@@ -742,6 +761,14 @@ async def refine_chunks(
         context_window=initial_context, log_callback=log_callback
     )
 
+    if context_tracker is None:
+        from src.utils.novel_context import RefinementContextTracker
+        context_tracker = RefinementContextTracker(
+            prompt_options=prompt_options or {},
+            historical_contexts=dynamic_contexts or [],
+            log_callback=log_callback,
+        )
+
     # Create adaptive context manager for Ollama
     context_manager = None
     if llm_provider == "ollama" and auto_adjust_context:
@@ -783,6 +810,11 @@ async def refine_chunks(
             # Progress update (token-based)
             # Measure refinement time for this chunk
             chunk_start_time = time.time()
+            if log_callback:
+                log_callback(
+                    "refinement_chunk_start",
+                    f"🪄 Refining chunk {i+1}/{total_chunks}...",
+                )
 
             # Skip empty chunks
             if not draft_text.strip():
@@ -791,6 +823,11 @@ async def refine_chunks(
                 progress_tracker.mark_completed(i, chunk_elapsed)
                 if stats_callback:
                     stats_callback(progress_tracker.get_stats().to_dict())
+                if log_callback:
+                    log_callback(
+                        "refinement_chunk_complete",
+                        f"✅ Refinement chunk {i+1}/{total_chunks} complete (empty chunk kept).",
+                    )
                 continue
 
             # Skip very short content
@@ -798,6 +835,13 @@ async def refine_chunks(
                 refined_parts.append(draft_text)
                 chunk_elapsed = time.time() - chunk_start_time
                 progress_tracker.mark_completed(i, chunk_elapsed)
+                if stats_callback:
+                    stats_callback(progress_tracker.get_stats().to_dict())
+                if log_callback:
+                    log_callback(
+                        "refinement_chunk_complete",
+                        f"✅ Refinement chunk {i+1}/{total_chunks} complete (short text kept).",
+                    )
                 continue
 
             # Get context from original chunks if available
@@ -806,6 +850,15 @@ async def refine_chunks(
             if i < len(original_chunks):
                 context_before = original_chunks[i].get("context_before", "")
                 context_after = original_chunks[i].get("context_after", "")
+
+            context_content = await context_tracker.next_context(
+                text=draft_text,
+                llm_client=llm_client,
+                model_name=model_name,
+                target_language=target_language,
+                display_index=i + 1,
+                total_chunks=total_chunks,
+            )
 
             # Make refinement request
             try:
@@ -822,6 +875,7 @@ async def refine_chunks(
                     prompt_options=prompt_options,
                     context_manager=context_manager,
                     runtime_state=runtime_state,
+                    context_content=context_content,
                 )
             except RateLimitError as e:
                 if log_callback:
@@ -856,6 +910,11 @@ async def refine_chunks(
                     last_refined_context = " ".join(words[-25:])
                 else:
                     last_refined_context = refined_text
+                if log_callback:
+                    log_callback(
+                        "refinement_chunk_complete",
+                        f"✅ Refinement chunk {i+1}/{total_chunks} complete.",
+                    )
             else:
                 # Keep original translation if refinement fails
                 if log_callback:

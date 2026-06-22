@@ -311,6 +311,21 @@ def test_template_has_no_hardcoded_user_visible_text() -> None:
     )
 
 
+def test_context_preview_dynamic_strings_are_locale_reactive() -> None:
+    """Dynamic context controls must update without replacing the whole page."""
+    tracker = (
+        JS_DIR / "translation" / "translation-tracker.js"
+    ).read_text(encoding="utf-8")
+
+    assert "opt.setAttribute('data-i18n', 'translation:context_chunk_option')" in tracker
+    assert "opt.setAttribute('data-i18n-params', JSON.stringify({ number: index + 1 }))" in tracker
+    assert "btn.setAttribute('data-i18n', sec.titleKey)" in tracker
+    assert "window.NovelContextUI.initializeLocaleListener()" in tracker
+    assert "if (this.localizedView && !this.isEditing)" in tracker
+    assert "activeTabIndex" in tracker
+    assert "activeTabTitle" not in tracker
+
+
 # ---------------------------------------------------------------------------
 # Hardcoded user-visible text in JS modules
 # ---------------------------------------------------------------------------

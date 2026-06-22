@@ -72,6 +72,8 @@ def _reconcile_paragraph_counts(
 def build_plain_segments(
     paragraphs: List[str],
     max_tokens_per_chunk: int,
+    paragraph_kinds: Optional[List[str]] = None,
+    chapter_mode: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Group source paragraphs into translation segments that track their indices.
@@ -85,8 +87,27 @@ def build_plain_segments(
     Empty/whitespace-only paragraphs are skipped here and restored by index at
     reassembly time.
     """
+    from src.core.chunking.chapter_detector import ChapterRange, find_chapter_ranges
+
     chunker = TokenChunker(max_tokens=max_tokens_per_chunk)
     sep_tokens = chunker.count_tokens(PARAGRAPH_SEPARATOR)
+    chapter_ranges = (
+        find_chapter_ranges(paragraphs, paragraph_kinds)
+        if chapter_mode
+        else []
+    )
+    if not chapter_ranges:
+        chapter_ranges = [ChapterRange(0, len(paragraphs))]
+
+    chapter_by_index: Dict[int, Tuple[int, str]] = {}
+    chapter_starts = set()
+    for chapter_index, chapter_range in enumerate(chapter_ranges):
+        chapter_starts.add(chapter_range.start)
+        for paragraph_index in range(chapter_range.start, chapter_range.end):
+            chapter_by_index[paragraph_index] = (
+                chapter_index,
+                chapter_range.title,
+            )
 
     segments: List[Dict[str, Any]] = []
     cur_indices: List[int] = []
@@ -96,14 +117,22 @@ def build_plain_segments(
     def flush():
         nonlocal cur_indices, cur_texts, cur_tokens
         if cur_indices:
+            chapter_index, chapter_title = chapter_by_index.get(
+                cur_indices[0], (0, "")
+            )
             segments.append({
                 'indices': cur_indices,
                 'text': PARAGRAPH_SEPARATOR.join(cur_texts),
                 'partial': False,
+                'chapter_index': chapter_index,
+                'chapter_title': chapter_title,
             })
             cur_indices, cur_texts, cur_tokens = [], [], 0
 
     for idx, paragraph in enumerate(paragraphs):
+        if chapter_mode and idx in chapter_starts and cur_indices:
+            flush()
+
         text = paragraph or ""
         if not text.strip():
             continue
@@ -117,8 +146,15 @@ def build_plain_segments(
                 pieces = chunker._chunk_units(sentences, separator=" ")
             else:
                 pieces = [text]
+            chapter_index, chapter_title = chapter_by_index.get(idx, (0, ""))
             for piece in pieces:
-                segments.append({'indices': [idx], 'text': piece, 'partial': True})
+                segments.append({
+                    'indices': [idx],
+                    'text': piece,
+                    'partial': True,
+                    'chapter_index': chapter_index,
+                    'chapter_title': chapter_title,
+                })
             continue
 
         potential = cur_tokens + tokens + (sep_tokens if cur_indices else 0)
@@ -178,6 +214,10 @@ async def translate_paragraphs_plain(
     check_interruption_callback: Optional[Callable] = None,
     prompt_options: Optional[Dict] = None,
     parallel_workers: int = 1,
+    checkpoint_manager: Optional[Any] = None,
+    translation_id: Optional[str] = None,
+    global_chunk_offset: int = 0,
+    paragraph_kinds: Optional[List[str]] = None,
 ) -> Tuple[List[str], TranslationMetrics, bool]:
     """
     Translate a list of plain-text paragraphs without placeholder preservation.
@@ -198,6 +238,9 @@ async def translate_paragraphs_plain(
             resolved against the provider by the caller). When 1, behavior is
             identical to the legacy sequential loop, including previous-chunk
             context chaining; > 1 drops that chaining.
+        checkpoint_manager, translation_id: optional persistence for context
+            snapshots in EPUB/DOCX Plain Text Mode.
+        global_chunk_offset: index offset used when an EPUB has several files.
 
     Returns:
         (translated_paragraphs, stats, was_interrupted)
@@ -210,17 +253,43 @@ async def translate_paragraphs_plain(
             stats_callback(stats.to_dict())
         return source, stats, False
 
-    segments = build_plain_segments(source, max_tokens_per_chunk)
+    chapter_mode = bool((prompt_options or {}).get('chapter_mode'))
+    segments = build_plain_segments(
+        source,
+        max_tokens_per_chunk,
+        paragraph_kinds=paragraph_kinds,
+        chapter_mode=chapter_mode,
+    )
+
+    if chapter_mode and log_callback:
+        chapter_count = len({
+            segment.get('chapter_index', 0) for segment in segments
+        })
+        log_callback(
+            "chapter_mode_ready",
+            f"Chapter-aware mode prepared {chapter_count} chapter(s) as "
+            f"{len(segments)} translation unit(s).",
+        )
 
     # Chunk dicts mirror split_text_into_chunks() output; context comes from
     # the neighboring segments.
     chunks: List[Dict[str, str]] = []
     for i, segment in enumerate(segments):
-        if i > 0:
+        same_previous_chapter = (
+            i > 0
+            and segments[i - 1].get('chapter_index')
+            == segment.get('chapter_index')
+        )
+        same_next_chapter = (
+            i < len(segments) - 1
+            and segments[i + 1].get('chapter_index')
+            == segment.get('chapter_index')
+        )
+        if i > 0 and (not chapter_mode or same_previous_chapter):
             context_before = segments[i - 1]['text'].split(PARAGRAPH_SEPARATOR)[-1]
         else:
             context_before = ""
-        if i < len(segments) - 1:
+        if i < len(segments) - 1 and (not chapter_mode or same_next_chapter):
             context_after = segments[i + 1]['text'].split(PARAGRAPH_SEPARATOR)[0]
         else:
             context_after = ""
@@ -228,13 +297,44 @@ async def translate_paragraphs_plain(
             'context_before': context_before,
             'main_content': segment['text'],
             'context_after': context_after,
+            'chapter_index': segment.get('chapter_index', 0),
+            'chapter_title': segment.get('chapter_title', ''),
         })
 
     stats.total_chunks = len(chunks)
     if stats_callback:
         stats_callback(stats.to_dict())
 
+    novel_context_file = prompt_options.get('novel_context_file') if prompt_options else None
+    auto_update_context = prompt_options.get('auto_update_context', False) if prompt_options else False
+
+    if prompt_options is None:
+        prompt_options = {}
+
+    context_session = None
+    if novel_context_file or auto_update_context:
+        from src.config import NOVEL_CONTEXTS_DIR
+        from src.utils.novel_context import open_novel_context_session
+        try:
+            context_session = open_novel_context_session(
+                prompt_options=prompt_options,
+                novel_contexts_dir=NOVEL_CONTEXTS_DIR,
+                input_filename=prompt_options.get('input_filename', ''),
+                fallback_name="plaintext",
+                log_callback=log_callback,
+            )
+        except Exception as e:
+            if log_callback:
+                log_callback("novel_context_error", f"Error loading novel context '{novel_context_file}': {str(e)}")
+
     workers = max(1, int(parallel_workers))
+    if auto_update_context and context_session:
+        if workers > 1 and log_callback:
+            log_callback(
+                "novel_context_workers_override",
+                "Warning: Auto-updating novel context requires sequential translation. Forcing parallel workers to 1.",
+            )
+        workers = 1
     sequential = workers == 1
 
     # Index-addressed results so out-of-order completion still reassembles in
@@ -245,14 +345,68 @@ async def translate_paragraphs_plain(
     async def _translate_chunk(i):
         """Translate one chunk. Reads previous_translation_context only in
         sequential mode (parallel runs have no stable previous chunk)."""
+        if log_callback:
+            log_callback("unit_start", f"Translating unit {i+1}/{len(chunks)}")
         main_content = chunks[i].get('main_content', '')
         if not main_content.strip():
             return ('empty', main_content)
+
+        if auto_update_context and context_session:
+            if log_callback:
+                log_callback(
+                    "novel_context_updating",
+                    f"Analyzing source context for chunk {i+1} before translation...",
+                )
+            try:
+                change_logs = await context_session.analyze_source(
+                    llm_client=llm_client,
+                    model_name=model_name,
+                    source_chunk=main_content,
+                    source_language=source_language,
+                    target_language=target_language,
+                    chunk_index=i + 1,
+                    total_chunks=len(chunks),
+                )
+                if log_callback:
+                    log_callback(
+                        "novel_context_updated",
+                        f"Novel context prepared for chunk {i+1}.",
+                    )
+                    for change_log in change_logs:
+                        log_callback("novel_context_log", change_log)
+                    log_callback(
+                        "novel_context_state",
+                        "Context updated",
+                        {
+                            "type": "novel_context_state",
+                            "content": context_session.content,
+                            "filename": context_session.path.name,
+                        },
+                    )
+            except Exception as e:
+                if log_callback:
+                    log_callback(
+                        "novel_context_update_failed",
+                        f"Failed to prepare novel context: {str(e)}",
+                    )
+
         translated = await generate_translation_request(
             main_content=main_content,
             context_before=chunks[i].get('context_before', ''),
             context_after=chunks[i].get('context_after', ''),
-            previous_translation_context=(previous_translation_context if sequential else ""),
+            previous_translation_context=(
+                previous_translation_context
+                if (
+                    sequential
+                    and (
+                        not chapter_mode
+                        or i == 0
+                        or chunks[i - 1].get('chapter_index')
+                        == chunks[i].get('chapter_index')
+                    )
+                )
+                else ""
+            ),
             source_language=source_language,
             target_language=target_language,
             model=model_name,
@@ -279,6 +433,7 @@ async def translate_paragraphs_plain(
         pending, workers, _translate_chunk, check_interruption_callback
     ):
         main_content = chunks[i].get('main_content', '')
+        chunk_succeeded = False
 
         if isinstance(result, RateLimitError):
             rate_limit_error = result
@@ -297,6 +452,7 @@ async def translate_paragraphs_plain(
             if kind == 'empty':
                 translated_parts[i] = value
                 stats.successful_first_try += 1
+                chunk_succeeded = True
             elif value is None:
                 if log_callback:
                     log_callback(
@@ -311,11 +467,30 @@ async def translate_paragraphs_plain(
                     cleaned, chunks[i].get('main_content', ''))
                 translated_parts[i] = cleaned
                 stats.successful_first_try += 1
+                chunk_succeeded = True
                 if sequential:
                     words = cleaned.split()
                     previous_translation_context = (
                         " ".join(words[-25:]) if len(words) > 25 else cleaned
                     )
+
+        if (
+            checkpoint_manager
+            and translation_id
+            and hasattr(checkpoint_manager, 'db')
+        ):
+            chunk_data = {}
+            if context_session:
+                chunk_data['context_snapshot'] = context_session.snapshot()
+            translated_value = translated_parts[i]
+            checkpoint_manager.db.save_chunk(
+                translation_id=translation_id,
+                chunk_index=global_chunk_offset + i,
+                original_text=main_content,
+                translated_text=translated_value,
+                chunk_data=chunk_data,
+                status='completed' if chunk_succeeded else 'partial',
+            )
 
         stats.record_processed()
         if stats_callback:

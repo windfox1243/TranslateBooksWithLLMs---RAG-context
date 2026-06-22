@@ -172,5 +172,11 @@
   "preview_no_match": "(no terms matched in this sample)",
   "preview_matched": "{{matched}} / {{total}} terms matched",
   "preview_capped": "(cap reached)",
-  "preview_failed": "Preview failed: {{error}}"
+  "preview_failed": "Preview failed: {{error}}",
+  "import_success_one": "Imported 1 term.",
+  "import_success_other": "Imported {{count}} terms.",
+  "import_skipped_empty_one": "1 empty row skipped",
+  "import_skipped_empty_other": "{{count}} empty rows skipped",
+  "import_skipped_duplicate_one": "1 duplicate skipped",
+  "import_skipped_duplicate_other": "{{count}} duplicates skipped"
 }

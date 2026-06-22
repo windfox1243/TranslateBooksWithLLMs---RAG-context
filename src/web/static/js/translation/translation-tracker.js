@@ -158,6 +158,9 @@ export const TranslationTracker = {
                 StateManager.setState('translation.isBatchActive', savedState.isBatchActive);
                 StateManager.setState('translation.activeJobs', savedState.activeJobs || []);
                 StateManager.setState('translation.hasActive', savedState.hasActive || false);
+                if (savedState.lastJobId) {
+                    StateManager.setState('translation.lastJobId', savedState.lastJobId);
+                }
 
                 DomHelpers.show('progressSection');
                 DomHelpers.show('interruptBtn');
@@ -257,6 +260,7 @@ export const TranslationTracker = {
                 isBatchActive: StateManager.getState('translation.isBatchActive'),
                 activeJobs: StateManager.getState('translation.activeJobs'),
                 hasActive: StateManager.getState('translation.hasActive'),
+                lastJobId: StateManager.getState('translation.lastJobId') || null,
                 timestamp: Date.now()
             };
 
@@ -314,12 +318,15 @@ export const TranslationTracker = {
 
                 // If no matching file found, create a virtual file reference from server data
                 // This allows restoration after browser refresh even if filesToProcess is empty
-                if (!matchingFile && job.input_filename) {
+                if (!matchingFile && (job.input_filename || job.output_filename)) {
                     matchingFile = {
-                        name: job.input_filename,
+                        // output_filename keeps older jobs restorable when
+                        // their config predates input-filename persistence.
+                        name: job.input_filename || job.output_filename,
                         translationId: job.translation_id,
                         status: 'Processing',
                         type: job.file_type || 'txt',
+                        fileType: job.file_type || 'txt',
                         isVirtual: true
                     };
                 }
@@ -333,6 +340,18 @@ export const TranslationTracker = {
 
                     DomHelpers.show('progressSection');
                     this.updateTranslationTitle(matchingFile);
+
+                    // Check if restored job uses a novel context and update preview visibility
+                    try {
+                        const jobStatus = await ApiClient.getTranslationStatus(job.translation_id);
+                        const hasNovelContext = jobStatus.config?.prompt_options?.novel_context_file || jobStatus.config?.prompt_options?.auto_update_context;
+                        const contextSection = DomHelpers.getElement('novelContextPreviewSection');
+                        if (contextSection) {
+                            contextSection.style.display = hasNovelContext ? 'block' : 'none';
+                        }
+                    } catch (err) {
+                        console.warn('[Context] Failed to fetch restored job config:', err);
+                    }
 
                     // Calculate progress from stats (job contains total_chunks, completed_chunks, etc.)
                     if (job.total_chunks > 0) {
@@ -388,6 +407,10 @@ export const TranslationTracker = {
         StateManager.subscribe('translation.activeJobs', () => {
             this.saveTranslationState();
         });
+
+        StateManager.subscribe('translation.lastJobId', () => {
+            this.saveTranslationState();
+        });
     },
 
     /**
@@ -398,9 +421,24 @@ export const TranslationTracker = {
         const currentJob = StateManager.getState('translation.currentJob');
 
         if (!currentJob || data.translation_id !== currentJob.translationId) {
-            if (data.translation_id && !currentJob) {
+            const isResyncStep = data.log_entry?.data?.ui_step === 'context_resync';
+            const lastJobId = StateManager.getState('translation.lastJobId');
+            if (isResyncStep && data.translation_id === lastJobId && data.log) {
+                MessageLogger.addStepLog(data.log);
+            }
+            if (data.translation_id) {
                 if (data.status === 'completed' || data.status === 'partial' || data.status === 'error' || data.status === 'interrupted' || data.status === 'rate_limited') {
-                    this.resetUIToIdle();
+                    if (!currentJob) {
+                        this.resetUIToIdle();
+                    }
+                } else if (data.status === 'running' || data.status === 'queued') {
+                    // We received an update for a running job that the UI is not showing.
+                    // This happens when auto-resuming after context resync, or if another tab started a job.
+                    // We must restore the active translation state.
+                    this.restoreActiveTranslation().then(() => {
+                        // After restoring, re-handle the update so we don't lose this event's payload
+                        this.handleTranslationUpdate(data);
+                    });
                 }
             }
             return;
@@ -409,7 +447,13 @@ export const TranslationTracker = {
         const currentFile = currentJob.fileRef;
 
         if (data.log) {
-            MessageLogger.addLog(`[${currentFile.name}] ${data.log}`);
+            const isWorkflowStep = !!data.log_entry?.data?.ui_step;
+            const formattedLog = `[${currentFile.name}] ${data.log}`;
+            if (isWorkflowStep) {
+                MessageLogger.addStepLog(formattedLog);
+            } else {
+                MessageLogger.addLog(formattedLog);
+            }
         }
 
         // Progress is now calculated from stats in ProgressManager.update()
@@ -424,10 +468,50 @@ export const TranslationTracker = {
             MessageLogger.updateTranslationPreview(data.log_entry.data.response);
         }
 
+        if (data.log_entry && data.log_entry.type === 'novel_context_state' && data.log_entry.data) {
+            const contextSection = DomHelpers.getElement('novelContextPreviewSection');
+            const filenameSpan = DomHelpers.getElement('contextPreviewFilename');
+            if (contextSection) {
+                contextSection.style.display = 'block';
+            }
+            if (filenameSpan && data.log_entry.data.filename) {
+                filenameSpan.textContent = `(${data.log_entry.data.filename})`;
+            }
+            
+            const currentStats = StateManager.getState('translation.stats') || {};
+            if (window.NovelContextUI) {
+                // Keep track of the latest content
+                window.NovelContextUI.latestContent = data.log_entry.data.content || '';
+                
+                // In-memory context rebuilt during standalone refinement has
+                // no persisted snapshots, so do not advertise chunk options
+                // that the snapshot endpoint cannot load.
+                if (!data.log_entry.data.ephemeral) {
+                    window.NovelContextUI.updateChunkSelector(
+                        currentStats.context_chunk_indices || []
+                    );
+                }
+                
+                const selector = document.getElementById('contextChunkSelector');
+                // Only update the display if the user is NOT currently editing the context
+                if (!window.NovelContextUI.isEditing) {
+                    if (!selector || selector.value === 'latest') {
+                        window.NovelContextUI.renderContextTabs(window.NovelContextUI.latestContent, false);
+                    } else {
+                        // Do not overwrite display if a specific chunk is selected, but refresh the loaded snapshot
+                        window.loadContextSnapshot(selector.value);
+                    }
+                }
+            }
+        }
+
         if (data.status === 'completed') {
             MessageLogger.resetProgressTracking();
+            const completionKey = currentFile.operation === 'refine'
+                ? 'translation:refinement_completed_msg'
+                : 'translation:translation_completed_msg';
             this.finishCurrentFileTranslation(
-                t('translation:translation_completed_msg', { name: currentFile.name }),
+                t(completionKey, { name: currentFile.name }),
                 'success',
                 data
             );
@@ -469,13 +553,32 @@ export const TranslationTracker = {
             this.updateActiveTranslationsState();
         } else if (data.status === 'running') {
             MessageLogger.resetProgressTracking();
+            
+            // Wake up the UI controls from idle/paused state if needed
+            StateManager.setState('translation.isBatchActive', true);
+            const translateBtn = DomHelpers.getElement('translateBtn');
+            if (translateBtn) {
+                translateBtn.disabled = true;
+                translateBtn.innerHTML = t('translation:batch_in_progress');
+            }
+            DomHelpers.show('interruptBtn');
+            DomHelpers.setDisabled('interruptBtn', false);
+            DomHelpers.setText('interruptBtn', t('translation:interrupt_batch_with_icon'));
+
             DomHelpers.show('progressSection');
             DomHelpers.show('statsGrid');
             this.updateTranslationTitle(currentFile);
             this.resetOpenRouterCostDisplay();
 
+            // Hide context preview section until first state update
+            const contextSection = DomHelpers.getElement('novelContextPreviewSection');
+            if (contextSection) {
+                contextSection.style.display = 'none';
+            }
+
             MessageLogger.showMessage(t('translation:translation_in_progress', { name: currentFile.name }), 'info');
             this.updateFileStatusInList(currentFile.name, 'Processing');
+            this.updateActiveTranslationsState();
         }
     },
 
@@ -493,8 +596,14 @@ export const TranslationTracker = {
      * @param {Object} stats - Statistics object
      */
     updateStats(fileType, stats) {
+        StateManager.setState('translation.stats', stats);
         ProgressManager.update({ stats: stats }, fileType);
         this.updateOpenRouterCost(stats);
+        if (window.NovelContextUI && stats) {
+            window.NovelContextUI.updateChunkSelector(
+                stats.context_chunk_indices || []
+            );
+        }
     },
 
     /**
@@ -562,6 +671,9 @@ export const TranslationTracker = {
     finishCurrentFileTranslation(statusMessage, messageType, resultData) {
         const currentJob = StateManager.getState('translation.currentJob');
         if (!currentJob) return;
+
+        // Store lastJobId so we can load context snapshots after it finishes
+        StateManager.setState('translation.lastJobId', currentJob.translationId);
 
         const currentFile = currentJob.fileRef;
         currentFile.status = resultData.status || 'unknown_error';
@@ -911,15 +1023,6 @@ export const TranslationTracker = {
     },
 
     /**
-     * Remove all completion cards. Currently unused — cards are dismissed
-     * individually by the user via the card's close button.
-     */
-    clearCompletionCards() {
-        const container = DomHelpers.getElement('completionCardsContainer');
-        if (container) container.innerHTML = '';
-    },
-
-    /**
      * Process next file in queue (delegates to batch-controller when available)
      */
     processNextFileInQueue() {
@@ -1044,5 +1147,540 @@ export const TranslationTracker = {
         if (window.loadResumableJobs) {
             window.loadResumableJobs();
         }
+    }
+};
+
+window.NovelContextUI = {
+    latestContent: '',
+    displayedContent: '',
+    activeTabIndex: 0,
+    localizedView: null,
+    _localeListenerBound: false,
+
+    initializeLocaleListener: function() {
+        if (this._localeListenerBound) return;
+        this._localeListenerBound = true;
+
+        window.addEventListener('localeChanged', () => {
+            // data-i18n markers update selector and tab labels automatically.
+            // Rebuild only synthetic localized content, and never replace an
+            // active edit form because that would discard unsaved changes.
+            if (this.localizedView && !this.isEditing) {
+                this._renderLocalizedView();
+            }
+        });
+    },
+
+    renderLocalizedView: function(bodyKey, {
+        titleKey = null,
+        params = {},
+        isSnapshot = true
+    } = {}) {
+        this.localizedView = { bodyKey, titleKey, params, isSnapshot };
+        this._renderLocalizedView();
+    },
+
+    _renderLocalizedView: function() {
+        if (!this.localizedView) return;
+
+        const { bodyKey, titleKey, params, isSnapshot } = this.localizedView;
+        const body = t(bodyKey, params);
+        const content = titleKey
+            ? `# ${t(titleKey, params)}\n${body}`
+            : body;
+        this.renderContextTabs(content, isSnapshot, true);
+    },
+    
+    renderContextTabs: function(content, isSnapshot = false, preserveLocalizedView = false) {
+        if (!preserveLocalizedView) {
+            this.localizedView = null;
+        }
+        if (!isSnapshot) {
+            this.latestContent = content;
+        }
+        this.displayedContent = content;
+        const header = document.getElementById('contextTabsHeader');
+        const body = document.getElementById('contextTabsBody');
+        if (!header || !body) return;
+
+        // Ensure header has a scrollbar if tabs overflow
+        header.style.overflowX = 'visible';
+        header.style.overflowY = 'visible';
+        header.style.whiteSpace = 'normal';
+        header.style.flexWrap = 'wrap';
+        header.style.display = 'flex';
+        header.style.gap = '0.5rem';
+        header.style.paddingBottom = '0.5rem';
+
+        // Split by markdown headers # or ##
+        const sections = [];
+        const regex = /^(#{1,3})\s*(.+)$/gm;
+        let match;
+        let lastIndex = 0;
+        let currentTitle = t('translation:context_general_tab');
+        let currentTitleKey = 'translation:context_general_tab';
+        
+        while ((match = regex.exec(content)) !== null) {
+            const textBefore = content.substring(lastIndex, match.index).trim();
+            const cleanText = textBefore
+                .replace(/---DYNAMIC_STATE_START---|---DYNAMIC_STATE_END---/g, '')
+                .replace(/^\s*\(.*?\)\s*$/gm, '')
+                .trim();
+            
+            // Push section only if it has content, or if it's the very first section and we have no other choice
+            if (cleanText) {
+                sections.push({
+                    title: currentTitle,
+                    titleKey: currentTitleKey,
+                    content: cleanText
+                });
+            }
+            
+            currentTitle = match[2].trim();
+            currentTitleKey = null;
+            lastIndex = match.index + match[0].length;
+        }
+        
+        const lastText = content.substring(lastIndex).trim();
+        const cleanLast = lastText
+            .replace(/---DYNAMIC_STATE_START---|---DYNAMIC_STATE_END---/g, '')
+            .replace(/^\s*\(.*?\)\s*$/gm, '')
+            .trim();
+        if (cleanLast || sections.length === 0) {
+            sections.push({
+                title: currentTitle,
+                titleKey: currentTitleKey,
+                content: cleanLast
+            });
+        }
+
+        // Always add a raw view tab.
+        sections.push({
+            title: t('translation:context_raw_view_tab'),
+            titleKey: 'translation:context_raw_view_tab',
+            content
+        });
+
+        header.innerHTML = '';
+        body.innerHTML = '';
+
+        // Determine which tab should be active
+        const activeIdx = Number.isInteger(this.activeTabIndex)
+            && this.activeTabIndex >= 0
+            && this.activeTabIndex < sections.length
+            ? this.activeTabIndex
+            : 0;
+        this.activeTabIndex = activeIdx;
+
+        sections.forEach((sec, idx) => {
+            const btn = document.createElement('button');
+            const isActive = idx === activeIdx;
+            btn.className = `btn btn-sm ${isActive ? 'btn-primary' : 'btn-secondary'}`;
+            btn.style.whiteSpace = 'nowrap';
+            btn.style.flexShrink = '0';
+            btn.style.borderRadius = '4px';
+            btn.style.padding = '0.25rem 0.75rem';
+            btn.textContent = sec.title;
+            if (sec.titleKey) {
+                btn.setAttribute('data-i18n', sec.titleKey);
+            }
+            
+            const pane = document.createElement('div');
+            pane.style.display = isActive ? 'block' : 'none';
+            pane.textContent = sec.content;
+            
+            btn.onclick = () => {
+                this.activeTabIndex = idx;
+                Array.from(header.children).forEach(c => {
+                    c.className = 'btn btn-sm btn-secondary';
+                    c.style.background = 'transparent';
+                    c.style.color = 'var(--text-dark)';
+                    c.style.border = '1px solid var(--border-color)';
+                });
+                btn.className = 'btn btn-sm btn-primary';
+                btn.style.background = 'var(--primary-color)';
+                btn.style.color = '#fff';
+                btn.style.border = '1px solid var(--primary-color)';
+                
+                Array.from(body.children).forEach(p => { p.style.display = 'none'; });
+                pane.style.display = 'block';
+            };
+            
+            // Set initial style for active tab
+            if (isActive) {
+                btn.style.background = 'var(--primary-color)';
+                btn.style.color = '#fff';
+                btn.style.border = '1px solid var(--primary-color)';
+            } else {
+                btn.style.background = 'transparent';
+                btn.style.color = 'var(--text-dark)';
+                btn.style.border = '1px solid var(--border-color)';
+            }
+            
+            header.appendChild(btn);
+            body.appendChild(pane);
+        });
+    },
+
+    updateChunkSelector: function(chunkIndices) {
+        const selector = document.getElementById('contextChunkSelector');
+        if (!selector) return;
+        
+        // Preserve current selection if possible
+        const currentVal = selector.value;
+        
+        selector.innerHTML = `<option value="latest" data-i18n="translation:context_latest_state">${t('translation:context_latest_state')}</option>`;
+        const availableIndices = Array.isArray(chunkIndices)
+            ? [...new Set(chunkIndices)]
+                .filter(index => Number.isInteger(index) && index >= 0)
+                .sort((a, b) => a - b)
+            : [];
+        availableIndices.forEach(index => {
+            const opt = document.createElement('option');
+            opt.value = index;
+            opt.textContent = t('translation:context_chunk_option', { number: index + 1 });
+            opt.setAttribute('data-i18n', 'translation:context_chunk_option');
+            opt.setAttribute('data-i18n-params', JSON.stringify({ number: index + 1 }));
+            selector.appendChild(opt);
+        });
+        
+        if (currentVal && Array.from(selector.options).some(o => o.value === currentVal)) {
+            selector.value = currentVal;
+        }
+    }
+};
+
+window.NovelContextUI.initializeLocaleListener();
+
+window.loadContextSnapshot = async function(chunkValue) {
+    const btnEdit = document.getElementById('btnEditResync');
+    const btnSave = document.getElementById('btnSaveResync');
+    const btnCancel = document.getElementById('btnCancelResync');
+    if (btnEdit) btnEdit.style.display = 'none';
+    if (btnSave) btnSave.style.display = 'none';
+    if (btnCancel) btnCancel.style.display = 'none';
+
+    if (chunkValue === 'latest') {
+        if (window.NovelContextUI.latestContent) {
+            window.NovelContextUI.renderContextTabs(window.NovelContextUI.latestContent, false);
+        }
+        return;
+    }
+    
+    // Resolve translationId from multiple sources
+    let translationId = null;
+    const currentJob = StateManager.getState('translation.currentJob');
+    if (currentJob && currentJob.translationId) {
+        translationId = currentJob.translationId;
+    }
+    if (!translationId) {
+        translationId = StateManager.getState('translation.lastJobId');
+    }
+    
+    if (!translationId) {
+        console.warn('[Context] No translationId available for loading chunk snapshot');
+        window.NovelContextUI.renderLocalizedView(
+            'translation:context_no_job_body',
+            { titleKey: 'translation:context_no_job_title' }
+        );
+        return;
+    }
+    
+    try {
+        console.log(`[Context] Loading snapshot for job=${translationId}, chunk=${chunkValue}`);
+        const result = await ApiClient.getContextSnapshot(translationId, parseInt(chunkValue));
+        if (result && (result.context_content !== undefined && result.context_content !== null)) {
+            // Check if novel context is configured
+            if (result.has_novel_context === false && !result.context_content) {
+                // Hide context preview section if no context is configured
+                const contextSection = document.getElementById('novelContextPreviewSection');
+                if (contextSection) {
+                    contextSection.style.display = 'none';
+                }
+                return;
+            }
+            
+            // Render context tabs or show empty snapshot if empty but configured
+            if (result.context_content === "") {
+                window.NovelContextUI.renderLocalizedView(
+                    'translation:context_empty_snapshot'
+                );
+            } else {
+                window.NovelContextUI.renderContextTabs(result.context_content, true);
+            }
+            if (btnEdit) btnEdit.style.display = 'inline-flex';
+        } else {
+            window.NovelContextUI.renderLocalizedView(
+                'translation:context_no_context_body',
+                { titleKey: 'translation:context_no_context_title' }
+            );
+        }
+    } catch (e) {
+        console.error(`[Context] Failed to load snapshot for job=${translationId}, chunk=${chunkValue}:`, e);
+        window.NovelContextUI.renderLocalizedView(
+            'translation:context_load_error_body',
+            {
+                titleKey: 'translation:context_load_error_title',
+                params: { error: e.message }
+            }
+        );
+    }
+};
+
+window.enableContextEdit = function() {
+    const btnEdit = document.getElementById('btnEditResync');
+    const btnSave = document.getElementById('btnSaveResync');
+    const btnCancel = document.getElementById('btnCancelResync');
+    const header = document.getElementById('contextTabsHeader');
+    const body = document.getElementById('contextTabsBody');
+    if (!header || !body) return;
+    
+    let content = window.NovelContextUI.latestContent;
+    const selector = document.getElementById('contextChunkSelector');
+    if (selector && selector.value !== 'latest') {
+        content = window.NovelContextUI.displayedContent || content;
+    } else if (window.NovelContextUI.latestContent) {
+        content = window.NovelContextUI.latestContent;
+    } else {
+        content = window.NovelContextUI.displayedContent || "";
+    }
+    
+    // Parse the content into exact chunks so we can reconstruct it losslessly
+    const sections = [];
+    const regex = /^(#{1,3})\s*(.+)$/gm;
+    let match;
+    let lastIndex = 0;
+    let currentHeaderFull = ""; 
+    let currentTitle = t('translation:context_general_tab');
+    let currentTitleKey = 'translation:context_general_tab';
+    
+    while ((match = regex.exec(content)) !== null) {
+        sections.push({
+            title: currentTitle,
+            titleKey: currentTitleKey,
+            fullHeader: currentHeaderFull,
+            rawContent: content.substring(lastIndex, match.index)
+        });
+        currentHeaderFull = match[0];
+        currentTitle = match[2].trim();
+        currentTitleKey = null;
+        lastIndex = match.index + match[0].length;
+    }
+    sections.push({
+        title: currentTitle,
+        titleKey: currentTitleKey,
+        fullHeader: currentHeaderFull,
+        rawContent: content.substring(lastIndex)
+    });
+    
+    // Group empty structural headers with the following section to hide empty tabs
+    const groupedSections = [];
+    let pendingHeader = "";
+    sections.forEach((sec, idx) => {
+        const cleanContent = sec.rawContent
+            .replace(/---DYNAMIC_STATE_START---|---DYNAMIC_STATE_END---/g, '')
+            .replace(/^\s*\(.*?\)\s*$/gm, '')
+            .trim();
+        if (!cleanContent && idx < sections.length - 1) {
+            pendingHeader += sec.fullHeader + sec.rawContent;
+        } else {
+            groupedSections.push({
+                title: sec.title,
+                titleKey: sec.titleKey,
+                fullHeader: pendingHeader + sec.fullHeader,
+                rawContent: sec.rawContent,
+                id: 'edit-textarea-' + idx
+            });
+            pendingHeader = "";
+        }
+    });
+    
+    window.NovelContextUI.editSections = groupedSections;
+    window.NovelContextUI.isEditing = true;
+    
+    // Render the edit UI while keeping the tabs
+    header.style.display = 'flex';
+    header.style.flexWrap = 'wrap';
+    header.style.gap = '0.5rem';
+    header.innerHTML = '';
+    body.innerHTML = '';
+    
+    const activeIdx = Number.isInteger(window.NovelContextUI.activeTabIndex)
+        && window.NovelContextUI.activeTabIndex >= 0
+        && window.NovelContextUI.activeTabIndex < groupedSections.length
+        ? window.NovelContextUI.activeTabIndex
+        : 0;
+    window.NovelContextUI.activeTabIndex = activeIdx;
+    
+    function checkForChanges() {
+        let isChanged = false;
+        groupedSections.forEach(sec => {
+            const textarea = document.getElementById(sec.id);
+            if (textarea && textarea.value !== sec.rawContent) {
+                isChanged = true;
+            }
+        });
+        if (btnSave) btnSave.disabled = !isChanged;
+    }
+    
+    groupedSections.forEach((sec, idx) => {
+        const btn = document.createElement('button');
+        const isActive = idx === activeIdx;
+        btn.className = `btn btn-sm ${isActive ? 'btn-primary' : 'btn-secondary'}`;
+        btn.style.whiteSpace = 'nowrap';
+        btn.style.flexShrink = '0';
+        btn.style.borderRadius = '4px';
+        btn.style.padding = '0.25rem 0.75rem';
+        btn.textContent = sec.title;
+        if (sec.titleKey) {
+            btn.setAttribute('data-i18n', sec.titleKey);
+        }
+        
+        const pane = document.createElement('div');
+        pane.style.display = isActive ? 'block' : 'none';
+        pane.style.height = '100%';
+        
+        const textarea = document.createElement('textarea');
+        textarea.id = sec.id;
+        textarea.className = 'form-control';
+        textarea.style.width = '100%';
+        textarea.style.height = '60vh';
+        textarea.style.minHeight = '400px';
+        textarea.style.resize = 'vertical';
+        textarea.style.fontFamily = 'monospace';
+        textarea.style.fontSize = '0.85rem';
+        textarea.style.padding = '15px';
+        textarea.style.border = '2px solid var(--primary-light)';
+        textarea.style.borderRadius = '8px';
+        textarea.style.boxShadow = 'inset 0 2px 8px rgba(0,0,0,0.05)';
+        textarea.style.backgroundColor = 'var(--bg-light)';
+        textarea.value = sec.rawContent;
+        textarea.addEventListener('input', checkForChanges);
+        
+        pane.appendChild(textarea);
+        
+        btn.onclick = () => {
+            window.NovelContextUI.activeTabIndex = idx;
+            Array.from(header.children).forEach(c => {
+                c.className = 'btn btn-sm btn-secondary';
+                c.style.background = 'transparent';
+                c.style.color = 'var(--text-dark)';
+                c.style.border = '1px solid var(--border-color)';
+            });
+            btn.className = 'btn btn-sm btn-primary';
+            btn.style.background = 'var(--primary-color)';
+            btn.style.color = '#fff';
+            btn.style.border = '1px solid var(--primary-color)';
+            
+            Array.from(body.children).forEach(p => { p.style.display = 'none'; });
+            pane.style.display = 'block';
+        };
+        
+        if (isActive) {
+            btn.style.background = 'var(--primary-color)';
+            btn.style.color = '#fff';
+            btn.style.border = '1px solid var(--primary-color)';
+        } else {
+            btn.style.background = 'transparent';
+            btn.style.color = 'var(--text-dark)';
+            btn.style.border = '1px solid var(--border-color)';
+        }
+        
+        header.appendChild(btn);
+        body.appendChild(pane);
+    });
+    
+    // Swap buttons
+    if (btnEdit) btnEdit.style.display = 'none';
+    if (btnSave) {
+        btnSave.style.display = 'inline-flex';
+        btnSave.disabled = true; // disabled until changed
+    }
+    if (btnCancel) btnCancel.style.display = 'inline-flex';
+};
+
+window.cancelContextEdit = function() {
+    window.NovelContextUI.isEditing = false;
+    window.NovelContextUI.editSections = null;
+    const btnEdit = document.getElementById('btnEditResync');
+    const btnSave = document.getElementById('btnSaveResync');
+    const btnCancel = document.getElementById('btnCancelResync');
+    
+    if (btnEdit) btnEdit.style.display = 'inline-flex';
+    if (btnSave) btnSave.style.display = 'none';
+    if (btnCancel) btnCancel.style.display = 'none';
+    
+    if (window.NovelContextUI.localizedView) {
+        window.NovelContextUI._renderLocalizedView();
+    } else if (window.NovelContextUI.displayedContent) {
+        window.NovelContextUI.renderContextTabs(window.NovelContextUI.displayedContent, true);
+    }
+};
+
+window.saveContextResync = async function() {
+    const selector = document.getElementById('contextChunkSelector');
+    if (!selector || selector.value === 'latest') return;
+    
+    let newContent = "";
+    if (window.NovelContextUI.editSections) {
+        window.NovelContextUI.editSections.forEach(sec => {
+            const textarea = document.getElementById(sec.id);
+            if (textarea) {
+                newContent += sec.fullHeader + textarea.value;
+            } else {
+                newContent += sec.fullHeader + sec.rawContent;
+            }
+        });
+    } else {
+        const textarea = document.getElementById('contextResyncEditor');
+        if (!textarea) return;
+        newContent = textarea.value;
+    }
+    
+    const chunkIndex = parseInt(selector.value);
+    
+    let translationId = null;
+    const currentJob = StateManager.getState('translation.currentJob');
+    if (currentJob && currentJob.translationId) {
+        translationId = currentJob.translationId;
+    }
+    if (!translationId) {
+        translationId = StateManager.getState('translation.lastJobId');
+    }
+    
+    if (!translationId) {
+        console.warn('[Context] No translationId available for resync');
+        return;
+    }
+    
+    try {
+        const btnSave = document.getElementById('btnSaveResync');
+        if (btnSave) btnSave.disabled = true;
+        
+        await ApiClient.resyncContextSnapshot(translationId, chunkIndex, newContent);
+        MessageLogger.addLog(t('translation:context_resync_started_log', { chunk: chunkIndex + 1 }));
+        
+        // Reload tabs
+        window.NovelContextUI.isEditing = false;
+        window.NovelContextUI.editSections = null;
+        window.NovelContextUI.latestContent = newContent;
+        const header = document.getElementById('contextTabsHeader');
+        if (header) header.style.display = 'flex';
+        window.NovelContextUI.renderContextTabs(newContent, false);
+        
+        const btnEdit = document.getElementById('btnEditResync');
+        if (btnEdit) btnEdit.style.display = 'inline-flex';
+        if (btnSave) {
+            btnSave.style.display = 'none';
+            btnSave.disabled = true;
+        }
+        const btnCancel = document.getElementById('btnCancelResync');
+        if (btnCancel) btnCancel.style.display = 'none';
+        
+    } catch (e) {
+        console.error("Failed to start resync:", e);
+        MessageLogger.addLog(t('translation:context_resync_failed_log', { error: e.message }));
+        const btnSave = document.getElementById('btnSaveResync');
+        if (btnSave) btnSave.disabled = false;
     }
 };

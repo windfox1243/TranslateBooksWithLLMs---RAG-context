@@ -5,7 +5,6 @@ import atexit
 import threading
 import time
 import copy
-import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional, TYPE_CHECKING
 from src.persistence.checkpoint_manager import CheckpointManager
@@ -16,7 +15,6 @@ if TYPE_CHECKING:
 
 def generate_server_session_id() -> str:
     """Generate a unique session ID for this server instance using timestamp."""
-    import time
     return str(int(time.time()))
 
 

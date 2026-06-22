@@ -19,9 +19,10 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from flask import Blueprint, jsonify, request
 
+import src.config as _config
 from src.api.services.path_validator import PathValidator
 from src.config import (
-    MAX_TOKENS_PER_CHUNK, OLLAMA_NUM_CTX,
+    OLLAMA_NUM_CTX,
     REQUEST_TIMEOUT, SRT_LINES_PER_BLOCK,
 )
 from src.core.glossary import build_glossary_block, filter_glossary
@@ -192,7 +193,10 @@ def _load_source_units(file_path: str, file_type: str) -> List[Dict[str, str]]:
     text = _extract_plain_text(file_path, file_type)
     if not text or not text.strip():
         raise ValueError("File is empty or unreadable")
-    return split_text_into_chunks(text, max_tokens_per_chunk=MAX_TOKENS_PER_CHUNK)
+    return split_text_into_chunks(
+        text,
+        max_tokens_per_chunk=_config.MAX_TOKENS_PER_CHUNK,
+    )
 
 
 def _items_for_indices(
@@ -231,9 +235,18 @@ def _build_srt_sample_blocks(file_path: str, n_samples: int, max_chars: int) -> 
     return _items_for_indices(units, indices, max_chars), warnings
 
 
-def _build_text_sample_items(text: str, n_samples: int, max_chars: int) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def _build_text_sample_items(
+    text: str,
+    n_samples: int,
+    max_chars: int,
+    chapter_mode: bool = False,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Chunk plain text and select N representative items capped at max_chars."""
-    chunks = split_text_into_chunks(text, max_tokens_per_chunk=MAX_TOKENS_PER_CHUNK)
+    chunks = split_text_into_chunks(
+        text,
+        max_tokens_per_chunk=_config.MAX_TOKENS_PER_CHUNK,
+        chapter_mode=chapter_mode,
+    )
     total = len(chunks)
     if total < 3:
         raise ValueError("document too small for sampling")
@@ -839,6 +852,7 @@ def create_sample_blueprint(sample_state_manager, socketio=None, output_dir=".")
         #  - `items` missing → fall back to the legacy auto-sampling path.
         warnings: List[Dict[str, Any]] = []
         client_items = data.get("items")
+        prompt_options = data.get("prompt_options") or {}
         try:
             if client_items is not None:
                 if not isinstance(client_items, list) or not client_items:
@@ -873,7 +887,12 @@ def create_sample_blueprint(sample_state_manager, socketio=None, output_dir=".")
                 text = _extract_plain_text(file_path, file_type)
                 if not text or not text.strip():
                     return jsonify({"error": "File is empty or unreadable"}), 400
-                items, warnings = _build_text_sample_items(text, n_samples, max_chars)
+                items, warnings = _build_text_sample_items(
+                    text,
+                    n_samples,
+                    max_chars,
+                    chapter_mode=bool(prompt_options.get("chapter_mode")),
+                )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         except Exception as exc:
@@ -931,7 +950,18 @@ def create_sample_blueprint(sample_state_manager, socketio=None, output_dir=".")
 
         if mode == "refine":
             target_language = source_language
-        prompt_options = data.get("prompt_options") or {}
+        # Resolve novel_context_file → novel_context content so the prompt
+        # builder receives the actual text (it reads prompt_options['novel_context'],
+        # not the filename).  Same resolution logic as GenericTranslator.translate().
+        novel_context_file = prompt_options.get('novel_context_file')
+        if novel_context_file and novel_context_file.strip():
+            try:
+                from src.config import NOVEL_CONTEXTS_DIR
+                from src.utils.novel_context import resolve_novel_context_path, load_novel_context
+                nc_path = resolve_novel_context_path(novel_context_file, NOVEL_CONTEXTS_DIR)
+                prompt_options['novel_context'] = load_novel_context(nc_path.name, nc_path.parent)
+            except Exception as exc:
+                logger.warning("sample: failed to load novel context %r: %s", novel_context_file, exc)
 
         # `defer_dispatch=true` lets the client read the items first, compute
         # which cells are already cached, then call /dispatch with skip_cells.

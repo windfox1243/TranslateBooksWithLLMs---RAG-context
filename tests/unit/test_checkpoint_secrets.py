@@ -12,7 +12,9 @@ from flask import Flask
 
 from src.persistence.database import Database, sanitize_config_secrets
 from src.api.blueprints.translation_routes import (
+    _available_context_chunk_indices,
     _apply_resume_overrides,
+    _rehydrate_resume_credentials,
     _strip_api_keys,
 )
 
@@ -129,6 +131,17 @@ class TestResumeCredentialValidation:
         monkeypatch.setenv('GEMINI_API_KEY', 'env-key')
         assert _apply_resume_overrides(self._restored_config(), {}) is None
 
+    def test_background_resume_uses_live_config_key(self, monkeypatch):
+        import src.api.blueprints.translation_routes as routes
+
+        monkeypatch.delenv('GEMINI_API_KEY', raising=False)
+        monkeypatch.setattr(routes._config, 'GEMINI_API_KEY', 'live-config-key')
+        config = self._restored_config()
+
+        _rehydrate_resume_credentials(config)
+
+        assert config['gemini_api_key'] == 'live-config-key'
+
     def test_key_in_resume_request_passes_without_env(self, app_ctx, monkeypatch):
         monkeypatch.delenv('GEMINI_API_KEY', raising=False)
         config = self._restored_config()
@@ -166,3 +179,27 @@ class TestResponseStripping:
 
     def test_strip_api_keys_tolerates_none(self):
         assert _strip_api_keys(None) is None
+
+
+def test_available_context_indices_come_from_real_checkpoint_rows():
+    checkpoint = {
+        'chunks': [
+            {
+                'chunk_index': 0,
+                'status': 'completed',
+                'chunk_data': {'context_snapshot': 'snapshot-0'},
+            },
+            {
+                'chunk_index': 2,
+                'status': 'partial',
+                'chunk_data': {'context_snapshot': 'snapshot-2'},
+            },
+            {
+                'chunk_index': 4,
+                'status': 'completed',
+                'chunk_data': {},
+            },
+        ]
+    }
+
+    assert _available_context_chunk_indices(checkpoint) == [0, 2]

@@ -23,6 +23,40 @@ from src.core.srt_processor import SRTProcessor
 from src.core.subtitle_translator import refine_subtitle_translations
 
 
+def _blocks_from_translation_checkpoint(subtitles, db_chunks):
+    """Rebuild the exact phase-1 subtitle block boundaries when available."""
+    checkpoint_blocks = []
+    covered_positions = []
+    for row in sorted(db_chunks or [], key=lambda item: item.get("chunk_index", -1)):
+        if row.get("status") != "completed":
+            continue
+        metadata = row.get("chunk_data") or {}
+        positions = metadata.get("block_subtitles")
+        if positions is None:
+            positions = metadata.get("block_indices")
+        if not isinstance(positions, list):
+            return []
+        try:
+            positions = [int(position) for position in positions]
+        except (TypeError, ValueError):
+            return []
+        if not positions or any(
+            position < 0 or position >= len(subtitles)
+            for position in positions
+        ):
+            return []
+        checkpoint_blocks.append([subtitles[position] for position in positions])
+        covered_positions.extend(positions)
+
+    if (
+        checkpoint_blocks
+        and sorted(covered_positions) == list(range(len(subtitles)))
+        and len(set(covered_positions)) == len(subtitles)
+    ):
+        return checkpoint_blocks
+    return []
+
+
 async def refine_srt_file(
     input_filepath: str,
     output_filepath: str,
@@ -41,6 +75,8 @@ async def refine_srt_file(
     poe_api_key: Optional[str] = None,
     nim_api_key: Optional[str] = None,
     prompt_options: Optional[Dict[str, Any]] = None,
+    checkpoint_manager: Optional[Any] = None,
+    translation_id: Optional[str] = None,
 ) -> bool:
     """Run a refinement-only pass on an already-translated SRT file."""
     if not os.path.exists(input_filepath):
@@ -107,6 +143,44 @@ async def refine_srt_file(
         subtitles, SRT_LINES_PER_BLOCK, _NO_CHAR_CAP
     )
 
+    db_chunks = []
+    if checkpoint_manager and translation_id:
+        db_chunks = checkpoint_manager.db.get_chunks(translation_id) or []
+
+    # Phase-1 checkpoints persist the exact subtitle indices in each block.
+    # Reuse them for refine-after so context snapshots and marker groups remain
+    # one-to-one even if the configured block size changes later.
+    checkpoint_blocks = _blocks_from_translation_checkpoint(
+        subtitles,
+        db_chunks,
+    )
+    if checkpoint_blocks:
+        refine_blocks = checkpoint_blocks
+        if log_callback:
+            log_callback(
+                "refine_chunk_alignment_exact",
+                f"Reusing {len(refine_blocks)} subtitle blocks for exact refinement/context alignment.",
+            )
+        
+    from src.utils.novel_context import (
+        RefinementContextTracker,
+        map_context_snapshots_for_refinement,
+    )
+    historical_contexts = map_context_snapshots_for_refinement(
+        len(refine_blocks),
+        db_chunks,
+        (prompt_options or {}).get('novel_context', ''),
+        refinement_units=[
+            "\n".join(subtitle.get("text", "") for subtitle in block)
+            for block in refine_blocks
+        ],
+    )
+    context_tracker = RefinementContextTracker(
+        prompt_options=prompt_options or {},
+        historical_contexts=historical_contexts,
+        log_callback=log_callback,
+    )
+
     try:
         refined = await refine_subtitle_translations(
             translations=translations,
@@ -123,6 +197,7 @@ async def refine_srt_file(
             check_interruption_callback=check_interruption_callback,
             subtitle_blocks=refine_blocks,
             subtitle_positions=subtitle_positions,
+            context_tracker=context_tracker,
         )
     finally:
         if llm_client:

@@ -82,7 +82,7 @@ export const LifecycleManager = {
 
             } catch (error) {
                 MessageLogger.showMessage(
-                    t('common:server_unavailable', { url: ApiClient.API_BASE_URL, error: error.message }),
+                    t('common:server_unavailable', { url: ApiClient.getBaseUrl(), error: error.message }),
                     'error'
                 );
                 MessageLogger.addLog(t('common:server_connect_failed_log', { error: error.message }));
@@ -181,7 +181,7 @@ export const LifecycleManager = {
             const currentJob = StateManager.getState('translation.currentJob');
 
             if (isBatchActive && currentJob && currentJob.translationId) {
-                const interruptUrl = `${ApiClient.API_BASE_URL}/api/translation/${currentJob.translationId}/interrupt`;
+                const interruptUrl = `${ApiClient.getBaseUrl()}/api/translation/${currentJob.translationId}/interrupt`;
 
                 if (navigator.sendBeacon) {
                     const blob = new Blob(['{}'], { type: 'application/json' });

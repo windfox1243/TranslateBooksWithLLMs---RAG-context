@@ -30,6 +30,7 @@ function validatePreferences(data) {
     // Validate types for known fields (non-exhaustive, just critical ones)
     if ('ttsEnabled' in data && typeof data.ttsEnabled !== 'boolean') return false;
     if ('textCleanup' in data && typeof data.textCleanup !== 'boolean') return false;
+    if ('chapterMode' in data && typeof data.chapterMode !== 'boolean') return false;
 
     return true;
 }
@@ -64,6 +65,11 @@ export const SettingsManager = {
         // Listen for custom instructions loaded event
         window.addEventListener('customInstructionsLoaded', () => {
             this.applyPendingCustomInstructionSelection();
+        });
+
+        // Listen for novel contexts loaded event
+        window.addEventListener('novelContextsLoaded', () => {
+            this.applyPendingNovelContextSelection();
         });
 
         // Setup auto-save listeners after a short delay to avoid triggering during initial load
@@ -125,7 +131,10 @@ export const SettingsManager = {
             { id: 'textCleanup', event: 'change' },
             { id: 'bilingualMode', event: 'change' },
             { id: 'plainTextMode', event: 'change' },
-            { id: 'customInstructionSelect', event: 'change' }
+            { id: 'chapterMode', event: 'change' },
+            { id: 'customInstructionSelect', event: 'change' },
+            { id: 'novelContextSelect', event: 'change' },
+            { id: 'autoUpdateContext', event: 'change' }
         ];
 
         localAutoSaveElements.forEach(({ id, event }) => {
@@ -350,6 +359,12 @@ export const SettingsManager = {
                 plainTextCheckbox.checked = prefs.plainTextMode;
             }
         }
+        if (prefs.chapterMode !== undefined) {
+            const chapterModeCheckbox = DomHelpers.getElement('chapterMode');
+            if (chapterModeCheckbox) {
+                chapterModeCheckbox.checked = prefs.chapterMode;
+            }
+        }
         // Note: disableAutoPause is now loaded from .env via /api/config in FormManager,
         // not from localStorage.
 
@@ -358,9 +373,20 @@ export const SettingsManager = {
             window.__pendingCustomInstructionSelection = prefs.customInstructionFile;
         }
 
+        // Store novel context file for later application
+        if (prefs.novelContextFile) {
+            window.__pendingNovelContextSelection = prefs.novelContextFile;
+        }
+        if (prefs.autoUpdateContext !== undefined) {
+            const autoUpdateCheckbox = DomHelpers.getElement('autoUpdateContext');
+            if (autoUpdateCheckbox) {
+                autoUpdateCheckbox.checked = prefs.autoUpdateContext;
+            }
+        }
+
         // Keep Prompt Options section open if any option is active.
         // Note: disableAutoPause now lives in the Provider & Defaults section, not here.
-        const hasAnyPromptOption = prefs.textCleanup || prefs.bilingualMode || prefs.plainTextMode || prefs.customInstructionFile;
+        const hasAnyPromptOption = prefs.textCleanup || prefs.bilingualMode || prefs.plainTextMode || prefs.chapterMode || prefs.customInstructionFile || prefs.novelContextFile || prefs.autoUpdateContext;
         if (hasAnyPromptOption) {
             const promptOptionsSection = DomHelpers.getElement('promptOptionsSection');
             const promptOptionsIcon = DomHelpers.getElement('promptOptionsIcon');
@@ -415,6 +441,7 @@ export const SettingsManager = {
         const textCleanupCheckbox = DomHelpers.getElement('textCleanup');
         const bilingualModeCheckbox = DomHelpers.getElement('bilingualMode');
         const plainTextModeCheckbox = DomHelpers.getElement('plainTextMode');
+        const chapterModeCheckbox = DomHelpers.getElement('chapterMode');
 
         const prefs = {
             lastProvider: DomHelpers.getValue('llmProvider'),
@@ -428,7 +455,10 @@ export const SettingsManager = {
             textCleanup: textCleanupCheckbox ? textCleanupCheckbox.checked : false,
             bilingualMode: bilingualModeCheckbox ? bilingualModeCheckbox.checked : false,
             plainTextMode: plainTextModeCheckbox ? plainTextModeCheckbox.checked : false,
-            customInstructionFile: DomHelpers.getValue('customInstructionSelect') || ''
+            chapterMode: chapterModeCheckbox ? chapterModeCheckbox.checked : false,
+            customInstructionFile: DomHelpers.getValue('customInstructionSelect') || '',
+            novelContextFile: DomHelpers.getValue('novelContextSelect') || '',
+            autoUpdateContext: DomHelpers.getElement('autoUpdateContext')?.checked || false
         };
 
         this.saveLocalPreferences(prefs);
@@ -625,6 +655,31 @@ export const SettingsManager = {
                     console.warn('[SettingsManager] Custom instruction not found:', window.__pendingCustomInstructionSelection);
                 }
                 delete window.__pendingCustomInstructionSelection;
+            }
+        }
+    },
+
+    /**
+     * Apply pending novel context selection after novel contexts are loaded
+     * Called when 'novelContextsLoaded' event is fired
+     */
+    applyPendingNovelContextSelection() {
+        if (window.__pendingNovelContextSelection) {
+            const select = DomHelpers.getElement('novelContextSelect');
+            if (select && select.options.length > 0) {
+                let found = false;
+                for (let option of select.options) {
+                    if (option.value === window.__pendingNovelContextSelection) {
+                        select.value = window.__pendingNovelContextSelection;
+                        found = true;
+                        console.log('[SettingsManager] Restored novel context:', window.__pendingNovelContextSelection);
+                        break;
+                    }
+                }
+                if (!found) {
+                    console.warn('[SettingsManager] Novel context not found:', window.__pendingNovelContextSelection);
+                }
+                delete window.__pendingNovelContextSelection;
             }
         }
     },

@@ -263,6 +263,16 @@ export const ApiClient = {
     },
 
     /**
+     * Open the Novel Contexts folder in the system's file explorer
+     * @returns {Promise<Object>} Open result with folder_path
+     */
+    async openContextFolder() {
+        return await apiRequest('/api/folders/context/open', {
+            method: 'POST'
+        });
+    },
+
+    /**
      * Clear uploaded files
      * @param {string[]} filePaths - Array of file paths to delete
      * @returns {Promise<Object>} Clear result
@@ -374,6 +384,33 @@ export const ApiClient = {
         });
     },
 
+    /**
+     * Get dynamic context snapshot for a specific chunk
+     * @param {string} translationId - Translation job ID
+     * @param {number} chunkIndex - Chunk index
+     * @returns {Promise<Object>} Context snapshot data
+     */
+    async getContextSnapshot(translationId, chunkIndex) {
+        return await apiRequest(`/api/translation/${translationId}/context/${chunkIndex}`, {
+            method: 'GET'
+        });
+    },
+
+    /**
+     * Trigger dynamic context snapshot resync
+     * @param {string} translationId - Translation job ID
+     * @param {number} chunkIndex - Chunk index
+     * @param {string} content - Context content
+     * @returns {Promise<Object>} Resync result
+     */
+    async resyncContextSnapshot(translationId, chunkIndex, content) {
+        return await apiRequest(`/api/translation/${translationId}/context/${chunkIndex}/resync`, {
+            method: 'POST',
+            body: JSON.stringify({ context_content: content })
+        });
+    },
+
+
     // ========================================
     // Settings Management
     // ========================================
@@ -413,6 +450,49 @@ export const ApiClient = {
     async openCustomInstructionsFolder() {
         return await apiRequest('/api/custom-instructions/open-folder', {
             method: 'POST'
+        });
+    },
+
+    /**
+     * Get available novel context files
+     * @returns {Promise<Object>} Novel contexts list with files array
+     */
+    async getNovelContexts() {
+        return await apiRequest('/api/novel-contexts');
+    },
+
+    /**
+     * Open the Novel_Contexts folder in the system file explorer
+     * @returns {Promise<Object>} Result with success status
+     */
+    async openNovelContextsFolder() {
+        return await apiRequest('/api/novel-contexts/open-folder', {
+            method: 'POST'
+        });
+    },
+
+    // ========================================
+    // Translation Profiles
+    // ========================================
+
+    async getProfiles() {
+        return await apiRequest('/api/profiles');
+    },
+
+    async getProfile(name) {
+        return await apiRequest(`/api/profiles/${encodeURIComponent(name)}`);
+    },
+
+    async saveProfile(name, profile) {
+        return await apiRequest(`/api/profiles/${encodeURIComponent(name)}`, {
+            method: 'POST',
+            body: JSON.stringify(profile)
+        });
+    },
+
+    async deleteProfile(name) {
+        return await apiRequest(`/api/profiles/${encodeURIComponent(name)}`, {
+            method: 'DELETE'
         });
     },
 
@@ -639,4 +719,3 @@ export const ApiClient = {
         });
     }
 };
-

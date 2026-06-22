@@ -10,6 +10,7 @@ every unit is genuinely translated.
 
 import pytest
 
+import src.config as config_module
 import src.core.llm_client as llm_client_module
 import src.core.translator as translator_module
 from src.core.adapters.format_adapter import FormatAdapter
@@ -168,3 +169,67 @@ async def test_resume_with_persistent_failure_stays_partial(
     assert job is not None
     assert job["status"] == "partial"
     assert cm.load_checkpoint("job")["failed_chunk_indices"] == [1]
+
+
+@pytest.mark.asyncio
+async def test_generic_txt_context_is_prepared_before_translation_and_snapshotted(
+    tmp_path,
+    cm,
+    monkeypatch,
+):
+    events = []
+
+    async def fake_update(**kwargs):
+        events.append(("analyze", kwargs["source_chunk"]))
+        return (
+            "# GLOBAL LORE\n\n## GLOSSARY & TERMINOLOGY\n- content: contenu",
+            "Stable relationship state",
+            [],
+        )
+
+    async def fake_request(main_content=None, prompt_options=None, **kwargs):
+        events.append(("translate", main_content))
+        assert "content: contenu" in prompt_options["novel_context"]
+        return f"translated {main_content}"
+
+    monkeypatch.setattr(config_module, "NOVEL_CONTEXTS_DIR", tmp_path / "contexts")
+    monkeypatch.setattr(llm_client_module, "LLMClient", FakeLLMClient)
+    monkeypatch.setattr(
+        "src.utils.novel_context.update_novel_context_chunk",
+        fake_update,
+    )
+    monkeypatch.setattr(
+        translator_module,
+        "generate_translation_request",
+        fake_request,
+    )
+
+    translator = GenericTranslator(
+        adapter=FakeAdapter(tmp_path),
+        checkpoint_manager=cm,
+        translation_id="context-job",
+    )
+    success = await translator.translate(
+        source_language="English",
+        target_language="French",
+        model_name="fake-model",
+        llm_provider="ollama",
+        parallel_workers=4,
+        prompt_options={
+            "auto_update_context": True,
+            "input_filename": "novel.txt",
+        },
+    )
+
+    assert success is True
+    assert [kind for kind, _ in events] == [
+        "analyze", "translate",
+        "analyze", "translate",
+        "analyze", "translate",
+        "analyze", "translate",
+    ]
+    chunks = cm.db.get_chunks("context-job")
+    assert len(chunks) == N_UNITS
+    for chunk in chunks:
+        snapshot = (chunk["chunk_data"] or {}).get("context_snapshot")
+        assert snapshot

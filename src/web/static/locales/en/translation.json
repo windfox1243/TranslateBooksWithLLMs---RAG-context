@@ -10,14 +10,12 @@
   "lang_other_option": "Other (Specify)",
   "custom_source_lang_placeholder": "Enter custom source language",
   "custom_target_lang_placeholder": "Enter custom target language",
-
   "drop_files_title": "Drop files to translate",
   "drop_files_support": "Support for TXT, EPUB, SRT, and DOCX",
   "drop_files_refine_title": "Drop files to refine (already translated)",
   "drop_files_refine_support": "Polish an existing translation — same language in, same language out",
   "browse_files": "Browse Files",
   "selected_files": "Selected Files:",
-
   "op_badge_translate": "Translate",
   "op_badge_refine": "Refine",
   "per_file_source": "Source",
@@ -27,7 +25,6 @@
   "per_file_refine_after_title": "Run a refinement pass on this file's output after translation",
   "zone_locked": "Drop area locked while the queue is in {{operation}} mode.",
   "zone_locked_current": "Queue is in {{current}} mode — clear it before switching.",
-
   "start_batch": "Start",
   "start_batch_with_icon": "▶️ Start",
   "interrupt_batch": "Interrupt Current & Stop Batch",
@@ -48,7 +45,6 @@
   "batch_paused_log": "⏸️ Batch processing paused (rate limited). Resume from the section below.",
   "batch_stopped_user_log": "🛑 Batch processing stopped by user.",
   "interrupt_before_clear_log": "🛑 Interrupting current translation before clearing files...",
-
   "translating": "Translating",
   "refining": "Refining",
   "translating_step": "Translating ({{step}}/{{total}})",
@@ -63,7 +59,6 @@
   "validation_target_required": "Please specify the target language.",
   "validation_model_required": "Please select an LLM model.",
   "system_initializing": "⚠️ System still initializing, please wait...",
-
   "starting_translation_log": "▶️ Starting translation for: {{name}} ({{type}})",
   "submitted_log": "⏳ Translation submitted for {{name}}...",
   "init_error_log": "❌ Error initiating translation for {{name}}: {{error}}",
@@ -76,7 +71,6 @@
   "file_upload_failed": "Failed to upload file '{{name}}': {{error}}",
   "file_duplicate": "File '{{name}}' is already in the list.",
   "file_uploaded_lang_not_in_list": "File '{{name}}' ({{type}}) uploaded. Language detected but not in list: {{lang}}",
-
   "no_file_uploaded_yet": "No file uploaded yet. Upload a file to auto-detect its language.",
   "file_not_in_queue": "File not found in queue.",
   "file_no_path": "File path not available for language detection.",
@@ -87,12 +81,11 @@
   "lang_detection_no_result": "Could not detect language from file content.",
   "lang_detection_failed": "Language detection failed: {{error}}",
   "cannot_edit_file_processing": "Cannot edit file '{{name}}' - it's already being processed.",
-
   "active_badge": "Active",
   "remove_file_title": "Remove file",
   "audiobook_btn_title": "Generate Audiobook (TTS)",
-
   "translation_completed_msg": "✅ {{name}}: Translation completed!",
+  "refinement_completed_msg": "✅ {{name}}: Refinement completed!",
   "translation_interrupted_msg": "ℹ️ {{name}}: Translation interrupted.",
   "translation_rate_limited_msg": "⏸️ {{name}}: Rate limited, translation auto-paused. Use the Resume button below when ready.",
   "translation_error_msg": "❌ {{name}}: Error - {{error}}",
@@ -116,7 +109,6 @@
   "completion_warning_placeholder_errors": "{{count}} formatting issue(s)",
   "completion_warning_failed": "{{count}} failed chunk(s)",
   "completion_warning_intro": "The LLM had trouble keeping the original formatting (inline tags, styles, line breaks) perfectly in place. Across {{processed}} chunks: {{retryPct}}% needed retries and {{fallbackPct}}% used approximate tag positioning (avg {{avgErrors}} formatting issues per chunk). For cleaner formatting next time, consider:",
-
   "session_restored_log": "🔄 Restored previous translation session",
   "session_corrupted_log": "Previous session state was corrupted, starting fresh",
   "session_could_not_restore": "Could not restore previous session, starting fresh",
@@ -125,7 +117,6 @@
   "session_job_missing_log": "Translation job no longer exists, resetting",
   "session_state_save_quota": "Browser storage full, could not save translation state",
   "session_state_save_failed": "Failed to save translation state",
-
   "active_translation_warning_title": "Active translation in progress",
   "active_translation_warning_desc": "Resume disabled. Active translation(s): {{names}}",
   "cannot_resume_in_progress_title": "⚠️ Cannot resume: a translation is already in progress",
@@ -147,16 +138,13 @@
   "resume_style_warning": "Switching model mid-book may cause a style break between the already-translated and remaining chunks.",
   "resume_apply_btn": "Resume with this model",
   "resume_no_model_selected": "Select a model before resuming.",
-
   "confirm_delete_checkpoint": "Are you sure you want to delete this checkpoint?\n\nThis action is irreversible and you will lose all progress.",
   "deleting_checkpoint_log": "🗑️ Deleting checkpoint {{id}}...",
   "checkpoint_deleted": "✅ Checkpoint deleted successfully",
   "checkpoint_deleted_log": "✅ Checkpoint {{id}} deleted",
   "checkpoint_delete_error": "❌ Error deleting checkpoint: {{error}}",
-
   "paused_count_log": "📦 {{count}} paused translation(s) found",
   "paused_load_error": "Error loading: {{error}}",
-
   "job_card_progress": "Progress: {{completed}} / {{total}} chunks ({{percent}}%)",
   "job_card_created": "Created: {{date}}",
   "job_card_paused": "Paused: {{date}}",
@@ -169,7 +157,6 @@
   "job_card_type_id": "Type: {{type}} • ID: {{id}}",
   "job_card_unknown": "Unknown",
   "job_card_na": "N/A",
-
   "progress_title": "Translation Progress",
   "stat_total_chunks": "Total Chunks",
   "stat_completed": "Completed",
@@ -187,18 +174,15 @@
   "stat_total_tokens": "Total Tokens",
   "last_translation_preview": "Last Translation Preview",
   "no_translation_yet": "No translation yet...",
-
   "paused_translations": "Paused Translations",
   "refresh_list_title": "Refresh list",
   "no_paused_translations": "No paused translations",
-
   "file_list_cleared": "File list cleared",
   "form_reset_log": "Form and file list reset.",
   "delete_uploaded_log": "🗑️ Deleting {{count}} uploaded file(s) from server...",
   "delete_uploaded_success_log": "✅ Successfully deleted {{count}} uploaded file(s).",
   "delete_uploaded_failed_log": "⚠️ Failed to delete {{count}} file(s).",
   "delete_uploaded_error_log": "⚠️ Error occurred while deleting uploaded files.",
-
   "settings_saved_env": "✅ Settings saved: {{keys}}",
   "settings_saved_env_log": "💾 Saved to .env: {{keys}}",
   "preferences_saved": "✅ Preferences saved",
@@ -206,17 +190,16 @@
   "preferences_save_quota": "Browser storage full, could not save preferences",
   "preferences_save_failed_log": "Failed to save preferences",
   "preferences_load_failed_log": "Could not load saved preferences",
-
   "summary_refining_in": "Refining in {{lang}}",
   "summary_refine_only": "Refine Only (skips translation)",
   "summary_no_auto_pause": "No auto-pause",
   "summary_bilingual": "Bilingual",
   "summary_plain_text_mode": "Plain Text Mode",
+  "summary_chapter_mode": "Chapter-aware",
   "summary_ocr_cleanup": "OCR cleanup",
   "summary_glossary": "Glossary: {{name}}",
   "summary_instructions": "Instructions: {{name}}",
   "summary_lang_auto_detect": "auto-detect",
-
   "quicktest_button_title": "Quick test: translate 5 excerpts with the selected LLM",
   "quicktest_button_label": "Quick test",
   "quicktest_title": "Quick LLM test",
@@ -232,5 +215,36 @@
   "quicktest_error_no_model": "No model selected. Pick a provider and model first.",
   "quicktest_error_no_target": "Set a target language for this file before testing.",
   "quicktest_error_empty": "This file is too small to sample.",
-  "quicktest_error_run": "Quick test failed: {{error}}"
+  "quicktest_error_run": "Quick test failed: {{error}}",
+  "profile_label": "Translation Profile (Project)",
+  "profile_custom_settings": "-- Custom Settings --",
+  "profile_load_btn": "Load",
+  "profile_load_title": "Load selected profile",
+  "profile_save_btn": "Save As...",
+  "profile_save_title": "Save current settings as a profile",
+  "context_preview_title": "Context Preview",
+  "context_edit_resync_title": "Edit this snapshot and re-sync all subsequent chunks",
+  "context_edit_resync_btn": "Edit & Re-sync",
+  "context_save_resync_btn": "Save & Re-sync",
+  "context_latest_state": "Latest State",
+  "context_open_folder_btn": "Open Folder",
+  "context_waiting": "Waiting for context...",
+  "profile_loaded_log": "[System] Loaded profile: {{name}}",
+  "profile_load_failed_log": "[Error] Failed to load profile: {{error}}",
+  "profile_saved_log": "[System] Saved profile: {{name}}",
+  "profile_save_failed_log": "[Error] Failed to save profile: {{error}}",
+  "profile_enter_name": "Enter a name for this Translation Profile (e.g. 'Project Alpha'):",
+  "context_general_tab": "General",
+  "context_raw_view_tab": "Raw View",
+  "context_chunk_option": "Chunk {{number}}",
+  "context_no_job_title": "No Job Selected",
+  "context_no_job_body": "No active or recent translation job found to load context from.",
+  "context_empty_snapshot": "(Empty context snapshot)",
+  "context_no_context_title": "No Context",
+  "context_no_context_body": "No snapshot found for this chunk.",
+  "context_load_error_title": "Error",
+  "context_load_error_body": "Failed to load context snapshot: {{error}}",
+  "context_resync_started_log": "[System] Context re-sync started from chunk {{chunk}}. This will process in the background.",
+  "context_resync_failed_log": "[Error] Failed to start context resync: {{error}}",
+  "context_open_folder_failed": "Failed to open novel contexts folder"
 }

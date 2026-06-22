@@ -10,6 +10,7 @@ from .glossary_routes import create_glossary_blueprint
 from .cost_routes import create_cost_blueprint
 from .version_routes import create_version_blueprint
 from .sample_routes import create_sample_blueprint
+from .profile_routes import create_profile_blueprint
 
 __all__ = [
     'create_config_blueprint',
@@ -21,4 +22,5 @@ __all__ = [
     'create_cost_blueprint',
     'create_version_blueprint',
     'create_sample_blueprint',
+    'create_profile_blueprint',
 ]

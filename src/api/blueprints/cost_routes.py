@@ -12,13 +12,13 @@ from pathlib import Path
 
 from flask import Blueprint, request, jsonify
 
+import src.config as _config
 from src.core.pricing import (
     DEFAULT_PRICING,
     LAST_UPDATED,
     get_default_pricing,
     CostEstimator,
 )
-from src.config import MAX_TOKENS_PER_CHUNK
 
 
 logger = logging.getLogger('cost_routes')
@@ -113,7 +113,7 @@ def create_cost_blueprint(output_dir):
                 provider=provider,
                 model=model,
                 pricing=pricing,
-                max_tokens_per_chunk=MAX_TOKENS_PER_CHUNK,
+                max_tokens_per_chunk=_config.MAX_TOKENS_PER_CHUNK,
             )
             result = estimator.estimate(
                 text=text,

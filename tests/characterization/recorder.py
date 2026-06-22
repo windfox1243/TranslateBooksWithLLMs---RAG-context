@@ -90,6 +90,14 @@ async def _run(coro_factory, work_dir: Path):
         os.chdir(cwd_before)
 
 
+def _checkpoint_manager(work_dir: Path) -> CheckpointManager:
+    """Create a checkpoint manager whose files stay inside pytest's temp dir."""
+    manager = CheckpointManager(db_path=str(work_dir / "jobs.db"))
+    manager.uploads_dir = work_dir / "uploads"
+    manager.uploads_dir.mkdir(parents=True, exist_ok=True)
+    return manager
+
+
 def record_translation(
     work_dir: Path,
     input_path: Path,
@@ -104,7 +112,7 @@ def record_translation(
     def stats_callback(stats: Dict[str, Any]):
         sequence.append(_project(stats))
 
-    checkpoint_manager = CheckpointManager(db_path=str(work_dir / "jobs.db"))
+    checkpoint_manager = _checkpoint_manager(work_dir)
 
     async def factory():
         await translate_file(
@@ -142,7 +150,7 @@ def record_refine(
     def stats_callback(stats: Dict[str, Any]):
         sequence.append(_project(stats))
 
-    checkpoint_manager = CheckpointManager(db_path=str(work_dir / "jobs.db"))
+    checkpoint_manager = _checkpoint_manager(work_dir)
 
     async def factory():
         await refine_file(

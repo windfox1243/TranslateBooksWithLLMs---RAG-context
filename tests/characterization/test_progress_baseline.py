@@ -30,6 +30,13 @@ _BUILDERS = {
 }
 
 
+def test_checkpoint_files_are_isolated_to_test_workdir(tmp_path):
+    manager = recorder._checkpoint_manager(tmp_path)
+
+    assert manager.uploads_dir == tmp_path / "uploads"
+    assert manager.uploads_dir.is_dir()
+
+
 def _golden_path(name: str) -> Path:
     return GOLDEN_DIR / f"{name}.json"
 

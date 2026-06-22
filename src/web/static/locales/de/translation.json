@@ -10,14 +10,12 @@
   "lang_other_option": "Andere (angeben)",
   "custom_source_lang_placeholder": "Benutzerdefinierte Quellsprache eingeben",
   "custom_target_lang_placeholder": "Benutzerdefinierte Zielsprache eingeben",
-
   "drop_files_title": "Dateien zum Übersetzen hier ablegen",
   "drop_files_support": "Unterstützung für TXT, EPUB, SRT und DOCX",
   "drop_files_refine_title": "Dateien zum Überarbeiten ablegen (bereits übersetzt)",
   "drop_files_refine_support": "Bestehende Übersetzung polieren — gleiche Sprache rein, gleiche Sprache raus",
   "browse_files": "Dateien durchsuchen",
   "selected_files": "Ausgewählte Dateien:",
-
   "op_badge_translate": "Übersetzen",
   "op_badge_refine": "Überarbeiten",
   "per_file_source": "Quelle",
@@ -27,7 +25,6 @@
   "per_file_refine_after_title": "Führt nach der Übersetzung einen Überarbeitungsdurchgang an der Ausgabe dieser Datei aus",
   "zone_locked": "Ablagebereich gesperrt, solange die Warteschlange im Modus {{operation}} läuft.",
   "zone_locked_current": "Warteschlange im Modus {{current}} — leere sie, um den Modus zu wechseln.",
-
   "start_batch": "Starten",
   "start_batch_with_icon": "▶️ Starten",
   "interrupt_batch": "Aktuelle abbrechen & Stapel anhalten",
@@ -48,7 +45,6 @@
   "batch_paused_log": "⏸️ Stapelverarbeitung pausiert (Ratenbegrenzung). Im Abschnitt unten fortsetzen.",
   "batch_stopped_user_log": "🛑 Stapelverarbeitung vom Benutzer angehalten.",
   "interrupt_before_clear_log": "🛑 Aktuelle Übersetzung wird vor dem Leeren der Dateien abgebrochen...",
-
   "translating": "Wird übersetzt",
   "refining": "Wird verfeinert",
   "translating_step": "Übersetzung ({{step}}/{{total}})",
@@ -63,7 +59,6 @@
   "validation_target_required": "Bitte geben Sie die Zielsprache an.",
   "validation_model_required": "Bitte wählen Sie ein LLM-Modell aus.",
   "system_initializing": "⚠️ System initialisiert noch, bitte warten...",
-
   "starting_translation_log": "▶️ Übersetzung wird gestartet für: {{name}} ({{type}})",
   "submitted_log": "⏳ Übersetzung für {{name}} eingereicht...",
   "init_error_log": "❌ Fehler beim Starten der Übersetzung für {{name}}: {{error}}",
@@ -76,7 +71,6 @@
   "file_upload_failed": "Hochladen der Datei '{{name}}' fehlgeschlagen: {{error}}",
   "file_duplicate": "Datei '{{name}}' ist bereits in der Liste.",
   "file_uploaded_lang_not_in_list": "Datei '{{name}}' ({{type}}) hochgeladen. Sprache erkannt, aber nicht in Liste: {{lang}}",
-
   "no_file_uploaded_yet": "Noch keine Datei hochgeladen. Laden Sie eine Datei hoch, um ihre Sprache automatisch zu erkennen.",
   "file_not_in_queue": "Datei nicht in der Warteschlange gefunden.",
   "file_no_path": "Dateipfad für Spracherkennung nicht verfügbar.",
@@ -87,12 +81,11 @@
   "lang_detection_no_result": "Sprache konnte aus dem Dateiinhalt nicht erkannt werden.",
   "lang_detection_failed": "Spracherkennung fehlgeschlagen: {{error}}",
   "cannot_edit_file_processing": "Datei '{{name}}' kann nicht bearbeitet werden - sie wird bereits verarbeitet.",
-
   "active_badge": "Aktiv",
   "remove_file_title": "Datei entfernen",
   "audiobook_btn_title": "Hörbuch generieren (TTS)",
-
   "translation_completed_msg": "✅ {{name}}: Übersetzung abgeschlossen!",
+  "refinement_completed_msg": "✅ {{name}}: Überarbeitung abgeschlossen!",
   "translation_interrupted_msg": "ℹ️ {{name}}: Übersetzung abgebrochen.",
   "translation_rate_limited_msg": "⏸️ {{name}}: Ratenbegrenzung, Übersetzung automatisch pausiert. Nutzen Sie die Schaltfläche „Fortsetzen“ unten, wenn Sie bereit sind.",
   "translation_error_msg": "❌ {{name}}: Fehler - {{error}}",
@@ -116,7 +109,6 @@
   "completion_warning_placeholder_errors": "{{count}} Formatierungsmangel",
   "completion_warning_failed": "{{count}} fehlgeschlagene(r) Chunk(s)",
   "completion_warning_intro": "Das LLM hatte Mühe, die ursprüngliche Formatierung (Inline-Tags, Styles, Zeilenumbrüche) exakt beizubehalten. Bei {{processed}} Chunks: {{retryPct}}% benötigten Wiederholungen und {{fallbackPct}}% verwendeten ungefähre Tag-Positionierung (Ø {{avgErrors}} Formatierungsmängel pro Chunk). Für sauberere Formatierung beim nächsten Mal sollten Sie Folgendes erwägen:",
-
   "session_restored_log": "🔄 Vorherige Übersetzungssitzung wiederhergestellt",
   "session_corrupted_log": "Vorheriger Sitzungsstatus war beschädigt, Neustart",
   "session_could_not_restore": "Vorherige Sitzung konnte nicht wiederhergestellt werden, Neustart",
@@ -125,7 +117,6 @@
   "session_job_missing_log": "Übersetzungsauftrag existiert nicht mehr, wird zurückgesetzt",
   "session_state_save_quota": "Browser-Speicher voll, Übersetzungsstatus konnte nicht gespeichert werden",
   "session_state_save_failed": "Speichern des Übersetzungsstatus fehlgeschlagen",
-
   "active_translation_warning_title": "Aktive Übersetzung läuft",
   "active_translation_warning_desc": "Fortsetzen deaktiviert. Aktive Übersetzung(en): {{names}}",
   "cannot_resume_in_progress_title": "⚠️ Fortsetzen nicht möglich: eine Übersetzung läuft bereits",
@@ -147,16 +138,13 @@
   "resume_style_warning": "Ein Modellwechsel mitten im Buch kann zu einem Stilbruch zwischen den bereits übersetzten und den verbleibenden Abschnitten führen.",
   "resume_apply_btn": "Mit diesem Modell fortsetzen",
   "resume_no_model_selected": "Wählen Sie ein Modell aus, bevor Sie fortfahren.",
-
   "confirm_delete_checkpoint": "Möchten Sie diesen Checkpoint wirklich löschen?\n\nDiese Aktion ist unumkehrbar und Sie verlieren den gesamten Fortschritt.",
   "deleting_checkpoint_log": "🗑️ Checkpoint {{id}} wird gelöscht...",
   "checkpoint_deleted": "✅ Checkpoint erfolgreich gelöscht",
   "checkpoint_deleted_log": "✅ Checkpoint {{id}} gelöscht",
   "checkpoint_delete_error": "❌ Fehler beim Löschen des Checkpoints: {{error}}",
-
   "paused_count_log": "📦 {{count}} pausierte Übersetzung(en) gefunden",
   "paused_load_error": "Fehler beim Laden: {{error}}",
-
   "job_card_progress": "Fortschritt: {{completed}} / {{total}} Segmente ({{percent}}%)",
   "job_card_created": "Erstellt: {{date}}",
   "job_card_paused": "Pausiert: {{date}}",
@@ -169,7 +157,6 @@
   "job_card_type_id": "Typ: {{type}} • ID: {{id}}",
   "job_card_unknown": "Unbekannt",
   "job_card_na": "k. A.",
-
   "progress_title": "Übersetzungsfortschritt",
   "stat_total_chunks": "Gesamte Segmente",
   "stat_completed": "Abgeschlossen",
@@ -187,18 +174,15 @@
   "stat_total_tokens": "Gesamte Tokens",
   "last_translation_preview": "Vorschau der letzten Übersetzung",
   "no_translation_yet": "Noch keine Übersetzung...",
-
   "paused_translations": "Pausierte Übersetzungen",
   "refresh_list_title": "Liste aktualisieren",
   "no_paused_translations": "Keine pausierten Übersetzungen",
-
   "file_list_cleared": "Dateiliste geleert",
   "form_reset_log": "Formular und Dateiliste zurückgesetzt.",
   "delete_uploaded_log": "🗑️ {{count}} hochgeladene Datei(en) werden vom Server gelöscht...",
   "delete_uploaded_success_log": "✅ {{count}} hochgeladene Datei(en) erfolgreich gelöscht.",
   "delete_uploaded_failed_log": "⚠️ Löschen von {{count}} Datei(en) fehlgeschlagen.",
   "delete_uploaded_error_log": "⚠️ Fehler beim Löschen hochgeladener Dateien aufgetreten.",
-
   "settings_saved_env": "✅ Einstellungen gespeichert: {{keys}}",
   "settings_saved_env_log": "💾 In .env gespeichert: {{keys}}",
   "preferences_saved": "✅ Einstellungen gespeichert",
@@ -206,17 +190,16 @@
   "preferences_save_quota": "Browser-Speicher voll, Einstellungen konnten nicht gespeichert werden",
   "preferences_save_failed_log": "Speichern der Einstellungen fehlgeschlagen",
   "preferences_load_failed_log": "Gespeicherte Einstellungen konnten nicht geladen werden",
-
   "summary_refining_in": "Verfeinerung in {{lang}}",
   "summary_refine_only": "Nur Verfeinern (überspringt Übersetzung)",
   "summary_no_auto_pause": "Keine Auto-Pause",
   "summary_bilingual": "Zweisprachig",
   "summary_plain_text_mode": "Klartextmodus",
+  "summary_chapter_mode": "Kapitelbasiert",
   "summary_ocr_cleanup": "OCR-Bereinigung",
   "summary_glossary": "Glossar: {{name}}",
   "summary_instructions": "Anweisungen: {{name}}",
   "summary_lang_auto_detect": "Auto-Erkennung",
-
   "quicktest_button_title": "Schnelltest: 5 Auszüge mit dem ausgewählten LLM übersetzen",
   "quicktest_button_label": "Schnelltest",
   "quicktest_title": "Schneller LLM-Test",
@@ -232,5 +215,36 @@
   "quicktest_error_no_model": "Kein Modell ausgewählt. Wähle zuerst einen Anbieter und ein Modell.",
   "quicktest_error_no_target": "Lege eine Zielsprache für diese Datei fest, bevor du testest.",
   "quicktest_error_empty": "Diese Datei ist zu klein für eine Stichprobe.",
-  "quicktest_error_run": "Schnelltest fehlgeschlagen: {{error}}"
+  "quicktest_error_run": "Schnelltest fehlgeschlagen: {{error}}",
+  "profile_label": "Übersetzungsprofil (Projekt)",
+  "profile_custom_settings": "-- Benutzerdefinierte Einstellungen --",
+  "profile_load_btn": "Laden",
+  "profile_load_title": "Ausgewähltes Profil laden",
+  "profile_save_btn": "Speichern unter...",
+  "profile_save_title": "Aktuelle Einstellungen als Profil speichern",
+  "context_preview_title": "Kontext-Vorschau",
+  "context_edit_resync_title": "Diesen Snapshot bearbeiten und alle nachfolgenden Chunks neu synchronisieren",
+  "context_edit_resync_btn": "Bearbeiten & Neu synchronisieren",
+  "context_save_resync_btn": "Speichern & Neu synchronisieren",
+  "context_latest_state": "Neueste Version",
+  "context_open_folder_btn": "Ordner öffnen",
+  "context_waiting": "Warten auf Kontext...",
+  "profile_loaded_log": "[System] Profil geladen: {{name}}",
+  "profile_load_failed_log": "[Fehler] Profil konnte nicht geladen werden: {{error}}",
+  "profile_saved_log": "[System] Profil gespeichert: {{name}}",
+  "profile_save_failed_log": "[Fehler] Profil konnte nicht gespeichert werden: {{error}}",
+  "profile_enter_name": "Geben Sie einen Namen für dieses Übersetzungsprofil ein (z. B. 'Projekt Alpha'):",
+  "context_general_tab": "Allgemein",
+  "context_raw_view_tab": "Rohansicht",
+  "context_chunk_option": "Chunk {{number}}",
+  "context_no_job_title": "Kein Auftrag ausgewählt",
+  "context_no_job_body": "Kein aktiver oder aktueller Übersetzungsauftrag gefunden, aus dem Kontext geladen werden kann.",
+  "context_empty_snapshot": "(Leerer Kontext-Snapshot)",
+  "context_no_context_title": "Kein Kontext",
+  "context_no_context_body": "Für diesen Chunk wurde kein Snapshot gefunden.",
+  "context_load_error_title": "Fehler",
+  "context_load_error_body": "Kontext-Snapshot konnte nicht geladen werden: {{error}}",
+  "context_resync_started_log": "[System] Kontext-Neusynchronisierung ab Chunk {{chunk}} gestartet. Dies wird im Hintergrund verarbeitet.",
+  "context_resync_failed_log": "[Fehler] Kontext-Neusynchronisierung konnte nicht gestartet werden: {{error}}",
+  "context_open_folder_failed": "Roman-Kontextordner konnte nicht geöffnet werden"
 }

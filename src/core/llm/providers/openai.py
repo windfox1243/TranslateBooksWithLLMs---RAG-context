@@ -106,8 +106,8 @@ class OpenAICompatibleProvider(LLMProvider):
         # Only add thinking-disable params for local servers (llama.cpp, vLLM, LM Studio)
         # Skip for official OpenAI API and cloud providers (NVIDIA NIM, etc.)
         if not self._is_official_openai_endpoint() and self._is_local_endpoint():
-            payload["thinking"] = False
-            payload["enable_thinking"] = False
+            # TabbyAPI and other engines reject boolean "thinking" at the root level.
+            # We only pass enable_thinking via chat_template_kwargs to be safe.
             payload["chat_template_kwargs"] = {"enable_thinking": False}
 
         client = await self._get_client()
@@ -193,6 +193,21 @@ class OpenAICompatibleProvider(LLMProvider):
 
                 return None
             except httpx.HTTPStatusError as e:
+                # Handle 400 Bad Request due to thinking/custom parameters (e.g. TabbyAPI)
+                if (hasattr(e, 'response') and e.response is not None
+                        and e.response.status_code == 400):
+                    removed_any = False
+                    for key in ["thinking", "enable_thinking", "chat_template_kwargs"]:
+                        if key in payload:
+                            del payload[key]
+                            removed_any = True
+                    if removed_any:
+                        if self.log_callback:
+                            self.log_callback("llm_http_400_retry",
+                                "⚠️ Local LLM server rejected thinking/custom parameters (status 400). "
+                                "Retrying request without them...")
+                        continue
+
                 RED = '\033[91m'
                 YELLOW = '\033[93m'
                 RESET = '\033[0m'

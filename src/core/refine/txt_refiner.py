@@ -36,6 +36,8 @@ async def refine_txt_file(
     max_tokens_per_chunk: Optional[int] = None,
     soft_limit_ratio: Optional[float] = None,
     prompt_options: Optional[Dict[str, Any]] = None,
+    checkpoint_manager: Optional[Any] = None,
+    translation_id: Optional[str] = None,
 ) -> bool:
     """Run a refinement-only pass on an already-translated text file.
 
@@ -78,7 +80,75 @@ async def refine_txt_file(
         translated_text,
         max_tokens_per_chunk=max_tokens_per_chunk,
         soft_limit_ratio=soft_limit_ratio,
+        chapter_mode=bool((prompt_options or {}).get('chapter_mode')),
     )
+
+    db_chunks = []
+    if checkpoint_manager and translation_id:
+        db_chunks = checkpoint_manager.db.get_chunks(translation_id) or []
+
+    # Refine-after can reuse the exact translated units persisted by phase 1.
+    # This keeps chunk-specific context snapshots perfectly aligned. A
+    # standalone refinement job has no phase-1 rows and uses normal chunking.
+    completed_rows = [
+        row for row in sorted(
+            db_chunks,
+            key=lambda item: item.get("chunk_index", -1),
+        )
+        if row.get("status") == "completed"
+        and row.get("translated_text") is not None
+    ]
+    checkpoint_drafts = [
+        str(row.get("translated_text") or "").strip()
+        for row in completed_rows
+    ]
+    checkpoint_text = "\n".join(checkpoint_drafts).strip()
+    normalized_input = translated_text.replace("\r\n", "\n").strip()
+    if checkpoint_drafts and checkpoint_text == normalized_input:
+        structured_chunks = []
+        for index, draft in enumerate(checkpoint_drafts):
+            chunk_data = completed_rows[index].get("chunk_data") or {}
+            chapter_index = chunk_data.get("chapter_index")
+            previous_data = (
+                (completed_rows[index - 1].get("chunk_data") or {})
+                if index > 0 else {}
+            )
+            next_data = (
+                (completed_rows[index + 1].get("chunk_data") or {})
+                if index < len(completed_rows) - 1 else {}
+            )
+            same_previous_chapter = (
+                index > 0
+                and previous_data.get("chapter_index") == chapter_index
+            )
+            same_next_chapter = (
+                index < len(completed_rows) - 1
+                and next_data.get("chapter_index") == chapter_index
+            )
+            chapter_mode = bool((prompt_options or {}).get("chapter_mode"))
+            structured_chunks.append({
+                "context_before": (
+                    checkpoint_drafts[index - 1]
+                    if index > 0
+                    and (not chapter_mode or same_previous_chapter)
+                    else ""
+                ),
+                "main_content": draft,
+                "context_after": (
+                    checkpoint_drafts[index + 1]
+                    if index < len(checkpoint_drafts) - 1
+                    and (not chapter_mode or same_next_chapter)
+                    else ""
+                ),
+                "chapter_index": chapter_index,
+                "chapter_title": chunk_data.get("chapter_title", ""),
+            })
+        if log_callback:
+            log_callback(
+                "refine_chunk_alignment_exact",
+                f"Reusing {len(structured_chunks)} translation units for exact refinement/context alignment.",
+            )
+
     total_chunks = len(structured_chunks)
 
     if total_chunks == 0:
@@ -98,6 +168,22 @@ async def refine_txt_file(
     if log_callback:
         log_callback("refine_info_chunks",
                      f"Refining {total_chunks} segment(s) in {target_language}.")
+
+    from src.utils.novel_context import (
+        RefinementContextTracker,
+        map_context_snapshots_for_refinement,
+    )
+    historical_contexts = map_context_snapshots_for_refinement(
+        total_chunks,
+        db_chunks,
+        (prompt_options or {}).get('novel_context', ''),
+        refinement_units=[chunk["main_content"] for chunk in structured_chunks],
+    )
+    context_tracker = RefinementContextTracker(
+        prompt_options=prompt_options or {},
+        historical_contexts=historical_contexts,
+        log_callback=log_callback,
+    )
 
     # refine_chunks uses original_chunks only for context_before/after, so in
     # refine-only mode we pass main_content as both draft and original.
@@ -123,6 +209,7 @@ async def refine_txt_file(
         context_window=context_window,
         auto_adjust_context=auto_adjust_context,
         prompt_options=prompt_options,
+        context_tracker=context_tracker,
     )
 
     from src.config import ATTRIBUTION_ENABLED, GENERATOR_NAME, GENERATOR_SOURCE

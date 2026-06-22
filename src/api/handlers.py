@@ -2,14 +2,13 @@
 Translation job handlers and processing logic
 """
 import os
-import re
 import time
 import asyncio
+import copy
 import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
 
 from src.utils.unified_logger import setup_web_logger, LogType
 from src.utils.file_utils import get_unique_output_path, find_partial_output_paths, generate_tts_for_translation
@@ -100,11 +99,6 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
     # Setup unified logger for web interface
     def web_callback(log_entry):
         """Callback for WebSocket emission"""
-        logs = state_manager.get_translation_field(translation_id, 'logs')
-        if logs is None:
-            logs = []
-        logs.append(log_entry)
-        state_manager.set_translation_field(translation_id, 'logs', logs)
         # Send full log entry for structured processing on client side
         emit_update(socketio, translation_id, {'log': log_entry['message'], 'log_entry': log_entry}, state_manager)
     
@@ -117,6 +111,52 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
         state_manager.set_translation_field(translation_id, 'logs', logs)
     
     logger = setup_web_logger(web_callback, storage_callback)
+
+    def _ui_step_metadata(message_key):
+        """Mark user-visible workflow milestones for the activity log."""
+        key = (message_key or "").lower()
+        if key.endswith(("_request", "_response")):
+            return None
+        visible = (
+            key.startswith((
+                "novel_context",
+                "refine",
+                "refinement",
+                "epub_refine",
+                "docx_refine",
+                "srt_refine",
+            ))
+            or key in {
+                "prepare_start",
+                "units_found",
+                "unit_start",
+                "unit_complete",
+                "reconstruct_start",
+                "reconstruct_complete",
+                "translation_complete",
+                "translation_interrupted",
+            }
+            or key.endswith((
+                "_start",
+                "_complete",
+                "_done",
+                "_updated",
+                "_refined",
+                "_fallback",
+                "_failed",
+                "_error",
+                "_interrupted",
+            ))
+        )
+        if not visible:
+            return None
+        if "context" in key:
+            phase = "context"
+        elif "refine" in key or "refinement" in key:
+            phase = "refinement"
+        else:
+            phase = "translation"
+        return {"ui_step": message_key, "phase": phase}
     
     def _log_message_callback(message_key_from_translate_module, message_content="", data=None):
         """Legacy callback wrapper for backward compatibility"""
@@ -124,25 +164,32 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
         if message_key_from_translate_module in ["llm_prompt_debug", "llm_raw_response_preview"]:
             return
         
+        step_metadata = _ui_step_metadata(message_key_from_translate_module)
+        structured_data = dict(data) if isinstance(data, dict) else {}
+        if step_metadata:
+            structured_data.update(step_metadata)
+
         # Handle structured data from new logging system
-        if data and isinstance(data, dict):
-            log_type = data.get('type')
+        if structured_data:
+            log_type = structured_data.get('type')
             if log_type == 'llm_request':
-                logger.debug("LLM Request", LogType.LLM_REQUEST, data)
+                logger.debug("LLM Request", LogType.LLM_REQUEST, structured_data)
             elif log_type == 'llm_response':
                 # Use INFO level to ensure translation preview works even when DEBUG_MODE=false
-                logger.info("LLM Response", LogType.LLM_RESPONSE, data)
+                logger.info("LLM Response", LogType.LLM_RESPONSE, structured_data)
             elif log_type == 'refinement_request':
                 # Refinement uses same log type as LLM request for UI display
-                logger.debug("Refinement Request", LogType.LLM_REQUEST, data)
+                logger.debug("Refinement Request", LogType.REFINEMENT_REQUEST, structured_data)
             elif log_type == 'refinement_response':
                 # Refinement uses same log type as LLM response for UI display
                 # Use INFO level to ensure translation preview works even when DEBUG_MODE=false
-                logger.info("Refinement Response", LogType.LLM_RESPONSE, data)
+                logger.info("Refinement Response", LogType.REFINEMENT_RESPONSE, structured_data)
             elif log_type == 'progress':
-                logger.info("Progress Update", LogType.PROGRESS, data)
+                logger.info("Progress Update", LogType.PROGRESS, structured_data)
+            elif log_type == 'novel_context_state':
+                logger.info(message_content or "Context Updated", LogType.NOVEL_CONTEXT_STATE, structured_data)
             else:
-                logger.info(message_content, data=data)
+                logger.info(message_content, data=structured_data)
         else:
             # Map specific message patterns to appropriate log types
             if "error" in message_key_from_translate_module.lower():
@@ -162,6 +209,29 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
     # transition.
     _progress_floor = {'value': 0.0}
 
+    def _context_chunk_indices():
+        prompt_options = config.get('prompt_options') or {}
+        if not (
+            prompt_options.get('novel_context_file')
+            or prompt_options.get('auto_update_context')
+        ):
+            return []
+        try:
+            rows = state_manager.get_checkpoint_manager().db.get_chunks(
+                translation_id
+            )
+        except Exception:
+            return []
+        return sorted({
+            row['chunk_index']
+            for row in rows
+            if (
+                isinstance(row.get('chunk_index'), int)
+                and row.get('status') in ('completed', 'partial')
+                and (row.get('chunk_data') or {}).get('context_snapshot')
+            )
+        })
+
     def _emit_progress(new_stats_dict, phase_meta):
         if not state_manager.exists(translation_id):
             return
@@ -176,6 +246,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
         else:
             _progress_floor['value'] = snapshot['percent']
         current_stats.update(snapshot)
+        current_stats['context_chunk_indices'] = _context_chunk_indices()
         state_manager.set_translation_field(translation_id, 'stats', current_stats)
         emit_update(socketio, translation_id, {'stats': current_stats}, state_manager)
 
@@ -325,8 +396,8 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
         refinement_instructions = None
 
         if custom_instruction_file:
-            project_root = Path(os.getcwd())
-            custom_instructions_dir = project_root / 'Custom_Instructions'
+            from src.config import CUSTOM_INSTRUCTIONS_DIR
+            custom_instructions_dir = CUSTOM_INSTRUCTIONS_DIR
 
             if not is_safe_filename(custom_instruction_file):
                 _log_message_callback(
@@ -411,7 +482,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                     f"⚠️ source_language ({src_lang}) ≠ target_language ({tgt_lang}). "
                     f"Refinement is monolingual; the file will be polished as {tgt_lang}."
                 )
-            await refine_file(
+            refine_success = await refine_file(
                 input_filepath=input_path_for_translate_module,
                 output_filepath=output_filepath_on_server,
                 target_language=config['target_language'],
@@ -435,12 +506,41 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 auto_adjust_context=config.get('auto_adjust_context', True),
                 max_tokens_per_chunk=config.get('max_tokens_per_chunk'),
                 prompt_options=config.get('prompt_options', {}),
+                soft_limit_ratio=config.get('soft_limit_ratio'),
             )
+            if not refine_success and not should_interrupt_current_task():
+                if os.path.exists(output_filepath_on_server):
+                    current_stats = (
+                        state_manager.get_translation_field(translation_id, 'stats') or {}
+                    )
+                    current_stats['failed_chunks'] = max(
+                        1,
+                        current_stats.get('failed_chunks', 0),
+                    )
+                    state_manager.set_translation_field(
+                        translation_id,
+                        'stats',
+                        current_stats,
+                    )
+                    _log_message_callback(
+                        "refine_only_partial",
+                        "⚠️ Refinement finished with errors; the best available output was saved.",
+                    )
+                else:
+                    raise RuntimeError("Refinement failed before an output file was produced")
         else:
             # The translate-phase callback advertises the two-phase workflow
             # up-front (via enable_refinement) when a refine-after pass will
             # follow, so the UI renders the phase bar from the start of phase 1.
-            await translate_file(
+            translation_prompt_options = copy.deepcopy(
+                config.get('prompt_options', {})
+            )
+            if config.get('refine_after'):
+                # The handler owns the second phase. Disable legacy adapter-
+                # internal refinement to avoid refining EPUB/DOCX twice.
+                translation_prompt_options['refine'] = False
+
+            translation_success = await translate_file(
                 input_filepath=input_path_for_translate_module,
                 output_filepath=output_filepath_on_server,
                 source_language=config['source_language'],
@@ -465,19 +565,55 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 auto_adjust_context=config.get('auto_adjust_context', True),
                 min_chunk_size=config.get('min_chunk_size', 5),
                 max_tokens_per_chunk=config.get('max_tokens_per_chunk'),
-                prompt_options=config.get('prompt_options', {}),
+                prompt_options=translation_prompt_options,
                 bilingual_output=config.get('bilingual_output', False),
-                parallel_workers=config.get('parallel_workers', 1)
+                parallel_workers=config.get('parallel_workers', 1),
+                soft_limit_ratio=config.get('soft_limit_ratio')
             )
+
+            if (
+                not translation_success
+                and not should_interrupt_current_task()
+                and state_manager.get_translation_field(translation_id, 'status')
+                    not in ('error', 'partial', 'rate_limited')
+            ):
+                if not os.path.exists(output_filepath_on_server):
+                    raise RuntimeError(
+                        "Translation stopped before a usable output file was produced"
+                    )
+                current_stats = (
+                    state_manager.get_translation_field(translation_id, 'stats')
+                    or {}
+                )
+                current_stats['failed_chunks'] = max(
+                    1,
+                    current_stats.get('failed_chunks', 0),
+                )
+                state_manager.set_translation_field(
+                    translation_id,
+                    'stats',
+                    current_stats,
+                )
+                _log_message_callback(
+                    "translation_partial_output",
+                    "⚠️ Translation stopped with errors; the best available "
+                    "output was saved and the checkpoint was kept.",
+                )
 
             # Optional chained refinement pass on the translated output.
             should_refine_after = (
                 config.get('refine_after')
+                and translation_success
                 and os.path.exists(output_filepath_on_server)
                 and not state_manager.get_translation_field(translation_id, 'interrupted')
                 and state_manager.get_translation_field(translation_id, 'status')
                     not in ('error', 'partial', 'rate_limited')
             )
+            if config.get('refine_after') and not should_refine_after:
+                _log_message_callback(
+                    "refine_after_skipped",
+                    "⚠️ Refinement pass skipped because translation did not finish cleanly.",
+                )
             if should_refine_after:
                 # Phase 2. No manual counter reset is needed: the refine-phase
                 # callback always tags emits as phase 2 with the refine engine's
@@ -489,7 +625,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                     "refine_after_start",
                     "✨ Translation done — running refinement pass on the output."
                 )
-                await refine_file(
+                refine_success = await refine_file(
                     input_filepath=output_filepath_on_server,
                     output_filepath=output_filepath_on_server,
                     target_language=config['target_language'],
@@ -512,8 +648,19 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                     context_window=config.get('context_window', 2048),
                     auto_adjust_context=config.get('auto_adjust_context', True),
                     max_tokens_per_chunk=config.get('max_tokens_per_chunk'),
-                    prompt_options=config.get('prompt_options', {}),
+                    prompt_options=translation_prompt_options,
+                    soft_limit_ratio=config.get('soft_limit_ratio'),
                 )
+                if refine_success:
+                    _log_message_callback(
+                        "refine_after_complete",
+                        "✅ Refinement pass completed; final output is ready.",
+                    )
+                elif not should_interrupt_current_task():
+                    _log_message_callback(
+                        "refine_after_fallback",
+                        "⚠️ Refinement pass did not complete; keeping the translated output.",
+                    )
 
         # If an EPUB translation was paused, the file was saved with a `[partial NN%]`
         # prefix. Re-point the tracking variables to the actual file on disk so the
@@ -532,10 +679,19 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
 
         # Set result message based on file type
         file_type_upper = config['file_type'].upper()
+        result_action = "refined" if config.get('refine_only') else "translated"
         if os.path.exists(output_filepath_on_server) and state_manager.get_translation_field(translation_id, 'status') not in ['error', 'interrupted_before_save']:
-            state_manager.set_translation_field(translation_id, 'result', f"[{file_type_upper} file translated - download to view]")
+            state_manager.set_translation_field(
+                translation_id,
+                'result',
+                f"[{file_type_upper} file {result_action} - download to view]",
+            )
         elif not os.path.exists(output_filepath_on_server):
-            state_manager.set_translation_field(translation_id, 'result', f"[{file_type_upper} file (partially) translated - content not loaded for preview or write failed]")
+            state_manager.set_translation_field(
+                translation_id,
+                'result',
+                f"[{file_type_upper} file (partially) {result_action} - content not loaded for preview or write failed]",
+            )
 
         # Clean up temporary text file if created
         if temp_txt_file_path and os.path.exists(temp_txt_file_path):
@@ -628,7 +784,11 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 # Skip cleanup_completed_job — we want the checkpoint to survive for retry.
             else:
                 state_manager.set_translation_field(translation_id, 'status', 'completed')
-                _log_message_callback("summary_completed", f"✅ Translation completed in {elapsed_time:.2f}s{stats_summary}")
+                completion_label = "Refinement" if config.get('refine_only') else "Translation"
+                _log_message_callback(
+                    "summary_completed",
+                    f"✅ {completion_label} completed in {elapsed_time:.2f}s{stats_summary}",
+                )
                 final_status_payload['status'] = 'completed'
                 await asyncio.to_thread(notify, EVENT_SUCCESS,
                     _notification_context(config, translation_id, elapsed_time))

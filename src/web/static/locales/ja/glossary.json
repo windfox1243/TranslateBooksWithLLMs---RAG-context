@@ -172,5 +172,11 @@
   "preview_no_match": "(このサンプルでは一致した用語がありません)",
   "preview_matched": "全 {{total}} 件中 {{matched}} 件の用語が一致",
   "preview_capped": "(上限に達しました)",
-  "preview_failed": "プレビューに失敗しました: {{error}}"
+  "preview_failed": "プレビューに失敗しました: {{error}}",
+  "import_success_one": "1 件の用語をインポートしました。",
+  "import_success_other": "{{count}} 件の用語をインポートしました。",
+  "import_skipped_empty_one": "1 行の空行をスキップしました",
+  "import_skipped_empty_other": "{{count}} 行の空行をスキップしました",
+  "import_skipped_duplicate_one": "1 件の重複をスキップしました",
+  "import_skipped_duplicate_other": "{{count}} 件の重複をスキップしました"
 }

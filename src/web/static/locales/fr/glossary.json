@@ -172,5 +172,11 @@
   "preview_no_match": "(aucun terme trouvé dans cet échantillon)",
   "preview_matched": "{{matched}} / {{total}} termes trouvés",
   "preview_capped": "(plafond atteint)",
-  "preview_failed": "Échec de l'aperçu : {{error}}"
+  "preview_failed": "Échec de l'aperçu : {{error}}",
+  "import_success_one": "1 terme importé.",
+  "import_success_other": "{{count}} termes importés.",
+  "import_skipped_empty_one": "1 ligne vide ignorée",
+  "import_skipped_empty_other": "{{count}} lignes vides ignorées",
+  "import_skipped_duplicate_one": "1 doublon ignoré",
+  "import_skipped_duplicate_other": "{{count}} doublons ignorés"
 }

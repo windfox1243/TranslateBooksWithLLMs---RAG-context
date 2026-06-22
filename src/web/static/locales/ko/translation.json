@@ -10,14 +10,12 @@
   "lang_other_option": "기타 (직접 입력)",
   "custom_source_lang_placeholder": "사용자 지정 원본 언어 입력",
   "custom_target_lang_placeholder": "사용자 지정 대상 언어 입력",
-
   "drop_files_title": "번역할 파일을 여기에 놓으세요",
   "drop_files_support": "TXT, EPUB, SRT, DOCX 지원",
   "drop_files_refine_title": "다듬을 파일을 여기에 놓으세요 (이미 번역됨)",
   "drop_files_refine_support": "기존 번역을 다듬기 — 같은 언어 입력, 같은 언어 출력",
   "browse_files": "파일 찾아보기",
   "selected_files": "선택된 파일:",
-
   "op_badge_translate": "번역",
   "op_badge_refine": "다듬기",
   "per_file_source": "원본",
@@ -27,7 +25,6 @@
   "per_file_refine_after_title": "번역 후 이 파일의 출력에 대해 다듬기 패스를 실행합니다",
   "zone_locked": "큐가 {{operation}} 모드일 때는 이 드롭 영역이 잠깁니다.",
   "zone_locked_current": "큐가 {{current}} 모드입니다 — 모드를 바꾸려면 비워주세요.",
-
   "start_batch": "시작",
   "start_batch_with_icon": "▶️ 시작",
   "interrupt_batch": "현재 작업 중단 및 배치 정지",
@@ -48,7 +45,6 @@
   "batch_paused_log": "⏸️ 배치 처리가 일시 중지되었습니다 (속도 제한). 아래 섹션에서 재개하세요.",
   "batch_stopped_user_log": "🛑 사용자에 의해 배치 처리가 정지되었습니다.",
   "interrupt_before_clear_log": "🛑 파일을 지우기 전에 현재 번역을 중단하는 중...",
-
   "translating": "번역 중",
   "refining": "다듬는 중",
   "translating_step": "번역 중 ({{step}}/{{total}})",
@@ -63,7 +59,6 @@
   "validation_target_required": "대상 언어를 지정하세요.",
   "validation_model_required": "LLM 모델을 선택하세요.",
   "system_initializing": "⚠️ 시스템 초기화 중입니다. 잠시 기다려 주세요...",
-
   "starting_translation_log": "▶️ 번역 시작: {{name}} ({{type}})",
   "submitted_log": "⏳ {{name}} 번역이 제출되었습니다...",
   "init_error_log": "❌ {{name}} 번역 시작 오류: {{error}}",
@@ -76,7 +71,6 @@
   "file_upload_failed": "'{{name}}' 파일 업로드 실패: {{error}}",
   "file_duplicate": "'{{name}}' 파일이 이미 목록에 있습니다.",
   "file_uploaded_lang_not_in_list": "'{{name}}' ({{type}}) 파일이 업로드되었습니다. 언어가 감지되었지만 목록에 없습니다: {{lang}}",
-
   "no_file_uploaded_yet": "아직 업로드된 파일이 없습니다. 언어를 자동 감지하려면 파일을 업로드하세요.",
   "file_not_in_queue": "큐에서 파일을 찾을 수 없습니다.",
   "file_no_path": "언어 감지를 위한 파일 경로를 사용할 수 없습니다.",
@@ -87,12 +81,11 @@
   "lang_detection_no_result": "파일 콘텐츠에서 언어를 감지할 수 없습니다.",
   "lang_detection_failed": "언어 감지 실패: {{error}}",
   "cannot_edit_file_processing": "'{{name}}' 파일을 편집할 수 없습니다 - 이미 처리 중입니다.",
-
   "active_badge": "활성",
   "remove_file_title": "파일 제거",
   "audiobook_btn_title": "오디오북 생성 (TTS)",
-
   "translation_completed_msg": "✅ {{name}}: 번역이 완료되었습니다!",
+  "refinement_completed_msg": "✅ {{name}}: 다듬기가 완료되었습니다!",
   "translation_interrupted_msg": "ℹ️ {{name}}: 번역이 중단되었습니다.",
   "translation_rate_limited_msg": "⏸️ {{name}}: 속도 제한으로 번역이 자동 일시 중지되었습니다. 준비되면 아래 재개 버튼을 사용하세요.",
   "translation_error_msg": "❌ {{name}}: 오류 - {{error}}",
@@ -116,7 +109,6 @@
   "completion_warning_placeholder_errors": "서식 미흡 {{count}}건",
   "completion_warning_failed": "실패한 청크 {{count}}개",
   "completion_warning_intro": "LLM이 원본 서식(인라인 태그, 스타일, 줄바꿈)을 완벽하게 유지하는 데 어려움을 겪었습니다. {{processed}}개 청크 중 {{retryPct}}%가 재시도를 필요로 했고, {{fallbackPct}}%가 태그를 근사 위치로 배치했습니다 (청크당 평균 {{avgErrors}}건의 서식 미흡). 다음 실행 시 더 깔끔한 서식을 원하시면 다음을 고려하세요:",
-
   "session_restored_log": "🔄 이전 번역 세션이 복원되었습니다",
   "session_corrupted_log": "이전 세션 상태가 손상되어 새로 시작합니다",
   "session_could_not_restore": "이전 세션을 복원할 수 없어 새로 시작합니다",
@@ -125,7 +117,6 @@
   "session_job_missing_log": "번역 작업이 더 이상 존재하지 않아 초기화합니다",
   "session_state_save_quota": "브라우저 저장 공간이 가득 차서 번역 상태를 저장할 수 없습니다",
   "session_state_save_failed": "번역 상태 저장 실패",
-
   "active_translation_warning_title": "활성 번역이 진행 중입니다",
   "active_translation_warning_desc": "재개가 비활성화되었습니다. 활성 번역: {{names}}",
   "cannot_resume_in_progress_title": "⚠️ 재개할 수 없습니다: 이미 번역이 진행 중입니다",
@@ -147,16 +138,13 @@
   "resume_style_warning": "책 번역 도중 모델을 변경하면 이미 번역된 부분과 남은 부분 사이에 문체가 달라질 수 있습니다.",
   "resume_apply_btn": "이 모델로 재개",
   "resume_no_model_selected": "재개하기 전에 모델을 선택하세요.",
-
   "confirm_delete_checkpoint": "이 체크포인트를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없으며 모든 진행 상황이 손실됩니다.",
   "deleting_checkpoint_log": "🗑️ 체크포인트 {{id}} 삭제 중...",
   "checkpoint_deleted": "✅ 체크포인트가 성공적으로 삭제되었습니다",
   "checkpoint_deleted_log": "✅ 체크포인트 {{id}}이(가) 삭제되었습니다",
   "checkpoint_delete_error": "❌ 체크포인트 삭제 오류: {{error}}",
-
   "paused_count_log": "📦 일시 중지된 번역 {{count}}개를 찾았습니다",
   "paused_load_error": "로드 오류: {{error}}",
-
   "job_card_progress": "진행률: {{completed}} / {{total}} 청크 ({{percent}}%)",
   "job_card_created": "생성: {{date}}",
   "job_card_paused": "일시 중지: {{date}}",
@@ -169,7 +157,6 @@
   "job_card_type_id": "유형: {{type}} • ID: {{id}}",
   "job_card_unknown": "알 수 없음",
   "job_card_na": "해당 없음",
-
   "progress_title": "번역 진행률",
   "stat_total_chunks": "전체 청크",
   "stat_completed": "완료됨",
@@ -187,18 +174,15 @@
   "stat_total_tokens": "총 토큰",
   "last_translation_preview": "마지막 번역 미리보기",
   "no_translation_yet": "아직 번역이 없습니다...",
-
   "paused_translations": "일시 중지된 번역",
   "refresh_list_title": "목록 새로 고침",
   "no_paused_translations": "일시 중지된 번역이 없습니다",
-
   "file_list_cleared": "파일 목록이 지워졌습니다",
   "form_reset_log": "양식 및 파일 목록이 초기화되었습니다.",
   "delete_uploaded_log": "🗑️ 서버에서 업로드된 파일 {{count}}개 삭제 중...",
   "delete_uploaded_success_log": "✅ 업로드된 파일 {{count}}개를 성공적으로 삭제했습니다.",
   "delete_uploaded_failed_log": "⚠️ {{count}}개 파일 삭제에 실패했습니다.",
   "delete_uploaded_error_log": "⚠️ 업로드된 파일을 삭제하는 중 오류가 발생했습니다.",
-
   "settings_saved_env": "✅ 설정이 저장되었습니다: {{keys}}",
   "settings_saved_env_log": "💾 .env에 저장됨: {{keys}}",
   "preferences_saved": "✅ 환경 설정이 저장되었습니다",
@@ -206,17 +190,16 @@
   "preferences_save_quota": "브라우저 저장 공간이 가득 차서 환경 설정을 저장할 수 없습니다",
   "preferences_save_failed_log": "환경 설정 저장 실패",
   "preferences_load_failed_log": "저장된 환경 설정을 로드할 수 없습니다",
-
   "summary_refining_in": "{{lang}}로 다듬는 중",
   "summary_refine_only": "다듬기만 (번역 생략)",
   "summary_no_auto_pause": "자동 일시정지 없음",
   "summary_bilingual": "이중 언어",
   "summary_plain_text_mode": "일반 텍스트 모드",
+  "summary_chapter_mode": "장 단위",
   "summary_ocr_cleanup": "OCR 정리",
   "summary_glossary": "용어집: {{name}}",
   "summary_instructions": "지침: {{name}}",
   "summary_lang_auto_detect": "자동 감지",
-
   "quicktest_button_title": "빠른 테스트: 선택한 LLM으로 5개 발췌문 번역",
   "quicktest_button_label": "빠른 테스트",
   "quicktest_title": "LLM 빠른 테스트",
@@ -232,5 +215,36 @@
   "quicktest_error_no_model": "선택된 모델이 없습니다. 먼저 공급자와 모델을 선택하세요.",
   "quicktest_error_no_target": "테스트하기 전에 이 파일의 대상 언어를 설정하세요.",
   "quicktest_error_empty": "이 파일은 너무 작아 샘플링할 수 없습니다.",
-  "quicktest_error_run": "빠른 테스트 실패: {{error}}"
+  "quicktest_error_run": "빠른 테스트 실패: {{error}}",
+  "profile_label": "번역 프로필 (프로젝트)",
+  "profile_custom_settings": "-- 사용자 정의 설정 --",
+  "profile_load_btn": "불러오기",
+  "profile_load_title": "선택한 프로필 불러오기",
+  "profile_save_btn": "다른 이름으로 저장...",
+  "profile_save_title": "현재 설정을 프로필로 저장",
+  "context_preview_title": "컨텍스트 미리보기",
+  "context_edit_resync_title": "이 스냅샷을 편집하고 모든 후속 청크를 다시 동기화합니다",
+  "context_edit_resync_btn": "편집 및 다시 동기화",
+  "context_save_resync_btn": "저장 및 다시 동기화",
+  "context_latest_state": "최신 상태",
+  "context_open_folder_btn": "폴더 열기",
+  "context_waiting": "컨텍스트 대기 중...",
+  "profile_loaded_log": "[시스템] 프로필 로드됨: {{name}}",
+  "profile_load_failed_log": "[오류] 프로필 로드 실패: {{error}}",
+  "profile_saved_log": "[시스템] 프로필 저장됨: {{name}}",
+  "profile_save_failed_log": "[오류] 프로필 저장 실패: {{error}}",
+  "profile_enter_name": "이 번역 프로필의 이름을 입력하세요 (예: 'Project Alpha'):",
+  "context_general_tab": "일반",
+  "context_raw_view_tab": "원본 보기",
+  "context_chunk_option": "청크 {{number}}",
+  "context_no_job_title": "선택된 작업 없음",
+  "context_no_job_body": "컨텍스트를 불러올 활성 또는 최근 번역 작업을 찾을 수 없습니다.",
+  "context_empty_snapshot": "(빈 컨텍스트 스냅샷)",
+  "context_no_context_title": "컨텍스트 없음",
+  "context_no_context_body": "이 청크의 스냅샷을 찾을 수 없습니다.",
+  "context_load_error_title": "오류",
+  "context_load_error_body": "컨텍스트 스냅샷을 불러오지 못했습니다: {{error}}",
+  "context_resync_started_log": "[시스템] 청크 {{chunk}}부터 컨텍스트 다시 동기화를 시작했습니다. 백그라운드에서 처리됩니다.",
+  "context_resync_failed_log": "[오류] 컨텍스트 다시 동기화를 시작하지 못했습니다: {{error}}",
+  "context_open_folder_failed": "소설 컨텍스트 폴더를 열지 못했습니다"
 }

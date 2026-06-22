@@ -244,6 +244,21 @@ def create_file_blueprint(output_dir):
             current_app.logger.error(f"Error in open_output_folder: {str(e)}")
             return jsonify({"error": "Failed to open output folder", "details": str(e)}), 500
 
+    @bp.route('/api/folders/context/open', methods=['POST'])
+    def open_context_folder():
+        """Open the Novel Contexts folder in the system's file explorer."""
+        from src.config import NOVEL_CONTEXTS_DIR
+        try:
+            success, message, abs_path = file_service.open_system_folder(NOVEL_CONTEXTS_DIR)
+            if success:
+                current_app.logger.info(f"Opened context folder: {abs_path}")
+                return jsonify({"success": True, "message": message, "folder_path": abs_path})
+            current_app.logger.error(f"Error opening context folder: {message}")
+            return jsonify({"error": message, "folder_path": abs_path}), 500
+        except Exception as e:
+            current_app.logger.error(f"Error in open_context_folder: {str(e)}")
+            return jsonify({"error": "Failed to open context folder", "details": str(e)}), 500
+
     @bp.route('/api/files/<path:filename>/reveal', methods=['POST'])
     def reveal_local_file(filename):
         """Reveal a file in the system's file explorer (selecting it when possible)"""

@@ -5,7 +5,7 @@ Provides centralized configuration for TTS generation including
 provider selection, voice settings, and audio encoding options.
 """
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Dict
 
 # Default voice mappings by language code

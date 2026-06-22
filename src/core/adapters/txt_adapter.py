@@ -57,7 +57,10 @@ class TxtAdapter(FormatAdapter):
             self.chunks = split_text_into_chunks(
                 text=self.text,
                 max_tokens_per_chunk=self.config.get('max_tokens_per_chunk'),
-                soft_limit_ratio=self.config.get('soft_limit_ratio')
+                soft_limit_ratio=self.config.get('soft_limit_ratio'),
+                chapter_mode=bool(
+                    (self.config.get('prompt_options') or {}).get('chapter_mode')
+                ),
             )
 
             # Initialize translation storage (None = not yet translated)
@@ -85,7 +88,9 @@ class TxtAdapter(FormatAdapter):
                 context_after=chunk.get('context_after', ''),
                 metadata={
                     'chunk_index': i,
-                    'total_chunks': len(self.chunks)
+                    'total_chunks': len(self.chunks),
+                    'chapter_index': chunk.get('chapter_index'),
+                    'chapter_title': chunk.get('chapter_title', ''),
                 }
             )
             units.append(unit)
