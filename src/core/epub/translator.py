@@ -174,6 +174,25 @@ async def translate_epub_file(
             # 2. Parse manifest
             manifest_data = _parse_epub_manifest(temp_dir, log_callback)
 
+            # Count chunks while every XHTML file still contains the original
+            # source text. On resume, completed files are restored as target-
+            # language XHTML below; counting after that restoration changes
+            # token totals and shifts global checkpoint/context indices.
+            plain_text_mode = bool(
+                prompt_options and prompt_options.get('plain_text_mode')
+            )
+            chapter_mode = bool(
+                prompt_options and prompt_options.get('chapter_mode')
+            )
+            source_chunk_counts = await _precount_chunks(
+                manifest_data['content_files'],
+                manifest_data['opf_dir'],
+                max_tokens_per_chunk,
+                log_callback,
+                plain_text_mode=plain_text_mode,
+                chapter_mode=chapter_mode,
+            )
+
             # 2.5. Restore checkpoint if resuming
             restored_docs = {}
             if checkpoint_manager and translation_id and resume_from_index > 0:
@@ -202,7 +221,8 @@ async def translate_epub_file(
                 check_interruption_callback=check_interruption_callback,
                 prompt_options=prompt_options,
                 restored_docs=restored_docs,
-                parallel_workers=parallel_workers
+                parallel_workers=parallel_workers,
+                precomputed_chunk_counts=source_chunk_counts,
             )
 
             # 4. Save translated files
@@ -833,7 +853,8 @@ async def _process_all_content_files(
     check_interruption_callback: Optional[Callable] = None,
     prompt_options: Optional[Dict] = None,
     restored_docs: Optional[Dict[str, etree._Element]] = None,
-    parallel_workers: int = 1
+    parallel_workers: int = 1,
+    precomputed_chunk_counts: Optional[Tuple[int, List[int]]] = None,
 ) -> Dict:
     """
     Process all XHTML content files using GenericTranslationOrchestrator.
@@ -862,14 +883,27 @@ async def _process_all_content_files(
     """
     from .translation_metrics import TranslationMetrics
 
-    # Pre-count chunks for accurate progress tracking
-    plain_text_mode = bool(prompt_options and prompt_options.get('plain_text_mode'))
-    chapter_mode = bool(prompt_options and prompt_options.get('chapter_mode'))
-    total_chunks, chunks_per_file = await _precount_chunks(
-        content_files, opf_dir, max_tokens_per_chunk, log_callback,
-        plain_text_mode=plain_text_mode,
-        chapter_mode=chapter_mode,
-    )
+    # Direct callers may omit the pre-count. The top-level EPUB path computes
+    # it before restoring translated checkpoint files, so counts always refer
+    # to the source-language documents.
+    if precomputed_chunk_counts is None:
+        plain_text_mode = bool(
+            prompt_options and prompt_options.get('plain_text_mode')
+        )
+        chapter_mode = bool(
+            prompt_options and prompt_options.get('chapter_mode')
+        )
+        total_chunks, chunks_per_file = await _precount_chunks(
+            content_files,
+            opf_dir,
+            max_tokens_per_chunk,
+            log_callback,
+            plain_text_mode=plain_text_mode,
+            chapter_mode=chapter_mode,
+        )
+    else:
+        total_chunks, chunks_per_file = precomputed_chunk_counts
+        chunks_per_file = list(chunks_per_file)
 
     # The progress denominator is the translation chunk count. In-translation
     # refinement (CLI --refine) is a per-file polish pass reported via logs; it
@@ -879,7 +913,7 @@ async def _process_all_content_files(
     # Start with restored documents
     parsed_xhtml_docs: Dict[str, etree._Element] = restored_docs.copy() if restored_docs else {}
     total_files = len(content_files)
-    completed_files = len(parsed_xhtml_docs)
+    completed_files = 0
     failed_files = 0
     was_interrupted = False
 
@@ -903,12 +937,40 @@ async def _process_all_content_files(
         if idx < len(chunks_per_file):
             completed_chunks_global += chunks_per_file[idx]
 
+    partial_file_completed = 0
+    if (
+        checkpoint_manager
+        and translation_id
+        and 0 <= resume_from_index < len(content_files)
+    ):
+        try:
+            partial_state = checkpoint_manager.load_xhtml_partial_state(
+                translation_id,
+                content_files[resume_from_index],
+            )
+        except Exception:
+            partial_state = None
+        if partial_state:
+            expected_count = (
+                chunks_per_file[resume_from_index]
+                if resume_from_index < len(chunks_per_file)
+                else len(partial_state.chunks)
+            )
+            partial_file_completed = min(
+                max(0, partial_state.current_chunk_index),
+                max(0, expected_count),
+            )
+
     # Send initial stats if resuming (to update UI immediately). Forward the
     # restored fallback counters so the UI hydrates the Fallbacks card with
-    # the work already done before the pause, instead of showing 0.
-    if stats_callback and resume_from_index > 0:
+    # the work already done before the pause, including a partially completed
+    # current XHTML file.
+    if stats_callback and (resume_from_index > 0 or partial_file_completed > 0):
         stats_callback(_global_stats_payload(
-            effective_total_chunks, completed_chunks_global, accumulated_stats))
+            effective_total_chunks,
+            completed_chunks_global + partial_file_completed,
+            accumulated_stats,
+        ))
 
     for file_idx, content_href in enumerate(content_files):
         # Check for interruption
