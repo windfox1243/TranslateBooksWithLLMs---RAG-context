@@ -53,6 +53,8 @@ def test_epub_interrupt_resume_matches_clean_run(tmp_path):
     # 1) Clean, uninterrupted reference run.
     clean_out = tmp_path / "clean.epub"
     clean_cm = CheckpointManager(db_path=str(tmp_path / "jobs_clean.db"))
+    clean_cm.uploads_dir = tmp_path / "uploads-clean"
+    clean_cm.uploads_dir.mkdir(parents=True, exist_ok=True)
 
     def clean_factory():
         return translate_file(
@@ -70,6 +72,8 @@ def test_epub_interrupt_resume_matches_clean_run(tmp_path):
     #    (file 0 checkpointed, into a later file).
     resume_out = tmp_path / "resumed.epub"
     cm = CheckpointManager(db_path=str(tmp_path / "jobs.db"))
+    cm.uploads_dir = tmp_path / "uploads-resume"
+    cm.uploads_dir.mkdir(parents=True, exist_ok=True)
     tid = "resume_job"
     cm.start_job(tid, "epub", {}, str(input_path))
 

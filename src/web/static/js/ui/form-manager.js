@@ -12,6 +12,7 @@ import { MessageLogger } from './message-logger.js';
 import { ApiKeyUtils } from '../utils/api-key-utils.js';
 import { TranslationTracker } from '../translation/translation-tracker.js';
 import { SettingsManager } from '../core/settings-manager.js';
+import { ProviderManager } from '../providers/provider-manager.js';
 import { t } from '../i18n/i18n.js';
 
 /**
@@ -68,6 +69,8 @@ export const FormManager = {
         this.setupEventListeners();
         this.loadDefaultConfig();
         this.loadCustomInstructions();
+        this.loadNovelContexts();
+        this.loadProfiles();
     },
 
     /**
@@ -103,8 +106,9 @@ export const FormManager = {
         const bilingualMode = DomHelpers.getElement('bilingualMode');
         const customInstructionSelect = DomHelpers.getElement('customInstructionSelect');
         const plainTextMode = DomHelpers.getElement('plainTextMode');
+        const chapterMode = DomHelpers.getElement('chapterMode');
 
-        [textCleanup, bilingualMode, plainTextMode].forEach(checkbox => {
+        [textCleanup, bilingualMode, plainTextMode, chapterMode].forEach(checkbox => {
             if (checkbox) {
                 checkbox.addEventListener('change', () => {
                     this.handlePromptOptionChange();
@@ -132,6 +136,38 @@ export const FormManager = {
         if (openCustomInstructionsFolderBtn) {
             openCustomInstructionsFolderBtn.addEventListener('click', () => {
                 this.openCustomInstructionsFolder();
+            });
+        }
+
+        // Novel context select - keep section open if a file is selected
+        const novelContextSelect = DomHelpers.getElement('novelContextSelect');
+        if (novelContextSelect) {
+            novelContextSelect.addEventListener('change', () => {
+                this.handlePromptOptionChange();
+            });
+        }
+
+        // Novel contexts refresh button
+        const refreshNovelContextsBtn = DomHelpers.getElement('refreshNovelContextsBtn');
+        if (refreshNovelContextsBtn) {
+            refreshNovelContextsBtn.addEventListener('click', () => {
+                this.loadNovelContexts();
+            });
+        }
+
+        // Novel contexts open folder button
+        const openNovelContextsFolderBtn = DomHelpers.getElement('openNovelContextsFolderBtn');
+        if (openNovelContextsFolderBtn) {
+            openNovelContextsFolderBtn.addEventListener('click', () => {
+                this.openNovelContextsFolder();
+            });
+        }
+
+        // Auto-update context checkbox changes
+        const autoUpdateContext = DomHelpers.getElement('autoUpdateContext');
+        if (autoUpdateContext) {
+            autoUpdateContext.addEventListener('change', () => {
+                this.handlePromptOptionChange();
             });
         }
 
@@ -274,13 +310,19 @@ export const FormManager = {
         const textCleanup = DomHelpers.getElement('textCleanup');
         const bilingualMode = DomHelpers.getElement('bilingualMode');
         const plainTextMode = DomHelpers.getElement('plainTextMode');
+        const chapterMode = DomHelpers.getElement('chapterMode');
         const customInstructionSelect = DomHelpers.getElement('customInstructionSelect');
+        const novelContextSelect = DomHelpers.getElement('novelContextSelect');
+        const autoUpdateContext = DomHelpers.getElement('autoUpdateContext');
 
         const anyActive = (
             textCleanup?.checked ||
             bilingualMode?.checked ||
             plainTextMode?.checked ||
-            (customInstructionSelect?.value && customInstructionSelect.value !== '')
+            chapterMode?.checked ||
+            (customInstructionSelect?.value && customInstructionSelect.value !== '') ||
+            (novelContextSelect?.value && novelContextSelect.value !== '') ||
+            autoUpdateContext?.checked
         );
 
         if (anyActive) {
@@ -593,6 +635,75 @@ export const FormManager = {
     },
 
     /**
+     * Load list of available novel context files
+     */
+    async loadNovelContexts() {
+        try {
+            console.log('[NovelContexts] Loading novel contexts...');
+            const data = await ApiClient.getNovelContexts();
+            console.log('[NovelContexts] Data received:', data);
+
+            const select = DomHelpers.getElement('novelContextSelect');
+            if (!select) {
+                console.warn('[NovelContexts] Select element not found!');
+                return;
+            }
+
+            const currentValue = select.value;
+            select.innerHTML = `<option value="">${t('settings:select_none')}</option>`;
+
+            if (data.files && data.files.length > 0) {
+                console.log('[NovelContexts] Adding', data.files.length, 'files to dropdown');
+                data.files.forEach(file => {
+                    const option = document.createElement('option');
+                    option.value = file.filename;
+                    option.textContent = file.display_name;
+                    select.appendChild(option);
+                    console.log('[NovelContexts] Added option:', file.display_name);
+                });
+            } else {
+                console.warn('[NovelContexts] No files found in response');
+            }
+
+            if (currentValue) {
+                let found = false;
+                for (let option of select.options) {
+                    if (option.value === currentValue) {
+                        select.value = currentValue;
+                        found = true;
+                        console.log('[NovelContexts] Restored selection:', currentValue);
+                        break;
+                    }
+                }
+                if (!found) {
+                    console.warn('[NovelContexts] Previously selected file not found:', currentValue);
+                }
+            }
+
+            window.dispatchEvent(new CustomEvent('novelContextsLoaded'));
+        } catch (error) {
+            console.error('[NovelContexts] Error loading novel contexts:', error);
+            window.dispatchEvent(new CustomEvent('novelContextsLoaded'));
+        }
+    },
+
+    /**
+     * Open the Novel_Contexts folder in the system file explorer
+     */
+    async openNovelContextsFolder() {
+        try {
+            const response = await ApiClient.openNovelContextsFolder();
+            if (!response.success) {
+                console.error('[NovelContexts] Failed to open folder:', response.error);
+                MessageLogger.addLog(t('translation:context_open_folder_failed'));
+            }
+        } catch (error) {
+            console.error('[NovelContexts] Error opening folder:', error);
+            MessageLogger.addLog(t('translation:context_open_folder_failed'));
+        }
+    },
+
+    /**
      * Reset form to default state
      */
     async resetForm() {
@@ -717,6 +828,10 @@ export const FormManager = {
         const geminiApiKey = provider === 'gemini' ? ApiKeyUtils.getValue('geminiApiKey') : '';
         const openaiApiKey = provider === 'openai' ? ApiKeyUtils.getValue('openaiApiKey') : '';
         const openrouterApiKey = provider === 'openrouter' ? ApiKeyUtils.getValue('openrouterApiKey') : '';
+        const mistralApiKey = provider === 'mistral' ? ApiKeyUtils.getValue('mistralApiKey') : '';
+        const deepseekApiKey = provider === 'deepseek' ? ApiKeyUtils.getValue('deepseekApiKey') : '';
+        const poeApiKey = provider === 'poe' ? ApiKeyUtils.getValue('poeApiKey') : '';
+        const nimApiKey = provider === 'nim' ? ApiKeyUtils.getValue('nimApiKey') : '';
 
         // Get TTS configuration
         const ttsEnabled = DomHelpers.getElement('ttsEnabled')?.checked || false;
@@ -730,13 +845,21 @@ export const FormManager = {
             gemini_api_key: geminiApiKey,
             openai_api_key: openaiApiKey,
             openrouter_api_key: openrouterApiKey,
+            mistral_api_key: mistralApiKey,
+            deepseek_api_key: deepseekApiKey,
+            poe_api_key: poeApiKey,
+            nim_api_key: nimApiKey,
             // Prompt options (optional system prompt instructions)
             // Technical content protection is always enabled
             prompt_options: {
                 preserve_technical_content: true,
                 text_cleanup: DomHelpers.getElement('textCleanup')?.checked || false,
                 refine: false,
-                custom_instruction_file: DomHelpers.getValue('customInstructionSelect') || ''
+                plain_text_mode: DomHelpers.getElement('plainTextMode')?.checked || false,
+                chapter_mode: DomHelpers.getElement('chapterMode')?.checked || false,
+                custom_instruction_file: DomHelpers.getValue('customInstructionSelect') || '',
+                novel_context_file: DomHelpers.getValue('novelContextSelect') || '',
+                auto_update_context: DomHelpers.getElement('autoUpdateContext')?.checked || false
             },
             // Bilingual output (original + translation interleaved)
             bilingual_output: DomHelpers.getElement('bilingualMode')?.checked || false,
@@ -785,5 +908,171 @@ export const FormManager = {
         }
 
         return { valid: true, message: '' };
+    },
+    /**
+     * Load translation profiles from API
+     */
+    async loadProfiles() {
+        try {
+            const profiles = await ApiClient.getProfiles();
+            const select = document.getElementById('profileSelect');
+            if (!select) return;
+
+            const currentValue = select.value;
+            const customOption = document.createElement('option');
+            customOption.value = '';
+            customOption.textContent = t('translation:profile_custom_settings');
+            customOption.setAttribute('data-i18n', 'translation:profile_custom_settings');
+            select.replaceChildren(customOption);
+
+            profiles.forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                select.appendChild(option);
+            });
+            if (profiles.includes(currentValue)) {
+                select.value = currentValue;
+            }
+        } catch (e) {
+            console.error('Failed to load profiles:', e);
+        }
+    }
+};
+
+window.loadSelectedProfile = async function() {
+    const select = document.getElementById('profileSelect');
+    const name = select.value;
+    if (!name) return;
+    
+    try {
+        const data = await ApiClient.getProfile(name);
+        
+        // Restore settings into form
+        if (data.source_language) setDefaultLanguage('sourceLang', 'customSourceLang', data.source_language, true);
+        if (data.target_language) setDefaultLanguage('targetLang', 'customTargetLang', data.target_language, true);
+        
+        const glossarySelect = document.getElementById('glossarySelect');
+        if (glossarySelect && data.glossary !== undefined) glossarySelect.value = data.glossary;
+        
+        const novelContextSelect = document.getElementById('novelContextSelect');
+        if (novelContextSelect && data.novel_context_file !== undefined) novelContextSelect.value = data.novel_context_file;
+        
+        const customInstructionSelect = document.getElementById('customInstructionSelect');
+        if (customInstructionSelect && data.custom_instruction_file !== undefined) customInstructionSelect.value = data.custom_instruction_file;
+
+        if (data.llm_api_endpoint !== undefined) {
+            const endpointId = data.llm_provider === 'openai' ? 'openaiEndpoint' : 'apiEndpoint';
+            DomHelpers.setValue(endpointId, data.llm_api_endpoint);
+        }
+
+        const providerEl = document.getElementById('llmProvider');
+        if (providerEl && data.llm_provider) {
+            providerEl.value = data.llm_provider;
+            providerEl.dispatchEvent(new Event('change'));
+            await ProviderManager.waitForCurrentModelLoad();
+        }
+
+        const modelEl = document.getElementById('model');
+        if (modelEl && data.model) {
+            const optionExists = Array.from(modelEl.options)
+                .some(option => option.value === data.model);
+            if (!optionExists) {
+                const option = document.createElement('option');
+                option.value = data.model;
+                option.textContent = data.model;
+                modelEl.appendChild(option);
+            }
+            ProviderManager.setCurrentModel(data.model);
+            modelEl.dispatchEvent(new Event('change'));
+        }
+
+        const checkboxValues = {
+            bilingualMode: data.bilingual_output,
+            textCleanup: data.text_cleanup,
+            autoUpdateContext: data.auto_update_context,
+            plainTextMode: data.plain_text_mode,
+            chapterMode: data.chapter_mode,
+            disableAutoPause: data.auto_pause_on_rate_limit === undefined
+                ? undefined
+                : !data.auto_pause_on_rate_limit,
+            ttsEnabled: data.tts_enabled
+        };
+        Object.entries(checkboxValues).forEach(([id, value]) => {
+            const element = document.getElementById(id);
+            if (element && value !== undefined) element.checked = value;
+        });
+
+        const valueFields = {
+            parallelWorkers: data.parallel_workers,
+            ttsVoice: data.tts_voice,
+            ttsRate: data.tts_rate,
+            ttsFormat: data.tts_format,
+            ttsBitrate: data.tts_bitrate,
+            outputFilenamePattern: data.output_filename_pattern
+        };
+        Object.entries(valueFields).forEach(([id, value]) => {
+            if (value !== undefined) DomHelpers.setValue(id, String(value));
+        });
+
+        if (data.tts_enabled !== undefined) {
+            FormManager.handleTtsToggle(data.tts_enabled);
+        }
+
+        // Open the prompt options section if any of the prompt options are enabled
+        FormManager.handlePromptOptionChange();
+        
+        MessageLogger.addLog(t('translation:profile_loaded_log', { name }));
+    } catch (e) {
+        console.error("Failed to load profile:", e);
+        MessageLogger.addLog(t('translation:profile_load_failed_log', { error: e.message }));
+    }
+};
+
+window.promptSaveProfile = async function() {
+    const name = prompt(t('translation:profile_enter_name'));
+    if (!name) return;
+    
+    const formData = FormManager.getTranslationConfig();
+    const glossarySelect = document.getElementById('glossarySelect');
+    
+    const profileData = {
+        source_language: formData.source_language,
+        target_language: formData.target_language,
+        llm_provider: formData.llm_provider,
+        model: formData.model,
+        llm_api_endpoint: formData.llm_api_endpoint || '',
+        novel_context_file: formData.prompt_options?.novel_context_file || '',
+        glossary: glossarySelect ? glossarySelect.value : '',
+        custom_instruction_file: formData.prompt_options?.custom_instruction_file || '',
+        bilingual_output: formData.bilingual_output,
+        text_cleanup: !!formData.prompt_options?.text_cleanup,
+        auto_update_context: !!formData.prompt_options?.auto_update_context,
+        plain_text_mode: !!formData.prompt_options?.plain_text_mode,
+        chapter_mode: !!formData.prompt_options?.chapter_mode,
+        auto_pause_on_rate_limit: formData.auto_pause_on_rate_limit,
+        parallel_workers: formData.parallel_workers,
+        tts_enabled: formData.tts_enabled,
+        tts_voice: formData.tts_voice,
+        tts_rate: formData.tts_rate,
+        tts_format: formData.tts_format,
+        tts_bitrate: formData.tts_bitrate,
+        output_filename_pattern: DomHelpers.getValue('outputFilenamePattern') || ''
+    };
+    
+    try {
+        await ApiClient.saveProfile(name, profileData);
+        MessageLogger.addLog(t('translation:profile_saved_log', { name }));
+        await FormManager.loadProfiles();
+        
+        const select = document.getElementById('profileSelect');
+        if (select) {
+            select.value = name;
+            const loadButton = document.getElementById('btnLoadProfile');
+            if (loadButton) loadButton.disabled = false;
+        }
+    } catch (e) {
+        console.error("Failed to save profile:", e);
+        MessageLogger.addLog(t('translation:profile_save_failed_log', { error: e.message }));
     }
 };

@@ -25,6 +25,8 @@ class LogType(Enum):
     GENERAL = "general"
     LLM_REQUEST = "llm_request"
     LLM_RESPONSE = "llm_response"
+    REFINEMENT_REQUEST = "refinement_request"
+    REFINEMENT_RESPONSE = "refinement_response"
     TOKEN_USAGE = "token_usage"
     PROGRESS = "progress"
     CHUNK_INFO = "chunk_info"
@@ -32,6 +34,7 @@ class LogType(Enum):
     TRANSLATION_START = "translation_start"
     TRANSLATION_END = "translation_end"
     ERROR_DETAIL = "error_detail"
+    NOVEL_CONTEXT_STATE = "novel_context_state"
 
 
 class Colors:
@@ -125,9 +128,9 @@ class UnifiedLogger:
         color = level_colors.get(level, Colors.WHITE)
         
         # Special formatting for different log types
-        if log_type == LogType.LLM_REQUEST:
+        if log_type in (LogType.LLM_REQUEST, LogType.REFINEMENT_REQUEST):
             return self._format_llm_request(data or {})
-        elif log_type == LogType.LLM_RESPONSE:
+        elif log_type in (LogType.LLM_RESPONSE, LogType.REFINEMENT_RESPONSE):
             return self._format_llm_response(data or {})
         elif log_type == LogType.PROGRESS:
             return self._format_progress(data or {})
@@ -139,6 +142,8 @@ class UnifiedLogger:
             return self._format_error_detail(message, data or {})
         elif log_type == LogType.TOKEN_USAGE:
             return self._format_token_usage(message, data or {})
+        elif log_type == LogType.NOVEL_CONTEXT_STATE:
+            return self._format_novel_context(message, data or {})
         else:
             # General message format
             level_str = f"[{level.name}]" if level != LogLevel.INFO else ""
@@ -199,7 +204,16 @@ class UnifiedLogger:
         output.append(f"{Colors.GREEN}{data.get('response', '')}{Colors.ENDC}")
 
         return '\n'.join(output)
-    
+
+    def _format_novel_context(self, message: str, data: Dict[str, Any]) -> str:
+        """Format novel context update for console"""
+        timestamp = self._format_timestamp()
+        output = []
+        output.append(f"{Colors.GREEN}[{timestamp}] 📝 {message}{Colors.ENDC}")
+        if 'filename' in data:
+            output.append(f"{Colors.GRAY}Context File: {data['filename']}{Colors.ENDC}")
+        return '\n'.join(output)
+        
     def _format_progress(self, data: Dict[str, Any]) -> str:
         """Format progress summary"""
         output = []
@@ -334,7 +348,7 @@ class UnifiedLogger:
             message = telemetry.annotate_log(message, "DEBUG")
         
         # Update chunk counter for LLM requests
-        if log_type == LogType.LLM_REQUEST and self.translation_state['in_progress']:
+        if log_type in (LogType.LLM_REQUEST, LogType.REFINEMENT_REQUEST) and self.translation_state['in_progress']:
             self.translation_state['current_chunk'] += 1
         
         # Format for console
@@ -421,6 +435,8 @@ class UnifiedLogger:
                     self.log(LogLevel.DEBUG, "LLM Response", LogType.LLM_RESPONSE, data)
                 elif log_type == 'progress':
                     self.log(LogLevel.INFO, "Progress Update", LogType.PROGRESS, data)
+                elif log_type == 'novel_context_state':
+                    self.log(LogLevel.INFO, details or message, LogType.NOVEL_CONTEXT_STATE, data)
                 else:
                     self.info(details or message, data=data)
             else:
@@ -457,6 +473,10 @@ class UnifiedLogger:
                 elif message == "txt_translation_loop_start":
                     self.translation_state['in_progress'] = True
                     self.info(details)
+                elif message == "novel_context_updated":
+                    self.log(LogLevel.INFO, details, LogType.NOVEL_CONTEXT_STATE, {})
+                elif message == "novel_context_diff":
+                    self.log(LogLevel.INFO, details, LogType.NOVEL_CONTEXT_STATE, {})
                 else:
                     self.info(details or message)
         

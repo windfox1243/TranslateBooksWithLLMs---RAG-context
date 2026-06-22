@@ -69,7 +69,8 @@ class TranslationAdapter(ABC, Generic[SourceT, ResultT]):
         text: str,
         structure_map: Dict[str, str],
         max_tokens: int,
-        log_callback: Optional[Callable]
+        log_callback: Optional[Callable],
+        chapter_mode: bool = False,
     ) -> List[Dict]:
         """
         Découpe le texte en chunks intelligents.
@@ -321,7 +322,8 @@ class GenericTranslationOrchestrator(Generic[SourceT, ResultT]):
                 context_manager=context_manager,
                 placeholder_format=placeholder_format,
                 log_callback=log_callback,
-                prompt_options=prompt_options
+                prompt_options=prompt_options,
+                check_interruption_callback=check_interruption_callback,
             )
             if refined_result:
                 translated_chunks = refined_result

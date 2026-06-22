@@ -61,7 +61,7 @@ async def translate_epub_file(
     max_attempts: int = None,
     bilingual: bool = False,
     parallel_workers: int = 1,
-) -> None:
+) -> bool:
     """
     Translate an EPUB file using LLM with generic orchestrator.
 
@@ -110,7 +110,7 @@ async def translate_epub_file(
         err_msg = f"ERROR: Input EPUB file '{input_filepath}' not found."
         if log_callback:
             log_callback("epub_input_file_not_found", err_msg)
-        return
+        return False
 
     # Use default MAX_TRANSLATION_ATTEMPTS if not provided
     if max_attempts is None:
@@ -149,7 +149,7 @@ async def translate_epub_file(
     )
 
     if llm_client is None:
-        return
+        return False
 
     # Resolve effective parallel workers (local providers are forced back to 1).
     # translate_file() already logged the effective count; this re-resolve is
@@ -309,6 +309,11 @@ async def translate_epub_file(
                     log_callback("epub_ltr_complete", 
                                f"📖 EPUB ready for LTR reading: text direction reset to left-to-right")
 
+            return (
+                not results.get('was_interrupted')
+                and results.get('failed_files', 0) == 0
+            )
+
         except Exception as e_epub:
             # Re-raise RateLimitError to trigger auto-pause
             from src.core.llm.exceptions import RateLimitError
@@ -319,6 +324,7 @@ async def translate_epub_file(
                 log_callback("epub_major_error", err_msg)
                 import traceback
                 log_callback("epub_major_error_traceback", traceback.format_exc())
+            return False
 
 
 # === Private Helper Functions ===
@@ -672,6 +678,7 @@ async def _precount_chunks(
     max_tokens_per_chunk: int,
     log_callback: Optional[Callable] = None,
     plain_text_mode: bool = False,
+    chapter_mode: bool = False,
 ) -> Tuple[int, List[int]]:
     """
     Pre-count chunks across all XHTML files for accurate progress tracking.
@@ -705,7 +712,11 @@ async def _precount_chunks(
             doc_root = etree.fromstring(content.encode('utf-8'), parser)
 
             if plain_text_mode:
-                chunk_count = _precount_chunks_plain_text(doc_root, max_tokens_per_chunk)
+                chunk_count = _precount_chunks_plain_text(
+                    doc_root,
+                    max_tokens_per_chunk,
+                    chapter_mode=chapter_mode,
+                )
                 chunks_per_file.append(chunk_count)
                 total_chunks += chunk_count
                 continue
@@ -723,7 +734,11 @@ async def _precount_chunks(
             )
 
             chunks = adapter.create_chunks(
-                text_with_placeholders, structure_map, max_tokens_per_chunk, None
+                text_with_placeholders,
+                structure_map,
+                max_tokens_per_chunk,
+                None,
+                chapter_mode=chapter_mode,
             )
 
             chunk_count = len(chunks)
@@ -740,7 +755,11 @@ async def _precount_chunks(
     return total_chunks, chunks_per_file
 
 
-def _precount_chunks_plain_text(doc_root, max_tokens_per_chunk: int) -> int:
+def _precount_chunks_plain_text(
+    doc_root,
+    max_tokens_per_chunk: int,
+    chapter_mode: bool = False,
+) -> int:
     """
     Count chunks for one XHTML file using the plain-text-mode pipeline.
     Returns 0 on any failure (matches the normal-path behavior).
@@ -755,11 +774,16 @@ def _precount_chunks_plain_text(doc_root, max_tokens_per_chunk: int) -> int:
         if body is None:
             return 0
 
-        paragraphs, _, _ = extract_plain_paragraphs(body)
+        paragraphs, paragraph_tags, _ = extract_plain_paragraphs(body)
         if not paragraphs:
             return 0
 
-        return len(build_plain_segments(paragraphs, max_tokens_per_chunk))
+        return len(build_plain_segments(
+            paragraphs,
+            max_tokens_per_chunk,
+            paragraph_kinds=paragraph_tags,
+            chapter_mode=chapter_mode,
+        ))
     except Exception:
         return 0
 
@@ -840,9 +864,11 @@ async def _process_all_content_files(
 
     # Pre-count chunks for accurate progress tracking
     plain_text_mode = bool(prompt_options and prompt_options.get('plain_text_mode'))
+    chapter_mode = bool(prompt_options and prompt_options.get('chapter_mode'))
     total_chunks, chunks_per_file = await _precount_chunks(
         content_files, opf_dir, max_tokens_per_chunk, log_callback,
         plain_text_mode=plain_text_mode,
+        chapter_mode=chapter_mode,
     )
 
     # The progress denominator is the translation chunk count. In-translation
@@ -987,7 +1013,7 @@ async def _process_all_content_files(
                 total_chunks=total_chunks,
                 completed_chunks=completed_chunks_global,
                 failed_chunks=accumulated_stats.failed_chunks,
-                epub_accumulated_stats=_snapshot_accumulated_stats(accumulated_stats)
+                epub_accumulated_stats=_snapshot_accumulated_stats(accumulated_stats),
             )
 
     # Final progress
@@ -1065,7 +1091,7 @@ async def _save_checkpoint(
     total_chunks: int = 0,
     completed_chunks: int = 0,
     failed_chunks: int = 0,
-    epub_accumulated_stats: Optional[Dict] = None
+    epub_accumulated_stats: Optional[Dict] = None,
 ) -> None:
     """Save checkpoint for a translated file."""
     try:
@@ -1099,15 +1125,12 @@ async def _save_checkpoint(
             # `epub_accumulated_stats` snapshot is what rehydrates the
             # Fallbacks stat card on resume — without it the cross-file
             # counters reset to zero after a pause (issue #180).
-            checkpoint_manager.save_checkpoint(
+            checkpoint_manager.db.update_job_progress(
                 translation_id=translation_id,
                 # Uniform convention: store the LAST COMPLETED file index
                 # (resume adds +1), matching TXT/SRT. load_checkpoint maps it
                 # back via the 'resume_index_semantics' marker.
-                chunk_index=file_idx,
-                original_text=content_href,
-                translated_text=content_href,
-                chunk_data={'last_file': content_href, 'file_type': 'epub_xhtml'},
+                current_chunk_index=file_idx,
                 total_chunks=total_chunks,
                 completed_chunks=completed_chunks,
                 failed_chunks=failed_chunks,

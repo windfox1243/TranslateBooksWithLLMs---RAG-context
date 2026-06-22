@@ -12,7 +12,6 @@ File type detection supports:
 
 import os
 from typing import Optional, Callable, Dict, Any
-from pathlib import Path
 
 from .generic_translator import GenericTranslator
 from .txt_adapter import TxtAdapter
@@ -162,7 +161,13 @@ async def translate_file(
     # TODO: Refactor EPUB translation to properly work with the adapter pattern
     if detected_type == 'epub':
         from src.core.epub.translator import translate_epub_file
-        await translate_epub_file(
+        import inspect
+        sig = inspect.signature(translate_epub_file)
+        filtered_config = {
+            k: v for k, v in additional_config.items()
+            if k in sig.parameters
+        }
+        return await translate_epub_file(
             input_filepath=input_filepath,
             output_filepath=output_filepath,
             source_language=source_language,
@@ -190,9 +195,8 @@ async def translate_file(
             prompt_options=prompt_options,
             bilingual=bilingual_output,
             parallel_workers=parallel_workers,
-            **additional_config
+            **filtered_config
         )
-        return True  # Legacy function doesn't return success status
 
     # DOCX translation using EPUB pipeline (Phase 1 implementation)
     # Similar to EPUB, DOCX requires HTML chunking, tag preservation, etc.

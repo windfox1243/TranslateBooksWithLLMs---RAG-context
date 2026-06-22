@@ -2,7 +2,7 @@
 Subtitle-specific translation module
 """
 import time
-from typing import List, Dict, Optional, Tuple
+from typing import Any, List, Dict, Optional, Tuple
 from tqdm.auto import tqdm
 
 from src.prompts.prompts import (
@@ -185,6 +185,8 @@ async def refine_subtitle_translations(
     check_interruption_callback=None,
     subtitle_blocks: Optional[List[List[Dict[str, str]]]] = None,
     subtitle_positions: Optional[Dict[int, int]] = None,
+    dynamic_contexts: Optional[List[str]] = None,
+    context_tracker: Optional[Any] = None,
 ) -> Dict[int, str]:
     """
     Refine subtitle translations using a second LLM pass.
@@ -214,6 +216,7 @@ async def refine_subtitle_translations(
             `translations` with. Without it the cue number printed in the
             file is used as a fallback, which is only safe when numbering
             is exactly 1..N (issue #205).
+        dynamic_contexts: Optional list of dynamic contexts per block for historical relationship mapping
 
     Returns:
         Dict mapping subtitle index to refined text
@@ -274,6 +277,13 @@ async def refine_subtitle_translations(
     total_blocks = len(index_groups)
     srt_processor = SRTProcessor()
     previous_refined_block = ""
+    if context_tracker is None:
+        from src.utils.novel_context import RefinementContextTracker
+        context_tracker = RefinementContextTracker(
+            prompt_options=prompt_options or {},
+            historical_contexts=dynamic_contexts or [],
+            log_callback=log_callback,
+        )
 
     # Preserve empty subtitles untouched so the output stays complete.
     # Count them as completed: they require no refinement, so leaving them
@@ -298,6 +308,12 @@ async def refine_subtitle_translations(
                     refined_translations.setdefault(g_idx, translations[g_idx])
             break
 
+        if log_callback:
+            log_callback(
+                "srt_refinement_block_start",
+                f"🪄 Refining subtitle block {block_idx + 1}/{total_blocks}...",
+            )
+
         # Build local-index tuples and the local->global mapping.
         local_subtitle_tuples: List[Tuple[int, str]] = []
         local_to_global: Dict[int, int] = {}
@@ -313,6 +329,20 @@ async def refine_subtitle_translations(
 
         block_refined: Dict[int, str] = {}
         expected_local_indices = list(range(len(local_subtitle_tuples)))
+        
+        context_content = await context_tracker.next_context(
+            text=block_text_for_glossary,
+            llm_client=llm_client,
+            model_name=model_name,
+            target_language=target_language,
+            display_index=block_idx + 1,
+            total_chunks=total_blocks,
+        )
+
+        # Inject historical/source-first context for this block.
+        local_prompt_options = dict(prompt_options) if prompt_options else {}
+        if context_content:
+            local_prompt_options['novel_context'] = context_content
 
         for attempt in range(max_block_attempts):
             if check_interruption_callback and check_interruption_callback():
@@ -340,6 +370,7 @@ async def refine_subtitle_translations(
                     target_language=target_language,
                     additional_instructions=extra_instructions,
                     glossary_block=glossary_block,
+                    prompt_options=local_prompt_options,
                 )
 
                 if log_callback and attempt > 0:
@@ -418,6 +449,11 @@ async def refine_subtitle_translations(
         for local_idx, g_idx in enumerate(group[-5:]):
             last_items.append(f"[{local_idx}]{refined_translations.get(g_idx, translations[g_idx])}")
         previous_refined_block = "\n".join(last_items)
+        if log_callback:
+            log_callback(
+                "srt_refinement_block_complete",
+                f"✅ Subtitle block {block_idx + 1}/{total_blocks} refinement complete.",
+            )
 
     return refined_translations
 
@@ -493,8 +529,8 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                     failed_blocks_count += 1  # Count failed blocks
 
             # Restore translation context for continuity
-            if checkpoint_data.get('translation_context'):
-                context = checkpoint_data['translation_context']
+            context = checkpoint_data.get('translation_context') or checkpoint_data.get('job', {}).get('translation_context')
+            if context:
                 previous_translation_block = context.get('previous_translation_block', '')
 
             if log_callback:
@@ -564,6 +600,7 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                 TRANSLATE_TAG_OUT,
                 custom_instructions,
                 glossary_block=glossary_block,
+                prompt_options=prompt_options,
             )
             
             # Make translation request using LLM client with retry mechanism
@@ -636,6 +673,7 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                                         TRANSLATE_TAG_OUT,
                                         custom_instructions + f"\n\nCRITICAL: You MUST preserve ALL [NUMBER] tags EXACTLY as they appear. Missing tags: {', '.join(missing_tags)}",
                                         glossary_block=glossary_block,
+                                        prompt_options=prompt_options,
                                     )
                                     retry_count += 1
                                     continue

@@ -2,7 +2,6 @@
 Checkpoint manager for translation job persistence and resume functionality.
 """
 
-import os
 import shutil
 from typing import Optional, Dict, List, Any, Tuple
 from pathlib import Path
@@ -15,7 +14,7 @@ class CheckpointManager:
     and file storage for uploaded files.
     """
 
-    def __init__(self, db_path: str = "data/jobs.db", server_session_id: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, server_session_id: Optional[str] = None):
         """
         Initialize checkpoint manager.
 
@@ -24,7 +23,8 @@ class CheckpointManager:
             server_session_id: Unique identifier for the current server session
         """
         self.db = Database(db_path)
-        self.uploads_dir = Path("data/uploads")
+        from src.config import UPLOADS_DIR
+        self.uploads_dir = UPLOADS_DIR
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
         self.server_session_id = server_session_id
 
@@ -490,15 +490,20 @@ class CheckpointManager:
 
     def cleanup_completed_job(self, translation_id: str) -> bool:
         """
-        Automatically clean up a completed job (immediate cleanup).
-
-        Args:
-            translation_id: Job identifier
-
-        Returns:
-            True if cleaned up successfully
+        Automatically clean up a completed job's files (immediate cleanup).
+        Keeps the database checkpoints so history/snapshots can be viewed.
         """
-        return self.delete_checkpoint(translation_id)
+        # Mark the status as completed in the DB so it is recorded as such
+        self.mark_completed(translation_id)
+
+        # Delete preserved files in uploads directory
+        job_upload_dir = self.uploads_dir / translation_id
+        if job_upload_dir.exists():
+            try:
+                shutil.rmtree(job_upload_dir)
+            except Exception as e:
+                print(f"Warning: Could not delete upload directory: {e}")
+        return True
 
     def get_preserved_input_path(self, translation_id: str) -> Optional[str]:
         """

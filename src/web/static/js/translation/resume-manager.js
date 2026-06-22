@@ -399,6 +399,21 @@ export const ResumeManager = {
                 ? jobData.stats.percent
                 : (jobData.progress || 0);
             ProgressManager.updateProgress(resumedPercent);
+            
+            // Populate the context chunk selector and show context preview if applicable
+            if (jobData.stats) {
+                StateManager.setState('translation.stats', jobData.stats);
+                window.NovelContextUI.updateChunkSelector(
+                    jobData.stats.context_chunk_indices || []
+                );
+            }
+            
+            // Show context preview section if job uses novel context, hide it otherwise
+            const hasNovelContext = jobData.config?.prompt_options?.novel_context_file || jobData.config?.prompt_options?.auto_update_context;
+            const contextSection = DomHelpers.getElement('novelContextPreviewSection');
+            if (contextSection) {
+                contextSection.style.display = hasNovelContext ? 'block' : 'none';
+            }
 
             // Emit event for translation started
             const event = new CustomEvent('translationResumed', { detail: { translationId, jobData } });
@@ -465,6 +480,13 @@ export const ResumeManager = {
         // Listen for translation state changes
         StateManager.subscribe('translation.hasActive', (hasActive) => {
             // Refresh job list when active state changes
+            this.loadResumableJobs();
+        });
+
+        // Most card strings are rendered with t(...) at creation time rather
+        // than data-i18n attributes, so rebuild the cards immediately when the
+        // user switches the interface language.
+        window.addEventListener('localeChanged', () => {
             this.loadResumableJobs();
         });
     }

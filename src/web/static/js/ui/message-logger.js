@@ -196,6 +196,14 @@ export const MessageLogger = {
     },
 
     /**
+     * Add a workflow milestone without applying verbosity filters.
+     * @param {string} message - Step message
+     */
+    addStepLog(message) {
+        this._createLogEntry(message);
+    },
+
+    /**
      * Create a new log entry in the container
      * @param {string} message - Message to log
      * @private

@@ -4,16 +4,19 @@ Translation job management routes
 import os
 import time
 import copy
+import threading
 from pathlib import Path
 from flask import Blueprint, request, jsonify
 
+import src.config as _config
+from src.api.websocket import emit_update
 from src.api.services.path_validator import PathValidator
 from src.config import (
     REQUEST_TIMEOUT,
     OLLAMA_NUM_CTX,
     AUTO_PAUSE_ON_RATE_LIMIT,
-    PARALLEL_TRANSLATIONS,
     MAX_PARALLEL_TRANSLATIONS,
+    MIN_CHUNK_SIZE,
 )
 from src.tts.tts_config import TTSConfig
 from src.api.api_keys import resolve_api_key as _resolve_api_key
@@ -26,11 +29,20 @@ def _clamp_parallel_workers(value):
     Local-provider gating happens later in resolve_parallel_workers().
     """
     if value is None:
-        return PARALLEL_TRANSLATIONS
+        return _config.PARALLEL_TRANSLATIONS
     try:
         return max(1, min(MAX_PARALLEL_TRANSLATIONS, int(value)))
     except (TypeError, ValueError):
-        return PARALLEL_TRANSLATIONS
+        return _config.PARALLEL_TRANSLATIONS
+
+
+def _clamp_chunk_tokens(value):
+    """Resolve the per-job token budget from request or live .env config."""
+    try:
+        resolved = int(value or _config.MAX_TOKENS_PER_CHUNK)
+    except (TypeError, ValueError):
+        resolved = int(_config.MAX_TOKENS_PER_CHUNK)
+    return max(50, resolved)
 
 
 # Cloud providers whose key lives in config['<provider>_api_key'] and env var
@@ -41,6 +53,22 @@ _KEY_PROVIDERS = ('gemini', 'openai', 'openrouter', 'mistral', 'deepseek', 'poe'
 
 # Providers that talk to a user-supplied endpoint; the others use a built-in one.
 _ENDPOINT_PROVIDERS = ('ollama', 'openai')
+
+_CONTEXT_RESYNC_LOCK = threading.Lock()
+_ACTIVE_CONTEXT_RESYNCS = set()
+
+
+def _claim_context_resync(translation_id):
+    with _CONTEXT_RESYNC_LOCK:
+        if translation_id in _ACTIVE_CONTEXT_RESYNCS:
+            return False
+        _ACTIVE_CONTEXT_RESYNCS.add(translation_id)
+        return True
+
+
+def _release_context_resync(translation_id):
+    with _CONTEXT_RESYNC_LOCK:
+        _ACTIVE_CONTEXT_RESYNCS.discard(translation_id)
 
 
 def _strip_api_keys(config):
@@ -56,17 +84,8 @@ def _strip_api_keys(config):
     return config
 
 
-def _validate_provider_credentials(config):
-    """Check that the provider in `config` has what it needs to run.
-
-    A cloud provider needs a key from the config (resume override or live
-    request) or from .env; an endpoint-driven provider needs an endpoint.
-    Persisted checkpoints carry no keys (issue #213), so for a resumed job
-    .env is the normal source — this guard turns a missing key into an
-    immediate 400 instead of a mid-translation failure.
-
-    Returns a Flask (response, status) tuple on failure, or None on success.
-    """
+def _provider_credentials_error(config):
+    """Return a credential error payload, or None when the config can run."""
     provider = (config.get('llm_provider') or 'ollama').lower()
 
     if provider in _KEY_PROVIDERS:
@@ -77,19 +96,53 @@ def _validate_provider_credentials(config):
         key_required = (provider != 'openai'
                         or 'api.openai.com' in (config.get('llm_api_endpoint') or ''))
         if key_required and not (config.get(f"{provider}_api_key") or os.getenv(env_var)):
-            return jsonify({
+            return {
                 "error": "Missing API key for provider",
                 "message": (f"Resuming with '{provider}' requires an API key. "
                             f"Set {env_var} in .env or include it in the request."),
-            }), 400
+            }
 
     if provider in _ENDPOINT_PROVIDERS and not config.get('llm_api_endpoint'):
-        return jsonify({
+        return {
             "error": "Missing API endpoint for provider",
             "message": f"Resuming with '{provider}' requires an API endpoint.",
-        }), 400
+        }
 
     return None
+
+
+def _validate_provider_credentials(config):
+    """Return a Flask error response when a resume config cannot run."""
+    error = _provider_credentials_error(config)
+    if error is not None:
+        return jsonify(error), 400
+    return None
+
+
+def _rehydrate_resume_credentials(config, overrides=None):
+    """Restore non-persisted provider credentials into a resume config.
+
+    Checkpoints deliberately exclude secrets. Every path that reconstructs a
+    job from a checkpoint, including background context re-sync, must call this
+    helper before starting a worker.
+    """
+    provider = (config.get('llm_provider') or 'ollama').lower()
+    raw_key = overrides.get('api_key') if isinstance(overrides, dict) else None
+
+    for key_provider in _KEY_PROVIDERS:
+        env_var = f"{key_provider.upper()}_API_KEY"
+        key_override = (
+            raw_key
+            if key_provider == provider and raw_key not in (None, '')
+            else None
+        )
+        resolved = _resolve_api_key(
+            key_override,
+            env_var,
+            getattr(_config, env_var, ''),
+        )
+        if resolved or f"{key_provider}_api_key" in config:
+            config[f"{key_provider}_api_key"] = resolved
 
 
 def _apply_resume_overrides(config, overrides):
@@ -120,18 +173,27 @@ def _apply_resume_overrides(config, overrides):
             except (TypeError, ValueError):
                 return jsonify({"error": "context_window must be an integer"}), 400
 
-        # A single generic api_key override maps to the chosen provider's key
-        # field, resolved through .env like every other entry point.
-        provider = (config.get('llm_provider') or 'ollama').lower()
-        raw_key = overrides.get('api_key')
-        if provider in _KEY_PROVIDERS and raw_key not in (None, ''):
-            env_var = f"{provider.upper()}_API_KEY"
-            config[f"{provider}_api_key"] = _resolve_api_key(raw_key, env_var)
+    _rehydrate_resume_credentials(config, overrides)
 
     return _validate_provider_credentials(config)
 
 
-def create_translation_blueprint(state_manager, start_translation_job, output_dir):
+def _available_context_chunk_indices(checkpoint_data):
+    """Return canonical checkpoint indices that contain editable snapshots."""
+    indices = []
+    for chunk in (checkpoint_data or {}).get('chunks', []):
+        chunk_data = chunk.get('chunk_data') or {}
+        index = chunk.get('chunk_index')
+        if (
+            isinstance(index, int)
+            and chunk.get('status') in ('completed', 'partial')
+            and chunk_data.get('context_snapshot')
+        ):
+            indices.append(index)
+    return sorted(set(indices))
+
+
+def create_translation_blueprint(state_manager, start_translation_job, output_dir, socketio=None):
     """
     Create and configure the translation blueprint
 
@@ -169,12 +231,37 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         # Generate unique translation ID
         translation_id = f"trans_{int(time.time() * 1000)}"
 
+        prompt_options = dict(data.get('prompt_options') or {})
+        if (
+            prompt_options.get('auto_update_context')
+            and not prompt_options.get('novel_context_file')
+        ):
+            from src.utils.novel_context import make_novel_context_filename
+            prompt_options['novel_context_file'] = make_novel_context_filename(
+                data.get('output_filename', 'translation')
+            )
+        if prompt_options.get('novel_context_file'):
+            from src.utils.novel_context import normalize_novel_context_filename
+            try:
+                prompt_options['novel_context_file'] = normalize_novel_context_filename(
+                    prompt_options['novel_context_file']
+                )
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
+
         # Build configuration
         config = {
             'source_language': data['source_language'],
             'target_language': data['target_language'],
             'model': data['model'],
             'llm_api_endpoint': data['llm_api_endpoint'],
+            # Keep the user-facing source name in the job config. The upload
+            # path may be hashed, and the UI needs a stable name to restore a
+            # running job after a browser refresh.
+            'input_filename': (
+                data.get('input_filename')
+                or prompt_options.get('input_filename')
+            ),
             'request_timeout': int(data.get('timeout', REQUEST_TIMEOUT)),
             'context_window': int(data.get('context_window', OLLAMA_NUM_CTX)),
             'max_attempts': int(data.get('max_attempts', 2)),
@@ -186,7 +273,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             'openai_api_key': _resolve_api_key(data.get('openai_api_key'), 'OPENAI_API_KEY'),
             'openrouter_api_key': _resolve_api_key(data.get('openrouter_api_key'), 'OPENROUTER_API_KEY'),
             # Prompt options (optional instructions to include in the system prompt)
-            'prompt_options': data.get('prompt_options', {}),
+            'prompt_options': prompt_options,
             # Auto-pause on rate limit toggle (request overrides .env default)
             'auto_pause_on_rate_limit': data.get('auto_pause_on_rate_limit', AUTO_PAUSE_ON_RATE_LIMIT),
             # Bilingual output (original + translation interleaved)
@@ -197,7 +284,16 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             'refine_after': data.get('refine_after', False),
             # TTS configuration
             'tts_enabled': data.get('tts_enabled', False),
-            'tts_config': TTSConfig.from_web_request(data).to_dict() if data.get('tts_enabled') else None
+            'tts_config': TTSConfig.from_web_request(data).to_dict() if data.get('tts_enabled') else None,
+            # Chunker settings persisted for resume consistency
+            'max_tokens_per_chunk': _clamp_chunk_tokens(
+                data.get('max_tokens_per_chunk')
+            ),
+            'soft_limit_ratio': float(
+                data.get('soft_limit_ratio')
+                or _config.SOFT_LIMIT_RATIO
+            ),
+            'min_chunk_size': int(data.get('min_chunk_size') or MIN_CHUNK_SIZE),
         }
 
         # Add file-specific or text-specific configuration
@@ -251,6 +347,10 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         else:
             elapsed = stats.get('elapsed_time', time.time() - stats.get('start_time', time.time()))
 
+        checkpoint_data = state_manager.checkpoint_manager.load_checkpoint(
+            translation_id
+        )
+
         return jsonify({
             "translation_id": translation_id,
             "status": job_data.get('status'),
@@ -260,7 +360,10 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                 'completed_chunks': stats.get('completed_chunks', 0),
                 'failed_chunks': stats.get('failed_chunks', 0),
                 'start_time': stats.get('start_time'),
-                'elapsed_time': elapsed
+                'elapsed_time': elapsed,
+                'context_chunk_indices': _available_context_chunk_indices(
+                    checkpoint_data
+                ),
             },
             "logs": job_data.get('logs', [])[-100:],
             "result_preview": "[Preview functionality removed. Download file to view content.]" if job_data.get('status') in ['completed', 'interrupted', 'partial'] else None,
@@ -416,5 +519,297 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             }), 200
         else:
             return jsonify({"error": "Failed to delete checkpoint or checkpoint not found"}), 404
+
+    @bp.route('/api/translation/<translation_id>/context/<int:chunk_index>', methods=['GET'])
+    def get_context_snapshot(translation_id, chunk_index):
+        """Fetch the dynamic context snapshot for a specific chunk"""
+        checkpoint_data = state_manager.checkpoint_manager.load_checkpoint(translation_id)
+        if not checkpoint_data:
+            return jsonify({"error": "Translation not found"}), 404
+            
+        chunks = checkpoint_data.get('chunks', [])
+        
+        # Find the specific chunk index (may not exist yet during active translation)
+        target_chunk = None
+        for chunk in chunks:
+            if chunk.get('chunk_index') == chunk_index:
+                target_chunk = chunk
+                break
+        
+        # Extract snapshot from chunk data if available
+        snapshot = None
+        if target_chunk:
+            chunk_data = target_chunk.get('chunk_data') or {}
+            snapshot = chunk_data.get('context_snapshot')
+            
+        plain_text_context = ""
+        
+        config = checkpoint_data.get('job', {}).get('config', {}) or {}
+        novel_context_file = config.get('prompt_options', {}).get('novel_context_file')
+        auto_update_context = config.get('prompt_options', {}).get('auto_update_context', False)
+        
+        if not novel_context_file and auto_update_context:
+            from src.utils.novel_context import make_novel_context_filename
+            novel_context_file = make_novel_context_filename(
+                config.get('output_filename', 'translation')
+            )
+            
+            # Update config copy and save back to the DB to repair permanently
+            new_config = dict(config)
+            if 'prompt_options' not in new_config:
+                new_config['prompt_options'] = {}
+            else:
+                new_config['prompt_options'] = dict(new_config['prompt_options'])
+            new_config['prompt_options']['novel_context_file'] = novel_context_file
+            
+            try:
+                state_manager.checkpoint_manager.update_job_config(translation_id, new_config)
+            except Exception as persist_err:
+                from src.utils.unified_logger import get_logger
+                get_logger(__name__).warning(f"Could not persist repaired novel_context_file to database: {persist_err}")
+        
+        if novel_context_file:
+            from src.utils.novel_context import (
+                decode_context_snapshot,
+                load_novel_context,
+                normalize_novel_context_filename,
+                resolve_novel_context_path,
+            )
+            from src.config import NOVEL_CONTEXTS_DIR
+            
+            full_context = ""
+            try:
+                novel_context_file = normalize_novel_context_filename(novel_context_file)
+                path = resolve_novel_context_path(novel_context_file, NOVEL_CONTEXTS_DIR)
+                full_context = load_novel_context(path.name, path.parent)
+            except Exception as e:
+                from src.utils.unified_logger import get_logger
+                get_logger(__name__).error(
+                    f"Failed to load or parse context snapshot for file {novel_context_file}: {e}",
+                    exc_info=True
+                )
+            
+            if snapshot:
+                plain_text_context, _, _ = decode_context_snapshot(snapshot, full_context)
+            else:
+                plain_text_context = full_context
+        
+        return jsonify({
+            "translation_id": translation_id,
+            "chunk_index": chunk_index,
+            "context_content": plain_text_context,
+            "has_novel_context": bool(novel_context_file) or bool(auto_update_context),
+            "status": target_chunk.get('status') if target_chunk else 'pending',
+            "available_chunk_indices": _available_context_chunk_indices(
+                checkpoint_data
+            ),
+        }), 200
+
+    @bp.route('/api/translation/<translation_id>/context/<int:chunk_index>/resync', methods=['POST'])
+    def resync_context_snapshot(translation_id, chunk_index):
+        """Update a context snapshot and trigger a background re-sync for subsequent chunks"""
+        from src.utils.unified_logger import get_logger
+        logger = get_logger(__name__)
+        logger.info(f"Received context resync request for translation {translation_id} at chunk {chunk_index}")
+        
+        data = request.json
+        if not data or 'context_content' not in data:
+            logger.error("Context resync failed: Missing context_content in request data")
+            return jsonify({"error": "Missing context_content"}), 400
+            
+        new_content = data['context_content']
+        if not isinstance(new_content, str):
+            return jsonify({"error": "context_content must be a string"}), 400
+        if len(new_content.encode('utf-8')) > 2 * 1024 * 1024:
+            return jsonify({"error": "Context content is too large"}), 413
+
+        from src.utils.novel_context import (
+            build_novel_context,
+            compress_dynamic_state,
+            extract_dynamic_state_from_text,
+            extract_global_lore,
+        )
+        dynamic_state = extract_dynamic_state_from_text(new_content)
+        if dynamic_state is None:
+            return jsonify({
+                "error": "Context content must include DYNAMIC_STATE_START and DYNAMIC_STATE_END markers"
+            }), 400
+        new_content = build_novel_context(
+            extract_global_lore(new_content),
+            dynamic_state,
+        )
+        compressed_snapshot = compress_dynamic_state(new_content)
+        
+        # 1. Update the DB for the target chunk
+        checkpoint_data = state_manager.checkpoint_manager.load_checkpoint(translation_id)
+        if not checkpoint_data:
+            logger.error(f"Context resync failed: Translation {translation_id} not found")
+            return jsonify({"error": "Translation not found"}), 404
+            
+        chunks = checkpoint_data.get('chunks', [])
+        target_chunk_idx = None
+        for i, chunk in enumerate(chunks):
+            if chunk.get('chunk_index') == chunk_index:
+                target_chunk_idx = i
+                break
+                
+        if target_chunk_idx is None:
+            logger.info(
+                f"Context snapshot {chunk_index} is no longer available for "
+                f"translation {translation_id}."
+            )
+            return jsonify({"error": "Chunk is not available for resync"}), 409
+
+        target_chunk = chunks[target_chunk_idx]
+        status = target_chunk.get('status')
+        if status not in ('completed', 'partial'):
+            return jsonify({"error": "Only completed chunks can be resynced"}), 409
+        if not _claim_context_resync(translation_id):
+            return jsonify({"error": "A context resync is already running for this translation"}), 409
+
+        if target_chunk.get('chunk_data') is None:
+            target_chunk['chunk_data'] = {}
+        target_chunk['chunk_data']['context_snapshot'] = compressed_snapshot
+
+        original_text = target_chunk.get('original_text')
+        translated_text = target_chunk.get('translated_text')
+        chunk_data = target_chunk.get('chunk_data')
+            
+        try:
+            state_manager.checkpoint_manager.db.save_chunk(
+                translation_id=translation_id,
+                chunk_index=chunk_index,
+                original_text=original_text,
+                translated_text=translated_text,
+                chunk_data=chunk_data,
+                status=status
+            )
+        except Exception:
+            _release_context_resync(translation_id)
+            raise
+        
+        # 2. Trigger background resync task
+        from src.core.adapters.generic_translator import resync_context_snapshots_background
+        
+        job_status = state_manager.get_translation(translation_id)
+        was_active = False
+        auto_resume_callback = None
+        
+        if job_status and job_status.get('status') == 'running':
+            was_active = True
+            logger.info(f"Translation {translation_id} is running. Interrupting for context resync...")
+            state_manager.set_interrupted(translation_id, True)
+            
+            def resume_cb():
+                logger.info(f"Auto-resuming translation {translation_id} after resync")
+                try:
+                    # Restore job into state manager
+                    restored = state_manager.restore_job_from_checkpoint(translation_id)
+                    if restored:
+                        # Get fresh checkpoint data since it might have updated during pause
+                        fresh_checkpoint = state_manager.checkpoint_manager.load_checkpoint(translation_id)
+                        job = fresh_checkpoint['job']
+                        import copy
+                        config = copy.deepcopy(job['config'])
+                        
+                        preserved_path = config.get('preserved_input_path')
+                        if not preserved_path:
+                            preserved_path = state_manager.checkpoint_manager.get_preserved_input_path(translation_id)
+                            
+                        if preserved_path:
+                            config['file_path'] = preserved_path
+                            config['resume_from_index'] = fresh_checkpoint['resume_from_index']
+                            config['is_resume'] = True
+
+                            _rehydrate_resume_credentials(config)
+                            credential_error = _provider_credentials_error(config)
+                            if credential_error is not None:
+                                logger.error(
+                                    "Auto-resume failed: provider credentials "
+                                    "could not be restored from the live configuration."
+                                )
+                                state_manager.set_translation_field(
+                                    translation_id,
+                                    'status',
+                                    'error',
+                                )
+                                state_manager.set_translation_field(
+                                    translation_id,
+                                    'error',
+                                    'Provider credentials are unavailable for auto-resume.',
+                                )
+                                emit_update(
+                                    socketio,
+                                    translation_id,
+                                    {
+                                        'status': 'error',
+                                        'error': (
+                                            'Provider credentials are unavailable '
+                                            'for auto-resume.'
+                                        ),
+                                        'log': (
+                                            'Context re-sync finished, but translation '
+                                            'could not resume because the provider '
+                                            'credentials are unavailable.'
+                                        ),
+                                    },
+                                    state_manager,
+                                )
+                                return
+                            
+                            state_manager.set_interrupted(translation_id, False)
+                            state_manager.set_translation_field(translation_id, 'status', 'running')
+                            state_manager.checkpoint_manager.mark_running(translation_id)
+                            emit_update(
+                                socketio,
+                                translation_id,
+                                {
+                                    'status': 'running',
+                                    'log': 'Translation auto-resumed after context resync.'
+                                },
+                                state_manager
+                            )
+                            start_translation_job(translation_id, config)
+                        else:
+                            logger.error("Auto-resume failed: preserved_input_path not found")
+                    else:
+                        logger.error("Auto-resume failed: Could not restore job from checkpoint")
+                except Exception as e:
+                    logger.error(f"Failed to auto-resume translation: {e}", exc_info=True)
+            
+            auto_resume_callback = resume_cb
+            
+        logger.info(f"Dispatching background context resync thread for translation {translation_id} starting at chunk {chunk_index}")
+        
+        # Run in a background thread so we don't block the API
+        def run_resync():
+            try:
+                resync_context_snapshots_background(
+                    translation_id,
+                    chunk_index,
+                    compressed_snapshot,
+                    socketio,
+                    was_active,
+                    auto_resume_callback,
+                )
+            finally:
+                _release_context_resync(translation_id)
+
+        thread = threading.Thread(
+            target=run_resync,
+            name=f"context-resync-{translation_id}",
+        )
+        thread.daemon = True
+        try:
+            thread.start()
+        except Exception:
+            _release_context_resync(translation_id)
+            raise
+        
+        return jsonify({
+            "message": "Context resync started successfully",
+            "translation_id": translation_id,
+            "chunk_index": chunk_index
+        }), 200
 
     return bp

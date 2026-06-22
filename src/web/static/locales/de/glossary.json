@@ -172,5 +172,11 @@
   "preview_no_match": "(keine Begriffe in diesem Beispiel erkannt)",
   "preview_matched": "{{matched}} / {{total}} Begriffe erkannt",
   "preview_capped": "(Obergrenze erreicht)",
-  "preview_failed": "Vorschau fehlgeschlagen: {{error}}"
+  "preview_failed": "Vorschau fehlgeschlagen: {{error}}",
+  "import_success_one": "1 Begriff importiert.",
+  "import_success_other": "{{count}} Begriffe importiert.",
+  "import_skipped_empty_one": "1 leere Zeile übersprungen",
+  "import_skipped_empty_other": "{{count}} leere Zeilen übersprungen",
+  "import_skipped_duplicate_one": "1 Duplikat übersprungen",
+  "import_skipped_duplicate_other": "{{count}} Duplikate übersprungen"
 }

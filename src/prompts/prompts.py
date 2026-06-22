@@ -236,10 +236,20 @@ def generate_translation_prompt(
 
 """
 
+    # Build novel context section
+    novel_context_section = ""
+    novel_context = prompt_options.get('novel_context')
+    if novel_context and novel_context.strip():
+        novel_context_section = f"""# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)
+
+{novel_context.strip()}
+
+"""
+
     # SYSTEM PROMPT - Role and instructions (stable across requests)
     system_prompt = f"""You are a professional {target_language} translator and writer.
 
-{custom_instructions_section}# TRANSLATION PRINCIPLES
+{custom_instructions_section}{novel_context_section}# TRANSLATION PRINCIPLES
 
 Translate {source_language} to {target_language}. Output only the translation.
 
@@ -462,6 +472,16 @@ def generate_refinement_prompt(
 
 {additional_instructions.strip()}"""
 
+    # Build novel context section
+    novel_context_section = ""
+    novel_context = prompt_options.get('novel_context')
+    if novel_context and novel_context.strip():
+        novel_context_section = f"""
+
+# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)
+
+{novel_context.strip()}"""
+
     # SYSTEM PROMPT for refinement
     system_prompt = f"""You are an elite {target_language} literary editor and prose stylist.
 
@@ -502,6 +522,7 @@ Your job is to REWRITE it with perfect literary {target_language} style.
 {optional_sections}
 {placeholder_section}
 {additional_instructions_section}
+{novel_context_section}
 
 # CRITICAL REMINDER
 
@@ -560,6 +581,7 @@ def generate_subtitle_refinement_block_prompt(
     translate_tag_out: str = TRANSLATE_TAG_OUT,
     additional_instructions: str = "",
     glossary_block: str = "",
+    prompt_options: dict = None,
 ) -> PromptPair:
     """
     Generate a refinement prompt for multiple subtitles in a single LLM call.
@@ -575,10 +597,24 @@ def generate_subtitle_refinement_block_prompt(
         translate_tag_out: Closing tag for refinement output
         additional_instructions: Extra refinement guidance
         glossary_block: Optional glossary block
+        prompt_options: Optional dict with prompt customization options
 
     Returns:
         PromptPair: A named tuple with 'system' and 'user' prompts
     """
+    if prompt_options is None:
+        prompt_options = {}
+
+    # Build novel context section
+    novel_context_section = ""
+    novel_context = prompt_options.get('novel_context')
+    if novel_context and novel_context.strip():
+        novel_context_section = f"""
+
+# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)
+
+{novel_context.strip()}"""
+
     subtitle_additional_rules = _SUBTITLE_FORMAT_RULES
     subtitle_example_format = "[0]Première ligne affinée\n[1]Deuxième ligne affinée"
     subtitle_output_format_section = _get_output_format_section(
@@ -633,7 +669,7 @@ preserving the index markers and the one-subtitle-per-marker structure.
 - Character names and proper nouns
 - The one-subtitle-per-[index] structure (no merging, no splitting)
 - Intentional repetitions (e.g. "No. No. No.") and dialogue dashes ("- ...\\n- ...") when present in the draft
-- Inline formatting tags and any \\n line breaks inside a subtitle{additional_instructions_section}
+- Inline formatting tags and any \\n line breaks inside a subtitle{additional_instructions_section}{novel_context_section}
 
 # CRITICAL REMINDERS
 
@@ -689,6 +725,7 @@ def generate_subtitle_block_prompt(
     translate_tag_out: str = TRANSLATE_TAG_OUT,
     custom_instructions: str = "",
     glossary_block: str = "",
+    prompt_options: dict = None,
 ) -> PromptPair:
     """
     Generate translation prompt for multiple subtitle blocks with index markers.
@@ -701,10 +738,29 @@ def generate_subtitle_block_prompt(
         translate_tag_in: Opening tag for translation output
         translate_tag_out: Closing tag for translation output
         custom_instructions: Additional custom translation instructions
+        glossary_block: Optional glossary block
+        prompt_options: Optional dict with prompt customization options
 
     Returns:
         PromptPair: A named tuple with 'system' and 'user' prompts
     """
+    if prompt_options is None:
+        prompt_options = {}
+
+    # Extract custom instructions from prompt_options if not explicitly provided
+    if not custom_instructions:
+        custom_instructions = prompt_options.get('custom_instructions', '')
+
+    # Build novel context section
+    novel_context_section = ""
+    novel_context = prompt_options.get('novel_context')
+    if novel_context and novel_context.strip():
+        novel_context_section = f"""
+
+# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)
+
+{novel_context.strip()}"""
+
     # Build the output format section outside the f-string to avoid backslash issues in Python 3.11
     subtitle_additional_rules = _SUBTITLE_FORMAT_RULES
     subtitle_example_format = "[1]第一行翻译文本\n[2]第二行翻译文本"
@@ -756,7 +812,7 @@ Your output must be in {target_language} ONLY - do NOT use any other language.
 - Condense when necessary without losing meaning
 - Use natural, spoken {target_language} (not formal written style)
 - Preserve intentional repetitions (e.g. "No. No. No.") and dialogue dashes ("- ...\\n- ...") from the source
-- Preserve inline formatting tags (<i>, <b>, <font ...>, {{\\an8}}, etc.) and any \\n line breaks inside a subtitle{custom_instructions_section}
+- Preserve inline formatting tags (<i>, <b>, <font ...>, {{\\an8}}, etc.) and any \\n line breaks inside a subtitle{custom_instructions_section}{novel_context_section}
 
 # FINAL REMINDER: YOUR OUTPUT LANGUAGE
 

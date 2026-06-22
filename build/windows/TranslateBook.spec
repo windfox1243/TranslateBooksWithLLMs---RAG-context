@@ -14,6 +14,7 @@ datas_list = [
     ('../../src', 'src'),
     ('../../.env.example', '.'),
     ('../../Custom_Instructions', 'Custom_Instructions'),
+    ('../../Novel_Contexts', 'Novel_Contexts'),
 ]
 
 # Add tiktoken_ext if directory exists

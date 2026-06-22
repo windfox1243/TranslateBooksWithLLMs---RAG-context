@@ -545,7 +545,7 @@ window.downloadSelectedFiles = FileManager.downloadSelectedFiles.bind(FileManage
 window.deleteSelectedFiles = FileManager.deleteSelectedFiles.bind(FileManager);
 window.toggleSelectAll = FileManager.toggleSelectAll.bind(FileManager);
 window.openOutputFolder = () => FileActions.openOutputFolder();
-
+window.openContextFolder = () => ApiClient.openContextFolder();
 // File manager functions (exposed in file-manager.js / file-actions.js)
 // window.toggleFileSelection, deleteSingleFile, openLocalFile, revealLocalFile, downloadSingleFile
 

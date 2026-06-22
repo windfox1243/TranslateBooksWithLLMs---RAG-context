@@ -9,7 +9,10 @@ from typing import Callable, Optional, Dict, Any
 from pathlib import Path
 
 from .format_adapter import FormatAdapter
-from .translation_unit import TranslationUnit
+from src.core.llm_client import LLMClient
+from src.utils.unified_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class _ValidationFailed:
@@ -116,6 +119,22 @@ class GenericTranslator:
 
             if log_callback:
                 log_callback("units_found", f"Found {total_units} translation units")
+                chapter_mode = bool(
+                    (self.adapter.config.get("prompt_options") or {}).get(
+                        "chapter_mode"
+                    )
+                )
+                if chapter_mode and self.adapter.format_name == "txt":
+                    chapter_count = len({
+                        unit.metadata.get("chapter_index")
+                        for unit in units
+                        if unit.metadata.get("chapter_index") is not None
+                    })
+                    log_callback(
+                        "chapter_mode_ready",
+                        f"Chapter-aware mode prepared {chapter_count} chapter(s) "
+                        f"as {total_units} translation unit(s).",
+                    )
 
             # Send initial stats with total_chunks
             if stats_callback:
@@ -159,8 +178,16 @@ class GenericTranslator:
                         'output_file_path': str(self.adapter.output_file_path),
                         'source_language': source_language,
                         'target_language': target_language,
+                        'model': model_name,
                         'model_name': model_name,
                         'llm_provider': llm_provider,
+                        'llm_api_endpoint': (
+                            llm_kwargs.get('api_endpoint')
+                            or llm_kwargs.get('endpoint')
+                        ),
+                        'request_timeout': llm_kwargs.get('timeout', 120),
+                        'prompt_options': llm_kwargs.get('prompt_options', {}),
+                        'parallel_workers': parallel_workers,
                         **self.adapter.config
                     },
                     input_file_path=str(self.adapter.input_file_path)
@@ -181,9 +208,58 @@ class GenericTranslator:
             from src.core.common.parallel import iter_ordered_concurrent
             from src.core.llm.exceptions import RateLimitError
 
+            prompt_options = llm_kwargs.get('prompt_options', {})
+            chapter_mode = bool(
+                prompt_options.get("chapter_mode")
+                and self.adapter.format_name == "txt"
+            )
+            novel_context_file = prompt_options.get('novel_context_file')
+            auto_update_context = prompt_options.get('auto_update_context', False)
+
+            from src.config import NOVEL_CONTEXTS_DIR
+            from src.utils.novel_context import open_novel_context_session
+
+            resume_snapshot = None
+            resume_snapshot_index = None
+            if restored_completed and checkpoint_data:
+                resume_snapshot_index = max(restored_completed)
+                for checkpoint_chunk in checkpoint_data.get('chunks', []):
+                    if checkpoint_chunk.get('chunk_index') == resume_snapshot_index:
+                        resume_snapshot = (
+                            checkpoint_chunk.get('chunk_data') or {}
+                        ).get('context_snapshot')
+                        break
+
+            try:
+                context_session = open_novel_context_session(
+                    prompt_options=prompt_options,
+                    novel_contexts_dir=NOVEL_CONTEXTS_DIR,
+                    input_filename=str(getattr(self.adapter, 'input_file_path', '') or ''),
+                    fallback_name="text",
+                    resume_snapshot=resume_snapshot,
+                    log_callback=log_callback,
+                )
+                if resume_snapshot and context_session and log_callback:
+                    log_callback(
+                        "novel_context_resume",
+                        f"Restored context from chunk {resume_snapshot_index} snapshot.",
+                    )
+            except Exception as e:
+                context_session = None
+                if log_callback:
+                    log_callback(
+                        "novel_context_error",
+                        f"Error loading novel context '{novel_context_file}': {str(e)}",
+                    )
+
+            if auto_update_context and context_session:
+                if parallel_workers > 1 or resolve_parallel_workers(llm_provider, parallel_workers) > 1:
+                    if log_callback:
+                        log_callback("novel_context_workers_override", "Warning: Auto-updating novel context requires sequential translation. Forcing parallel workers to 1.")
+                parallel_workers = 1
+
             workers = resolve_parallel_workers(llm_provider, parallel_workers)
             sequential = workers == 1
-            prompt_options = llm_kwargs.get('prompt_options', {})
             max_validation_attempts = 1 + max(0, UNIT_VALIDATION_RETRIES)
 
             last_context = ""
@@ -207,12 +283,67 @@ class GenericTranslator:
                 attempt_options = prompt_options
                 result = None
 
+                if auto_update_context and context_session:
+                    if log_callback:
+                        log_callback(
+                            "novel_context_updating",
+                            f"Analyzing source context for unit {i+1} before translation...",
+                        )
+                    try:
+                        change_logs = await context_session.analyze_source(
+                            llm_client=llm_client,
+                            model_name=model_name,
+                            source_chunk=unit.content,
+                            source_language=source_language,
+                            target_language=target_language,
+                            chunk_index=i + 1,
+                            total_chunks=total_units,
+                        )
+                        if log_callback:
+                            log_callback(
+                                "novel_context_updated",
+                                f"Novel context prepared for unit {i+1}.",
+                            )
+                            for change_log in change_logs:
+                                log_callback("novel_context_log", change_log)
+                            log_callback(
+                                "novel_context_state",
+                                "Context updated",
+                                {
+                                    "type": "novel_context_state",
+                                    "content": context_session.content,
+                                    "filename": context_session.path.name,
+                                },
+                            )
+                    except Exception as e:
+                        if log_callback:
+                            log_callback(
+                                "novel_context_update_failed",
+                                f"Failed to prepare novel context: {str(e)}",
+                            )
+
                 for attempt in range(max_validation_attempts):
+                    same_previous_chapter = (
+                        i > 0
+                        and units[i - 1].metadata.get("chapter_index")
+                        == unit.metadata.get("chapter_index")
+                    )
                     result = await generate_translation_request(
                         main_content=unit.content,
                         context_before=unit.context_before,
                         context_after=unit.context_after,
-                        previous_translation_context=(last_context if sequential else ""),
+                        previous_translation_context=(
+                            last_context
+                            if (
+                                sequential
+                                and (
+                                    not chapter_mode
+                                    or i == 0
+                                    or same_previous_chapter
+                                )
+                            )
+                            else ""
+                        ),
                         source_language=source_language,
                         target_language=target_language,
                         model=model_name,
@@ -356,6 +487,13 @@ class GenericTranslator:
                         continue
 
                     completed_count += 1
+                    
+                    # Save the full context snapshot in the chunk checkpoint
+                    if context_session:
+                        if unit.metadata is None:
+                            unit.metadata = {}
+                        unit.metadata['context_snapshot'] = context_session.snapshot()
+
                     self.checkpoint_manager.save_checkpoint(
                         translation_id=self.translation_id,
                         chunk_index=i,
@@ -460,3 +598,268 @@ class GenericTranslator:
             f"id={self.translation_id}, "
             f"adapter={self.adapter})"
         )
+
+def resync_context_snapshots_background(translation_id: str, start_chunk_index: int, initial_compressed_snapshot: str, socketio=None, was_active=False, auto_resume_callback=None):
+    """Entry point for the background thread."""
+    import asyncio
+    from src.config import NOVEL_CONTEXTS_DIR
+    
+    # Try to use existing loop if we are in one, otherwise run new
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.run_coroutine_threadsafe(_resync_context_snapshots_async(translation_id, start_chunk_index, initial_compressed_snapshot, socketio, was_active, auto_resume_callback), loop)
+            return
+    except RuntimeError:
+        pass
+        
+    asyncio.run(_resync_context_snapshots_async(translation_id, start_chunk_index, initial_compressed_snapshot, socketio, was_active, auto_resume_callback))
+
+async def _resync_context_snapshots_async(translation_id: str, start_chunk_index: int, initial_compressed_snapshot: str, socketio=None, was_active=False, auto_resume_callback=None):
+    """Forward-pass through chunks to re-evaluate the context using the LLM."""
+    from src.api.translation_state import get_state_manager
+    from src.utils.novel_context import (
+        build_novel_context,
+        compress_dynamic_state,
+        decode_context_snapshot,
+        load_novel_context,
+        normalize_novel_context_filename,
+        resolve_novel_context_path,
+        save_novel_context,
+        update_novel_context_chunk,
+    )
+    from src.core.llm_client import LLMClient
+    from src.config import NOVEL_CONTEXTS_DIR
+    from datetime import datetime
+    from src.utils.unified_logger import get_logger
+    from src.api.websocket import emit_update
+    
+    state_manager = get_state_manager()
+    logger = get_logger("context_resync")
+    
+    def append_and_emit(msg_str):
+        log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {msg_str}"
+        state_manager.append_log(translation_id, log_entry)
+        if socketio:
+            structured_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "level": "INFO",
+                "type": "general",
+                "message": msg_str,
+                "data": {
+                    "ui_step": "context_resync",
+                    "phase": "context",
+                },
+            }
+            emit_update(
+                socketio,
+                translation_id,
+                {
+                    "log": msg_str,
+                    "log_entry": structured_entry,
+                },
+                state_manager,
+            )
+    
+    msg = f"Starting background context resync for {translation_id} from chunk {start_chunk_index}"
+    logger.info(msg)
+    append_and_emit(f"🔄 {msg}")
+    
+    if was_active:
+        msg_pause = "Waiting for active translation to pause before resyncing..."
+        logger.info(msg_pause)
+        append_and_emit(f"⏸️ {msg_pause}")
+        
+        import asyncio
+        paused = False
+        for _ in range(60):  # Wait up to 60 seconds
+            status_dict = state_manager.get_translation(translation_id)
+            status = status_dict.get('status') if status_dict else None
+            if not status and hasattr(state_manager.checkpoint_manager, 'get_job'):
+                persisted_job = state_manager.checkpoint_manager.get_job(translation_id)
+                status = persisted_job.get('status') if persisted_job else None
+            if status in (
+                'paused', 'interrupted', 'partial', 'completed', 'failed', 'error'
+            ):
+                paused = True
+                break
+            await asyncio.sleep(1)
+        if not paused:
+            err_msg = "Active translation did not pause within 60 seconds; resync aborted to avoid racing with translation."
+            logger.error(err_msg)
+            append_and_emit(f"❌ {err_msg}")
+            return False
+    
+    checkpoint_data = state_manager.checkpoint_manager.load_checkpoint(translation_id)
+    if not checkpoint_data:
+        append_and_emit("❌ Translation checkpoint is no longer available.")
+        return False
+        
+    config = checkpoint_data.get('job', {}).get('config', {})
+    chunks = checkpoint_data.get('chunks', [])
+    
+    # We only re-sync completed chunks that are ahead of start_chunk_index
+    completed_chunks = [c for c in chunks if c.get('status') in ('completed', 'partial') and c.get('chunk_index') is not None]
+    completed_chunks.sort(key=lambda x: x['chunk_index'])
+    
+    chunks_to_process = [c for c in completed_chunks if c['chunk_index'] > start_chunk_index]
+    
+    novel_context_file = config.get('prompt_options', {}).get('novel_context_file')
+    path = None
+    fallback_context = ""
+    if novel_context_file:
+        try:
+            novel_context_file = normalize_novel_context_filename(novel_context_file)
+            path = resolve_novel_context_path(novel_context_file, NOVEL_CONTEXTS_DIR)
+            fallback_context = load_novel_context(path.name, path.parent)
+        except Exception as e:
+            err_msg = f"Failed to load global lore: {e}"
+            logger.error(err_msg)
+            append_and_emit(f"❌ {err_msg}")
+            return False
+
+    current_full_context, global_lore, current_dynamic_text = decode_context_snapshot(
+        initial_compressed_snapshot,
+        fallback_context,
+    )
+
+    if not chunks_to_process:
+        latest_completed = [c['chunk_index'] for c in completed_chunks]
+        if not latest_completed or start_chunk_index != max(latest_completed):
+            append_and_emit("❌ The selected context snapshot is not a completed chunk.")
+            return False
+        if path:
+            try:
+                save_novel_context(path.name, path.parent, current_full_context)
+                append_and_emit(f"✅ Context file '{path.name}' updated successfully.")
+            except Exception as e:
+                err_msg = f"Failed to update context file '{path.name}': {e}"
+                logger.error(err_msg)
+                append_and_emit(f"❌ {err_msg}")
+                return False
+        append_and_emit("✅ Background context resync completed.")
+        if auto_resume_callback:
+            append_and_emit("▶️ Auto-resuming active translation...")
+            auto_resume_callback()
+        return True
+
+    llm_provider = config.get('llm_provider', 'ollama')
+    model_name = config.get('model') or config.get('model_name')
+    provider_key = config.get(f'{llm_provider}_api_key')
+    if not provider_key:
+        import os
+        import src.config as live_config
+
+        env_var = f"{llm_provider.upper()}_API_KEY"
+        provider_key = (
+            os.getenv(env_var)
+            or getattr(live_config, env_var, '')
+        )
+
+    if llm_provider not in ('ollama', 'openai') and not provider_key:
+        err_msg = (
+            f"Cannot re-sync context with '{llm_provider}': the live API key "
+            "is unavailable."
+        )
+        logger.error(err_msg)
+        append_and_emit(f"❌ {err_msg}")
+        return False
+
+    llm_kwargs = {
+        'api_endpoint': config.get('llm_api_endpoint'),
+        'api_key': provider_key,
+        'timeout': config.get('request_timeout', 120),
+    }
+    try:
+        llm_client = LLMClient(provider_type=llm_provider, model=model_name, **llm_kwargs)
+    except Exception as e:
+        err_msg = f"Failed to init LLM client for resync: {e}"
+        logger.error(err_msg)
+        append_and_emit(f"❌ {err_msg}")
+        return False
+    
+    for chunk in chunks_to_process:
+        idx = chunk['chunk_index']
+        source_text = chunk.get('original_text') or ''
+        
+        try:
+            msg_resync = f"Resyncing chunk {idx}..."
+            logger.info(msg_resync)
+            append_and_emit(f"🔄 {msg_resync}")
+            global_lore, current_dynamic_text, change_logs = await update_novel_context_chunk(
+                llm_client=llm_client,
+                model_name=model_name,
+                current_global_lore=global_lore,
+                current_dynamic_state=current_dynamic_text,
+                source_chunk=source_text,
+                translated_chunk=None,
+                source_language=config.get('source_language'),
+                target_language=config.get('target_language'),
+                chunk_index=idx + 1,
+                total_chunks=len(chunks),
+            )
+            
+            new_full_context = build_novel_context(global_lore, current_dynamic_text)
+            new_compressed = compress_dynamic_state(new_full_context)
+            
+            if new_compressed:
+                # Log any changes
+                for change_log in change_logs:
+                    append_and_emit(change_log)
+                
+                # Save to DB
+                latest_cp = state_manager.checkpoint_manager.load_checkpoint(translation_id)
+                if not latest_cp:
+                    append_and_emit("❌ Translation checkpoint disappeared during resync.")
+                    return False
+                
+                snapshot_saved = False
+                for c in latest_cp['chunks']:
+                    if c.get('chunk_index') == idx:
+                        if c.get('chunk_data') is None:
+                            c['chunk_data'] = {}
+                        c['chunk_data']['context_snapshot'] = new_compressed
+                        state_manager.checkpoint_manager.db.save_chunk(
+                            translation_id=translation_id,
+                            chunk_index=idx,
+                            original_text=c.get('original_text'),
+                            translated_text=c.get('translated_text'),
+                            chunk_data=c.get('chunk_data'),
+                            status=c.get('status') or 'completed'
+                        )
+                        snapshot_saved = True
+                        break
+                if not snapshot_saved:
+                    append_and_emit(f"❌ Chunk {idx} disappeared during resync.")
+                    return False
+                
+                # If this is the last completed chunk, update the file
+                latest_completed = [
+                    c.get('chunk_index')
+                    for c in latest_cp['chunks']
+                    if c.get('status') in ('completed', 'partial')
+                ]
+                if path and latest_completed and idx == max(latest_completed):
+                    try:
+                        save_novel_context(path.name, path.parent, new_full_context)
+                    except Exception as e:
+                        err_msg = f"Failed to update context file: {e}"
+                        logger.error(err_msg)
+                        append_and_emit(f"❌ {err_msg}")
+                        return False
+                        
+        except Exception as e:
+            err_msg = f"Resync failed at chunk {idx}: {e}"
+            logger.error(err_msg)
+            append_and_emit(f"❌ {err_msg}")
+            return False
+            
+    msg_end = "Background context resync completed."
+    logger.info(msg_end)
+    append_and_emit(f"✅ {msg_end}")
+    
+    if auto_resume_callback:
+        logger.info("Triggering auto-resume callback after resync")
+        append_and_emit(f"▶️ Auto-resuming active translation...")
+        auto_resume_callback()
+    return True

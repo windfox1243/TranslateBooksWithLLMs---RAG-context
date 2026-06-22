@@ -167,3 +167,44 @@ def test_update_translated_subtitles_ignores_negative_index():
     updated = processor.update_translated_subtitles(subtitles, {-1: "INTRUDER"})
 
     assert updated[-1]["text"] == "last"
+
+
+def test_refine_after_reuses_translation_subtitle_blocks():
+    from src.core.refine.srt_refiner import _blocks_from_translation_checkpoint
+
+    subtitles = [
+        {"text": f"cue {index}"}
+        for index in range(5)
+    ]
+    rows = [
+        {
+            "chunk_index": 0,
+            "status": "completed",
+            "chunk_data": {"block_subtitles": [0, 1, 2]},
+        },
+        {
+            "chunk_index": 1,
+            "status": "completed",
+            "chunk_data": {"block_subtitles": [3, 4]},
+        },
+    ]
+
+    blocks = _blocks_from_translation_checkpoint(subtitles, rows)
+
+    assert [[cue["text"] for cue in block] for block in blocks] == [
+        ["cue 0", "cue 1", "cue 2"],
+        ["cue 3", "cue 4"],
+    ]
+
+
+def test_invalid_checkpoint_blocks_fall_back_to_configured_grouping():
+    from src.core.refine.srt_refiner import _blocks_from_translation_checkpoint
+
+    subtitles = [{"text": "one"}, {"text": "two"}]
+    rows = [{
+        "chunk_index": 0,
+        "status": "completed",
+        "chunk_data": {"block_subtitles": [0, 0]},
+    }]
+
+    assert _blocks_from_translation_checkpoint(subtitles, rows) == []

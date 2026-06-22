@@ -181,7 +181,7 @@ class TestOrderedConcurrent:
             if item == 0:
                 break  # triggers generator close -> cancels 1,2,3
         # Give the event loop a tick to process cancellations.
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.1)
         assert set(cancelled) == {1, 2, 3}
 
 

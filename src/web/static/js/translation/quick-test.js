@@ -78,6 +78,8 @@ function readPromptOptions() {
     return {
         preserve_technical_content: !!($('preserveTechnicalContent')?.checked),
         text_cleanup: !!($('textCleanup')?.checked),
+        chapter_mode: !!($('chapterMode')?.checked),
+        novel_context_file: (DomHelpers.getValue('novelContextSelect') || '').trim(),
     };
 }
 
@@ -117,7 +119,9 @@ function renderSummary(file, cfg, mode) {
     const po = readPromptOptions();
     if (cfg.glossary_id) chips.push(t('translation:quicktest_chip_glossary'));
     if (cfg.custom_instruction_file) chips.push(t('translation:quicktest_chip_instructions'));
+    if (po.novel_context_file) chips.push(t('translation:quicktest_chip_novel_context', { fallback: 'Novel Context' }));
     if (po.text_cleanup) chips.push(t('translation:summary_ocr_cleanup'));
+    if (po.chapter_mode) chips.push(t('translation:summary_chapter_mode'));
 
     const chipsHtml = chips.length
         ? `<div class="quick-test-chips">${chips.map((c) => `<span class="quick-test-chip">${escapeHtml(c)}</span>`).join('')}</div>`

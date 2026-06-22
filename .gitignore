@@ -27,6 +27,17 @@ tests/.placeholder_tests/
 /experiments
 /benchmark_results/
 /[Dd]ebug/
+/.tmp/
+/.test-tmp-*/
+/scratch/
+/TranslateBook_Data/
+/build/TranslateBook/
+/build/TranslateBooksWithLLMs/
+/build/launcher/
+/build/windows/build/
+/build/windows/dist/
+/TranslateBooksWithLLMs.spec
+/launcher.spec
 
 # Ad-hoc scratch scripts at repo root — keep them out of commits.
 # Real tests live under tests/, real entrypoints are translate.py / translation_api.py / launcher.py.

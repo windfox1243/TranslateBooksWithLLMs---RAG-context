@@ -7,10 +7,14 @@ support in v1.
 
 import os
 import tempfile
-from typing import Optional, Callable, Dict
+from typing import Optional, Callable, Dict, Any
 
 from src.config import DEFAULT_MODEL, API_ENDPOINT, MAX_TOKENS_PER_CHUNK
-from src.core.epub.xhtml_translator import _refine_epub_chunks, _escape_stray_angle_brackets
+from src.core.epub.xhtml_translator import (
+    _create_chunks,
+    _escape_stray_angle_brackets,
+    _refine_epub_chunks,
+)
 from src.core.epub.container import TranslationContainer
 from src.core.docx.converter import DocxHtmlConverter
 from .client_setup import build_refine_client
@@ -38,6 +42,8 @@ async def refine_docx_file(
     auto_adjust_context: bool = True,
     prompt_options: Optional[Dict] = None,
     max_tokens_per_chunk: int = MAX_TOKENS_PER_CHUNK,
+    checkpoint_manager: Optional[Any] = None,
+    translation_id: Optional[str] = None,
 ) -> bool:
     """Run a refinement-only pass on an already-translated DOCX file."""
     if not os.path.exists(input_filepath):
@@ -86,8 +92,13 @@ async def refine_docx_file(
             log_callback("docx_tags_preserved",
                          f"Preserved {len(tag_map)} tag groups")
 
-        chunks = container.chunker.chunk_html_with_placeholders(
-            text_with_placeholders, tag_map
+        chunks = _create_chunks(
+            text_with_placeholders,
+            tag_map,
+            max_tokens_per_chunk,
+            log_callback,
+            container,
+            chapter_mode=bool((prompt_options or {}).get("chapter_mode")),
         )
         if not chunks:
             if log_callback:
@@ -100,7 +111,30 @@ async def refine_docx_file(
         if stats_callback:
             stats_callback({'total_chunks': len(chunks), 'completed_chunks': 0, 'failed_chunks': 0})
 
-        draft_globalized = [_globalize_chunk_text(c, placeholder_format) for c in chunks]
+        db_chunks = []
+        if checkpoint_manager and translation_id:
+            db_chunks = checkpoint_manager.db.get_chunks(translation_id) or []
+
+        draft_globalized = [
+            _globalize_chunk_text(chunk, placeholder_format)
+            for chunk in chunks
+        ]
+
+        from src.utils.novel_context import (
+            RefinementContextTracker,
+            map_context_snapshots_for_refinement,
+        )
+        historical_contexts = map_context_snapshots_for_refinement(
+            len(chunks),
+            db_chunks,
+            (prompt_options or {}).get('novel_context', ''),
+            refinement_units=draft_globalized,
+        )
+        context_tracker = RefinementContextTracker(
+            prompt_options=prompt_options or {},
+            historical_contexts=historical_contexts,
+            log_callback=log_callback,
+        )
 
         refined_chunks = await _refine_epub_chunks(
             translated_chunks=draft_globalized,
@@ -113,6 +147,8 @@ async def refine_docx_file(
             log_callback=log_callback,
             prompt_options=prompt_options,
             stats_callback=stats_callback,
+            context_tracker=context_tracker,
+            check_interruption_callback=check_interruption_callback,
         )
 
         if check_interruption_callback and check_interruption_callback():

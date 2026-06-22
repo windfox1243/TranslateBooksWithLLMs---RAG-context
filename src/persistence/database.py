@@ -7,7 +7,6 @@ import json
 import os
 import time
 from typing import Optional, Dict, List, Any
-from datetime import datetime
 import threading
 
 
@@ -33,13 +32,18 @@ class Database:
     Thread-safe for concurrent access.
     """
 
-    def __init__(self, db_path: str = "data/jobs.db"):
+    def __init__(self, db_path: Optional[str] = None):
         """
         Initialize database connection.
 
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to database. If None, uses default path from config.
         """
+        if db_path is None:
+            from src.config import DATA_DIR
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            db_path = str(DATA_DIR / "jobs.db")
+
         self.db_path = db_path
         self._local = threading.local()
         self._lock = threading.RLock()

@@ -63,6 +63,8 @@
   "option_bilingual_description": "Inclut le texte original à côté de la traduction. Chaque segment affiche le texte source suivi de sa traduction, idéal pour l'apprentissage des langues ou la comparaison côte à côte.",
   "option_plain_text_title": "Mode texte brut (EPUB / DOCX)",
   "option_plain_text_description": "Simplifie fortement le formatage avant d'envoyer le contenu au LLM pour rendre la traduction plus rapide et plus fiable — il ne s'agit pas d'un mode de moindre qualité. Très bien adapté aux romans simples et à la prose courante où la structure compte moins que la lecture du texte traduit. Seul le texte des paragraphes est envoyé au LLM, les styles en ligne et le balisage complexe sont supprimés. Les titres, listes et citations sont conservés ; les images restent dans la sortie et sont regroupées à la fin de leur paragraphe d'origine. Particulièrement utile sur les petits LLM ou les LLM locaux qui peinent avec les variables <code>[id0]</code>. Moins adapté aux livres techniques, aux guides illustrés ou à tout document où la mise en page porte du sens. Ne s'applique qu'aux fichiers EPUB et DOCX.",
+  "option_chapter_mode_title": "Traduction par chapitre (TXT / EPUB / DOCX)",
+  "option_chapter_mode_description": "Utilise les titres de chapitre détectés comme limites de traduction stables. Un chapitre complet est envoyé en une seule requête s'il respecte la limite de jetons ; les chapitres trop longs sont divisés uniquement à l'intérieur du chapitre. Cela améliore la cohérence narrative et aligne la traduction avec la révision. Les sous-titres conservent leur regroupement habituel.",
   "option_text_cleanup_title": "Nettoyage de texte (correction OCR)",
   "option_text_cleanup_description": "Pour les textes mal formatés ou scannés par OCR. Demande au LLM de corriger : sauts de ligne cassés, doubles espaces, erreurs de ponctuation et fusion des paragraphes mal coupés.",
 
@@ -220,5 +222,8 @@
   "cost_override_note": "Un prix personnalisé est actuellement enregistré pour ce modèle.",
   "cost_reset_default": "Réinitialiser à la valeur par défaut",
   "cost_format_free": "Gratuit",
-  "cost_format_lt_001": "<$0.01"
+  "cost_format_lt_001": "<$0.01",
+  "novel_context_label": "Contexte du roman (genres, relations & glossaire)",
+  "auto_update_context_label": "Mettre à jour automatiquement le fichier de contexte après chaque segment traduit",
+  "novel_context_help": "Conservez les genres des personnages, les formes d'adresse (relations) et les glossaires persistants dans un fichier <code>.txt</code> pour améliorer la cohérence de la traduction. Note : la mise à jour automatique impose une traduction séquentielle (1 thread)."
 }

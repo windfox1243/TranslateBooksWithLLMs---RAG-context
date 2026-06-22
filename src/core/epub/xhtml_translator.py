@@ -647,7 +647,8 @@ def _create_chunks(
     tag_map: Dict[str, str],
     max_tokens: int,
     log_callback: Optional[Callable] = None,
-    container: Optional[TranslationContainer] = None
+    container: Optional[TranslationContainer] = None,
+    chapter_mode: bool = False,
 ) -> List[Dict]:
     """Chunk text into translatable segments.
 
@@ -657,13 +658,22 @@ def _create_chunks(
         max_tokens: Maximum tokens per chunk
         log_callback: Optional logging callback
         container: Optional dependency injection container (uses default if None)
+        chapter_mode: Prevent chunks from crossing h1-h3 chapter boundaries
 
     Returns:
         List of chunk dictionaries
     """
-    # Use container's chunker if provided, otherwise create directly
-    if container is not None:
+    # The explicit per-job budget must win over a container created earlier
+    # with an import-time default. Reuse the container only when its configured
+    # budget matches; otherwise create a correctly sized chunker for this run.
+    if (
+        container is not None
+        and container.config.max_tokens_per_chunk == max_tokens
+        and not chapter_mode
+    ):
         chunker = container.chunker
+    elif chapter_mode:
+        chunker = HtmlChunker(max_tokens=max_tokens, chapter_mode=True)
     else:
         chunker = HtmlChunker(max_tokens=max_tokens)
 
@@ -671,6 +681,15 @@ def _create_chunks(
 
     if log_callback:
         log_callback("chunks_created", f"Created {len(chunks)} chunks")
+        if chapter_mode:
+            chapter_count = len({
+                chunk.get("chapter_index", 0) for chunk in chunks
+            })
+            log_callback(
+                "chapter_mode_ready",
+                f"Chapter-aware mode prepared {chapter_count} chapter(s) as "
+                f"{len(chunks)} translation unit(s).",
+            )
 
     return chunks
 
@@ -759,13 +778,99 @@ async def _translate_all_chunks_with_checkpoint(
 
     from src.core.common.parallel import iter_ordered_concurrent
     from src.core.llm.exceptions import RateLimitError
+    from pathlib import Path
 
-    # EPUB chunks carry no cross-chunk translation context (the prompt is built
-    # with previous_translation_context=""), so they parallelize cleanly. The
-    # ordered-concurrent scheduler keeps translated_chunks a contiguous prefix
-    # (resume-safe) while keeping the request pool full. parallel_workers is
-    # already resolved by the caller (local providers forced to 1).
-    workers = max(1, int(parallel_workers))
+    if prompt_options is None:
+        prompt_options = {}
+
+    novel_context_file = prompt_options.get('novel_context_file')
+    auto_update_context = prompt_options.get('auto_update_context', False)
+
+    # Resolve novel context file path and initial content
+    novel_context_path = None
+    from src.config import NOVEL_CONTEXTS_DIR
+    novel_contexts_dir = NOVEL_CONTEXTS_DIR
+
+    # Auto-generate filename if auto-update is enabled but no file specified
+    if auto_update_context and not novel_context_file:
+        from src.utils.novel_context import make_novel_context_filename
+        source_name = ""
+        if prompt_options and 'input_filename' in prompt_options:
+            source_name = prompt_options['input_filename']
+        elif file_href:
+            source_name = file_href
+        novel_context_file = make_novel_context_filename(source_name, "epub")
+        prompt_options['novel_context_file'] = novel_context_file
+        if log_callback:
+            log_callback("novel_context_created", f"Auto-created new novel context file: {novel_context_file}")
+
+    current_global_lore = ""
+    current_dynamic_state = ""
+    if novel_context_file:
+        from src.utils.novel_context import (
+            NovelContextSession,
+            build_novel_context,
+            decode_context_snapshot,
+            extract_dynamic_state_from_text,
+            extract_global_lore,
+            load_novel_context,
+            resolve_novel_context_path,
+        )
+        try:
+            novel_context_path = resolve_novel_context_path(novel_context_file, novel_contexts_dir)
+            current_context_content = load_novel_context(novel_context_path.name, novel_context_path.parent)
+            current_global_lore = extract_global_lore(current_context_content)
+            current_dynamic_state = extract_dynamic_state_from_text(current_context_content) or ""
+            
+            # If resuming, restore dynamic state from the last completed chunk's snapshot
+            if (start_chunk_index > 0 or (global_completed_chunks or 0) > 0) and checkpoint_manager:
+                last_completed_global_idx = (global_completed_chunks or 0) + start_chunk_index - 1
+                if last_completed_global_idx >= 0 and hasattr(checkpoint_manager, 'db'):
+                    db_chunks = checkpoint_manager.db.get_chunks(translation_id) or []
+                    for c in db_chunks:
+                        if c.get('chunk_index') == last_completed_global_idx:
+                            chunk_data = c.get('chunk_data') or {}
+                            compressed_snapshot = chunk_data.get('context_snapshot')
+                            if compressed_snapshot:
+                                _, current_global_lore, current_dynamic_state = decode_context_snapshot(
+                                    compressed_snapshot,
+                                    current_context_content,
+                                )
+                                if log_callback:
+                                    log_callback("novel_context_resume", f"Restored context from global chunk {last_completed_global_idx} snapshot.")
+                            break
+            
+            prompt_options['novel_context'] = build_novel_context(
+                current_global_lore,
+                current_dynamic_state,
+            )
+            if log_callback:
+                log_callback("novel_context_state", "Context loaded", {"type": "novel_context_state", "content": prompt_options['novel_context'], "filename": novel_context_path.name})
+        except Exception as e:
+            if log_callback:
+                log_callback("novel_context_error", f"Error loading novel context '{novel_context_file}': {str(e)}")
+            current_context_content = ""
+    else:
+        current_context_content = ""
+
+    context_session = None
+    if novel_context_path:
+        context_session = NovelContextSession(
+            path=novel_context_path,
+            prompt_options=prompt_options,
+            global_lore=current_global_lore,
+            dynamic_state=current_dynamic_state,
+            log_callback=log_callback,
+        )
+
+    if auto_update_context and novel_context_path:
+        if parallel_workers > 1:
+            if log_callback:
+                log_callback("novel_context_workers_override", "Warning: Auto-updating novel context requires sequential translation. Forcing parallel workers to 1.")
+        parallel_workers = 1
+        workers = 1
+    else:
+        workers = max(1, int(parallel_workers))
 
     def _save_state(next_index):
         """Persist resume state with current_chunk_index = next chunk to do."""
@@ -811,6 +916,41 @@ async def _translate_all_chunks_with_checkpoint(
 
     async def _translate_one(i):
         chunk = chunks[i]
+        if auto_update_context and context_session:
+            if log_callback:
+                log_callback(
+                    "novel_context_updating",
+                    f"Analyzing source context for chunk {i+1} before translation...",
+                )
+            try:
+                change_logs = await context_session.analyze_source(
+                    llm_client=llm_client,
+                    model_name=model_name,
+                    source_chunk=chunk['text'],
+                    source_language=source_language,
+                    target_language=target_language,
+                    chunk_index=i + 1,
+                    total_chunks=len(chunks),
+                )
+                if log_callback:
+                    log_callback("novel_context_updated", f"Novel context prepared for chunk {i+1}.")
+                    for change_log in change_logs:
+                        log_callback("novel_context_log", change_log)
+                    log_callback(
+                        "novel_context_state",
+                        "Context updated",
+                        {
+                            "type": "novel_context_state",
+                            "content": context_session.content,
+                            "filename": context_session.path.name,
+                        },
+                    )
+            except Exception as e:
+                if log_callback:
+                    log_callback(
+                        "novel_context_update_failed",
+                        f"Failed to prepare novel context: {str(e)}",
+                    )
         return await translate_chunk_with_fallback(
             chunk_text=chunk['text'],
             local_tag_map=chunk['local_tag_map'],
@@ -848,6 +988,23 @@ async def _translate_all_chunks_with_checkpoint(
 
         translated_chunks.append(result)
         i_done = i
+
+        # Save translation chunk checkpoint to SQLite for the context snapshot dropdown
+        ctx_snapshot = context_session.snapshot() if context_session else None
+        chunks[i]['context_snapshot'] = ctx_snapshot
+        
+        if checkpoint_manager and translation_id and hasattr(checkpoint_manager, 'db'):
+            chunk_data = {'context_snapshot': ctx_snapshot} if ctx_snapshot else {}
+            global_chunk_idx = (global_completed_chunks or 0) + i
+            
+            checkpoint_manager.db.save_chunk(
+                translation_id=translation_id,
+                chunk_index=global_chunk_idx,
+                original_text=chunks[i]['text'],
+                translated_text=result,
+                chunk_data=chunk_data,
+                status='completed'
+            )
 
         # === HEALTH CHECK ===
         # Warn loudly once if the LLM is failing to preserve placeholders at a
@@ -937,6 +1094,70 @@ async def _translate_all_chunks(
     if stats_callback:
         stats_callback(stats.to_dict())
 
+    from pathlib import Path
+    if prompt_options is None:
+        prompt_options = {}
+
+    novel_context_file = prompt_options.get('novel_context_file')
+    auto_update_context = prompt_options.get('auto_update_context', False)
+
+    # Resolve novel context file path and initial content
+    novel_context_path = None
+    from src.config import NOVEL_CONTEXTS_DIR
+    novel_contexts_dir = NOVEL_CONTEXTS_DIR
+
+    # Auto-generate filename if auto-update is enabled but no file specified
+    if auto_update_context and not novel_context_file:
+        from src.utils.novel_context import make_novel_context_filename
+        source_name = ""
+        if prompt_options and 'input_filename' in prompt_options:
+            source_name = prompt_options['input_filename']
+        elif file_href:
+            source_name = file_href
+        novel_context_file = make_novel_context_filename(source_name, "epub")
+        prompt_options['novel_context_file'] = novel_context_file
+        if log_callback:
+            log_callback("novel_context_created", f"Auto-created new novel context file: {novel_context_file}")
+
+    current_global_lore = ""
+    current_dynamic_state = ""
+    if novel_context_file:
+        from src.utils.novel_context import (
+            NovelContextSession,
+            build_novel_context,
+            extract_dynamic_state_from_text,
+            extract_global_lore,
+            load_novel_context,
+            resolve_novel_context_path,
+        )
+        try:
+            novel_context_path = resolve_novel_context_path(novel_context_file, novel_contexts_dir)
+            current_context_content = load_novel_context(novel_context_path.name, novel_context_path.parent)
+            current_global_lore = extract_global_lore(current_context_content)
+            current_dynamic_state = extract_dynamic_state_from_text(current_context_content) or ""
+            prompt_options['novel_context'] = build_novel_context(
+                current_global_lore,
+                current_dynamic_state,
+            )
+            if log_callback:
+                log_callback("novel_context_state", "Context loaded", {"type": "novel_context_state", "content": prompt_options['novel_context'], "filename": novel_context_path.name})
+        except Exception as e:
+            if log_callback:
+                log_callback("novel_context_error", f"Error loading novel context '{novel_context_file}': {str(e)}")
+            current_context_content = ""
+    else:
+        current_context_content = ""
+
+    context_session = None
+    if novel_context_path:
+        context_session = NovelContextSession(
+            path=novel_context_path,
+            prompt_options=prompt_options,
+            global_lore=current_global_lore,
+            dynamic_state=current_dynamic_state,
+            log_callback=log_callback,
+        )
+
     for i, chunk in enumerate(chunks):
         # Check for interruption before processing chunk
         if check_interruption_callback:
@@ -945,6 +1166,42 @@ async def _translate_all_chunks(
                 if log_callback:
                     log_callback("translation_interrupted", f"Translation interrupted at chunk {i}/{len(chunks)}")
                 break
+
+        if auto_update_context and context_session:
+            if log_callback:
+                log_callback(
+                    "novel_context_updating",
+                    f"Analyzing source context for chunk {i+1} before translation...",
+                )
+            try:
+                change_logs = await context_session.analyze_source(
+                    llm_client=llm_client,
+                    model_name=model_name,
+                    source_chunk=chunk['text'],
+                    source_language=source_language,
+                    target_language=target_language,
+                    chunk_index=i + 1,
+                    total_chunks=len(chunks),
+                )
+                if log_callback:
+                    log_callback("novel_context_updated", f"Novel context prepared for chunk {i+1}.")
+                    for change_log in change_logs:
+                        log_callback("novel_context_log", change_log)
+                    log_callback(
+                        "novel_context_state",
+                        "Context updated",
+                        {
+                            "type": "novel_context_state",
+                            "content": context_session.content,
+                            "filename": context_session.path.name,
+                        },
+                    )
+            except Exception as e:
+                if log_callback:
+                    log_callback(
+                        "novel_context_update_failed",
+                        f"Failed to prepare novel context: {str(e)}",
+                    )
 
         translated = await translate_chunk_with_fallback(
             chunk_text=chunk['text'],
@@ -1368,7 +1625,10 @@ async def _refine_epub_chunks(
     log_callback: Optional[Callable],
     prompt_options: Optional[Dict],
     stats_callback: Optional[Callable] = None,
-    stats: Optional['TranslationMetrics'] = None
+    stats: Optional['TranslationMetrics'] = None,
+    dynamic_contexts: Optional[List[str]] = None,
+    context_tracker: Optional[Any] = None,
+    check_interruption_callback: Optional[Callable] = None,
 ) -> List[str]:
     """
     Refine translated EPUB chunks using a second LLM pass.
@@ -1389,6 +1649,7 @@ async def _refine_epub_chunks(
         prompt_options: Prompt options dict
         stats_callback: Optional callback for progress updates during refinement
         stats: Optional TranslationMetrics to update during refinement
+        dynamic_contexts: Optional list of dynamic contexts per chunk for historical relationship mapping
 
     Returns:
         List of refined chunk texts
@@ -1407,10 +1668,54 @@ async def _refine_epub_chunks(
         _log_error(log_callback, "epub_refinement_warning",
                     f"Warning: Length mismatch - translated_chunks: {len(translated_chunks)}, chunks: {len(chunks)}")
 
+    if context_tracker is None:
+        from src.utils.novel_context import RefinementContextTracker
+        context_tracker = RefinementContextTracker(
+            prompt_options=prompt_options or {},
+            historical_contexts=dynamic_contexts or [],
+            log_callback=log_callback,
+        )
+
     for idx, (translated_text, chunk_dict) in enumerate(zip(translated_chunks, chunks)):
-        # Build context from surrounding chunks
-        context_before = translated_chunks[idx - 1] if idx > 0 else ""
-        context_after = translated_chunks[idx + 1] if idx < len(translated_chunks) - 1 else ""
+        if check_interruption_callback and check_interruption_callback():
+            if log_callback:
+                log_callback(
+                    "epub_refinement_interrupted",
+                    f"⏸️ Refinement interrupted at chunk {idx + 1}/{total_chunks}.",
+                )
+            refined_chunks.extend(translated_chunks[idx:])
+            break
+
+        if log_callback:
+            log_callback(
+                "epub_refinement_chunk_start",
+                f"🪄 Refining chunk {idx + 1}/{total_chunks}...",
+            )
+
+        # Build context only inside the same chapter when chapter-aware mode is
+        # active. This prevents the end of one chapter from influencing the
+        # opening voice, time, or point of view of the next.
+        chapter_mode = bool((prompt_options or {}).get("chapter_mode"))
+        current_chapter = chunk_dict.get("chapter_index")
+        same_previous_chapter = (
+            idx > 0
+            and chunks[idx - 1].get("chapter_index") == current_chapter
+        )
+        same_next_chapter = (
+            idx < len(chunks) - 1
+            and chunks[idx + 1].get("chapter_index") == current_chapter
+        )
+        context_before = (
+            translated_chunks[idx - 1]
+            if idx > 0 and (not chapter_mode or same_previous_chapter)
+            else ""
+        )
+        context_after = (
+            translated_chunks[idx + 1]
+            if idx < len(translated_chunks) - 1
+            and (not chapter_mode or same_next_chapter)
+            else ""
+        )
 
         # Extract refinement instructions from prompt_options
         refinement_instructions = prompt_options.get('refinement_instructions', '') if prompt_options else ''
@@ -1438,6 +1743,20 @@ async def _refine_epub_chunks(
             text_for_refinement = text_for_refinement.replace(f"__TEMP_PH_{local_idx}__",
                                                               f"{placeholder_format[0]}{local_idx}{placeholder_format[1]}")
 
+        context_content = await context_tracker.next_context(
+            text=translated_text,
+            llm_client=llm_client,
+            model_name=model_name,
+            target_language=target_language,
+            display_index=idx + 1,
+            total_chunks=total_chunks,
+        )
+
+        # Inject historical/source-first context if provided.
+        local_prompt_options = dict(prompt_options) if prompt_options else {}
+        if context_content:
+            local_prompt_options['novel_context'] = context_content
+
         # Generate refinement prompt using text with LOCAL indices
         prompt_pair = generate_post_processing_prompt(
             translated_text=text_for_refinement,  # Use localized version
@@ -1447,15 +1766,15 @@ async def _refine_epub_chunks(
             additional_instructions=refinement_instructions,
             has_placeholders=True,
             placeholder_format=placeholder_format,
-            prompt_options=prompt_options
+            prompt_options=local_prompt_options
         )
 
         # Make refinement request
         try:
             # Log the refinement request (like translation does)
             if log_callback:
-                log_callback("llm_request", "Sending refinement request to LLM", data={
-                    'type': 'llm_request',
+                log_callback("refinement_request", "Sending refinement request to LLM", data={
+                    'type': 'refinement_request',
                     'system_prompt': prompt_pair.system,
                     'user_prompt': prompt_pair.user,
                     'model': model_name
@@ -1476,8 +1795,8 @@ async def _refine_epub_chunks(
 
             # Log the response (like translation does)
             if log_callback and llm_response:
-                log_callback("llm_response", "LLM Response received", data={
-                    'type': 'llm_response',
+                log_callback("refinement_response", "Refinement response received", data={
+                    'type': 'refinement_response',
                     'response': llm_response.content,
                     'execution_time': execution_time,
                     'model': model_name,
@@ -1699,7 +2018,8 @@ async def translate_xhtml_simplified(
             global_tag_map,
             max_tokens_per_chunk,
             log_callback,
-            container
+            container,
+            chapter_mode=bool((prompt_options or {}).get("chapter_mode")),
         )
 
         # Initialize variables for new translation
@@ -1779,6 +2099,20 @@ async def translate_xhtml_simplified(
             log_callback("epub_refinement_start",
                         f"✨ Starting EPUB refinement pass to polish translation quality... ({len(translated_chunks)} chunks)")
 
+        from src.utils.novel_context import decode_context_snapshot
+        refinement_contexts = []
+        fallback_context = (prompt_options or {}).get('novel_context', '')
+        for chunk in chunks:
+            snapshot = (chunk or {}).get('context_snapshot')
+            if snapshot:
+                full_context, _, _ = decode_context_snapshot(
+                    snapshot,
+                    fallback_context,
+                )
+                refinement_contexts.append(full_context)
+            else:
+                refinement_contexts.append(None)
+
         refined_result = await _refine_epub_chunks(
             translated_chunks=translated_chunks,
             chunks=chunks,
@@ -1790,7 +2124,9 @@ async def translate_xhtml_simplified(
             log_callback=log_callback,  # Pass through to parent's token tracker
             prompt_options=prompt_options,
             stats_callback=stats_callback,  # Pass stats callback for progress updates
-            stats=stats  # Pass stats object to update during refinement
+            stats=stats,  # Pass stats object to update during refinement
+            dynamic_contexts=refinement_contexts,
+            check_interruption_callback=check_interruption_callback,
         )
 
         if refined_result:

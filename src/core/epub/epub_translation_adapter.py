@@ -94,7 +94,8 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
         text: str,
         structure_map: Dict[str, str],
         max_tokens: int,
-        log_callback: Optional[Callable]
+        log_callback: Optional[Callable],
+        chapter_mode: bool = False,
     ) -> List[Dict]:
         """
         Découpe via HtmlChunker.
@@ -108,7 +109,20 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
         Returns:
             List of chunks
         """
-        chunks = self.html_chunker.chunk_html_with_placeholders(
+        from .html_chunker import HtmlChunker
+        chunker = (
+            self.html_chunker
+            if (
+                self.container.config.max_tokens_per_chunk == max_tokens
+                and not chapter_mode
+            )
+            else (
+                HtmlChunker(max_tokens=max_tokens, chapter_mode=True)
+                if chapter_mode
+                else HtmlChunker(max_tokens=max_tokens)
+            )
+        )
+        chunks = chunker.chunk_html_with_placeholders(
             text, structure_map
         )
 
@@ -253,6 +267,9 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
                 bilingual_flag=bilingual_flag,
                 file_href=file_href,
                 parallel_workers=parallel_workers,
+                checkpoint_manager=checkpoint_manager,
+                translation_id=translation_id,
+                global_chunk_offset=global_completed_chunks or 0,
             )
 
         success, stats = await translate_xhtml_simplified(
@@ -297,6 +314,9 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
         bilingual_flag: bool,
         file_href: Optional[str],
         parallel_workers: int = 1,
+        checkpoint_manager: Optional[Any] = None,
+        translation_id: Optional[str] = None,
+        global_chunk_offset: int = 0,
     ) -> Tuple[bool, Any]:
         """
         Plain-text-mode translation path: skip placeholders entirely.
@@ -330,6 +350,7 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
 
         translated, stats, was_interrupted = await translate_paragraphs_plain(
             paragraphs=paragraphs_text,
+            paragraph_kinds=paragraphs_tag,
             source_language=source_language,
             target_language=target_language,
             model_name=model_name,
@@ -341,6 +362,9 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
             check_interruption_callback=check_interruption_callback,
             prompt_options=prompt_options,
             parallel_workers=parallel_workers,
+            checkpoint_manager=checkpoint_manager,
+            translation_id=translation_id,
+            global_chunk_offset=global_chunk_offset,
         )
 
         if was_interrupted:

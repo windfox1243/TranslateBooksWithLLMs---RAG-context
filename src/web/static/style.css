@@ -999,6 +999,27 @@ select.form-control {
     background: var(--text-muted-light);
 }
 
+/* Scrollbar for context tabs header */
+.context-tabs-header::-webkit-scrollbar {
+    height: 6px;
+}
+.context-tabs-header::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 0 4px;
+}
+.context-tabs-header::-webkit-scrollbar-thumb {
+    background: var(--shadow-dark);
+    border-radius: 4px;
+    transition: background 0.3s ease;
+}
+.context-tabs-header::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted-light);
+}
+.context-tabs-header {
+    scrollbar-width: thin;
+    scrollbar-color: var(--shadow-dark) transparent;
+}
+
 /* Scrollbar pour Firefox */
 .log-container {
     scrollbar-width: thin;

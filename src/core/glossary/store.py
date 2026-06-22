@@ -19,8 +19,10 @@ from src.core.glossary.models import BulkReplaceResult, Glossary, GlossaryTerm
 
 logger = logging.getLogger("glossary.store")
 
-LEGACY_DB_PATH = "data/jobs.db"
-DEFAULT_DB_PATH = "data/glossaries.db"
+from src.config import DATA_DIR
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+LEGACY_DB_PATH = str(DATA_DIR / "jobs.db")
+DEFAULT_DB_PATH = str(DATA_DIR / "glossaries.db")
 
 # Backoff retry on transient SQLite "database is locked" errors. Total budget
 # is short (~750ms across 4 attempts).

@@ -5,6 +5,7 @@ This module provides intelligent chunking of HTML content with placeholders,
 ensuring chunks are split at safe boundaries (between complete HTML blocks)
 and includes a proportional reinsertion fallback for placeholder recovery.
 """
+import re
 from typing import List, Dict, Tuple
 
 from src.core.chunking.token_chunker import TokenChunker
@@ -22,8 +23,9 @@ class HtmlChunker:
     (no orphan [id3] without its closing [id4]).
     """
 
-    def __init__(self, max_tokens: int = 450):
+    def __init__(self, max_tokens: int = 450, chapter_mode: bool = False):
         self.max_tokens = max_tokens
+        self.chapter_mode = chapter_mode
         self.token_chunker = TokenChunker(max_tokens=max_tokens)
         self.placeholder_format = PlaceholderFormat.from_config()
         self.text_splitter = TextSplitter(max_tokens, self.token_chunker)
@@ -55,16 +57,63 @@ class HtmlChunker:
         if not text_with_placeholders or not text_with_placeholders.strip():
             return []
 
-        # Find safe split points (between complete blocks)
-        split_points = self._find_safe_split_points(text_with_placeholders, tag_map)
+        chapter_regions = (
+            self._split_into_chapter_regions(text_with_placeholders, tag_map)
+            if self.chapter_mode
+            else [text_with_placeholders]
+        )
 
-        # Split into segments
-        segments = self._split_at_points(text_with_placeholders, split_points)
-
-        # Merge segments into appropriately sized chunks
-        chunks = self._merge_segments_into_chunks(segments, tag_map)
+        chunks: List[Dict] = []
+        global_offset = 0
+        for chapter_index, chapter_region in enumerate(chapter_regions):
+            split_points = self._find_safe_split_points(chapter_region, tag_map)
+            segments = self._split_at_points(chapter_region, split_points)
+            chapter_chunks = self._merge_segments_into_chunks(
+                segments,
+                tag_map,
+                initial_global_offset=global_offset,
+            )
+            for chunk_index, chunk in enumerate(chapter_chunks):
+                chunk.update({
+                    "chapter_index": chapter_index,
+                    "chunk_in_chapter": chunk_index,
+                    "chunks_in_chapter": len(chapter_chunks),
+                })
+                global_offset += len(chunk.get("local_tag_map", {}))
+            chunks.extend(chapter_chunks)
 
         return chunks
+
+    def _split_into_chapter_regions(
+        self,
+        text: str,
+        tag_map: Dict[str, str],
+    ) -> List[str]:
+        """Split before h1-h3 opening tags so headings stay with their body."""
+        starts = []
+        for start, _end, placeholder, _idx in self.placeholder_format.find_all(text):
+            tag = (tag_map.get(placeholder) or "").strip()
+            if re.search(
+                r"<\s*(?!/)(?:[A-Za-z0-9_.-]+:)?h[1-3]\b",
+                tag,
+                re.IGNORECASE,
+            ):
+                starts.append(start)
+
+        if not starts:
+            return [text]
+
+        boundaries = sorted(set(starts))
+        if boundaries[0] > 0:
+            boundaries.insert(0, 0)
+
+        regions = []
+        for index, start in enumerate(boundaries):
+            end = boundaries[index + 1] if index + 1 < len(boundaries) else len(text)
+            region = text[start:end]
+            if region.strip():
+                regions.append(region)
+        return regions or [text]
 
     def _find_safe_split_points(
         self,
@@ -136,7 +185,8 @@ class HtmlChunker:
     def _merge_segments_into_chunks(
         self,
         segments: List[str],
-        global_tag_map: Dict[str, str]
+        global_tag_map: Dict[str, str],
+        initial_global_offset: int = 0,
     ) -> List[Dict]:
         """
         Merge segments into chunks respecting token limit.
@@ -149,7 +199,7 @@ class HtmlChunker:
         chunks = []
         current_segments = []
         current_tokens = 0
-        global_offset = 0
+        global_offset = initial_global_offset
 
         for segment in segments:
             segment_tokens = self._count_segment_tokens(segment)

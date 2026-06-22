@@ -309,6 +309,20 @@
         <!-- Main Translation Configuration Card -->
         <div class="main-card">
             <div class="card-body">
+                <!-- Translation Profile -->
+                <div class="form-group" style="margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label style="margin-bottom: 0;" data-i18n="translation:profile_label">Translation Profile (Project)</label>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <select id="profileSelect" class="form-control" style="width: auto; min-width: 200px; padding: 0.25rem 0.5rem; font-size: 0.85rem; height: auto;" onchange="document.getElementById('btnLoadProfile').disabled = !this.value">
+                                <option value="" data-i18n="translation:profile_custom_settings">-- Custom Settings --</option>
+                            </select>
+                            <button id="btnLoadProfile" class="btn btn-secondary" onclick="loadSelectedProfile()" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;" disabled title="Load selected profile" data-i18n="translation:profile_load_btn" data-i18n-attr="title:translation:profile_load_title">Load</button>
+                            <button id="btnSaveProfile" class="btn btn-primary" onclick="promptSaveProfile()" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;" title="Save current settings as a profile" data-i18n="translation:profile_save_btn" data-i18n-attr="title:translation:profile_save_title">Save As...</button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Languages Row -->
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                     <div class="form-group" style="margin-bottom: 0;">
@@ -561,6 +575,45 @@
                         </h4>
                         <div class="log-container" id="lastTranslationPreview">
                             <div data-i18n="translation:no_translation_yet" style="color: var(--text-muted-light); font-style: italic; padding: 10px;">No translation yet...</div>
+                        </div>
+                    </div>
+
+                    <!-- Context Preview -->
+                    <div id="novelContextPreviewSection" style="margin-top: 20px; display: none;">
+                        <h4 style="margin: 0 0 10px 0; color: var(--text-dark); font-weight: 700; display: flex; align-items: center; justify-content: space-between;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 1.25rem;">menu_book</span>
+                                <span data-i18n="translation:context_preview_title">Context Preview</span>
+                                <span id="contextPreviewFilename" style="font-weight: 400; font-size: 0.85rem; color: var(--text-muted-light); margin-left: 0.5rem;"></span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <button id="btnEditResync" class="btn btn-warning" onclick="enableContextEdit()" style="display: none; padding: 0.25rem 0.75rem; font-size: 0.85rem; align-items: center; gap: 0.25rem;" title="Edit this snapshot and re-sync all subsequent chunks" data-i18n-attr="title:translation:context_edit_resync_title">
+                                    <span class="material-symbols-outlined" style="font-size: 1rem;">edit</span>
+                                    <span data-i18n="translation:context_edit_resync_btn">Edit & Re-sync</span>
+                                </button>
+                                <button id="btnCancelResync" class="btn btn-secondary" onclick="cancelContextEdit()" style="display: none; padding: 0.25rem 0.75rem; font-size: 0.85rem; align-items: center; gap: 0.25rem;">
+                                    <span class="material-symbols-outlined" style="font-size: 1rem;">cancel</span>
+                                    <span data-i18n="translation:context_cancel_btn">Cancel</span>
+                                </button>
+                                <button id="btnSaveResync" class="btn btn-primary" onclick="saveContextResync()" style="display: none; padding: 0.25rem 0.75rem; font-size: 0.85rem; align-items: center; gap: 0.25rem;" disabled>
+                                    <span class="material-symbols-outlined" style="font-size: 1rem;">save</span>
+                                    <span data-i18n="translation:context_save_resync_btn">Save & Re-sync</span>
+                                </button>
+                                <select id="contextChunkSelector" class="form-control" style="margin-bottom: 0; padding: 0.25rem 0.5rem; font-size: 0.85rem; height: auto;" onchange="loadContextSnapshot(this.value)">
+                                    <option value="latest" data-i18n="translation:context_latest_state">Latest State</option>
+                                </select>
+                                <button class="btn btn-secondary" onclick="openContextFolder()" style="padding: 0.25rem 0.75rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.25rem;">
+                                    <span class="material-symbols-outlined" style="font-size: 1rem;">folder_open</span>
+                                    <span data-i18n="translation:context_open_folder_btn">Open Folder</span>
+                                </button>
+                            </div>
+                        </h4>
+                        <div class="log-container" id="novelContextPreview" style="padding: 0; display: flex; flex-direction: column;">
+                            <div class="context-tabs-header" id="contextTabsHeader" style="display: flex; gap: 5px; background: var(--bg-light); padding: 5px 10px; border-bottom: 1px solid var(--border-color); overflow-x: auto; max-width: 100%;">
+                            </div>
+                            <div class="context-tabs-body" id="contextTabsBody" style="padding: 15px; min-height: 200px; white-space: pre-wrap; word-wrap: break-word;">
+                                <div style="color: var(--text-muted-light); font-style: italic; padding: 10px;" data-i18n="translation:context_waiting">Waiting for context...</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1010,6 +1063,19 @@
                         </label>
                     </div>
 
+                    <!-- Chapter-aware translation -->
+                    <div class="option-item">
+                        <label class="option-item__label">
+                            <input type="checkbox" id="chapterMode">
+                            <div>
+                                <span class="option-item__title" data-i18n="settings:option_chapter_mode_title">Chapter-aware Translation (TXT / EPUB / DOCX)</span>
+                                <p class="option-item__description" data-i18n="settings:option_chapter_mode_description">
+                                    Uses detected chapter headings as stable translation boundaries. A complete chapter is sent in one request when it fits the token budget; oversized chapters are split only inside that chapter. This improves narrative consistency and keeps translation and refinement aligned. Subtitle files keep their normal cue-based grouping.
+                                </p>
+                            </div>
+                        </label>
+                    </div>
+
                     <!-- Text Cleanup (OCR Correction) -->
                     <div class="option-item">
                         <label class="option-item__label">
@@ -1048,7 +1114,7 @@
                     </div>
 
                     <!-- Custom Instructions -->
-                    <div class="form-group" style="margin-bottom: 0; margin-top: 15px;">
+                    <div class="form-group" style="margin-bottom: 15px; margin-top: 15px;">
                         <label data-i18n="settings:custom_instructions_label" style="font-weight: 600; color: var(--text-dark); margin-bottom: 5px; display: block;">
                             Custom Instructions
                         </label>
@@ -1068,6 +1134,36 @@
                         </div>
                         <p data-i18n-html="settings:custom_instructions_help" style="margin: 5px 0 0 0; font-size: 0.8125rem; color: var(--text-muted-light);">
                             Select custom instructions from the <code>Custom_Instructions/</code> folder. Use <code>.yaml</code> files with <code>translation:</code> and/or <code>refinement:</code> keys to scope a preset per phase. Legacy <code>.txt</code> files still work and apply to both phases.
+                        </p>
+                    </div>
+
+                    <!-- Novel Context -->
+                    <div class="form-group" style="margin-bottom: 0; margin-top: 15px;">
+                        <label data-i18n="settings:novel_context_label" style="font-weight: 600; color: var(--text-dark); margin-bottom: 5px; display: block;">
+                            Novel Context (Genders, Relationships & Glossary)
+                        </label>
+                        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 5px;">
+                            <div class="neu-inset-light" style="flex: 1;">
+                                <select id="novelContextSelect" class="form-control" style="margin-bottom: 0;">
+                                    <option value="" data-i18n="settings:select_none">None</option>
+                                    <!-- Options populated dynamically via JavaScript -->
+                                </select>
+                            </div>
+                            <button type="button" id="refreshNovelContextsBtn" class="btn btn-sm" data-i18n-attr="title:settings:refresh_list_title" style="padding: 6px 10px; background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer;" title="Refresh list">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+                            </button>
+                            <button type="button" id="openNovelContextsFolderBtn" class="btn btn-sm" data-i18n-attr="title:settings:open_folder_title" style="padding: 6px 10px; background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer;" title="Open folder">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                            </button>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                            <input type="checkbox" id="autoUpdateContext" style="width: 16px; height: 16px; margin: 0; cursor: pointer;">
+                            <label for="autoUpdateContext" data-i18n="settings:auto_update_context_label" style="font-size: 0.8125rem; color: var(--text-dark); cursor: pointer; margin-bottom: 0;">
+                                Auto-update context file after translating each chunk
+                            </label>
+                        </div>
+                        <p data-i18n-html="settings:novel_context_help" style="margin: 5px 0 0 0; font-size: 0.8125rem; color: var(--text-muted-light);">
+                            Keep character genders, forms of address (relationships), and glossaries persistent in a <code>.txt</code> file to improve translation consistency. Note: Auto-update forces sequential translation (1 worker).
                         </p>
                     </div>
                 </div>
@@ -1209,6 +1305,7 @@
             </div>
         </div>
         </div><!-- /#tab-settings -->
+
 
         <!-- Tab: Files -->
         <div id="tab-files" class="hidden">

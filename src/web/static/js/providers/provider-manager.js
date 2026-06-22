@@ -358,7 +358,6 @@ export const ProviderManager = {
             if (deepseekSettings) deepseekSettings.style.display = 'none';
             if (poeSettings) poeSettings.style.display = 'none';
             if (nimSettings) nimSettings.style.display = 'none';
-            if (loadModels) this.loadOllamaModels();
         } else if (provider === 'poe') {
             DomHelpers.hide('ollamaSettings');
             if (geminiSettings) geminiSettings.style.display = 'none';
@@ -369,7 +368,6 @@ export const ProviderManager = {
             if (deepseekSettings) deepseekSettings.style.display = 'none';
             if (poeSettings) poeSettings.style.display = 'block';
             if (nimSettings) nimSettings.style.display = 'none';
-            if (loadModels) this.loadPoeModels();
         } else if (provider === 'gemini') {
             DomHelpers.hide('ollamaSettings');
             if (geminiSettings) geminiSettings.style.display = 'block';
@@ -380,7 +378,6 @@ export const ProviderManager = {
             if (deepseekSettings) deepseekSettings.style.display = 'none';
             if (poeSettings) poeSettings.style.display = 'none';
             if (nimSettings) nimSettings.style.display = 'none';
-            if (loadModels) this.loadGeminiModels();
         } else if (provider === 'openai') {
             DomHelpers.hide('ollamaSettings');
             if (geminiSettings) geminiSettings.style.display = 'none';
@@ -391,7 +388,6 @@ export const ProviderManager = {
             if (deepseekSettings) deepseekSettings.style.display = 'none';
             if (poeSettings) poeSettings.style.display = 'none';
             if (nimSettings) nimSettings.style.display = 'none';
-            if (loadModels) this.loadOpenAIModels();
         } else if (provider === 'openrouter') {
             DomHelpers.hide('ollamaSettings');
             if (geminiSettings) geminiSettings.style.display = 'none';
@@ -402,7 +398,6 @@ export const ProviderManager = {
             if (deepseekSettings) deepseekSettings.style.display = 'none';
             if (poeSettings) poeSettings.style.display = 'none';
             if (nimSettings) nimSettings.style.display = 'none';
-            if (loadModels) this.loadOpenRouterModels();
         } else if (provider === 'mistral') {
             DomHelpers.hide('ollamaSettings');
             if (geminiSettings) geminiSettings.style.display = 'none';
@@ -413,7 +408,6 @@ export const ProviderManager = {
             if (deepseekSettings) deepseekSettings.style.display = 'none';
             if (poeSettings) poeSettings.style.display = 'none';
             if (nimSettings) nimSettings.style.display = 'none';
-            if (loadModels) this.loadMistralModels();
         } else if (provider === 'deepseek') {
             DomHelpers.hide('ollamaSettings');
             if (geminiSettings) geminiSettings.style.display = 'none';
@@ -424,7 +418,6 @@ export const ProviderManager = {
             if (deepseekSettings) deepseekSettings.style.display = 'block';
             if (poeSettings) poeSettings.style.display = 'none';
             if (nimSettings) nimSettings.style.display = 'none';
-            if (loadModels) this.loadDeepSeekModels();
         } else if (provider === 'nim') {
             DomHelpers.hide('ollamaSettings');
             if (geminiSettings) geminiSettings.style.display = 'none';
@@ -435,7 +428,6 @@ export const ProviderManager = {
             if (deepseekSettings) deepseekSettings.style.display = 'none';
             if (poeSettings) poeSettings.style.display = 'none';
             if (nimSettings) nimSettings.style.display = 'block';
-            if (loadModels) this.loadNimModels();
         }
 
         // Parallel translation is only useful for cloud providers; a single
@@ -446,6 +438,33 @@ export const ProviderManager = {
             const isLocal = provider === 'ollama';
             parallelGroup.style.display = isLocal ? 'none' : 'block';
         }
+
+        const loadPromise = loadModels
+            ? this.loadModelsForProvider(provider)
+            : Promise.resolve();
+        this.currentModelLoad = Promise.resolve(loadPromise);
+        return this.currentModelLoad;
+    },
+
+    /**
+     * Load models for a specific provider and return an awaitable promise.
+     * @param {string} provider - Provider identifier
+     * @returns {Promise<void>}
+     */
+    loadModelsForProvider(provider) {
+        if (provider === 'ollama') return this.loadOllamaModels();
+        if (provider === 'poe') return this.loadPoeModels();
+        if (provider === 'gemini') return this.loadGeminiModels();
+        if (provider === 'openai') return this.loadOpenAIModels();
+        if (provider === 'openrouter') return this.loadOpenRouterModels();
+        if (provider === 'mistral') return this.loadMistralModels();
+        if (provider === 'deepseek') return this.loadDeepSeekModels();
+        if (provider === 'nim') return this.loadNimModels();
+        return Promise.resolve();
+    },
+
+    waitForCurrentModelLoad() {
+        return this.currentModelLoad || Promise.resolve();
     },
 
     /**
@@ -453,24 +472,8 @@ export const ProviderManager = {
      */
     refreshModels() {
         const provider = DomHelpers.getValue('llmProvider');
-
-        if (provider === 'ollama') {
-            this.loadOllamaModels();
-        } else if (provider === 'poe') {
-            this.loadPoeModels();
-        } else if (provider === 'gemini') {
-            this.loadGeminiModels();
-        } else if (provider === 'openai') {
-            this.loadOpenAIModels();
-        } else if (provider === 'openrouter') {
-            this.loadOpenRouterModels();
-        } else if (provider === 'mistral') {
-            this.loadMistralModels();
-        } else if (provider === 'deepseek') {
-            this.loadDeepSeekModels();
-        } else if (provider === 'nim') {
-            this.loadNimModels();
-        }
+        this.currentModelLoad = Promise.resolve(this.loadModelsForProvider(provider));
+        return this.currentModelLoad;
     },
 
     /**

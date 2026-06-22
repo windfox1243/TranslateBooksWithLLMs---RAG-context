@@ -65,9 +65,16 @@ function getTranslationConfig(file) {
     const promptOptions = {
         preserve_technical_content: true,
         text_cleanup: DomHelpers.getElement('textCleanup')?.checked || false,
-        refine: refineAfter,
+        // Refinement is orchestrated as a separate backend phase. Keeping this
+        // false prevents EPUB/DOCX adapters from refining internally and then
+        // being refined a second time by the refine-after workflow.
+        refine: false,
         plain_text_mode: DomHelpers.getElement('plainTextMode')?.checked || false,
-        custom_instruction_file: DomHelpers.getValue('customInstructionSelect') || ''
+        chapter_mode: DomHelpers.getElement('chapterMode')?.checked || false,
+        custom_instruction_file: DomHelpers.getValue('customInstructionSelect') || '',
+        novel_context_file: DomHelpers.getValue('novelContextSelect') || '',
+        auto_update_context: DomHelpers.getElement('autoUpdateContext')?.checked || false,
+        input_filename: file.name
     };
 
     const glossaryId = DomHelpers.getValue('glossarySelect');

@@ -48,6 +48,40 @@ async def refine_file(
     if prompt_options is None:
         prompt_options = {}
 
+    # Load novel context if a file is specified
+    novel_context_file = prompt_options.get('novel_context_file')
+    if novel_context_file:
+        from src.config import NOVEL_CONTEXTS_DIR
+        from src.utils.novel_context import (
+            build_novel_context,
+            extract_global_lore,
+            load_novel_context,
+            resolve_novel_context_path,
+        )
+        try:
+            # For refinement, we always reset the context to the global lore (removing any end-of-run
+            # dynamic relationship state), because using the final dynamic state from the end of the book
+            # would spoil the relationships for earlier chunks during the refinement pass.
+            # The local chunk-specific dynamic context is dynamically resolved and injected per-chunk.
+            novel_context_path = resolve_novel_context_path(novel_context_file, NOVEL_CONTEXTS_DIR)
+            current_context_content = load_novel_context(novel_context_path.name, novel_context_path.parent)
+            global_lore_only = extract_global_lore(current_context_content)
+            
+            prompt_options['novel_context'] = build_novel_context(
+                global_lore_only,
+                "",
+            )
+            if log_callback:
+                log_callback("novel_context_state", "Context loaded for refinement (global lore; historical state resolved per unit)", {
+                    "type": "novel_context_state", 
+                    "content": prompt_options['novel_context'],
+                    "filename": novel_context_path.name,
+                    "phase": "refinement",
+                })
+        except Exception as e:
+            if log_callback:
+                log_callback("novel_context_error", f"Error loading novel context '{novel_context_file}': {str(e)}")
+
     # Resolve max_tokens_per_chunk lazily so a reload_config() between calls is
     # honoured for subsequent runs (the .env value can change at runtime via
     # the /api/settings endpoint).
@@ -92,7 +126,10 @@ async def refine_file(
             context_window=context_window or 2048,
             auto_adjust_context=auto_adjust_context,
             max_tokens_per_chunk=max_tokens_per_chunk,
+            soft_limit_ratio=additional_config.get('soft_limit_ratio'),
             prompt_options=prompt_options,
+            checkpoint_manager=checkpoint_manager,
+            translation_id=translation_id,
         )
 
     if detected_type == 'epub':
@@ -118,6 +155,8 @@ async def refine_file(
             auto_adjust_context=auto_adjust_context,
             max_tokens_per_chunk=max_tokens_per_chunk,
             prompt_options=prompt_options,
+            checkpoint_manager=checkpoint_manager,
+            translation_id=translation_id,
         )
 
     if detected_type == 'docx':
@@ -143,6 +182,8 @@ async def refine_file(
             auto_adjust_context=auto_adjust_context,
             max_tokens_per_chunk=max_tokens_per_chunk,
             prompt_options=prompt_options,
+            checkpoint_manager=checkpoint_manager,
+            translation_id=translation_id,
         )
 
     if detected_type == 'srt':
@@ -165,6 +206,8 @@ async def refine_file(
             poe_api_key=poe_api_key,
             nim_api_key=nim_api_key,
             prompt_options=prompt_options,
+            checkpoint_manager=checkpoint_manager,
+            translation_id=translation_id,
         )
 
     supported = ', '.join(['txt', 'epub', 'srt', 'docx'])

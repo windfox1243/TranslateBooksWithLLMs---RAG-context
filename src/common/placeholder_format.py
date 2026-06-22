@@ -41,7 +41,7 @@ class PlaceholderFormat:
         Args:
             prefix: Placeholder prefix (e.g., "[id")
             suffix: Placeholder suffix (e.g., "]")
-            pattern: Regex pattern (e.g., r'\[id(\d+)\]')
+            pattern: Regex pattern (e.g., ``\\[id(\\d+)\\]``)
         """
         self.prefix = prefix
         self.suffix = suffix
@@ -144,7 +144,7 @@ class PlaceholderFormat:
             >>> fmt.parse('invalid')
             None
         """
-        match = self._compiled_pattern.match(placeholder)
+        match = self._compiled_pattern.fullmatch(placeholder)
         if match:
             return int(match.group(1))
         return None
@@ -166,7 +166,7 @@ class PlaceholderFormat:
             >>> fmt.matches('not a placeholder')
             False
         """
-        return bool(self._compiled_pattern.match(text))
+        return bool(self._compiled_pattern.fullmatch(text))
 
     def find_all(self, text: str) -> list:
         """
@@ -263,13 +263,13 @@ class PlaceholderFormat:
                 seen.add(placeholder)
                 new_index += 1
 
-        # Apply renumbering in reverse order to avoid conflicts
-        # (e.g., [id10] -> [id1]0 if we replace [id1] first)
-        result = text
-        for old_placeholder in sorted(mapping.keys(),
-                                      key=lambda p: self.parse(p) or 0,
-                                      reverse=True):
-            result = result.replace(old_placeholder, mapping[old_placeholder])
+        # Replace matches in a single regex pass. Repeated ``str.replace`` calls
+        # can rewrite placeholders produced by an earlier replacement, e.g.
+        # ``[id5][id0]`` collapsing to ``[id1][id1]``.
+        result = self._compiled_pattern.sub(
+            lambda match: mapping[match.group(0)],
+            text,
+        )
 
         return result, mapping
 

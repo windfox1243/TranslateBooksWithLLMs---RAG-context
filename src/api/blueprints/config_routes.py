@@ -763,11 +763,11 @@ def create_config_blueprint(server_session_id=None):
         from src.utils.custom_instructions import list_custom_instructions
 
         try:
-            project_root = Path(get_config_path())
-            custom_instructions_dir = project_root / 'Custom_Instructions'
+            from src.config import CUSTOM_INSTRUCTIONS_DIR
+            custom_instructions_dir = CUSTOM_INSTRUCTIONS_DIR
 
             if not custom_instructions_dir.exists():
-                return jsonify({"files": [], "count": 0, "status": "folder_not_found"})
+                custom_instructions_dir.mkdir(parents=True, exist_ok=True)
 
             files = list_custom_instructions(custom_instructions_dir)
             return jsonify({"files": files, "count": len(files), "status": "ok"})
@@ -783,8 +783,8 @@ def create_config_blueprint(server_session_id=None):
         import platform
 
         try:
-            project_root = Path(get_config_path())
-            custom_instructions_dir = project_root / 'Custom_Instructions'
+            from src.config import CUSTOM_INSTRUCTIONS_DIR
+            custom_instructions_dir = CUSTOM_INSTRUCTIONS_DIR
 
             # Create folder if it doesn't exist
             if not custom_instructions_dir.exists():
@@ -804,6 +804,53 @@ def create_config_blueprint(server_session_id=None):
 
         except Exception as e:
             logger.error(f"Error opening custom instructions folder: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @bp.route('/api/novel-contexts', methods=['GET'])
+    def get_novel_contexts_api():
+        """List available novel context files from Novel_Contexts/ folder."""
+        from src.utils.novel_context import list_novel_contexts
+        try:
+            from src.config import NOVEL_CONTEXTS_DIR
+            novel_contexts_dir = NOVEL_CONTEXTS_DIR
+
+            if not novel_contexts_dir.exists():
+                novel_contexts_dir.mkdir(parents=True, exist_ok=True)
+
+            files = list_novel_contexts(novel_contexts_dir)
+            return jsonify({"files": files, "count": len(files), "status": "ok"})
+        except Exception as e:
+            logger.error(f"Error listing novel contexts: {e}")
+            return jsonify({"files": [], "count": 0, "status": "error", "error": str(e)})
+
+    @bp.route('/api/novel-contexts/open-folder', methods=['POST'])
+    def open_novel_contexts_folder():
+        """Open the Novel_Contexts folder in the system file explorer"""
+        import subprocess
+        import platform
+
+        try:
+            from src.config import NOVEL_CONTEXTS_DIR
+            novel_contexts_dir = NOVEL_CONTEXTS_DIR
+
+            # Create folder if it doesn't exist
+            if not novel_contexts_dir.exists():
+                novel_contexts_dir.mkdir(parents=True, exist_ok=True)
+
+            abs_path = str(novel_contexts_dir.resolve())
+            system = platform.system()
+
+            if system == 'Windows':
+                os.startfile(abs_path)
+            elif system == 'Darwin':  # macOS
+                subprocess.run(['open', abs_path], check=True)
+            else:  # Linux and others
+                subprocess.run(['xdg-open', abs_path], check=True)
+
+            return jsonify({"success": True, "path": abs_path})
+
+        except Exception as e:
+            logger.error(f"Error opening novel contexts folder: {e}")
             return jsonify({"success": False, "error": str(e)}), 500
 
     def _get_env_file_path():
@@ -951,14 +998,14 @@ def create_config_blueprint(server_session_id=None):
                 if key in allowed_keys:
                     # Sanitize value - remove newlines and dangerous characters
                     safe_value = str(value).replace('\n', '').replace('\r', '')
-                    # Clamp MAX_TOKENS_PER_CHUNK to the same range the UI enforces
-                    # so a hand-crafted POST can't break the chunker.
+                    # Keep a small positive floor, but honor larger deliberate
+                    # budgets such as 2,000 tokens from .env or the settings UI.
                     if key == 'MAX_TOKENS_PER_CHUNK':
                         try:
                             n = int(safe_value)
                         except (TypeError, ValueError):
                             continue
-                        safe_value = str(max(50, min(1000, n)))
+                        safe_value = str(max(50, n))
                     # Clamp parallel workers to [1, MAX_PARALLEL_TRANSLATIONS].
                     elif key == 'PARALLEL_TRANSLATIONS':
                         try:

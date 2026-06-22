@@ -938,6 +938,7 @@ function buildRunPayload({ defer = false } = {}) {
     const promptOptions = {
         preserve_technical_content: $('preserveTechnicalContent')?.checked || false,
         text_cleanup: $('textCleanup')?.checked || false,
+        novel_context_file: ($('novelContextSelect')?.value || '').trim(),
     };
 
     const payload = {

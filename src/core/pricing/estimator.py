@@ -82,7 +82,15 @@ class CostEstimator:
         if not text or not text.strip():
             return self._empty_result()
 
-        chunks = self.chunker.chunk_text(text)
+        if options.get("chapter_mode"):
+            from src.core.text_processor import split_text_into_chunks
+            chunks = split_text_into_chunks(
+                text,
+                max_tokens_per_chunk=self.chunker.max_tokens,
+                chapter_mode=True,
+            )
+        else:
+            chunks = self.chunker.chunk_text(text)
         n_chunks = len(chunks)
 
         if n_chunks == 0:

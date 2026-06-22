@@ -172,5 +172,11 @@
   "preview_no_match": "（此示例中无术语匹配）",
   "preview_matched": "{{matched}} / {{total}} 个术语已匹配",
   "preview_capped": "（已达上限）",
-  "preview_failed": "预览失败：{{error}}"
+  "preview_failed": "预览失败：{{error}}",
+  "import_success_one": "已导入 1 个术语。",
+  "import_success_other": "已导入 {{count}} 个术语。",
+  "import_skipped_empty_one": "跳过了 1 个空行",
+  "import_skipped_empty_other": "跳过了 {{count}} 个空行",
+  "import_skipped_duplicate_one": "跳过了 1 个重复项",
+  "import_skipped_duplicate_other": "跳过了 {{count}} 个重复项"
 }

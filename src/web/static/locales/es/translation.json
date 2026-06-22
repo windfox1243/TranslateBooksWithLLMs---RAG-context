@@ -10,14 +10,12 @@
   "lang_other_option": "Otro (especificar)",
   "custom_source_lang_placeholder": "Introduce un idioma de origen personalizado",
   "custom_target_lang_placeholder": "Introduce un idioma de destino personalizado",
-
   "drop_files_title": "Suelta archivos para traducir",
   "drop_files_support": "Compatible con TXT, EPUB, SRT y DOCX",
   "drop_files_refine_title": "Suelta archivos para refinar (ya traducidos)",
   "drop_files_refine_support": "Pule una traducción existente — misma lengua de entrada y salida",
   "browse_files": "Explorar archivos",
   "selected_files": "Archivos seleccionados:",
-
   "op_badge_translate": "Traducir",
   "op_badge_refine": "Refinar",
   "per_file_source": "Origen",
@@ -27,7 +25,6 @@
   "per_file_refine_after_title": "Ejecuta una pasada de refinamiento sobre la salida de este archivo después de la traducción",
   "zone_locked": "Zona de depósito bloqueada mientras la cola está en modo {{operation}}.",
   "zone_locked_current": "La cola está en modo {{current}} — vacíala antes de cambiar.",
-
   "start_batch": "Iniciar",
   "start_batch_with_icon": "▶️ Iniciar",
   "interrupt_batch": "Interrumpir actual y detener lote",
@@ -48,7 +45,6 @@
   "batch_paused_log": "⏸️ Procesamiento por lotes pausado (límite de tasa alcanzado). Reanúdalo desde la sección de abajo.",
   "batch_stopped_user_log": "🛑 Procesamiento por lotes detenido por el usuario.",
   "interrupt_before_clear_log": "🛑 Interrumpiendo la traducción actual antes de limpiar archivos...",
-
   "translating": "Traduciendo",
   "refining": "Refinando",
   "translating_step": "Traduciendo ({{step}}/{{total}})",
@@ -63,7 +59,6 @@
   "validation_target_required": "Especifica el idioma de destino.",
   "validation_model_required": "Selecciona un modelo LLM.",
   "system_initializing": "⚠️ El sistema aún se está iniciando, espera un momento...",
-
   "starting_translation_log": "▶️ Iniciando traducción de: {{name}} ({{type}})",
   "submitted_log": "⏳ Traducción enviada para {{name}}...",
   "init_error_log": "❌ Error al iniciar la traducción de {{name}}: {{error}}",
@@ -76,7 +71,6 @@
   "file_upload_failed": "Error al subir el archivo «{{name}}»: {{error}}",
   "file_duplicate": "El archivo «{{name}}» ya está en la lista.",
   "file_uploaded_lang_not_in_list": "Archivo «{{name}}» ({{type}}) subido. Idioma detectado pero no en la lista: {{lang}}",
-
   "no_file_uploaded_yet": "Aún no se ha subido ningún archivo. Sube un archivo para detectar su idioma automáticamente.",
   "file_not_in_queue": "Archivo no encontrado en la cola.",
   "file_no_path": "Ruta del archivo no disponible para la detección de idioma.",
@@ -87,12 +81,11 @@
   "lang_detection_no_result": "No se pudo detectar el idioma a partir del contenido del archivo.",
   "lang_detection_failed": "Falló la detección de idioma: {{error}}",
   "cannot_edit_file_processing": "No se puede editar el archivo «{{name}}»: ya se está procesando.",
-
   "active_badge": "Activo",
   "remove_file_title": "Quitar archivo",
   "audiobook_btn_title": "Generar audiolibro (TTS)",
-
   "translation_completed_msg": "✅ {{name}}: ¡Traducción completada!",
+  "refinement_completed_msg": "✅ {{name}}: ¡Revisión completada!",
   "translation_interrupted_msg": "ℹ️ {{name}}: Traducción interrumpida.",
   "translation_rate_limited_msg": "⏸️ {{name}}: Límite de tasa alcanzado, traducción pausada automáticamente. Usa el botón Reanudar de abajo cuando estés listo.",
   "translation_error_msg": "❌ {{name}}: Error - {{error}}",
@@ -116,7 +109,6 @@
   "completion_warning_placeholder_errors": "{{count}} imperfección(es) de formato",
   "completion_warning_failed": "{{count}} fragmento(s) fallidos",
   "completion_warning_intro": "El LLM tuvo dificultades para mantener perfectamente el formato original (etiquetas en línea, estilos, saltos de línea). En {{processed}} fragmentos: {{retryPct}}% necesitaron reintentos y {{fallbackPct}}% usaron posicionamiento aproximado de etiquetas (promedio {{avgErrors}} imperfecciones de formato por fragmento). Para un formato más limpio la próxima vez, considere:",
-
   "session_restored_log": "🔄 Sesión de traducción anterior restaurada",
   "session_corrupted_log": "El estado de la sesión anterior estaba corrupto, empezando de cero",
   "session_could_not_restore": "No se pudo restaurar la sesión anterior, empezando de cero",
@@ -125,7 +117,6 @@
   "session_job_missing_log": "La tarea de traducción ya no existe, restableciendo",
   "session_state_save_quota": "Almacenamiento del navegador lleno, no se pudo guardar el estado de la traducción",
   "session_state_save_failed": "Error al guardar el estado de la traducción",
-
   "active_translation_warning_title": "Traducción activa en curso",
   "active_translation_warning_desc": "Reanudación desactivada. Traducción(es) activa(s): {{names}}",
   "cannot_resume_in_progress_title": "⚠️ No se puede reanudar: ya hay una traducción en curso",
@@ -147,16 +138,13 @@
   "resume_style_warning": "Cambiar de modelo a mitad del libro puede provocar una ruptura de estilo entre los segmentos ya traducidos y los restantes.",
   "resume_apply_btn": "Reanudar con este modelo",
   "resume_no_model_selected": "Selecciona un modelo antes de reanudar.",
-
   "confirm_delete_checkpoint": "¿Seguro que quieres eliminar este punto de control?\n\nEsta acción es irreversible y perderás todo el progreso.",
   "deleting_checkpoint_log": "🗑️ Eliminando punto de control {{id}}...",
   "checkpoint_deleted": "✅ Punto de control eliminado correctamente",
   "checkpoint_deleted_log": "✅ Punto de control {{id}} eliminado",
   "checkpoint_delete_error": "❌ Error al eliminar el punto de control: {{error}}",
-
   "paused_count_log": "📦 {{count}} traducción(es) en pausa encontrada(s)",
   "paused_load_error": "Error al cargar: {{error}}",
-
   "job_card_progress": "Progreso: {{completed}} / {{total}} fragmentos ({{percent}}%)",
   "job_card_created": "Creado: {{date}}",
   "job_card_paused": "Pausado: {{date}}",
@@ -169,7 +157,6 @@
   "job_card_type_id": "Tipo: {{type}} • ID: {{id}}",
   "job_card_unknown": "Desconocido",
   "job_card_na": "N/D",
-
   "progress_title": "Progreso de la traducción",
   "stat_total_chunks": "Fragmentos totales",
   "stat_completed": "Completados",
@@ -187,18 +174,15 @@
   "stat_total_tokens": "Tokens totales",
   "last_translation_preview": "Vista previa de la última traducción",
   "no_translation_yet": "Aún no hay traducción...",
-
   "paused_translations": "Traducciones en pausa",
   "refresh_list_title": "Actualizar lista",
   "no_paused_translations": "No hay traducciones en pausa",
-
   "file_list_cleared": "Lista de archivos limpiada",
   "form_reset_log": "Formulario y lista de archivos restablecidos.",
   "delete_uploaded_log": "🗑️ Eliminando {{count}} archivo(s) subido(s) del servidor...",
   "delete_uploaded_success_log": "✅ {{count}} archivo(s) subido(s) eliminado(s) correctamente.",
   "delete_uploaded_failed_log": "⚠️ No se pudo eliminar {{count}} archivo(s).",
   "delete_uploaded_error_log": "⚠️ Se produjo un error al eliminar los archivos subidos.",
-
   "settings_saved_env": "✅ Ajustes guardados: {{keys}}",
   "settings_saved_env_log": "💾 Guardado en .env: {{keys}}",
   "preferences_saved": "✅ Preferencias guardadas",
@@ -206,17 +190,16 @@
   "preferences_save_quota": "Almacenamiento del navegador lleno, no se pudieron guardar las preferencias",
   "preferences_save_failed_log": "Error al guardar las preferencias",
   "preferences_load_failed_log": "No se pudieron cargar las preferencias guardadas",
-
   "summary_refining_in": "Refinando en {{lang}}",
   "summary_refine_only": "Solo refinar (omite la traducción)",
   "summary_no_auto_pause": "Sin auto-pausa",
   "summary_bilingual": "Bilingüe",
   "summary_plain_text_mode": "Modo texto plano",
+  "summary_chapter_mode": "Por capítulos",
   "summary_ocr_cleanup": "Limpieza OCR",
   "summary_glossary": "Glosario: {{name}}",
   "summary_instructions": "Instrucciones: {{name}}",
   "summary_lang_auto_detect": "autodetectar",
-
   "quicktest_button_title": "Prueba rápida: traduce 5 extractos con el LLM seleccionado",
   "quicktest_button_label": "Prueba rápida",
   "quicktest_title": "Prueba rápida del LLM",
@@ -232,5 +215,36 @@
   "quicktest_error_no_model": "Ningún modelo seleccionado. Elige primero un proveedor y un modelo.",
   "quicktest_error_no_target": "Define un idioma de destino para este archivo antes de probar.",
   "quicktest_error_empty": "Este archivo es demasiado pequeño para muestrear.",
-  "quicktest_error_run": "La prueba rápida falló: {{error}}"
+  "quicktest_error_run": "La prueba rápida falló: {{error}}",
+  "profile_label": "Perfil de traducción (Proyecto)",
+  "profile_custom_settings": "-- Configuración personalizada --",
+  "profile_load_btn": "Cargar",
+  "profile_load_title": "Cargar el perfil seleccionado",
+  "profile_save_btn": "Guardar como...",
+  "profile_save_title": "Guardar la configuración actual como un perfil",
+  "context_preview_title": "Vista previa del contexto",
+  "context_edit_resync_title": "Editar esta instantánea y resincronizar todos los fragmentos posteriores",
+  "context_edit_resync_btn": "Editar y resincronizar",
+  "context_save_resync_btn": "Guardar y resincronizar",
+  "context_latest_state": "Último estado",
+  "context_open_folder_btn": "Abrir carpeta",
+  "context_waiting": "Esperando el contexto...",
+  "profile_loaded_log": "[Sistema] Perfil cargado: {{name}}",
+  "profile_load_failed_log": "[Error] Error al cargar el perfil: {{error}}",
+  "profile_saved_log": "[Sistema] Perfil guardado: {{name}}",
+  "profile_save_failed_log": "[Error] Error al guardar el perfil: {{error}}",
+  "profile_enter_name": "Ingrese un nombre para este Perfil de Traducción (por ejemplo, 'Proyecto Alfa'):",
+  "context_general_tab": "General",
+  "context_raw_view_tab": "Vista sin formato",
+  "context_chunk_option": "Fragmento {{number}}",
+  "context_no_job_title": "No hay tarea seleccionada",
+  "context_no_job_body": "No se encontró ninguna tarea de traducción activa o reciente desde la que cargar el contexto.",
+  "context_empty_snapshot": "(Instantánea de contexto vacía)",
+  "context_no_context_title": "Sin contexto",
+  "context_no_context_body": "No se encontró ninguna instantánea para este fragmento.",
+  "context_load_error_title": "Error",
+  "context_load_error_body": "Error al cargar la instantánea de contexto: {{error}}",
+  "context_resync_started_log": "[Sistema] Resincronización de contexto iniciada desde el fragmento {{chunk}}. Se procesará en segundo plano.",
+  "context_resync_failed_log": "[Error] Error al iniciar la resincronización de contexto: {{error}}",
+  "context_open_folder_failed": "Error al abrir la carpeta de contextos de la novela"
 }

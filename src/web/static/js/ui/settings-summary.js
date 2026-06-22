@@ -30,6 +30,7 @@ const PROVIDER_LABELS = {
 const OPTION_STYLES = {
     bilingual:    { bg: 'rgba(59, 130, 246, 0.18)', fg: '#2563eb', border: 'rgba(59, 130, 246, 0.45)' },
     plainText:    { bg: 'rgba(245, 158, 11, 0.20)', fg: '#d97706', border: 'rgba(245, 158, 11, 0.45)' },
+    chapter:      { bg: 'rgba(14, 165, 233, 0.18)', fg: '#0284c7', border: 'rgba(14, 165, 233, 0.45)' },
     ocr:          { bg: 'rgba(168, 85, 247, 0.18)', fg: '#9333ea', border: 'rgba(168, 85, 247, 0.45)' },
     noPause:      { bg: 'rgba(239, 68, 68, 0.18)',  fg: '#dc2626', border: 'rgba(239, 68, 68, 0.45)' },
     glossary:     { bg: 'rgba(99, 102, 241, 0.18)', fg: '#4f46e5', border: 'rgba(99, 102, 241, 0.45)' },
@@ -48,6 +49,7 @@ const TARGETS = {
     noPause:      { tab: 'settings', section: 'settings', focus: 'disableAutoPause' },
     bilingual:    { tab: 'settings', section: 'prompt',   focus: 'bilingualMode' },
     plainText:    { tab: 'settings', section: 'prompt',   focus: 'plainTextMode' },
+    chapter:      { tab: 'settings', section: 'prompt',   focus: 'chapterMode' },
     ocr:          { tab: 'settings', section: 'prompt',   focus: 'textCleanup' },
     glossary:     { tab: 'settings', section: 'prompt',   focus: 'glossarySelect' },
     instructions: { tab: 'settings', section: 'prompt',   focus: 'customInstructionSelect' },
@@ -125,6 +127,9 @@ function buildChips() {
         if (hasInstructions) {
             chips.push({ key: 'instructions', label: t('translation:summary_instructions', { name: getSelectText('customInstructionSelect') }) });
         }
+        if (isChecked('chapterMode')) {
+            chips.push({ key: 'chapter', label: t('translation:summary_chapter_mode') });
+        }
         if (isChecked('disableAutoPause')) {
             chips.push({ key: 'noPause', label: t('translation:summary_no_auto_pause') });
         }
@@ -133,6 +138,7 @@ function buildChips() {
 
     if (isChecked('bilingualMode'))     chips.push({ key: 'bilingual', label: t('translation:summary_bilingual') });
     if (isChecked('plainTextMode'))     chips.push({ key: 'plainText', label: t('translation:summary_plain_text_mode') });
+    if (isChecked('chapterMode'))       chips.push({ key: 'chapter', label: t('translation:summary_chapter_mode') });
     if (isChecked('textCleanup'))       chips.push({ key: 'ocr', label: t('translation:summary_ocr_cleanup') });
     if (isChecked('disableAutoPause'))  chips.push({ key: 'noPause', label: t('translation:summary_no_auto_pause') });
 
@@ -283,7 +289,7 @@ const WATCHED_IDS = [
     'llmProvider', 'model',
     'sourceLang', 'customSourceLang',
     'targetLang', 'customTargetLang',
-    'bilingualMode', 'plainTextMode',
+    'bilingualMode', 'plainTextMode', 'chapterMode',
     'textCleanup', 'disableAutoPause',
     'glossarySelect', 'customInstructionSelect',
 ];

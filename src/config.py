@@ -38,6 +38,25 @@ if _debug_mode:
 # have resolved their effective settings — so the warning shows the real CLI
 # arguments (provider, endpoint, model) instead of import-time defaults (#187).
 _is_frozen = getattr(sys, 'frozen', False)
+
+# Path to Novel_Contexts and Custom_Instructions directory.
+# In frozen mode, they live inside TranslateBook_Data next to the executable.
+# In development mode, we also want to read and write to TranslateBook_Data
+# to avoid polluting the root repository directory (the unbuilt folder).
+if _is_frozen:
+    _exe_dir = Path(sys.executable).parent
+    NOVEL_CONTEXTS_DIR = _exe_dir / 'TranslateBook_Data' / 'Novel_Contexts'
+    CUSTOM_INSTRUCTIONS_DIR = _exe_dir / 'TranslateBook_Data' / 'Custom_Instructions'
+    TRANSLATION_PROFILES_DIR = _exe_dir / 'TranslateBook_Data' / 'Translation_Profiles'
+    DATA_DIR = _exe_dir / 'TranslateBook_Data' / 'data'
+    UPLOADS_DIR = DATA_DIR / 'uploads'
+else:
+    _project_root = Path(__file__).parent.parent.resolve()
+    NOVEL_CONTEXTS_DIR = _project_root / 'TranslateBook_Data' / 'Novel_Contexts'
+    CUSTOM_INSTRUCTIONS_DIR = _project_root / 'TranslateBook_Data' / 'Custom_Instructions'
+    TRANSLATION_PROFILES_DIR = _project_root / 'TranslateBook_Data' / 'Translation_Profiles'
+    DATA_DIR = _project_root / 'data'
+    UPLOADS_DIR = DATA_DIR / 'uploads'
 ENV_FILE_MISSING = not _env_exists
 
 if ENV_FILE_MISSING and _is_frozen and _debug_mode:
@@ -92,12 +111,15 @@ _RELOADABLE_ENV_SETTINGS = (
     # save it back via /api/settings; reloadable so changes apply without a
     # server restart).
     ('PARALLEL_TRANSLATIONS', 'PARALLEL_TRANSLATIONS', '1'),
+    # Token chunk budget is editable in the web UI. The next job must use the
+    # value saved to .env without requiring a server restart.
+    ('MAX_TOKENS_PER_CHUNK', 'MAX_TOKENS_PER_CHUNK', '450'),
 )
 
 
 _NOTIFY_BOOL_ATTRS = {'NOTIFY_ON_SUCCESS', 'NOTIFY_ON_FAILURE', 'NOTIFY_ON_INTERRUPTION'}
 _NOTIFY_INT_ATTRS = {'NOTIFY_TIMEOUT_SECONDS'}
-_INT_ATTRS = {'PARALLEL_TRANSLATIONS'}
+_INT_ATTRS = {'PARALLEL_TRANSLATIONS', 'MAX_TOKENS_PER_CHUNK'}
 
 
 def _apply_reloadable_env_settings():
@@ -431,7 +453,7 @@ def reload_config():
     without restarting the server.
 
     Only settings listed in _RELOADABLE_ENV_SETTINGS are refreshed.
-    Static settings (chunk sizes, namespaces, prompts) and modules that
+    Static settings (namespaces, prompts) and modules that
     did `from src.config import X` snapshot at import time and are not
     affected — read via `import src.config as cfg; cfg.X` for live values.
     """
@@ -694,11 +716,11 @@ class TranslationConfig:
     @classmethod
     def from_web_request(cls, request_data: dict) -> 'TranslationConfig':
         """Create config from web request data"""
-        # Clamp chunker budget to the same [50, 1000] window the UI enforces,
-        # falling back to the .env default if the field is absent or malformed.
+        # Keep a small positive floor while honoring the live .env/request
+        # budget. The old 1,000-token ceiling silently changed valid settings.
         try:
             requested_max_tokens = int(request_data.get('max_tokens_per_chunk', MAX_TOKENS_PER_CHUNK))
-            clamped_max_tokens = max(50, min(1000, requested_max_tokens))
+            clamped_max_tokens = max(50, requested_max_tokens)
         except (TypeError, ValueError):
             clamped_max_tokens = MAX_TOKENS_PER_CHUNK
 

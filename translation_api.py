@@ -25,6 +25,10 @@ from urllib.parse import urlparse
 from flask import Flask
 from flask_socketio import SocketIO
 
+# Explicitly import the threading driver so PyInstaller bundles it.
+# This prevents "ValueError: Invalid async_mode specified" in the executable.
+import engineio.async_drivers.threading
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -267,6 +271,11 @@ restore_incomplete_jobs()
 
 def open_browser(host, port):
     """Open the web interface in the default browser after a short delay"""
+    if os.environ.get("TBL_NO_BROWSER", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }:
+        return
+
     def _open():
         # Small delay to ensure server is ready
         import time
@@ -329,7 +338,7 @@ def start_server():
         logger.info("=" * 50)
         logger.info("")
         logger.info(f"  Ollama Endpoint: {DEFAULT_OLLAMA_API_ENDPOINT}")
-        logger.info(f"  Supported formats: .txt, .epub, .srt")
+        logger.info("  Supported formats: .txt, .epub, .srt, .docx")
         logger.info("")
 
         # Test Ollama connection at startup

@@ -64,6 +64,7 @@ async def _refine_one_xhtml(
     prompt_options: Optional[Dict],
     check_interruption_callback: Optional[Callable],
     container: Optional[TranslationContainer] = None,
+    context_tracker: Optional[Any] = None,
 ) -> bool:
     """Refine a single parsed XHTML document in place."""
     body_html, body_element, tag_preserver = _setup_translation(
@@ -81,6 +82,7 @@ async def _refine_one_xhtml(
     chunks = _create_chunks(
         text_with_placeholders, global_tag_map, max_tokens_per_chunk,
         log_callback, container,
+        chapter_mode=bool((prompt_options or {}).get("chapter_mode")),
     )
 
     if not chunks:
@@ -100,6 +102,8 @@ async def _refine_one_xhtml(
         placeholder_format=placeholder_format,
         log_callback=log_callback,
         prompt_options=prompt_options,
+        context_tracker=context_tracker,
+        check_interruption_callback=check_interruption_callback,
     )
 
     if check_interruption_callback and check_interruption_callback():
@@ -136,6 +140,8 @@ async def refine_epub_file(
     auto_adjust_context: bool = True,
     prompt_options: Optional[Dict] = None,
     max_tokens_per_chunk: int = MAX_TOKENS_PER_CHUNK,
+    checkpoint_manager: Optional[Any] = None,
+    translation_id: Optional[str] = None,
 ) -> bool:
     """Run a refinement-only pass on an already-translated EPUB."""
     if not os.path.exists(input_filepath):
@@ -177,6 +183,65 @@ async def refine_epub_file(
 
             if stats_callback:
                 stats_callback({'total_chunks': total_files, 'completed_chunks': 0, 'failed_chunks': 0})
+
+            db_chunks = []
+            if checkpoint_manager and translation_id:
+                db_chunks = checkpoint_manager.db.get_chunks(translation_id) or []
+
+            # Pre-calculate the global refine chunk count so persisted snapshots
+            # map consistently across all XHTML files.
+            total_refine_chunks = 0
+            refinement_units: List[str] = []
+            pre_container = TranslationContainer()
+            for href in content_files:
+                file_path = os.path.join(opf_dir, href)
+                if not os.path.exists(file_path):
+                    continue
+                try:
+                    parser = etree.XMLParser(recover=True, remove_blank_text=False)
+                    tree = etree.parse(file_path, parser)
+                    doc_root = tree.getroot()
+                    body_html, body_element, tag_preserver = _setup_translation(
+                        doc_root, None, pre_container
+                    )
+                    if body_html and body_element is not None:
+                        (
+                            text_with_placeholders,
+                            global_tag_map,
+                            placeholder_format,
+                        ) = _preserve_tags(
+                            body_html, tag_preserver, None, protect_technical=True
+                        )
+                        chunks = _create_chunks(
+                            text_with_placeholders, global_tag_map, max_tokens_per_chunk,
+                            None, pre_container,
+                            chapter_mode=bool(
+                                (prompt_options or {}).get("chapter_mode")
+                            ),
+                        )
+                        total_refine_chunks += len(chunks)
+                        refinement_units.extend(
+                            _globalize_chunk_text(chunk, placeholder_format)
+                            for chunk in chunks
+                        )
+                except Exception:
+                    pass
+
+            from src.utils.novel_context import (
+                RefinementContextTracker,
+                map_context_snapshots_for_refinement,
+            )
+            historical_contexts = map_context_snapshots_for_refinement(
+                total_refine_chunks,
+                db_chunks,
+                (prompt_options or {}).get('novel_context', ''),
+                refinement_units=refinement_units,
+            )
+            context_tracker = RefinementContextTracker(
+                prompt_options=prompt_options or {},
+                historical_contexts=historical_contexts,
+                log_callback=log_callback,
+            )
 
             completed, failed, interrupted = 0, 0, False
             for idx, href in enumerate(content_files):
@@ -220,6 +285,7 @@ async def refine_epub_file(
                     context_manager=context_manager,
                     prompt_options=prompt_options,
                     check_interruption_callback=check_interruption_callback,
+                    context_tracker=context_tracker,
                 )
 
                 if ok:

@@ -1,10 +1,7 @@
 """
 Text processing module for chunking and context management
 """
-import re
 from typing import List, Dict, Optional, TYPE_CHECKING
-
-from src.config import SENTENCE_TERMINATORS
 
 if TYPE_CHECKING:
     from src.config import TranslationConfig
@@ -18,7 +15,8 @@ def split_text_into_chunks(
     text: str,
     config: Optional['TranslationConfig'] = None,
     max_tokens_per_chunk: Optional[int] = None,
-    soft_limit_ratio: Optional[float] = None
+    soft_limit_ratio: Optional[float] = None,
+    chapter_mode: bool = False,
 ) -> List[Dict[str, str]]:
     """
     Split text into chunks with context preservation using token-based chunking.
@@ -28,6 +26,7 @@ def split_text_into_chunks(
         config: TranslationConfig object (optional, for default values)
         max_tokens_per_chunk: Override for max tokens per chunk
         soft_limit_ratio: Override for soft limit ratio
+        chapter_mode: Keep detected chapters as independent semantic ranges
 
     Returns:
         List of chunk dictionaries with context_before, main_content, context_after
@@ -48,4 +47,27 @@ def split_text_into_chunks(
         max_tokens=_max_tokens,
         soft_limit_ratio=_soft_limit
     )
-    return chunker.chunk_text(text)
+    if not chapter_mode:
+        return chunker.chunk_text(text)
+
+    from src.core.chunking.chapter_detector import find_chapter_ranges
+
+    paragraphs = chunker.split_into_paragraphs(text)
+    chapter_ranges = find_chapter_ranges(paragraphs)
+    chunks: List[Dict[str, str]] = []
+
+    for chapter_index, chapter_range in enumerate(chapter_ranges):
+        chapter_text = "\n\n".join(
+            paragraphs[chapter_range.start:chapter_range.end]
+        )
+        chapter_chunks = chunker.chunk_text(chapter_text)
+        for chunk_index, chunk in enumerate(chapter_chunks):
+            chunk.update({
+                "chapter_index": chapter_index,
+                "chapter_title": chapter_range.title,
+                "chunk_in_chapter": chunk_index,
+                "chunks_in_chapter": len(chapter_chunks),
+            })
+        chunks.extend(chapter_chunks)
+
+    return chunks

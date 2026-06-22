@@ -194,12 +194,14 @@ function switchTopTab(name) {
     const translateTab = $('tab-translate');
     const settingsTab = $('tab-settings');
     const glossariesTab = $('tab-glossaries');
+    const contextTab = $('tab-context');
     const filesTab = $('tab-files');
     const sampleTab = $('tab-sample');
 
     if (translateTab) translateTab.classList.toggle('hidden', name !== 'translate');
     if (settingsTab) settingsTab.classList.toggle('hidden', name !== 'settings');
     if (glossariesTab) glossariesTab.classList.toggle('hidden', name !== 'glossaries');
+    if (contextTab) contextTab.classList.toggle('hidden', name !== 'context');
     if (filesTab) filesTab.classList.toggle('hidden', name !== 'files');
     if (sampleTab) sampleTab.classList.toggle('hidden', name !== 'sample');
 
@@ -1244,14 +1246,21 @@ async function handleImportFile(file) {
         const skippedEmpty = (result && result.skipped_empty) || 0;
         const skippedDuplicate = (result && result.skipped_duplicate) || 0;
 
-        let message = `Imported ${imported} term${imported === 1 ? '' : 's'}.`;
+        let message = imported === 1
+            ? t('glossary:import_success_one')
+            : t('glossary:import_success_other', { count: imported });
+
         if (skippedEmpty > 0 || skippedDuplicate > 0) {
             const parts = [];
             if (skippedEmpty > 0) {
-                parts.push(`${skippedEmpty} empty row${skippedEmpty === 1 ? '' : 's'} skipped`);
+                parts.push(skippedEmpty === 1
+                    ? t('glossary:import_skipped_empty_one')
+                    : t('glossary:import_skipped_empty_other', { count: skippedEmpty }));
             }
             if (skippedDuplicate > 0) {
-                parts.push(`${skippedDuplicate} duplicate${skippedDuplicate === 1 ? '' : 's'} skipped`);
+                parts.push(skippedDuplicate === 1
+                    ? t('glossary:import_skipped_duplicate_one')
+                    : t('glossary:import_skipped_duplicate_other', { count: skippedDuplicate }));
             }
             message += ` (${parts.join(', ')}.)`;
         }

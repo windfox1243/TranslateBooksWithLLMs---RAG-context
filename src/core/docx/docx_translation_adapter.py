@@ -102,7 +102,8 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
         text: str,
         structure_map: Dict[str, str],
         max_tokens: int,
-        log_callback: Optional[Callable]
+        log_callback: Optional[Callable],
+        chapter_mode: bool = False,
     ) -> List[Dict]:
         """
         Découpe via HtmlChunker.
@@ -118,7 +119,19 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
         Returns:
             List of chunks
         """
-        chunks = self.html_chunker.chunk_html_with_placeholders(
+        chunker = (
+            self.html_chunker
+            if (
+                self.container.config.max_tokens_per_chunk == max_tokens
+                and not chapter_mode
+            )
+            else (
+                HtmlChunker(max_tokens=max_tokens, chapter_mode=True)
+                if chapter_mode
+                else HtmlChunker(max_tokens=max_tokens)
+            )
+        )
+        chunks = chunker.chunk_html_with_placeholders(
             text, structure_map
         )
 
@@ -279,6 +292,8 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
                 stats_callback=stats_callback,
                 check_interruption_callback=check_interruption_callback,
                 parallel_workers=parallel_workers,
+                checkpoint_manager=checkpoint_manager,
+                translation_id=translation_id,
             )
 
         # === RESUME FROM PARTIAL STATE ===
@@ -326,7 +341,8 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
                 text_with_placeholders,
                 global_tag_map,
                 max_tokens_per_chunk,
-                log_callback
+                log_callback,
+                chapter_mode=bool((prompt_options or {}).get("chapter_mode")),
             )
 
             # Initialize variables for new translation
@@ -410,6 +426,8 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
         stats_callback: Optional[Callable],
         check_interruption_callback: Optional[Callable],
         parallel_workers: int = 1,
+        checkpoint_manager: Optional[Any] = None,
+        translation_id: Optional[str] = None,
     ) -> Tuple[bytes, Any]:
         """
         Plain-text-mode DOCX translation: skip mammoth + placeholders.
@@ -443,6 +461,7 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
 
         translated, stats, was_interrupted = await translate_paragraphs_plain(
             paragraphs=content.paragraphs_text,
+            paragraph_kinds=content.paragraphs_style,
             source_language=source_language,
             target_language=target_language,
             model_name=model_name,
@@ -454,6 +473,8 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
             check_interruption_callback=check_interruption_callback,
             prompt_options=prompt_options,
             parallel_workers=parallel_workers,
+            checkpoint_manager=checkpoint_manager,
+            translation_id=translation_id,
         )
 
         if was_interrupted:

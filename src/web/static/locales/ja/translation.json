@@ -10,14 +10,12 @@
   "lang_other_option": "その他 (指定する)",
   "custom_source_lang_placeholder": "カスタムの翻訳元の言語を入力",
   "custom_target_lang_placeholder": "カスタムの翻訳先の言語を入力",
-
   "drop_files_title": "翻訳するファイルをここにドロップ",
   "drop_files_support": "TXT、EPUB、SRT、DOCX に対応",
   "drop_files_refine_title": "推敲するファイルをここにドロップ（翻訳済み）",
   "drop_files_refine_support": "既存の翻訳を磨く — 同じ言語入力、同じ言語出力",
   "browse_files": "ファイルを選択",
   "selected_files": "選択されたファイル:",
-
   "op_badge_translate": "翻訳",
   "op_badge_refine": "推敲",
   "per_file_source": "原文",
@@ -27,7 +25,6 @@
   "per_file_refine_after_title": "翻訳後にこのファイルの出力に対して推敲パスを実行します",
   "zone_locked": "キューが {{operation}} モードの間、このドロップ領域はロックされています。",
   "zone_locked_current": "キューは {{current}} モードです — モードを切り替えるには空にしてください。",
-
   "start_batch": "開始",
   "start_batch_with_icon": "▶️ 開始",
   "interrupt_batch": "現在の処理を中断してバッチを停止",
@@ -48,7 +45,6 @@
   "batch_paused_log": "⏸️ バッチ処理を一時停止しました (レート制限)。下のセクションから再開してください。",
   "batch_stopped_user_log": "🛑 ユーザーによってバッチ処理が停止されました。",
   "interrupt_before_clear_log": "🛑 ファイルをクリアする前に現在の翻訳を中断しています...",
-
   "translating": "翻訳中",
   "refining": "推敲中",
   "translating_step": "翻訳中 ({{step}}/{{total}})",
@@ -63,7 +59,6 @@
   "validation_target_required": "翻訳先の言語を指定してください。",
   "validation_model_required": "LLM モデルを選択してください。",
   "system_initializing": "⚠️ システムは初期化中です。お待ちください...",
-
   "starting_translation_log": "▶️ 翻訳を開始しています: {{name}} ({{type}})",
   "submitted_log": "⏳ {{name}} の翻訳を送信しました...",
   "init_error_log": "❌ {{name}} の翻訳開始時にエラーが発生しました: {{error}}",
@@ -76,7 +71,6 @@
   "file_upload_failed": "ファイル '{{name}}' のアップロードに失敗しました: {{error}}",
   "file_duplicate": "ファイル '{{name}}' は既にリストにあります。",
   "file_uploaded_lang_not_in_list": "ファイル '{{name}}' ({{type}}) をアップロードしました。言語を検出しましたがリストにありません: {{lang}}",
-
   "no_file_uploaded_yet": "まだファイルがアップロードされていません。ファイルをアップロードすると言語が自動検出されます。",
   "file_not_in_queue": "ファイルがキューに見つかりません。",
   "file_no_path": "言語検出用のファイルパスが利用できません。",
@@ -87,12 +81,11 @@
   "lang_detection_no_result": "ファイル内容から言語を検出できませんでした。",
   "lang_detection_failed": "言語の検出に失敗しました: {{error}}",
   "cannot_edit_file_processing": "ファイル '{{name}}' は既に処理中のため編集できません。",
-
   "active_badge": "アクティブ",
   "remove_file_title": "ファイルを削除",
   "audiobook_btn_title": "オーディオブックを生成 (TTS)",
-
   "translation_completed_msg": "✅ {{name}}: 翻訳が完了しました!",
+  "refinement_completed_msg": "✅ {{name}}: 推敲が完了しました!",
   "translation_interrupted_msg": "ℹ️ {{name}}: 翻訳が中断されました。",
   "translation_rate_limited_msg": "⏸️ {{name}}: レート制限のため、翻訳を自動的に一時停止しました。準備ができたら下の再開ボタンを使用してください。",
   "translation_error_msg": "❌ {{name}}: エラー - {{error}}",
@@ -116,7 +109,6 @@
   "completion_warning_placeholder_errors": "書式の不備 {{count}} 件",
   "completion_warning_failed": "失敗したチャンク {{count}} 件",
   "completion_warning_intro": "LLM が元の書式（インラインタグ、スタイル、改行）を完全に保持するのに苦労しました。{{processed}} チャンクのうち、{{retryPct}}% が再試行を必要とし、{{fallbackPct}}% でタグ位置の近似配置が使われました（チャンクあたり平均 {{avgErrors}} 件の書式の不備）。次回より整った書式にするには、以下を検討してください:",
-
   "session_restored_log": "🔄 前回の翻訳セッションを復元しました",
   "session_corrupted_log": "前回のセッション状態が破損していたため、新規に開始します",
   "session_could_not_restore": "前回のセッションを復元できなかったため、新規に開始します",
@@ -125,7 +117,6 @@
   "session_job_missing_log": "翻訳ジョブが存在しないため、リセットします",
   "session_state_save_quota": "ブラウザのストレージが満杯のため、翻訳状態を保存できませんでした",
   "session_state_save_failed": "翻訳状態の保存に失敗しました",
-
   "active_translation_warning_title": "翻訳が進行中です",
   "active_translation_warning_desc": "再開は無効になっています。アクティブな翻訳: {{names}}",
   "cannot_resume_in_progress_title": "⚠️ 再開できません: 既に翻訳が進行中です",
@@ -147,16 +138,13 @@
   "resume_style_warning": "書籍の途中でモデルを切り替えると、翻訳済みの部分と残りの部分の間で文体が変わる可能性があります。",
   "resume_apply_btn": "このモデルで再開",
   "resume_no_model_selected": "再開する前にモデルを選択してください。",
-
   "confirm_delete_checkpoint": "このチェックポイントを削除してもよろしいですか?\n\nこの操作は取り消せず、すべての進捗が失われます。",
   "deleting_checkpoint_log": "🗑️ チェックポイント {{id}} を削除中...",
   "checkpoint_deleted": "✅ チェックポイントを正常に削除しました",
   "checkpoint_deleted_log": "✅ チェックポイント {{id}} を削除しました",
   "checkpoint_delete_error": "❌ チェックポイントの削除中にエラーが発生しました: {{error}}",
-
   "paused_count_log": "📦 一時停止中の翻訳が {{count}} 件見つかりました",
   "paused_load_error": "読み込みエラー: {{error}}",
-
   "job_card_progress": "進捗: {{completed}} / {{total}} チャンク ({{percent}}%)",
   "job_card_created": "作成日: {{date}}",
   "job_card_paused": "一時停止日: {{date}}",
@@ -169,7 +157,6 @@
   "job_card_type_id": "種別: {{type}} • ID: {{id}}",
   "job_card_unknown": "不明",
   "job_card_na": "N/A",
-
   "progress_title": "翻訳の進捗",
   "stat_total_chunks": "合計チャンク数",
   "stat_completed": "完了",
@@ -187,18 +174,15 @@
   "stat_total_tokens": "合計トークン数",
   "last_translation_preview": "最新の翻訳プレビュー",
   "no_translation_yet": "翻訳はまだありません...",
-
   "paused_translations": "一時停止中の翻訳",
   "refresh_list_title": "リストを更新",
   "no_paused_translations": "一時停止中の翻訳はありません",
-
   "file_list_cleared": "ファイルリストをクリアしました",
   "form_reset_log": "フォームとファイルリストをリセットしました。",
   "delete_uploaded_log": "🗑️ サーバーからアップロード済みファイル {{count}} 個を削除中...",
   "delete_uploaded_success_log": "✅ アップロード済みファイル {{count}} 個を正常に削除しました。",
   "delete_uploaded_failed_log": "⚠️ ファイル {{count}} 個の削除に失敗しました。",
   "delete_uploaded_error_log": "⚠️ アップロード済みファイルの削除中にエラーが発生しました。",
-
   "settings_saved_env": "✅ 設定を保存しました: {{keys}}",
   "settings_saved_env_log": "💾 .env に保存しました: {{keys}}",
   "preferences_saved": "✅ 設定を保存しました",
@@ -206,17 +190,16 @@
   "preferences_save_quota": "ブラウザのストレージが満杯のため、設定を保存できませんでした",
   "preferences_save_failed_log": "設定の保存に失敗しました",
   "preferences_load_failed_log": "保存された設定を読み込めませんでした",
-
   "summary_refining_in": "{{lang}}で洗練中",
   "summary_refine_only": "洗練のみ（翻訳をスキップ）",
   "summary_no_auto_pause": "自動一時停止なし",
   "summary_bilingual": "バイリンガル",
   "summary_plain_text_mode": "プレーンテキストモード",
+  "summary_chapter_mode": "章単位",
   "summary_ocr_cleanup": "OCR クリーンアップ",
   "summary_glossary": "用語集：{{name}}",
   "summary_instructions": "指示：{{name}}",
   "summary_lang_auto_detect": "自動検出",
-
   "quicktest_button_title": "クイックテスト：選択した LLM で 5 つの抜粋を翻訳",
   "quicktest_button_label": "クイックテスト",
   "quicktest_title": "LLM クイックテスト",
@@ -232,5 +215,36 @@
   "quicktest_error_no_model": "モデルが選択されていません。先にプロバイダーとモデルを選択してください。",
   "quicktest_error_no_target": "テストの前にこのファイルの対象言語を設定してください。",
   "quicktest_error_empty": "このファイルは小さすぎてサンプリングできません。",
-  "quicktest_error_run": "クイックテストに失敗しました：{{error}}"
+  "quicktest_error_run": "クイックテストに失敗しました：{{error}}",
+  "profile_label": "翻訳プロファイル (プロジェクト)",
+  "profile_custom_settings": "-- カスタム設定 --",
+  "profile_load_btn": "読み込み",
+  "profile_load_title": "選択したプロファイルを読み込む",
+  "profile_save_btn": "名前を付けて保存...",
+  "profile_save_title": "現在の設定をプロファイルとして保存",
+  "context_preview_title": "コンテキストプレビュー",
+  "context_edit_resync_title": "このスナップショットを編集して、以降のすべてのチャンクを再同期します",
+  "context_edit_resync_btn": "編集して再同期",
+  "context_save_resync_btn": "保存して再同期",
+  "context_latest_state": "最新の状態",
+  "context_open_folder_btn": "フォルダを開く",
+  "context_waiting": "コンテキストを待機中...",
+  "profile_loaded_log": "[システム] プロファイルを読み込みました: {{name}}",
+  "profile_load_failed_log": "[エラー] プロファイルの読み込みに失敗しました: {{error}}",
+  "profile_saved_log": "[システム] プロファイルを保存しました: {{name}}",
+  "profile_save_failed_log": "[エラー] プロファイルの保存に失敗しました: {{error}}",
+  "profile_enter_name": "この翻訳プロファイルの名前を入力してください（例：'Project Alpha'）:",
+  "context_general_tab": "一般",
+  "context_raw_view_tab": "Raw 表示",
+  "context_chunk_option": "チャンク {{number}}",
+  "context_no_job_title": "ジョブが選択されていません",
+  "context_no_job_body": "コンテキストを読み込めるアクティブまたは最近の翻訳ジョブが見つかりません。",
+  "context_empty_snapshot": "（空のコンテキストスナップショット）",
+  "context_no_context_title": "コンテキストなし",
+  "context_no_context_body": "このチャンクのスナップショットが見つかりません。",
+  "context_load_error_title": "エラー",
+  "context_load_error_body": "コンテキストスナップショットの読み込みに失敗しました: {{error}}",
+  "context_resync_started_log": "[システム] チャンク {{chunk}} からコンテキストの再同期を開始しました。バックグラウンドで処理されます。",
+  "context_resync_failed_log": "[エラー] コンテキスト再同期の開始に失敗しました: {{error}}",
+  "context_open_folder_failed": "小説コンテキストフォルダーを開けませんでした"
 }

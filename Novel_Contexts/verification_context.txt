@@ -1,0 +1,13 @@
+# CHARACTERS & GENDERS
+- Li Fan: Male, elder brother of Li Meimei.
+- Li Meimei: Female, younger sister of Li Fan.
+- Uncle Wang: Male, older neighbor.
+
+# RELATIONSHIPS & ADDRESSING FORMS
+- Li Fan to Li Meimei: Addresses her as "em" or "em gái" (pronoun pair: anh - em).
+- Li Meimei to Li Fan: Addresses him as "anh" or "anh trai" (pronoun pair: em - anh).
+- Li Fan and Li Meimei to Uncle Wang: Address him as "Bác Wang" or "Chú Wang".
+
+# GLOSSARY & TERMINOLOGY
+- brother: anh (when Meimei speaks to Li Fan), anh trai (when referring to Li Fan)
+- sister: em (when Li Fan speaks to Li Meimei), em gái (when referring to Li Meimei)

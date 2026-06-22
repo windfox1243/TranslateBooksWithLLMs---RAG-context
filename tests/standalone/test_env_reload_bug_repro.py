@@ -100,9 +100,9 @@ def run_scenario(tmp_dir: Path) -> bool:
 
         print("\nSTEP 2 - User saves new settings (writes .env, then reload):")
         new_values = {
-            "DEEPSEEK_API_KEY": "sk-deepseek-new-secret-1234",
+            "DEEPSEEK_API_KEY": "YOUR_DEEPSEEK_API_KEY_HERE",
             "DEEPSEEK_MODEL": "deepseek-v4-pro",
-            "GEMINI_API_KEY": "AIza-gemini-new-9999",
+            "GEMINI_API_KEY": "YOUR_GEMINI_API_KEY_HERE",
             "DEFAULT_MODEL": "qwen3:30b",
             "OUTPUT_FILENAME_PATTERN": "{originalName}-{model}.{ext}",
         }
