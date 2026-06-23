@@ -5,7 +5,7 @@ This module provides serializable state management for XHTML translation,
 enabling interruption and resume at the chunk level.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
@@ -68,6 +68,10 @@ class XHTMLTranslationState:
     # Technical Content Protection (always enabled)
     protect_technical: bool = True
 
+    # Chunks that exhausted all translation fallbacks and currently contain
+    # source text. They remain retryable even when later chunks were processed.
+    failed_chunk_indices: List[int] = field(default_factory=list)
+
     def to_dict(self) -> Dict[str, Any]:
         """
         Serialize state to JSON-compatible dictionary.
@@ -96,6 +100,7 @@ class XHTMLTranslationState:
             'bilingual': self.bilingual,
             'original_chunks': self.original_chunks,
             'protect_technical': self.protect_technical,
+            'failed_chunk_indices': self.failed_chunk_indices,
             'created_at': self.created_at,
             'updated_at': self.updated_at,
             'global_stats': self.global_stats,
@@ -133,6 +138,7 @@ class XHTMLTranslationState:
             bilingual=data.get('bilingual', False),
             original_chunks=data.get('original_chunks'),
             protect_technical=data.get('protect_technical', True),
+            failed_chunk_indices=data.get('failed_chunk_indices', []),
             created_at=data['created_at'],
             updated_at=data['updated_at'],
             global_stats=data.get('global_stats'),
@@ -151,6 +157,14 @@ class XHTMLTranslationState:
 
         # Check that translated_chunks matches current_chunk_index
         if len(self.translated_chunks) != self.current_chunk_index:
+            return False
+
+        if any(
+            not isinstance(index, int)
+            or index < 0
+            or index >= self.current_chunk_index
+            for index in self.failed_chunk_indices
+        ):
             return False
 
         # Check that placeholder_format is valid

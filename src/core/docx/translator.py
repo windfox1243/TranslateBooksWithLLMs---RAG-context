@@ -118,7 +118,7 @@ async def translate_docx_file(
         log_callback("file_saved", f"DOCX saved to {output_filepath}")
 
     return {
-        'success': True,
+        'success': stats.failed_chunks == 0,
         'stats': stats.to_dict(),
         'output_path': output_filepath
     }

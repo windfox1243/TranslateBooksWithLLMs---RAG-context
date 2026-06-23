@@ -308,6 +308,9 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
             placeholder_format = resume_state.placeholder_format
             translated_chunks = resume_state.translated_chunks.copy()
             start_chunk_index = resume_state.current_chunk_index
+            failed_chunk_indices = list(
+                resume_state.failed_chunk_indices or []
+            )
             html_content = resume_state.original_body_html
 
             # Restore statistics
@@ -348,6 +351,7 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
             # Initialize variables for new translation
             translated_chunks = []
             start_chunk_index = 0
+            failed_chunk_indices = []
             stats = TranslationMetrics()
             stats.total_chunks = len(chunks)
             tag_preserver = self.tag_preserver
@@ -383,6 +387,7 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
             global_total_chunks=total_chunks,
             global_completed_chunks=completed_chunks,
             parallel_workers=parallel_workers,
+            failed_chunk_indices=failed_chunk_indices,
         )
 
         # If interrupted, save state and return partial result
