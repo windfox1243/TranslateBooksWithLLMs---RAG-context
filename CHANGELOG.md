@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.4.12-context-experiment.2 - 2026-06-23
+
+This prerelease adds hidden, scene-local dialogue speaker attribution to the
+source-first context architecture.
+
+### Added
+
+- Dialogue-turn detection for multilingual quotation marks, dialogue dashes,
+  subtitle markers, and short unlabelled conversational line sequences.
+- Speaker and addressee inference inside the existing source-context LLM call,
+  avoiding a second API request per translation unit.
+- Compact progress logs showing identified, assigned, and uncertain dialogue
+  turns after context analysis.
+- Stable dialogue-turn identities and checkpoint persistence for resume,
+  context re-sync, and refine-after workflows.
+
+### Improved
+
+- Translation and refinement prompts can use high-confidence speaker metadata
+  for pronouns, addressing forms, register, and character voice.
+- Speaker state carries across adjacent units and resets at chapter boundaries.
+- TXT, SRT, EPUB, and DOCX refinement reuse speaker maps only when translation
+  and refinement units align exactly; otherwise refinement performs fresh
+  monolingual context analysis.
+
+### Safety
+
+- Speaker attribution remains hidden working metadata and is never written to
+  novel-context files, the context editor, profiles, or translated output.
+- Only canonical characters already present in novel lore are accepted.
+- Unknown names and assignments below the confidence threshold remain
+  uncertain and are not injected into translation prompts.
+
+### Validation
+
+- 1,356 selected automated tests passed.
+- Windows executable startup smoke test passed and reported the expected
+  prerelease version.
+
 ## 1.4.12-context-experiment.1 - 2026-06-23
 
 This prerelease contains the global-context architecture experiment and its

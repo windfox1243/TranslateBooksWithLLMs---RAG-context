@@ -139,6 +139,19 @@ def _build_optional_prompt_sections(prompt_options: dict) -> str:
     return '\n\n'.join(sections)
 
 
+def _build_dialogue_attribution_section(prompt_options: dict) -> str:
+    """Build hidden scene-local speaker metadata for the current unit."""
+    if not prompt_options:
+        return ""
+    from src.utils.dialogue_attribution import (
+        format_dialogue_attribution_for_prompt,
+    )
+
+    return format_dialogue_attribution_for_prompt(
+        prompt_options.get("dialogue_attribution")
+    )
+
+
 # ============================================================================
 # TRANSLATION PROMPT FUNCTIONS
 # ============================================================================
@@ -296,8 +309,11 @@ For consistency and natural flow, here's what came immediately before:
     # keeping it out of the system prompt lets the system prompt stay
     # stable and cacheable across chunks.
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
+    dialogue_section = _build_dialogue_attribution_section(prompt_options)
+    if dialogue_section:
+        dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_translation_block_text}{glossary_section}# TEXT TO TRANSLATE
+    user_prompt = f"""{previous_translation_block_text}{glossary_section}{dialogue_section}# TEXT TO TRANSLATE
 
 {INPUT_TAG_IN}
 {main_content}
@@ -551,8 +567,11 @@ For consistency and natural flow, here's what came immediately before:
     # Glossary block injected here (per-chunk dynamic) so the system prompt
     # stays cacheable across chunks.
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
+    dialogue_section = _build_dialogue_attribution_section(prompt_options)
+    if dialogue_section:
+        dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_context_block}{glossary_section}# DRAFT TO REFINE
+    user_prompt = f"""{previous_context_block}{glossary_section}{dialogue_section}# DRAFT TO REFINE
 
 The following is a rough {target_language} translation that needs significant improvement.
 Rewrite it with elegant, literary-quality {target_language} prose:
@@ -696,8 +715,11 @@ For continuity and consistency, here's the previous refined block:
     formatted_subtitles_text = "\n".join(formatted_subtitles)
 
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
+    dialogue_section = _build_dialogue_attribution_section(prompt_options)
+    if dialogue_section:
+        dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_refined_block_text}{glossary_section}# SUBTITLES TO REFINE
+    user_prompt = f"""{previous_refined_block_text}{glossary_section}{dialogue_section}# SUBTITLES TO REFINE
 
 {INPUT_TAG_IN}
 {formatted_subtitles_text}
@@ -841,8 +863,11 @@ For continuity and consistency, here's the previous subtitle block:
 
     # Glossary block in user prompt (dynamic per chunk).
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
+    dialogue_section = _build_dialogue_attribution_section(prompt_options)
+    if dialogue_section:
+        dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_translation_block_text}{glossary_section}# SUBTITLES TO TRANSLATE
+    user_prompt = f"""{previous_translation_block_text}{glossary_section}{dialogue_section}# SUBTITLES TO TRANSLATE
 
 {INPUT_TAG_IN}
 {formatted_subtitles_text}

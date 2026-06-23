@@ -221,13 +221,30 @@ class GenericTranslator:
 
             resume_snapshot = None
             resume_snapshot_index = None
+            resume_dialogue_state = None
+            resume_dialogue_scene_key = None
             if restored_completed and checkpoint_data:
                 resume_snapshot_index = max(restored_completed)
                 for checkpoint_chunk in checkpoint_data.get('chunks', []):
                     if checkpoint_chunk.get('chunk_index') == resume_snapshot_index:
-                        resume_snapshot = (
+                        checkpoint_chunk_data = (
                             checkpoint_chunk.get('chunk_data') or {}
-                        ).get('context_snapshot')
+                        )
+                        resume_snapshot = checkpoint_chunk_data.get(
+                            'context_snapshot'
+                        )
+                        resume_dialogue_state = (
+                            (
+                                checkpoint_chunk_data.get(
+                                    'dialogue_attribution'
+                                ) or {}
+                            ).get('state_after')
+                        )
+                        resume_dialogue_scene_key = (
+                            checkpoint_chunk_data.get(
+                                'dialogue_attribution'
+                            ) or {}
+                        ).get('scene_key')
                         break
 
             try:
@@ -237,6 +254,8 @@ class GenericTranslator:
                     input_filename=str(getattr(self.adapter, 'input_file_path', '') or ''),
                     fallback_name="text",
                     resume_snapshot=resume_snapshot,
+                    resume_dialogue_state=resume_dialogue_state,
+                    resume_dialogue_scene_key=resume_dialogue_scene_key,
                     log_callback=log_callback,
                 )
                 if resume_snapshot and context_session and log_callback:
@@ -298,6 +317,7 @@ class GenericTranslator:
                             target_language=target_language,
                             chunk_index=i + 1,
                             total_chunks=total_units,
+                            scene_key=unit.metadata.get("chapter_index"),
                         )
                         if log_callback:
                             log_callback(
@@ -321,6 +341,11 @@ class GenericTranslator:
                                 "novel_context_update_failed",
                                 f"Failed to prepare novel context: {str(e)}",
                             )
+                    if unit.metadata is None:
+                        unit.metadata = {}
+                    unit.metadata['dialogue_attribution'] = (
+                        context_session.dialogue_attribution
+                    )
 
                 for attempt in range(max_validation_attempts):
                     same_previous_chapter = (
@@ -722,6 +747,28 @@ async def _resync_context_snapshots_async(translation_id: str, start_chunk_index
         initial_compressed_snapshot,
         fallback_context,
     )
+    initial_chunk = next(
+        (
+            chunk for chunk in completed_chunks
+            if chunk.get('chunk_index') == start_chunk_index
+        ),
+        None,
+    )
+    current_dialogue_state = (
+        (
+            ((initial_chunk or {}).get('chunk_data') or {}).get(
+                'dialogue_attribution'
+            ) or {}
+        ).get('state_after')
+        or {}
+    )
+    current_dialogue_scene_key = (
+        (
+            ((initial_chunk or {}).get('chunk_data') or {}).get(
+                'dialogue_attribution'
+            ) or {}
+        ).get('scene_key')
+    )
 
     if not chunks_to_process:
         latest_completed = [c['chunk_index'] for c in completed_chunks]
@@ -786,6 +833,25 @@ async def _resync_context_snapshots_async(translation_id: str, start_chunk_index
             msg_resync = f"Resyncing chunk {idx}..."
             logger.info(msg_resync)
             append_and_emit(f"🔄 {msg_resync}")
+            from src.utils.dialogue_attribution import (
+                detect_dialogue_turns,
+                dialogue_attribution_stats,
+            )
+
+            dialogue_sink = {}
+            dialogue_turns = detect_dialogue_turns(source_text)
+            scene_key = (chunk.get('chunk_data') or {}).get('chapter_index')
+            normalized_scene_key = (
+                str(scene_key) if scene_key is not None else None
+            )
+            if (
+                normalized_scene_key is not None
+                and current_dialogue_scene_key is not None
+                and normalized_scene_key != current_dialogue_scene_key
+            ):
+                current_dialogue_state = {}
+            if normalized_scene_key is not None:
+                current_dialogue_scene_key = normalized_scene_key
             global_lore, current_dynamic_text, change_logs = await update_novel_context_chunk(
                 llm_client=llm_client,
                 model_name=model_name,
@@ -797,7 +863,23 @@ async def _resync_context_snapshots_async(translation_id: str, start_chunk_index
                 target_language=config.get('target_language'),
                 chunk_index=idx + 1,
                 total_chunks=len(chunks),
+                dialogue_turns=dialogue_turns,
+                current_dialogue_state=current_dialogue_state,
+                dialogue_attribution_sink=dialogue_sink,
             )
+            current_dialogue_state = dict(
+                dialogue_sink.get('state_after') or current_dialogue_state
+            )
+            if normalized_scene_key is not None:
+                dialogue_sink['scene_key'] = normalized_scene_key
+            if dialogue_turns:
+                dialogue_stats = dialogue_attribution_stats(dialogue_sink)
+                append_and_emit(
+                    "Dialogue context: "
+                    f"{dialogue_stats['identified']} turns identified, "
+                    f"{dialogue_stats['assigned']} assigned, "
+                    f"{dialogue_stats['uncertain']} uncertain."
+                )
             
             new_full_context = build_novel_context(global_lore, current_dynamic_text)
             new_compressed = compress_dynamic_state(new_full_context)
@@ -819,6 +901,7 @@ async def _resync_context_snapshots_async(translation_id: str, start_chunk_index
                         if c.get('chunk_data') is None:
                             c['chunk_data'] = {}
                         c['chunk_data']['context_snapshot'] = new_compressed
+                        c['chunk_data']['dialogue_attribution'] = dialogue_sink
                         state_manager.checkpoint_manager.db.save_chunk(
                             translation_id=translation_id,
                             chunk_index=idx,
