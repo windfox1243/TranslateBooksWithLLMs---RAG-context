@@ -232,7 +232,7 @@ async def test_resync_last_chunk_writes_edited_full_snapshot_without_nesting(
         ],
     }
     state_manager.checkpoint_manager = checkpoint_manager
-    resume_callback = MagicMock()
+    refinement_callback = MagicMock()
 
     monkeypatch.setattr(src.config, "NOVEL_CONTEXTS_DIR", tmp_path)
     monkeypatch.setattr(
@@ -244,13 +244,18 @@ async def test_resync_last_chunk_writes_edited_full_snapshot_without_nesting(
         translation_id="job",
         start_chunk_index=0,
         initial_compressed_snapshot=compress_dynamic_state(edited),
-        auto_resume_callback=resume_callback,
+        post_resync_callback=refinement_callback,
+        post_resync_message="Starting corrective refinement...",
     )
 
     assert result is True
     assert load_novel_context("resync.txt", tmp_path) == edited
     assert load_novel_context("resync.txt", tmp_path).count("---DYNAMIC_STATE_START---") == 1
-    resume_callback.assert_called_once()
+    refinement_callback.assert_called_once()
+    assert any(
+        "Starting corrective refinement..." in call.args[1]
+        for call in state_manager.append_log.call_args_list
+    )
 
 
 @pytest.mark.asyncio
@@ -458,6 +463,23 @@ def test_gender_repair_does_not_use_pronouns_that_refer_to_another_character():
 
     assert "- Eric's sister: Unspecified" in normalized
     assert "- Guard: Unspecified" in normalized
+
+
+def test_character_name_alone_never_promotes_unspecified_gender():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Andrea: Unspecified, recurring officer.\n"
+        "- Sasha: Unspecified, recurring medic.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- Andrea: Unspecified" in normalized
+    assert "- Sasha: Unspecified" in normalized
 
 
 def test_character_details_compact_repeated_subordinate_roles():

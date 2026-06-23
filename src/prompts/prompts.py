@@ -496,7 +496,12 @@ def generate_refinement_prompt(
 
 # NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)
 
-{novel_context.strip()}"""
+{novel_context.strip()}
+
+Use book-wide character identity, proven gender, and terminology for consistency.
+The global lore may contain facts discovered later in the book: never add,
+foreshadow, or reveal any fact that is not already present in the draft or its
+immediate local context."""
 
     # SYSTEM PROMPT for refinement
     system_prompt = f"""You are an elite {target_language} literary editor and prose stylist.
@@ -632,7 +637,12 @@ def generate_subtitle_refinement_block_prompt(
 
 # NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)
 
-{novel_context.strip()}"""
+{novel_context.strip()}
+
+Use book-wide character identity, proven gender, and terminology for consistency.
+The global lore may contain facts discovered later in the book: never add,
+foreshadow, or reveal any fact that is not already present in the current
+subtitle block or its immediate local context."""
 
     subtitle_additional_rules = _SUBTITLE_FORMAT_RULES
     subtitle_example_format = "[0]Première ligne affinée\n[1]Deuxième ligne affinée"

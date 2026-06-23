@@ -624,23 +624,63 @@ class GenericTranslator:
             f"adapter={self.adapter})"
         )
 
-def resync_context_snapshots_background(translation_id: str, start_chunk_index: int, initial_compressed_snapshot: str, socketio=None, was_active=False, auto_resume_callback=None):
+def resync_context_snapshots_background(
+    translation_id: str,
+    start_chunk_index: int,
+    initial_compressed_snapshot: str,
+    socketio=None,
+    was_active=False,
+    auto_resume_callback=None,
+    post_resync_callback=None,
+    post_resync_message=None,
+):
     """Entry point for the background thread."""
     import asyncio
-    from src.config import NOVEL_CONTEXTS_DIR
     
     # Try to use existing loop if we are in one, otherwise run new
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            asyncio.run_coroutine_threadsafe(_resync_context_snapshots_async(translation_id, start_chunk_index, initial_compressed_snapshot, socketio, was_active, auto_resume_callback), loop)
+            asyncio.run_coroutine_threadsafe(
+                _resync_context_snapshots_async(
+                    translation_id,
+                    start_chunk_index,
+                    initial_compressed_snapshot,
+                    socketio,
+                    was_active,
+                    auto_resume_callback,
+                    post_resync_callback,
+                    post_resync_message,
+                ),
+                loop,
+            )
             return
     except RuntimeError:
         pass
         
-    asyncio.run(_resync_context_snapshots_async(translation_id, start_chunk_index, initial_compressed_snapshot, socketio, was_active, auto_resume_callback))
+    asyncio.run(
+        _resync_context_snapshots_async(
+            translation_id,
+            start_chunk_index,
+            initial_compressed_snapshot,
+            socketio,
+            was_active,
+            auto_resume_callback,
+            post_resync_callback,
+            post_resync_message,
+        )
+    )
 
-async def _resync_context_snapshots_async(translation_id: str, start_chunk_index: int, initial_compressed_snapshot: str, socketio=None, was_active=False, auto_resume_callback=None):
+async def _resync_context_snapshots_async(
+    translation_id: str,
+    start_chunk_index: int,
+    initial_compressed_snapshot: str,
+    socketio=None,
+    was_active=False,
+    auto_resume_callback=None,
+    post_resync_callback=None,
+    post_resync_message=None,
+):
     """Forward-pass through chunks to re-evaluate the context using the LLM."""
     from src.api.translation_state import get_state_manager
     from src.utils.novel_context import (
@@ -685,6 +725,14 @@ async def _resync_context_snapshots_async(translation_id: str, start_chunk_index
                 },
                 state_manager,
             )
+
+    def run_follow_up():
+        callback = post_resync_callback or auto_resume_callback
+        if not callback:
+            return
+        message = post_resync_message or "Auto-resuming active translation..."
+        append_and_emit(f"▶️ {message}")
+        callback()
     
     msg = f"Starting background context resync for {translation_id} from chunk {start_chunk_index}"
     logger.info(msg)
@@ -697,7 +745,14 @@ async def _resync_context_snapshots_async(translation_id: str, start_chunk_index
         
         import asyncio
         paused = False
-        for _ in range(60):  # Wait up to 60 seconds
+        live_job = state_manager.get_translation(translation_id) or {}
+        live_config = live_job.get("config") or {}
+        try:
+            pause_timeout = int(live_config.get("request_timeout", 120)) + 15
+        except (TypeError, ValueError):
+            pause_timeout = 135
+        pause_timeout = max(60, min(pause_timeout, 600))
+        for _ in range(pause_timeout):
             status_dict = state_manager.get_translation(translation_id)
             status = status_dict.get('status') if status_dict else None
             if not status and hasattr(state_manager.checkpoint_manager, 'get_job'):
@@ -710,7 +765,11 @@ async def _resync_context_snapshots_async(translation_id: str, start_chunk_index
                 break
             await asyncio.sleep(1)
         if not paused:
-            err_msg = "Active translation did not pause within 60 seconds; resync aborted to avoid racing with translation."
+            err_msg = (
+                "Active translation did not pause within "
+                f"{pause_timeout} seconds; resync aborted to avoid racing "
+                "with translation."
+            )
             logger.error(err_msg)
             append_and_emit(f"❌ {err_msg}")
             return False
@@ -785,22 +844,24 @@ async def _resync_context_snapshots_async(translation_id: str, start_chunk_index
                 append_and_emit(f"❌ {err_msg}")
                 return False
         append_and_emit("✅ Background context resync completed.")
-        if auto_resume_callback:
-            append_and_emit("▶️ Auto-resuming active translation...")
-            auto_resume_callback()
+        run_follow_up()
         return True
 
     llm_provider = config.get('llm_provider', 'ollama')
     model_name = config.get('model') or config.get('model_name')
     provider_key = config.get(f'{llm_provider}_api_key')
+    live_job = state_manager.get_translation(translation_id) or {}
+    live_config = live_job.get('config') or {}
+    if not provider_key:
+        provider_key = live_config.get(f'{llm_provider}_api_key')
     if not provider_key:
         import os
-        import src.config as live_config
+        import src.config as runtime_config
 
         env_var = f"{llm_provider.upper()}_API_KEY"
         provider_key = (
             os.getenv(env_var)
-            or getattr(live_config, env_var, '')
+            or getattr(runtime_config, env_var, '')
         )
 
     if llm_provider not in ('ollama', 'openai') and not provider_key:
@@ -941,8 +1002,7 @@ async def _resync_context_snapshots_async(translation_id: str, start_chunk_index
     logger.info(msg_end)
     append_and_emit(f"✅ {msg_end}")
     
-    if auto_resume_callback:
-        logger.info("Triggering auto-resume callback after resync")
-        append_and_emit(f"▶️ Auto-resuming active translation...")
-        auto_resume_callback()
+    if post_resync_callback or auto_resume_callback:
+        logger.info("Triggering follow-up callback after resync")
+        run_follow_up()
     return True

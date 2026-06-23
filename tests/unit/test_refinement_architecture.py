@@ -4,11 +4,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.core.llm.base import LLMResponse
+from src.persistence.checkpoint_manager import CheckpointManager
 from src.utils.novel_context import (
     RefinementContextTracker,
     build_novel_context,
     compress_dynamic_state,
     map_context_snapshots_for_refinement,
+    normalize_refinement_context,
 )
 
 
@@ -61,6 +63,189 @@ def test_refinement_context_mapping_uses_translated_text_position():
     )
 
     assert mapped == [context_a, context_a, context_b]
+
+
+def test_refinement_context_uses_final_lore_with_historical_dynamic_state():
+    historical = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Kriha: Unspecified, Captain.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            "- Kriha → Valentine: source form \"Major\" | formal\n\n"
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Kriha → Valentine: Newly assigned subordinate."
+        ),
+    )
+    final_context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Kriha: Female, Captain and loyal subordinate.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+            "- blood art: huyết thuật\n"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            "- Kriha → Valentine: source form \"Valentine\" | intimate\n\n"
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Kriha → Valentine: Deep mutual trust."
+        ),
+    )
+
+    combined = normalize_refinement_context(historical, final_context)
+
+    assert "- Kriha: Female, Captain and loyal subordinate." in combined
+    assert "- blood art: huyết thuật" in combined
+    assert 'source form "Major" | formal' in combined
+    assert "Newly assigned subordinate" in combined
+    assert 'source form "Valentine" | intimate' not in combined
+    assert "Deep mutual trust" not in combined
+    assert "Unspecified" not in combined
+
+
+def test_refinement_source_survives_completed_checkpoint_cleanup(tmp_path):
+    manager = CheckpointManager(db_path=str(tmp_path / "jobs.db"))
+    manager.uploads_dir = tmp_path / "uploads"
+    manager.uploads_dir.mkdir()
+
+    original = tmp_path / "novel.txt"
+    original.write_text("Source novel", encoding="utf-8")
+    translated = tmp_path / "translated.txt"
+    translated.write_text("First-pass translation", encoding="utf-8")
+    config = {
+        "file_type": "txt",
+        "file_path": str(original),
+        "output_filename": translated.name,
+        "refine_after": True,
+    }
+
+    assert manager.start_job(
+        "job",
+        "txt",
+        config,
+        str(original),
+    )
+    preserved_original = Path(config["preserved_input_path"])
+    refinement_source = manager.preserve_refinement_source(
+        "job",
+        str(translated),
+        config,
+    )
+
+    assert refinement_source is not None
+    assert Path(refinement_source).read_text(
+        encoding="utf-8"
+    ) == "First-pass translation"
+    assert manager.cleanup_completed_job("job")
+    assert Path(refinement_source).is_file()
+    assert not preserved_original.exists()
+
+    persisted = manager.load_checkpoint("job")["job"]["config"]
+    assert persisted["refinement_source_path"] == refinement_source
+    assert persisted["refinement_stale"] is True
+
+    assert manager.mark_refinement_current("job")
+    persisted = manager.load_checkpoint("job")["job"]["config"]
+    assert persisted["refinement_stale"] is False
+    assert persisted["refinement_context_revision"] == 0
+
+    assert manager.mark_refinement_stale("job") == 1
+    persisted = manager.load_checkpoint("job")["job"]["config"]
+    assert persisted["refinement_stale"] is True
+    assert persisted["context_revision"] == 1
+
+
+def test_context_resync_correction_replays_preserved_first_pass(tmp_path):
+    from src.api.blueprints.translation_routes import (
+        _build_corrective_refinement_config,
+    )
+
+    source = tmp_path / "first-pass.epub"
+    source.write_bytes(b"draft")
+    output = tmp_path / "final.epub"
+    output.write_bytes(b"refined")
+    config = {
+        "refine_after": True,
+        "refinement_source_path": str(source),
+        "output_filepath": str(output),
+        "output_filename": output.name,
+        "refine_only": False,
+    }
+
+    correction = _build_corrective_refinement_config(config)
+
+    assert correction is not None
+    assert correction["file_path"] == str(source.resolve())
+    assert correction["_force_output_filepath"] == str(output.resolve())
+    assert correction["refine_only"] is True
+    assert correction["refine_after"] is False
+    assert correction["_context_resync_refinement"] is True
+    assert config["refine_only"] is False
+
+
+def test_context_resync_does_not_refine_an_already_refined_output(tmp_path):
+    from src.api.blueprints.translation_routes import (
+        _build_corrective_refinement_config,
+    )
+
+    output = tmp_path / "final.txt"
+    output.write_text("Already refined", encoding="utf-8")
+
+    assert _build_corrective_refinement_config({
+        "refine_after": True,
+        "output_filepath": str(output),
+    }) is None
+
+
+@pytest.mark.asyncio
+async def test_early_refinement_unit_receives_final_lore_and_early_state():
+    historical = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Kriha: Unspecified, Captain.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            "- Kriha → Valentine: source form \"Major\" | formal\n\n"
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Kriha → Valentine: Newly assigned subordinate."
+        ),
+    )
+    final_context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Kriha: Female, Captain and loyal subordinate.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+            "- blood art: huyết thuật\n"
+        ),
+        "",
+    )
+    tracker = RefinementContextTracker(
+        prompt_options={"novel_context": final_context},
+        historical_contexts=[historical],
+    )
+
+    combined = await tracker.next_context(
+        text="Draft chapter one.",
+        llm_client=MagicMock(),
+        model_name="model",
+        target_language="English",
+        display_index=1,
+        total_chunks=1,
+        scene_key=0,
+    )
+
+    assert "- Kriha: Female, Captain and loyal subordinate." in combined
+    assert "- blood art: huyết thuật" in combined
+    assert 'source form "Major" | formal' in combined
+    assert "Newly assigned subordinate" in combined
 
 
 @pytest.mark.asyncio

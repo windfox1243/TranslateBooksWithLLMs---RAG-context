@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.4.13 - 2026-06-23
+
+This stable release makes refinement consume the final canonical lore while
+preserving scene-local history, and turns context re-sync into an actionable
+correction workflow instead of a context-only update.
+
+### Improved
+
+- Every refinement unit now receives the final book-wide character identities,
+  source-proven genders, and glossary terminology.
+- Historical addressing forms, relationship evolution, and dialogue
+  attribution remain mapped to the appropriate translation unit, preventing
+  later relationship state from leaking into early chapters.
+- Refinement prompts explicitly prevent later-discovered global facts from
+  being added, foreshadowed, or revealed before they appear locally.
+- Background context re-sync can reuse API credentials from the live job and
+  waits according to the configured request timeout when pausing active work.
+
+### Fixed
+
+- Early refinement units could retain incomplete character or glossary lore
+  even after later source text established the canonical facts.
+- Re-syncing context during or after refinement could update snapshots without
+  correcting the already-produced final translation.
+- Re-sync during refinement now invalidates the old result, repairs subsequent
+  snapshots, and runs one fresh corrective refinement from the preserved
+  first-pass translation.
+- Corrective refinement replaces the intended final file across TXT, SRT,
+  EPUB, and DOCX instead of creating a duplicate or refining an already-refined
+  file.
+
+### Safety and compatibility
+
+- The first-pass translation is retained with the checkpoint only for jobs
+  using refine-after mode and is removed when the checkpoint is deleted.
+- Context and refinement revisions are persisted so failed or interrupted
+  corrective passes remain visibly stale rather than being marked current.
+- Gender remains `Unspecified` without source evidence. Character names are not
+  treated as calibrated gender probabilities because multilingual,
+  transliterated, unisex, title-based, and fictional names make that inference
+  unsafe as global lore.
+
+### Validation
+
+- 1,374 selected automated tests passed.
+- Windows executable startup and local UI smoke tests passed.
+
 ## 1.4.12 - 2026-06-23
 
 This stable release promotes the global-context experiment after hardening
