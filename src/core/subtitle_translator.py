@@ -343,6 +343,15 @@ async def refine_subtitle_translations(
         local_prompt_options = dict(prompt_options) if prompt_options else {}
         if context_content:
             local_prompt_options['novel_context'] = context_content
+        dialogue_attribution = getattr(
+            context_tracker,
+            "current_dialogue_attribution",
+            None,
+        )
+        if dialogue_attribution:
+            local_prompt_options["dialogue_attribution"] = dialogue_attribution
+        else:
+            local_prompt_options.pop("dialogue_attribution", None)
 
         for attempt in range(max_block_attempts):
             if check_interruption_callback and check_interruption_callback():

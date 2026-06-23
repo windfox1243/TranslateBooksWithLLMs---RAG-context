@@ -822,6 +822,8 @@ async def _translate_all_chunks_with_checkpoint(
 
     current_global_lore = ""
     current_dynamic_state = ""
+    current_dialogue_state = {}
+    current_dialogue_scene_key = None
     if novel_context_file:
         from src.utils.novel_context import (
             NovelContextSession,
@@ -859,6 +861,15 @@ async def _translate_all_chunks_with_checkpoint(
                                 )
                                 if log_callback:
                                     log_callback("novel_context_resume", f"Restored context from global chunk {last_completed_global_idx} snapshot.")
+                            current_dialogue_state = dict(
+                                (
+                                    chunk_data.get("dialogue_attribution") or {}
+                                ).get("state_after")
+                                or {}
+                            )
+                            current_dialogue_scene_key = (
+                                chunk_data.get("dialogue_attribution") or {}
+                            ).get("scene_key")
                             break
             
             prompt_options['novel_context'] = build_novel_context(
@@ -882,6 +893,8 @@ async def _translate_all_chunks_with_checkpoint(
             global_lore=current_global_lore,
             dynamic_state=current_dynamic_state,
             log_callback=log_callback,
+            dialogue_state=current_dialogue_state,
+            dialogue_scene_key=current_dialogue_scene_key,
         )
 
     if auto_update_context and novel_context_path:
@@ -953,6 +966,7 @@ async def _translate_all_chunks_with_checkpoint(
                     target_language=target_language,
                     chunk_index=i + 1,
                     total_chunks=len(chunks),
+                    scene_key=chunk.get("chapter_index"),
                 )
                 if log_callback:
                     log_callback("novel_context_updated", f"Novel context prepared for chunk {i+1}.")
@@ -1033,9 +1047,17 @@ async def _translate_all_chunks_with_checkpoint(
         # Save translation chunk checkpoint to SQLite for the context snapshot dropdown
         ctx_snapshot = context_session.snapshot() if context_session else None
         chunks[i]['context_snapshot'] = ctx_snapshot
+        dialogue_attribution = (
+            context_session.dialogue_attribution if context_session else None
+        )
+        chunks[i]['dialogue_attribution'] = dialogue_attribution
         
         if checkpoint_manager and translation_id and hasattr(checkpoint_manager, 'db'):
-            chunk_data = {'context_snapshot': ctx_snapshot} if ctx_snapshot else {}
+            chunk_data = {}
+            if ctx_snapshot:
+                chunk_data['context_snapshot'] = ctx_snapshot
+            if dialogue_attribution:
+                chunk_data['dialogue_attribution'] = dialogue_attribution
             global_chunk_idx = (global_completed_chunks or 0) + i
             
             checkpoint_manager.db.save_chunk(
@@ -1796,12 +1818,25 @@ async def _refine_epub_chunks(
             target_language=target_language,
             display_index=idx + 1,
             total_chunks=total_chunks,
+            scene_key=chunk_dict.get("chapter_index"),
         )
 
         # Inject historical/source-first context if provided.
         local_prompt_options = dict(prompt_options) if prompt_options else {}
         if context_content:
             local_prompt_options['novel_context'] = context_content
+        dialogue_attribution = (
+            chunk_dict.get("dialogue_attribution")
+            or getattr(
+                context_tracker,
+                "current_dialogue_attribution",
+                None,
+            )
+        )
+        if dialogue_attribution:
+            local_prompt_options["dialogue_attribution"] = dialogue_attribution
+        else:
+            local_prompt_options.pop("dialogue_attribution", None)
 
         # Generate refinement prompt using text with LOCAL indices
         prompt_pair = generate_post_processing_prompt(

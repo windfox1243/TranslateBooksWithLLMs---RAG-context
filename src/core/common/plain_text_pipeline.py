@@ -316,11 +316,46 @@ async def translate_paragraphs_plain(
         from src.config import NOVEL_CONTEXTS_DIR
         from src.utils.novel_context import open_novel_context_session
         try:
+            resume_snapshot = None
+            resume_dialogue_state = None
+            resume_dialogue_scene_key = None
+            if (
+                checkpoint_manager
+                and translation_id
+                and hasattr(checkpoint_manager, "db")
+                and global_chunk_offset > 0
+            ):
+                previous_rows = [
+                    row
+                    for row in (
+                        checkpoint_manager.db.get_chunks(translation_id) or []
+                    )
+                    if row.get("status") == "completed"
+                    and row.get("chunk_index", -1) < global_chunk_offset
+                ]
+                if previous_rows:
+                    previous_row = max(
+                        previous_rows,
+                        key=lambda row: row.get("chunk_index", -1),
+                    )
+                    previous_data = previous_row.get("chunk_data") or {}
+                    resume_snapshot = previous_data.get("context_snapshot")
+                    resume_dialogue_state = (
+                        (
+                            previous_data.get("dialogue_attribution") or {}
+                        ).get("state_after")
+                    )
+                    resume_dialogue_scene_key = (
+                        previous_data.get("dialogue_attribution") or {}
+                    ).get("scene_key")
             context_session = open_novel_context_session(
                 prompt_options=prompt_options,
                 novel_contexts_dir=NOVEL_CONTEXTS_DIR,
                 input_filename=prompt_options.get('input_filename', ''),
                 fallback_name="plaintext",
+                resume_snapshot=resume_snapshot,
+                resume_dialogue_state=resume_dialogue_state,
+                resume_dialogue_scene_key=resume_dialogue_scene_key,
                 log_callback=log_callback,
             )
         except Exception as e:
@@ -366,6 +401,7 @@ async def translate_paragraphs_plain(
                     target_language=target_language,
                     chunk_index=i + 1,
                     total_chunks=len(chunks),
+                    scene_key=chunks[i].get("chapter_index"),
                 )
                 if log_callback:
                     log_callback(
@@ -482,6 +518,9 @@ async def translate_paragraphs_plain(
             chunk_data = {}
             if context_session:
                 chunk_data['context_snapshot'] = context_session.snapshot()
+                chunk_data['dialogue_attribution'] = (
+                    context_session.dialogue_attribution
+                )
             translated_value = translated_parts[i]
             checkpoint_manager.db.save_chunk(
                 translation_id=translation_id,

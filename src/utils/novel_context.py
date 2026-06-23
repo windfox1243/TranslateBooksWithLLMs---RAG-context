@@ -12,7 +12,7 @@ import logging
 import base64
 import zlib
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple, Callable
 
@@ -1019,20 +1019,58 @@ def map_context_snapshots_for_refinement(
     return contexts
 
 
+def map_dialogue_attributions_for_refinement(
+    total_chunks: int,
+    db_chunks: List[Dict[str, Any]],
+) -> List[Optional[Dict[str, Any]]]:
+    """Reuse dialogue maps only when translation/refinement units align exactly.
+
+    Unlike cumulative lore snapshots, a speaker map belongs to one local source
+    unit. Guessing a proportional mapping after re-chunking could attach the
+    wrong speaker to unrelated dialogue, so mismatched layouts deliberately
+    fall back to fresh monolingual analysis during refinement.
+    """
+    if total_chunks <= 0:
+        return []
+    rows = [
+        chunk
+        for chunk in sorted(
+            db_chunks or [],
+            key=lambda item: item.get("chunk_index", -1),
+        )
+        if chunk.get("status") == "completed"
+        and chunk.get("translated_text") is not None
+    ]
+    if len(rows) != total_chunks:
+        return [None] * total_chunks
+    return [
+        (row.get("chunk_data") or {}).get("dialogue_attribution")
+        for row in rows
+    ]
+
+
 @dataclass
 class RefinementContextTracker:
     """Resolve historical or source-first context for sequential refinement."""
 
     prompt_options: Dict[str, Any]
     historical_contexts: List[Optional[str]]
+    historical_dialogue_attributions: List[Optional[Dict[str, Any]]] = field(
+        default_factory=list
+    )
     log_callback: Optional[Callable] = None
     cursor: int = 0
 
     def __post_init__(self) -> None:
+        from src.utils.dialogue_attribution import empty_dialogue_attribution
+
         base_context = self.prompt_options.get("novel_context", "")
         self.global_lore = extract_global_lore(base_context)
         self.dynamic_state = extract_dynamic_state_from_text(base_context) or ""
         self.auto_analyze = bool(self.prompt_options.get("auto_update_context"))
+        self.dialogue_state: Dict[str, str] = {}
+        self.dialogue_scene_key: Optional[str] = None
+        self.current_dialogue_attribution = empty_dialogue_attribution()
 
     async def next_context(
         self,
@@ -1043,6 +1081,7 @@ class RefinementContextTracker:
         target_language: str,
         display_index: int,
         total_chunks: int,
+        scene_key: Optional[Any] = None,
     ) -> str:
         """Return context for the next refinement unit without mutating its file."""
         historical = (
@@ -1050,6 +1089,36 @@ class RefinementContextTracker:
             if self.cursor < len(self.historical_contexts)
             else None
         )
+        historical_dialogue = (
+            self.historical_dialogue_attributions[self.cursor]
+            if self.cursor < len(self.historical_dialogue_attributions)
+            else None
+        )
+        from src.utils.dialogue_attribution import (
+            detect_dialogue_turns,
+            dialogue_attribution_stats,
+            empty_dialogue_attribution,
+        )
+        normalized_scene_key = (
+            str(scene_key) if scene_key is not None else None
+        )
+        if (
+            normalized_scene_key is not None
+            and self.dialogue_scene_key is not None
+            and normalized_scene_key != self.dialogue_scene_key
+        ):
+            self.dialogue_state = {}
+        if normalized_scene_key is not None:
+            self.dialogue_scene_key = normalized_scene_key
+        self.current_dialogue_attribution = (
+            historical_dialogue
+            or empty_dialogue_attribution(self.dialogue_state)
+        )
+        if historical_dialogue:
+            self.dialogue_state = dict(
+                historical_dialogue.get("state_after")
+                or self.dialogue_state
+            )
 
         if historical:
             full_context = normalize_refinement_context(
@@ -1069,6 +1138,8 @@ class RefinementContextTracker:
                     "refinement_context_analyzing",
                     f"🧭 Analyzing context for refinement unit {display_index}/{total_chunks}...",
                 )
+            dialogue_sink: Dict[str, Any] = {}
+            dialogue_turns = detect_dialogue_turns(text)
             self.global_lore, self.dynamic_state, change_logs = await update_novel_context_chunk(
                 llm_client=llm_client,
                 model_name=model_name,
@@ -1080,6 +1151,17 @@ class RefinementContextTracker:
                 target_language=target_language,
                 chunk_index=display_index,
                 total_chunks=total_chunks,
+                dialogue_turns=dialogue_turns,
+                current_dialogue_state=self.dialogue_state,
+                dialogue_attribution_sink=dialogue_sink,
+            )
+            self.current_dialogue_attribution = (
+                dialogue_sink
+                or empty_dialogue_attribution(self.dialogue_state)
+            )
+            self.dialogue_state = dict(
+                self.current_dialogue_attribution.get("state_after")
+                or self.dialogue_state
             )
             full_context = build_novel_context(
                 self.global_lore,
@@ -1092,6 +1174,21 @@ class RefinementContextTracker:
                 )
                 for change_log in change_logs:
                     self.log_callback("novel_context_log", change_log)
+                if dialogue_turns:
+                    stats = dialogue_attribution_stats(
+                        self.current_dialogue_attribution
+                    )
+                    message = (
+                        "Dialogue context: "
+                        f"{stats['identified']} turns identified, "
+                        f"{stats['assigned']} assigned, "
+                        f"{stats['uncertain']} uncertain."
+                    )
+                    logger.info(message)
+                    self.log_callback(
+                        "dialogue_attribution",
+                        message,
+                    )
         else:
             full_context = build_novel_context(
                 self.global_lore,
@@ -1124,6 +1221,9 @@ class NovelContextSession:
     global_lore: str
     dynamic_state: str
     log_callback: Optional[Callable] = None
+    dialogue_state: Dict[str, str] = field(default_factory=dict)
+    dialogue_attribution: Dict[str, Any] = field(default_factory=dict)
+    dialogue_scene_key: Optional[str] = None
 
     @property
     def content(self) -> str:
@@ -1152,8 +1252,29 @@ class NovelContextSession:
         target_language: str,
         chunk_index: int,
         total_chunks: int,
+        scene_key: Optional[Any] = None,
     ) -> List[str]:
         """Analyze source text before translating it and expose the new context."""
+        from src.utils.dialogue_attribution import (
+            detect_dialogue_turns,
+            dialogue_attribution_stats,
+            empty_dialogue_attribution,
+        )
+
+        normalized_scene_key = (
+            str(scene_key) if scene_key is not None else None
+        )
+        if (
+            normalized_scene_key is not None
+            and self.dialogue_scene_key is not None
+            and normalized_scene_key != self.dialogue_scene_key
+        ):
+            self.dialogue_state = {}
+        if normalized_scene_key is not None:
+            self.dialogue_scene_key = normalized_scene_key
+
+        dialogue_turns = detect_dialogue_turns(source_chunk)
+        dialogue_sink: Dict[str, Any] = {}
         self.global_lore, self.dynamic_state, change_logs = await update_novel_context_chunk(
             llm_client=llm_client,
             model_name=model_name,
@@ -1165,7 +1286,46 @@ class NovelContextSession:
             target_language=target_language,
             chunk_index=chunk_index,
             total_chunks=total_chunks,
+            dialogue_turns=dialogue_turns,
+            current_dialogue_state=self.dialogue_state,
+            dialogue_attribution_sink=dialogue_sink,
         )
+        self.dialogue_attribution = (
+            dialogue_sink
+            or empty_dialogue_attribution(self.dialogue_state)
+        )
+        self.dialogue_state = dict(
+            self.dialogue_attribution.get("state_after") or self.dialogue_state
+        )
+        if normalized_scene_key is not None:
+            self.dialogue_attribution["scene_key"] = normalized_scene_key
+        if self.dialogue_attribution.get("turns"):
+            self.prompt_options["dialogue_attribution"] = self.dialogue_attribution
+        else:
+            self.prompt_options.pop("dialogue_attribution", None)
+        if dialogue_turns and self.log_callback:
+            stats = dialogue_attribution_stats(self.dialogue_attribution)
+            message = (
+                "Dialogue context: "
+                f"{stats['identified']} turns identified, "
+                f"{stats['assigned']} assigned, "
+                f"{stats['uncertain']} uncertain."
+            )
+            logger.info(message)
+            self.log_callback(
+                "dialogue_attribution",
+                message,
+            )
+        elif dialogue_turns:
+            stats = dialogue_attribution_stats(self.dialogue_attribution)
+            message = (
+                "Dialogue context: "
+                f"{stats['identified']} turns identified, "
+                f"{stats['assigned']} assigned, "
+                f"{stats['uncertain']} uncertain."
+            )
+            logger.info(message)
+            print(message)
         self.save()
         return change_logs
 
@@ -1176,6 +1336,8 @@ def open_novel_context_session(
     input_filename: str = "",
     fallback_name: str = "translation",
     resume_snapshot: Optional[str] = None,
+    resume_dialogue_state: Optional[Dict[str, str]] = None,
+    resume_dialogue_scene_key: Optional[Any] = None,
     log_callback: Optional[Callable] = None,
 ) -> Optional[NovelContextSession]:
     """Load/create context state, restore a snapshot, and inject it into prompts."""
@@ -1211,6 +1373,12 @@ def open_novel_context_session(
         global_lore=global_lore,
         dynamic_state=dynamic_state,
         log_callback=log_callback,
+        dialogue_state=dict(resume_dialogue_state or {}),
+        dialogue_scene_key=(
+            str(resume_dialogue_scene_key)
+            if resume_dialogue_scene_key is not None
+            else None
+        ),
     )
     content = session.sync_prompt()
     if log_callback:
@@ -1262,6 +1430,10 @@ Your output must follow this strict format:
 - Character A ↔ Character B: concise current relationship
 (Output both headings every time. Copy still-current entries from the input and update only what changed. Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Do not duplicate these headings.)
 
+[DIALOGUE_ATTRIBUTION]
+{"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
+(Classify only the supplied dialogue candidates. Infer from narration, turn-taking, current scene state, voice, and addressing forms. Use only canonical character names already present in CURRENT GLOBAL LORE, including characters added in this response. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates.)
+
 Do not include any other explanations, markdown fences, or extra text outside these blocks.
 """
 
@@ -1300,6 +1472,10 @@ Your output must follow this strict format:
 - Character A ↔ Character B: concise current relationship
 (Output both headings every time. Copy still-current entries from the input and update only what changed. Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Keep it concise and do not duplicate headings.)
 
+[DIALOGUE_ATTRIBUTION]
+{"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
+(Classify only the supplied dialogue candidates. Infer from narration, turn-taking, current scene state, voice, and addressing forms. Use only canonical character names already present in CURRENT GLOBAL LORE, including characters added in this response. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates.)
+
 Do not translate the whole passage. Do not include explanations, markdown fences, or text outside these blocks.
 """
 
@@ -1317,6 +1493,12 @@ UPDATE_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
 ### LATEST TRANSLATION ({target_language}):
 {translated_chunk}
 
+### CURRENT SCENE SPEAKER STATE:
+{current_dialogue_state}
+
+### DIALOGUE CANDIDATES:
+{dialogue_candidates}
+
 Output the updates now. Output ONLY the strictly formatted blocks."""
 
 SOURCE_ANALYSIS_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
@@ -1332,6 +1514,12 @@ SOURCE_ANALYSIS_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
 
 ### TARGET LANGUAGE:
 {target_language}
+
+### CURRENT SCENE SPEAKER STATE:
+{current_dialogue_state}
+
+### DIALOGUE CANDIDATES:
+{dialogue_candidates}
 
 Analyze the source for context needed by its translation. Output ONLY the strictly formatted blocks."""
 
@@ -1473,12 +1661,23 @@ async def update_novel_context_chunk(
     target_language: str,
     chunk_index: int = 0,
     total_chunks: int = 0,
+    dialogue_turns: Optional[List[Dict[str, str]]] = None,
+    current_dialogue_state: Optional[Dict[str, str]] = None,
+    dialogue_attribution_sink: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, str, List[str]]:
     """Calls the LLM to update global lore and dynamic state incrementally.
     
     Returns:
         Tuple of (updated_global_lore, updated_dynamic_state, change_logs)
     """
+    from src.utils.dialogue_attribution import (
+        dialogue_candidates_prompt,
+        empty_dialogue_attribution,
+        parse_dialogue_attribution,
+    )
+
+    dialogue_turns = list(dialogue_turns or [])
+    current_dialogue_state = dict(current_dialogue_state or {})
     prompt_values = {
         "current_global_lore": current_global_lore,
         "current_dynamic_state": current_dynamic_state,
@@ -1488,6 +1687,10 @@ async def update_novel_context_chunk(
         "translated_chunk": translated_chunk or "",
         "chunk_index": chunk_index if chunk_index > 0 else "?",
         "total_chunks": total_chunks if total_chunks > 0 else "?",
+        "current_dialogue_state": (
+            current_dialogue_state or {"speaker": "Unknown", "addressee": "Unknown"}
+        ),
+        "dialogue_candidates": dialogue_candidates_prompt(dialogue_turns),
     }
     if translated_chunk is None:
         user_prompt = SOURCE_ANALYSIS_USER_PROMPT_TEMPLATE.format(**prompt_values)
@@ -1504,6 +1707,11 @@ async def update_novel_context_chunk(
         
         if not response or not response.content:
             logger.warning("Empty response received from LLM during novel context chunk update. Keeping current state.")
+            if dialogue_attribution_sink is not None:
+                dialogue_attribution_sink.clear()
+                dialogue_attribution_sink.update(
+                    empty_dialogue_attribution(current_dialogue_state)
+                )
             return current_global_lore, current_dynamic_state, []
             
         content = response.content.strip()
@@ -1516,7 +1724,16 @@ async def update_novel_context_chunk(
         import re
         chars_match = re.search(r'\[NEW_CHARACTERS\]\s*(.*?)\s*(?=\[NEW_GLOSSARY\]|\[DYNAMIC_STATE\]|$)', content, re.DOTALL)
         glossary_match = re.search(r'\[NEW_GLOSSARY\]\s*(.*?)\s*(?=\[DYNAMIC_STATE\]|\[NEW_CHARACTERS\]|$)', content, re.DOTALL)
-        dynamic_match = re.search(r'\[DYNAMIC_STATE\]\s*(.*?)\s*$', content, re.DOTALL)
+        dynamic_match = re.search(
+            r'\[DYNAMIC_STATE\]\s*(.*?)\s*(?=\[DIALOGUE_ATTRIBUTION\]|$)',
+            content,
+            re.DOTALL,
+        )
+        dialogue_match = re.search(
+            r'\[DIALOGUE_ATTRIBUTION\]\s*(.*?)\s*$',
+            content,
+            re.DOTALL,
+        )
         
         if chars_match:
             new_chars = chars_match.group(1).strip()
@@ -1558,9 +1775,25 @@ async def update_novel_context_chunk(
             # We can log that relationship state changed
             change_logs.append("[Novel Context] Dynamic relationship state / addressing forms updated.")
             print("[Novel Context] Dynamic relationship state / addressing forms updated.")
+
+        if dialogue_attribution_sink is not None:
+            dialogue_attribution_sink.clear()
+            dialogue_attribution_sink.update(
+                parse_dialogue_attribution(
+                    dialogue_match.group(1).strip() if dialogue_match else "",
+                    dialogue_turns,
+                    _character_alias_map(updated_global_lore),
+                    current_dialogue_state,
+                )
+            )
             
         return updated_global_lore, new_dynamic, change_logs
         
     except Exception as e:
         logger.error(f"Error in update_novel_context_chunk: {e}")
+        if dialogue_attribution_sink is not None:
+            dialogue_attribution_sink.clear()
+            dialogue_attribution_sink.update(
+                empty_dialogue_attribution(current_dialogue_state)
+            )
         return current_global_lore, current_dynamic_state, []

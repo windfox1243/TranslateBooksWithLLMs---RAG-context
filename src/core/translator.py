@@ -858,7 +858,30 @@ async def refine_chunks(
                 target_language=target_language,
                 display_index=i + 1,
                 total_chunks=total_chunks,
+                scene_key=(
+                    original_chunks[i].get("chapter_index")
+                    if i < len(original_chunks)
+                    else None
+                ),
             )
+            local_prompt_options = dict(prompt_options or {})
+            dialogue_attribution = None
+            if i < len(original_chunks):
+                dialogue_attribution = original_chunks[i].get(
+                    "dialogue_attribution"
+                )
+            if not dialogue_attribution:
+                dialogue_attribution = getattr(
+                    context_tracker,
+                    "current_dialogue_attribution",
+                    None,
+                )
+            if dialogue_attribution:
+                local_prompt_options["dialogue_attribution"] = (
+                    dialogue_attribution
+                )
+            else:
+                local_prompt_options.pop("dialogue_attribution", None)
 
             # Make refinement request
             try:
@@ -872,7 +895,7 @@ async def refine_chunks(
                     llm_client=llm_client,
                     log_callback=log_callback,
                     has_placeholders=False,
-                    prompt_options=prompt_options,
+                    prompt_options=local_prompt_options,
                     context_manager=context_manager,
                     runtime_state=runtime_state,
                     context_content=context_content,

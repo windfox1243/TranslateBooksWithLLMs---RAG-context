@@ -164,6 +164,7 @@ async def refine_srt_file(
         
     from src.utils.novel_context import (
         RefinementContextTracker,
+        map_dialogue_attributions_for_refinement,
         map_context_snapshots_for_refinement,
     )
     historical_contexts = map_context_snapshots_for_refinement(
@@ -175,9 +176,16 @@ async def refine_srt_file(
             for block in refine_blocks
         ],
     )
+    historical_dialogue_attributions = (
+        map_dialogue_attributions_for_refinement(
+            len(refine_blocks),
+            db_chunks,
+        )
+    )
     context_tracker = RefinementContextTracker(
         prompt_options=prompt_options or {},
         historical_contexts=historical_contexts,
+        historical_dialogue_attributions=historical_dialogue_attributions,
         log_callback=log_callback,
     )
 

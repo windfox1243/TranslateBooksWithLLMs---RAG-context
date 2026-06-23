@@ -122,6 +122,7 @@ async def refine_docx_file(
 
         from src.utils.novel_context import (
             RefinementContextTracker,
+            map_dialogue_attributions_for_refinement,
             map_context_snapshots_for_refinement,
         )
         historical_contexts = map_context_snapshots_for_refinement(
@@ -130,9 +131,16 @@ async def refine_docx_file(
             (prompt_options or {}).get('novel_context', ''),
             refinement_units=draft_globalized,
         )
+        historical_dialogue_attributions = (
+            map_dialogue_attributions_for_refinement(
+                len(chunks),
+                db_chunks,
+            )
+        )
         context_tracker = RefinementContextTracker(
             prompt_options=prompt_options or {},
             historical_contexts=historical_contexts,
+            historical_dialogue_attributions=historical_dialogue_attributions,
             log_callback=log_callback,
         )
 

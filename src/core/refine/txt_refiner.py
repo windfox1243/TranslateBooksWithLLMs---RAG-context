@@ -142,6 +142,9 @@ async def refine_txt_file(
                 ),
                 "chapter_index": chapter_index,
                 "chapter_title": chunk_data.get("chapter_title", ""),
+                "dialogue_attribution": chunk_data.get(
+                    "dialogue_attribution"
+                ),
             })
         if log_callback:
             log_callback(
@@ -171,6 +174,7 @@ async def refine_txt_file(
 
     from src.utils.novel_context import (
         RefinementContextTracker,
+        map_dialogue_attributions_for_refinement,
         map_context_snapshots_for_refinement,
     )
     historical_contexts = map_context_snapshots_for_refinement(
@@ -179,9 +183,16 @@ async def refine_txt_file(
         (prompt_options or {}).get('novel_context', ''),
         refinement_units=[chunk["main_content"] for chunk in structured_chunks],
     )
+    historical_dialogue_attributions = (
+        map_dialogue_attributions_for_refinement(
+            total_chunks,
+            db_chunks,
+        )
+    )
     context_tracker = RefinementContextTracker(
         prompt_options=prompt_options or {},
         historical_contexts=historical_contexts,
+        historical_dialogue_attributions=historical_dialogue_attributions,
         log_callback=log_callback,
     )
 
