@@ -1663,10 +1663,12 @@ window.saveContextResync = async function() {
         // Reload tabs
         window.NovelContextUI.isEditing = false;
         window.NovelContextUI.editSections = null;
-        window.NovelContextUI.latestContent = newContent;
         const header = document.getElementById('contextTabsHeader');
         if (header) header.style.display = 'flex';
-        window.NovelContextUI.renderContextTabs(newContent, false);
+        // Keep displaying the edited historical snapshot, but do not replace
+        // the separately tracked latest state. The resync worker will emit the
+        // new canonical latest context when its forward pass completes.
+        window.NovelContextUI.renderContextTabs(newContent, true);
         
         const btnEdit = document.getElementById('btnEditResync');
         if (btnEdit) btnEdit.style.display = 'inline-flex';

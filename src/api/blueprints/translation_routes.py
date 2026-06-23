@@ -605,6 +605,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             from src.utils.novel_context import (
                 decode_context_snapshot,
                 load_novel_context,
+                normalize_refinement_context,
                 normalize_novel_context_filename,
                 resolve_novel_context_path,
             )
@@ -623,7 +624,17 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                 )
             
             if snapshot:
-                plain_text_context, _, _ = decode_context_snapshot(snapshot, full_context)
+                historical_context, _, _ = decode_context_snapshot(
+                    snapshot,
+                    full_context,
+                )
+                # The selected chunk owns only time-sensitive state. Global
+                # characters, proven genders, and glossary terms are canonical
+                # book-wide lore, so the editor must show their latest values.
+                plain_text_context = normalize_refinement_context(
+                    historical_context,
+                    full_context,
+                )
             else:
                 plain_text_context = full_context
         

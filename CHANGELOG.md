@@ -24,6 +24,11 @@ correction workflow instead of a context-only update.
   even after later source text established the canonical facts.
 - Re-syncing context during or after refinement could update snapshots without
   correcting the already-produced final translation.
+- Selecting an early context snapshot in the editor displayed its obsolete
+  character, gender, and glossary lore instead of combining current global
+  lore with that chunk's historical relationship state.
+- Saving an edited historical snapshot temporarily replaced the browser's
+  cached `Latest state` view with the selected chunk.
 - Re-sync during refinement now invalidates the old result, repairs subsequent
   snapshots, and runs one fresh corrective refinement from the preserved
   first-pass translation.
@@ -44,7 +49,7 @@ correction workflow instead of a context-only update.
 
 ### Validation
 
-- 1,374 selected automated tests passed.
+- 1,376 selected automated tests passed.
 - Windows executable startup and local UI smoke tests passed.
 
 ## 1.4.12 - 2026-06-23

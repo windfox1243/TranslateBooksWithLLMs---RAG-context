@@ -2,6 +2,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from flask import Flask
 
 from src.core.llm.base import LLMResponse
 from src.persistence.checkpoint_manager import CheckpointManager
@@ -105,6 +106,85 @@ def test_refinement_context_uses_final_lore_with_historical_dynamic_state():
     assert 'source form "Valentine" | intimate' not in combined
     assert "Deep mutual trust" not in combined
     assert "Unspecified" not in combined
+
+
+def test_context_editor_uses_latest_lore_with_selected_chunk_state(
+    monkeypatch,
+    tmp_path,
+):
+    from src.api.blueprints.translation_routes import (
+        create_translation_blueprint,
+    )
+    from src.utils.novel_context import save_novel_context
+    import src.config
+
+    historical = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Kriha: Unspecified, Captain.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            "- Kriha → Valentine: source form \"Major\" | formal"
+        ),
+    )
+    latest = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Kriha: Female, Captain and loyal subordinate.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+            "- blood art: huyết thuật\n"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            "- Kriha → Valentine: source form \"Valentine\" | intimate"
+        ),
+    )
+    save_novel_context("novel.txt", tmp_path, latest)
+    monkeypatch.setattr(src.config, "NOVEL_CONTEXTS_DIR", tmp_path)
+
+    checkpoint_manager = MagicMock()
+    checkpoint_manager.load_checkpoint.return_value = {
+        "job": {
+            "config": {
+                "prompt_options": {
+                    "novel_context_file": "novel.txt",
+                }
+            }
+        },
+        "chunks": [{
+            "chunk_index": 0,
+            "status": "completed",
+            "chunk_data": {
+                "context_snapshot": compress_dynamic_state(historical),
+            },
+        }],
+    }
+    state_manager = MagicMock()
+    state_manager.checkpoint_manager = checkpoint_manager
+
+    app = Flask(__name__)
+    app.register_blueprint(
+        create_translation_blueprint(
+            state_manager,
+            lambda *_args, **_kwargs: None,
+            str(tmp_path),
+        )
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/translation/job/context/0")
+
+    assert response.status_code == 200
+    content = response.get_json()["context_content"]
+    assert "- Kriha: Female, Captain and loyal subordinate." in content
+    assert "- blood art: huyết thuật" in content
+    assert 'source form "Major" | formal' in content
+    assert 'source form "Valentine" | intimate' not in content
+    assert "Unspecified" not in content
 
 
 def test_refinement_source_survives_completed_checkpoint_cleanup(tmp_path):
@@ -443,6 +523,21 @@ def test_workflow_steps_and_resync_logs_use_the_canonical_ui_channel():
     assert "ui_step === 'context_resync'" in tracker
     assert '"ui_step": "context_resync"' in generic
     assert "emit_update(" in generic
+
+
+def test_context_resync_save_does_not_replace_latest_with_historical_snapshot():
+    project_root = Path(__file__).resolve().parents[2]
+    tracker = (
+        project_root / "src" / "web" / "static" / "js"
+        / "translation" / "translation-tracker.js"
+    ).read_text(encoding="utf-8")
+
+    save_block = tracker.split(
+        "window.saveContextResync = async function()",
+        1,
+    )[1]
+    assert "NovelContextUI.latestContent = newContent" not in save_block
+    assert "NovelContextUI.renderContextTabs(newContent, true)" in save_block
 
 
 def test_running_refinement_can_be_restored_after_browser_refresh():
