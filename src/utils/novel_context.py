@@ -52,6 +52,12 @@ _GENDER_LABELS = {
     "unknown",
     "unspecified",
 }
+_SPECIFIC_GENDER_LABELS = {
+    "male",
+    "female",
+    "non-binary",
+    "nonbinary",
+}
 _NAME_TITLES = {
     "captain",
     "commander",
@@ -208,6 +214,43 @@ def _character_names_match(first: str, second: str) -> bool:
     )
 
 
+def _character_unique_roles(name: str, value: str = "") -> set[str]:
+    """Extract identity-bearing unique titles from a name or its own description."""
+    roles = set()
+    name_role = _monarch_role(name)
+    if name_role:
+        roles.add(name_role)
+
+    _, details = _split_gender_and_details(value)
+    details_key = _plain_key(details)
+    for role in _UNIQUE_ROLE_TITLES:
+        if re.search(
+            rf"(?:^|[;,]\s*)(?:the\s+)?{re.escape(role)}\b",
+            details_key,
+        ):
+            roles.add(role)
+    return roles
+
+
+def _character_identities_match(
+    first_name: str,
+    first_value: str,
+    second_name: str,
+    second_value: str,
+) -> bool:
+    """Match deterministic aliases, including a unique title revealed in lore."""
+    if _character_names_match(first_name, second_name):
+        return True
+    shared_roles = (
+        _character_unique_roles(first_name, first_value)
+        & _character_unique_roles(second_name, second_value)
+    )
+    return bool(
+        shared_roles
+        and (_is_role_only_name(first_name) or _is_role_only_name(second_name))
+    )
+
+
 def _name_specificity(name: str) -> Tuple[int, int, int]:
     canonical = _canonical_display_name(name)
     key = _plain_key(canonical)
@@ -230,6 +273,248 @@ def _split_gender_and_details(value: str) -> Tuple[str, str]:
     if gender_candidate.casefold() in _GENDER_LABELS:
         return gender_candidate, rest.strip()
     return "", clean
+
+
+def _canonical_gender(gender: str) -> str:
+    return {
+        "male": "Male",
+        "female": "Female",
+        "non-binary": "Non-binary",
+        "nonbinary": "Non-binary",
+        "unknown": "Unspecified",
+        "unspecified": "Unspecified",
+    }.get(str(gender or "").casefold(), str(gender or "").strip())
+
+
+def _infer_gender_from_character_details(details: str) -> str:
+    """Recover explicit English evidence that a model left after Unspecified.
+
+    Context metadata is required to be English so this conservative repair can
+    recognize direct self-references without guessing from names or roles.
+    """
+    text = _clean_inline_text(details).casefold()
+    if not text:
+        return ""
+
+    kinship_object = (
+        r"(?:own|brother|sister|mother|father|family|wife|husband|son|daughter)"
+    )
+    male_patterns = (
+        r"^(?:an?\s+)?(?:young\s+|old\s+)?(?:male|man|boy)\b",
+        r"(?:^|[.;,]\s*)he\b",
+        r"\bhimself\b",
+        rf"\bwho\b[^.;]{{0,80}}\bhis\s+{kinship_object}\b",
+    )
+    female_patterns = (
+        r"^(?:an?\s+)?(?:young\s+|old\s+)?(?:female|woman|girl)\b",
+        r"(?:^|[.;,]\s*)she\b",
+        r"\bherself\b",
+        rf"\bwho\b[^.;]{{0,80}}\bher\s+{kinship_object}\b",
+    )
+    has_male = any(re.search(pattern, text) for pattern in male_patterns)
+    has_female = any(re.search(pattern, text) for pattern in female_patterns)
+    if has_male == has_female:
+        return ""
+    return "Male" if has_male else "Female"
+
+
+_DETAIL_STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "is",
+    "of",
+    "the",
+    "who",
+    "with",
+}
+
+
+def _detail_key(value: str) -> str:
+    return _plain_key(value).rstrip(" .;,:")
+
+
+def _detail_tokens(value: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"\w+", _detail_key(value), flags=re.UNICODE)
+        if token not in _DETAIL_STOP_WORDS
+    }
+
+
+def _detail_is_redundant(first: str, second: str) -> bool:
+    first_key = _detail_key(first)
+    second_key = _detail_key(second)
+    if not first_key or not second_key:
+        return False
+    if first_key in second_key or second_key in first_key:
+        return True
+    first_tokens = _detail_tokens(first)
+    second_tokens = _detail_tokens(second)
+    if not first_tokens or not second_tokens:
+        return False
+    overlap = len(first_tokens & second_tokens) / min(
+        len(first_tokens),
+        len(second_tokens),
+    )
+    return overlap >= 0.85
+
+
+def _compact_subordinate_facts(facts: List[str]) -> List[str]:
+    """Combine repeated English subordinate clauses into one cumulative fact."""
+    grouped: Dict[str, Dict[str, Any]] = {}
+    untouched: List[Tuple[int, str]] = []
+    pattern = re.compile(
+        r"^(?P<prefix>.*?)\bsubordinate\s+of\s+(?P<leader>.+?)\.?$",
+        flags=re.IGNORECASE,
+    )
+    for index, fact in enumerate(facts):
+        match = pattern.match(fact.strip())
+        if not match:
+            untouched.append((index, fact))
+            continue
+        leader = match.group("leader").strip().rstrip(" .")
+        leader_key = _plain_key(leader)
+        group = grouped.setdefault(
+            leader_key,
+            {"index": index, "leader": leader, "modifiers": []},
+        )
+        prefix = re.sub(
+            r"^(?:a|an|the)\s+",
+            "",
+            match.group("prefix").strip().rstrip(" ,"),
+            flags=re.IGNORECASE,
+        )
+        prefix = re.sub(r"(?:,?\s+and)\s*$", "", prefix, flags=re.IGNORECASE)
+        for modifier in re.split(r"\s*(?:,|\band\b)\s*", prefix):
+            clean = modifier.strip()
+            if clean and _plain_key(clean) not in {
+                _plain_key(item) for item in group["modifiers"]
+            }:
+                group["modifiers"].append(clean)
+
+    rendered = list(untouched)
+    for group in grouped.values():
+        modifiers = group["modifiers"]
+        titles = [
+            modifier
+            for modifier in modifiers
+            if _plain_key(modifier).split(maxsplit=1)[0] in _NAME_TITLES
+        ]
+        descriptors = [
+            modifier for modifier in modifiers if modifier not in titles
+        ]
+        title_prefix = ", ".join(titles)
+        descriptor_prefix = " and ".join(descriptors)
+        if title_prefix and descriptor_prefix:
+            prefix = f"{title_prefix}, {descriptor_prefix}"
+        elif title_prefix:
+            prefix = f"{title_prefix},"
+        else:
+            prefix = descriptor_prefix
+        fact = (
+            f"{prefix} subordinate of {group['leader']}"
+            if prefix
+            else f"subordinate of {group['leader']}"
+        )
+        rendered.append((group["index"], fact))
+    return [fact for _, fact in sorted(rendered, key=lambda item: item[0])]
+
+
+def _split_monarch_fact(
+    fact: str,
+    *,
+    role: Optional[str] = None,
+    ruler: bool = False,
+) -> Optional[Tuple[str, str]]:
+    prefix = r"(?:the\s+)?ruler" if ruler else rf"(?:the\s+)?{re.escape(role or '')}"
+    match = re.match(
+        rf"^{prefix}\s+of\s+(?P<realm>.+?)"
+        r"(?P<tail>\s+(?:with|who|known\s+for|known\s+as)\b.*)?$",
+        fact.strip(),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return (
+        match.group("realm").strip().rstrip(" ."),
+        (match.group("tail") or "").strip().rstrip(" ."),
+    )
+
+
+def _compact_unique_role_facts(facts: List[str]) -> List[str]:
+    """Prefer a named monarch title over a duplicate generic ruler phrase."""
+    compacted = list(facts)
+    for role in _UNIQUE_ROLE_TITLES:
+        title_match = next(
+            (
+                (index, parsed)
+                for index, fact in enumerate(compacted)
+                if (parsed := _split_monarch_fact(fact, role=role))
+            ),
+            None,
+        )
+        ruler_match = next(
+            (
+                (index, parsed)
+                for index, fact in enumerate(compacted)
+                if (parsed := _split_monarch_fact(fact, ruler=True))
+            ),
+            None,
+        )
+        if not title_match or not ruler_match:
+            continue
+        title_index, (title_realm, title_tail) = title_match
+        ruler_index, (ruler_realm, ruler_tail) = ruler_match
+        if _plain_key(title_realm) != _plain_key(ruler_realm):
+            continue
+        tails = _merge_character_details(title_tail, ruler_tail)
+        replacement = f"{role.title()} of {title_realm}"
+        if tails:
+            replacement = f"{replacement} {tails}"
+        first_index = min(title_index, ruler_index)
+        compacted = [
+            fact
+            for index, fact in enumerate(compacted)
+            if index not in {title_index, ruler_index}
+        ]
+        compacted.insert(first_index, replacement)
+    return compacted
+
+
+def _merge_character_details(first: str, second: str) -> str:
+    facts: List[str] = []
+    for raw_fact in re.split(r"\s*;\s*", f"{first};{second}"):
+        fact = _clean_inline_text(raw_fact).strip(" ;").rstrip(" .;,")
+        if not fact:
+            continue
+        redundant_index = next(
+            (
+                index
+                for index, existing in enumerate(facts)
+                if _detail_is_redundant(existing, fact)
+            ),
+            None,
+        )
+        if redundant_index is None:
+            facts.append(fact)
+            continue
+        existing = facts[redundant_index]
+        if len(_detail_tokens(fact)) > len(_detail_tokens(existing)):
+            facts[redundant_index] = fact
+    facts = _compact_subordinate_facts(facts)
+    facts = _compact_unique_role_facts(facts)
+    return "; ".join(facts)
+
+
+def _normalize_character_value(value: str) -> str:
+    clean = _strip_balanced_brackets(value).strip()
+    gender, details = _split_gender_and_details(clean)
+    gender = _canonical_gender(gender)
+    if gender.casefold() in {"unknown", "unspecified"}:
+        gender = _infer_gender_from_character_details(details) or "Unspecified"
+    details = _merge_character_details(details, "")
+    return f"{gender}, {details}".rstrip(" ,") if gender else details
 
 
 def _strip_character_correction_marker(value: str) -> Tuple[str, bool]:
@@ -280,17 +565,19 @@ def _merge_character_values(
     allow_gender_correction: bool = False,
 ) -> str:
     """Merge descriptions without letting an unsupported guess flip gender."""
-    first_clean = _strip_balanced_brackets(first).strip()
-    second_clean = _strip_balanced_brackets(second).strip()
+    first_clean = _normalize_character_value(first)
+    second_clean = _normalize_character_value(second)
     if not first_clean:
         return second_clean
     if not second_clean:
         return first_clean
     first_gender, first_details = _split_gender_and_details(first_clean)
     second_gender, second_details = _split_gender_and_details(second_clean)
+    first_specific = first_gender.casefold() in _SPECIFIC_GENDER_LABELS
+    second_specific = second_gender.casefold() in _SPECIFIC_GENDER_LABELS
     gender_conflict = bool(
-        first_gender
-        and second_gender
+        first_specific
+        and second_specific
         and first_gender.casefold() != second_gender.casefold()
     )
 
@@ -304,31 +591,25 @@ def _merge_character_values(
 
     if gender_conflict and allow_gender_correction:
         gender = second_gender
-        details = second_details
     else:
-        gender = first_gender or second_gender
-        if not first_details:
-            details = second_details
-        elif not second_details:
-            details = first_details
-        elif first_details.casefold().rstrip(" .;,:") in second_details.casefold():
-            details = second_details
-        elif second_details.casefold().rstrip(" .;,:") in first_details.casefold():
-            details = first_details
+        if first_specific:
+            gender = first_gender
+        elif second_specific:
+            gender = second_gender
         else:
-            details = (
-                f"{first_details.rstrip(' .;')}; {second_details.lstrip()}"
-            )
+            gender = first_gender or second_gender
 
-    if not gender_conflict and not first_details:
-        details = second_details
+    details = _merge_character_details(first_details, second_details)
 
     merged = f"{gender}, {details}" if gender and details else (gender or details)
     return merged[:600].rstrip(" ;,")
 
 
 def _format_character_line(name: str, value: str) -> str:
-    return f"- {name}: {_strip_balanced_brackets(value)}"
+    normalized = _normalize_character_value(value)
+    if normalized and not normalized.endswith((".", "!", "?")):
+        normalized = f"{normalized}."
+    return f"- {name}: {normalized}"
 
 
 def _parse_bullet_entries(text: str) -> List[Tuple[str, str]]:
@@ -387,7 +668,6 @@ def _deduplicate_character_entries(
     entries: List[Tuple[str, str]],
 ) -> Tuple[List[Tuple[str, str]], Dict[str, str]]:
     normalized: List[Dict[str, Any]] = []
-    alias_to_index: Dict[str, int] = {}
 
     for raw_name, raw_value in entries:
         if (
@@ -397,35 +677,44 @@ def _deduplicate_character_entries(
             continue
         aliases = _character_alias_keys(raw_name)
         matching_indices = {
-            alias_to_index[alias] for alias in aliases if alias in alias_to_index
-        }
-        if not matching_indices:
-            matching_indices = {
-                index
-                for index, item in enumerate(normalized)
-                if any(
-                    _character_names_match(source_name, raw_name)
-                    for source_name in item["source_names"]
+            index
+            for index, item in enumerate(normalized)
+            if (
+                aliases & item["aliases"]
+                or _character_identities_match(
+                    item["name"],
+                    item["value"],
+                    raw_name,
+                    raw_value,
                 )
-            }
+            )
+        }
         if matching_indices:
             index = min(matching_indices)
             item = normalized[index]
             item["name"] = _preferred_character_name(item["name"], raw_name)
             item["value"] = _merge_character_values(item["value"], raw_value)
             item["aliases"].update(aliases)
-            item["source_names"].add(raw_name)
+            for duplicate_index in sorted(
+                matching_indices - {index},
+                reverse=True,
+            ):
+                duplicate = normalized.pop(duplicate_index)
+                item["name"] = _preferred_character_name(
+                    item["name"],
+                    duplicate["name"],
+                )
+                item["value"] = _merge_character_values(
+                    item["value"],
+                    duplicate["value"],
+                )
+                item["aliases"].update(duplicate["aliases"])
         else:
-            index = len(normalized)
             normalized.append({
                 "name": _canonical_display_name(raw_name),
-                "value": _strip_balanced_brackets(raw_value),
+                "value": _normalize_character_value(raw_value),
                 "aliases": set(aliases),
-                "source_names": {raw_name},
             })
-
-        for alias in normalized[index]["aliases"]:
-            alias_to_index[alias] = index
 
     alias_map: Dict[str, str] = {}
     result: List[Tuple[str, str]] = []
@@ -912,7 +1201,8 @@ def decode_context_snapshot(
         dynamic_state = decoded or fallback_dynamic
 
     full_context = build_novel_context(global_lore, dynamic_state)
-    return full_context, global_lore, dynamic_state
+    canonical_global = extract_global_lore(full_context)
+    return full_context, canonical_global, dynamic_state
 
 
 def normalize_refinement_context(
@@ -1400,11 +1690,14 @@ Your task is to analyze the latest source text and its translation, and detect a
 Identity rules:
 - Reuse the exact canonical name already present in CURRENT GLOBAL LORE.
 - A title, rank, nickname, transformed state, awakened state, disguise, age qualifier, or relationship label is not a new character when it refers to an existing person. Update the existing canonical entry instead.
+- When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
 - Do not add one-scene unnamed soldiers, victims, hallucinations, generic crowds, or incidental job labels unless they recur and their identity/gender is required for translation consistency.
 - Never output template entries, "None", "[None]", "Unknown", "N/A", or an empty bullet.
 - Record gender only when the source states it or supplies unambiguous grammatical/pronoun evidence. Never guess gender from a name, occupation, rank, appearance, genre convention, or stereotype.
+- Before writing "Unspecified", scan the whole latest source for direct evidence such as gendered nouns, pronouns, kinship grammar, or an explicit description. If an existing Unspecified character is now proven Male/Female, output that specific gender directly; this is not a correction.
 - An existing specific gender is authoritative. Change it only when the latest source explicitly proves it was wrong; write that rare update as "CORRECTION: [Gender, role, description]".
-- Keep each character entry concise and cumulative. Do not duplicate facts already present.
+- Write all character metadata in English, regardless of source and target language.
+- For an existing character, output one concise cumulative replacement description containing the important old and new facts. Summarize repeated roles instead of appending duplicate phrases.
 
 Input provided:
 1. CURRENT GLOBAL LORE (Characters & Glossary)
@@ -1443,11 +1736,14 @@ Analyze the latest SOURCE text before it is translated. Detect new or corrected 
 Identity rules:
 - Reuse the exact canonical name already present in CURRENT GLOBAL LORE.
 - Do not create separate characters for ranks, titles, nicknames, transformed/awakened states, disguises, age variants, or relational aliases of an existing person.
+- When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
 - Do not add one-scene unnamed soldiers, victims, generic crowds, or incidental roles unless they recur and are necessary for pronoun/address consistency.
 - Never output template entries, "None", "[None]", "Unknown", "N/A", or an empty bullet.
 - Record gender only when this source text states it or gives unambiguous grammatical/pronoun evidence. Never infer it from names, jobs, ranks, appearance, personality, or genre stereotypes.
+- Before writing "Unspecified", scan the entire latest source for direct evidence such as gendered nouns, pronouns, kinship grammar, or an explicit description. If an existing Unspecified character is now proven Male/Female, output that specific gender directly; this is not a correction.
 - Treat an existing specific gender as authoritative. Change it only when this source text explicitly proves it wrong, using "CORRECTION: [Gender, role, description]".
-- Preserve source-side proper names exactly; descriptions and recommended terminology may use the target language.
+- Preserve source-side proper names exactly. Write character metadata descriptions in English so context remains stable when the translation model or target language changes.
+- For an existing character, output one concise cumulative replacement description containing the important old and new facts. Summarize repeated roles instead of appending duplicate phrases.
 
 Input provided:
 1. CURRENT GLOBAL LORE (Characters & Glossary)
@@ -1548,10 +1844,15 @@ def merge_new_lore(global_lore: str, new_characters: str, new_glossary: str) -> 
             continue
         incoming_aliases = _character_alias_keys(raw_name)
         match_index = None
-        for index, (existing_name, _) in enumerate(characters):
+        for index, (existing_name, existing_value) in enumerate(characters):
             if (
                 incoming_aliases & _character_alias_keys(existing_name)
-                or _character_names_match(existing_name, raw_name)
+                or _character_identities_match(
+                    existing_name,
+                    existing_value,
+                    raw_name,
+                    raw_value,
+                )
             ):
                 match_index = index
                 break
@@ -1568,6 +1869,7 @@ def merge_new_lore(global_lore: str, new_characters: str, new_glossary: str) -> 
         clean_value, explicit_correction = _strip_character_correction_marker(
             raw_value
         )
+        clean_value = _normalize_character_value(clean_value)
         if match_index is None:
             characters.append((canonical_name, clean_value))
             record(

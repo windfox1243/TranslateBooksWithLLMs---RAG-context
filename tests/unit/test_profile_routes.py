@@ -41,6 +41,10 @@ def test_profile_round_trip_preserves_all_non_secret_settings(profile_client):
         "tts_format": "mp3",
         "tts_bitrate": "128k",
         "output_filename_pattern": "{originalName}-{targetLang}.{ext}",
+        "translation_id": "old-job",
+        "resume_from_index": 42,
+        "context_snapshot": "old-snapshot",
+        "dialogue_attribution": {"state_after": {"speaker": "Old Speaker"}},
     }
 
     response = client.post("/api/profiles/Novel Project", json=payload)
@@ -50,6 +54,10 @@ def test_profile_round_trip_preserves_all_non_secret_settings(profile_client):
     saved = json.loads((profile_dir / "Novel Project.json").read_text(encoding="utf-8"))
     assert saved["profile_version"] == 1
     assert "api_key" not in saved
+    assert "translation_id" not in saved
+    assert "resume_from_index" not in saved
+    assert "context_snapshot" not in saved
+    assert "dialogue_attribution" not in saved
 
     response = client.get("/api/profiles/Novel Project")
     assert response.status_code == 200
@@ -113,6 +121,12 @@ def test_profile_frontend_restores_complete_state_without_timer_race():
     ).read_text(encoding="utf-8")
 
     assert "await ProviderManager.waitForCurrentModelLoad()" in form_manager
+    assert "await GlossaryManager.refreshDropdown()" in form_manager
+    assert "await FormManager.loadNovelContexts()" in form_manager
+    assert "await FormManager.loadCustomInstructions()" in form_manager
+    assert "option.value === String(data.glossary)" in form_manager
+    assert "option.value === data.novel_context_file" in form_manager
+    assert "option.value === data.custom_instruction_file" in form_manager
     assert "ApiClient.getProfiles()" in form_manager
     assert "ApiClient.getProfile(name)" in form_manager
     assert "ApiClient.saveProfile(name, profileData)" in form_manager
