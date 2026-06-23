@@ -619,8 +619,8 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             except Exception as e:
                 from src.utils.unified_logger import get_logger
                 get_logger(__name__).error(
-                    f"Failed to load or parse context snapshot for file {novel_context_file}: {e}",
-                    exc_info=True
+                    f"Failed to load or parse context snapshot for file "
+                    f"{novel_context_file}: {e}"
                 )
             
             if snapshot:
@@ -740,9 +740,8 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         )
         if context_revision is not None:
             logger.info(
-                "Context revision %s recorded for translation %s.",
-                context_revision,
-                translation_id,
+                f"Context revision {context_revision} recorded for "
+                f"translation {translation_id}."
             )
 
         # 2. Trigger background resync task
@@ -845,9 +844,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                 )
             except Exception as e:
                 logger.error(
-                    "Failed to start corrective refinement: %s",
-                    e,
-                    exc_info=True,
+                    f"Failed to start corrective refinement: {e}"
                 )
                 if state_manager.exists(translation_id):
                     state_manager.set_translation_field(
@@ -896,8 +893,8 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             else:
                 def resume_cb():
                     logger.info(
-                        "Auto-resuming translation %s after resync",
-                        translation_id,
+                        f"Auto-resuming translation {translation_id} "
+                        "after resync"
                     )
                     try:
                         fresh_checkpoint = (
@@ -980,9 +977,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                         start_translation_job(translation_id, config)
                     except Exception as e:
                         logger.error(
-                            "Failed to auto-resume translation: %s",
-                            e,
-                            exc_info=True,
+                            f"Failed to auto-resume translation: {e}"
                         )
                         state_manager.set_translation_field(
                             translation_id,
@@ -1060,7 +1055,8 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         return jsonify({
             "message": "Context resync started successfully",
             "translation_id": translation_id,
-            "chunk_index": chunk_index
+            "chunk_index": chunk_index,
+            "context_revision": context_revision,
         }), 200
 
     return bp

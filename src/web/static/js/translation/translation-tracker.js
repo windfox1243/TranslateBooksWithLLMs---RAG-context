@@ -1153,6 +1153,9 @@ export const TranslationTracker = {
 window.NovelContextUI = {
     latestContent: '',
     displayedContent: '',
+    availableChunkIndices: [],
+    globalAnchorChunkIndex: null,
+    globalAnchorFullContent: '',
     activeTabIndex: 0,
     localizedView: null,
     _localeListenerBound: false,
@@ -1329,12 +1332,34 @@ window.NovelContextUI = {
         // Preserve current selection if possible
         const currentVal = selector.value;
         
-        selector.innerHTML = `<option value="latest" data-i18n="translation:context_latest_state">${t('translation:context_latest_state')}</option>`;
         const availableIndices = Array.isArray(chunkIndices)
             ? [...new Set(chunkIndices)]
                 .filter(index => Number.isInteger(index) && index >= 0)
                 .sort((a, b) => a - b)
             : [];
+        this.availableChunkIndices = availableIndices;
+        selector.innerHTML = '';
+
+        if (availableIndices.length > 0) {
+            const globalOption = document.createElement('option');
+            globalOption.value = 'global';
+            globalOption.textContent = t('translation:context_global_state');
+            globalOption.setAttribute(
+                'data-i18n',
+                'translation:context_global_state'
+            );
+            selector.appendChild(globalOption);
+        }
+
+        const latestOption = document.createElement('option');
+        latestOption.value = 'latest';
+        latestOption.textContent = t('translation:context_latest_state');
+        latestOption.setAttribute(
+            'data-i18n',
+            'translation:context_latest_state'
+        );
+        selector.appendChild(latestOption);
+
         availableIndices.forEach(index => {
             const opt = document.createElement('option');
             opt.value = index;
@@ -1352,6 +1377,35 @@ window.NovelContextUI = {
 
 window.NovelContextUI.initializeLocaleListener();
 
+function setContextEditButtonMode(isGlobal) {
+    const btnEdit = document.getElementById('btnEditResync');
+    const btnSave = document.getElementById('btnSaveResync');
+    const editLabel = btnEdit?.querySelector('[data-context-action-label]');
+    const saveLabel = btnSave?.querySelector('[data-context-action-label]');
+    const editTitleKey = isGlobal
+        ? 'translation:context_edit_global_title'
+        : 'translation:context_edit_resync_title';
+    const editLabelKey = isGlobal
+        ? 'translation:context_edit_global_btn'
+        : 'translation:context_edit_resync_btn';
+    const saveLabelKey = isGlobal
+        ? 'translation:context_save_global_btn'
+        : 'translation:context_save_resync_btn';
+
+    if (btnEdit) {
+        btnEdit.setAttribute('data-i18n-attr', `title:${editTitleKey}`);
+        btnEdit.title = t(editTitleKey);
+    }
+    if (editLabel) {
+        editLabel.setAttribute('data-i18n', editLabelKey);
+        editLabel.textContent = t(editLabelKey);
+    }
+    if (saveLabel) {
+        saveLabel.setAttribute('data-i18n', saveLabelKey);
+        saveLabel.textContent = t(saveLabelKey);
+    }
+}
+
 window.loadContextSnapshot = async function(chunkValue) {
     const btnEdit = document.getElementById('btnEditResync');
     const btnSave = document.getElementById('btnSaveResync');
@@ -1361,9 +1415,22 @@ window.loadContextSnapshot = async function(chunkValue) {
     if (btnCancel) btnCancel.style.display = 'none';
 
     if (chunkValue === 'latest') {
+        setContextEditButtonMode(false);
         if (window.NovelContextUI.latestContent) {
             window.NovelContextUI.renderContextTabs(window.NovelContextUI.latestContent, false);
         }
+        return;
+    }
+
+    const isGlobal = chunkValue === 'global';
+    const resolvedChunkValue = isGlobal
+        ? window.NovelContextUI.availableChunkIndices[0]
+        : parseInt(chunkValue);
+    if (!Number.isInteger(resolvedChunkValue)) {
+        window.NovelContextUI.renderLocalizedView(
+            'translation:context_no_context_body',
+            { titleKey: 'translation:context_no_context_title' }
+        );
         return;
     }
     
@@ -1387,8 +1454,8 @@ window.loadContextSnapshot = async function(chunkValue) {
     }
     
     try {
-        console.log(`[Context] Loading snapshot for job=${translationId}, chunk=${chunkValue}`);
-        const result = await ApiClient.getContextSnapshot(translationId, parseInt(chunkValue));
+        console.log(`[Context] Loading snapshot for job=${translationId}, chunk=${resolvedChunkValue}`);
+        const result = await ApiClient.getContextSnapshot(translationId, resolvedChunkValue);
         if (result && (result.context_content !== undefined && result.context_content !== null)) {
             // Check if novel context is configured
             if (result.has_novel_context === false && !result.context_content) {
@@ -1405,9 +1472,20 @@ window.loadContextSnapshot = async function(chunkValue) {
                 window.NovelContextUI.renderLocalizedView(
                     'translation:context_empty_snapshot'
                 );
+            } else if (isGlobal) {
+                window.NovelContextUI.globalAnchorChunkIndex = resolvedChunkValue;
+                window.NovelContextUI.globalAnchorFullContent = result.context_content;
+                const dynamicMarker = result.context_content.indexOf(
+                    '---DYNAMIC_STATE_START---'
+                );
+                const globalContent = dynamicMarker >= 0
+                    ? result.context_content.substring(0, dynamicMarker).trim()
+                    : result.context_content.trim();
+                window.NovelContextUI.renderContextTabs(globalContent, true);
             } else {
                 window.NovelContextUI.renderContextTabs(result.context_content, true);
             }
+            setContextEditButtonMode(isGlobal);
             if (btnEdit) btnEdit.style.display = 'inline-flex';
         } else {
             window.NovelContextUI.renderLocalizedView(
@@ -1416,7 +1494,7 @@ window.loadContextSnapshot = async function(chunkValue) {
             );
         }
     } catch (e) {
-        console.error(`[Context] Failed to load snapshot for job=${translationId}, chunk=${chunkValue}:`, e);
+        console.error(`[Context] Failed to load snapshot for job=${translationId}, chunk=${resolvedChunkValue}:`, e);
         window.NovelContextUI.renderLocalizedView(
             'translation:context_load_error_body',
             {
@@ -1637,7 +1715,28 @@ window.saveContextResync = async function() {
         newContent = textarea.value;
     }
     
-    const chunkIndex = parseInt(selector.value);
+    const isGlobal = selector.value === 'global';
+    const chunkIndex = isGlobal
+        ? window.NovelContextUI.globalAnchorChunkIndex
+        : parseInt(selector.value);
+    if (!Number.isInteger(chunkIndex)) return;
+
+    let submittedContent = newContent;
+    if (isGlobal) {
+        const anchorContent = window.NovelContextUI.globalAnchorFullContent || '';
+        const dynamicMarker = anchorContent.indexOf('---DYNAMIC_STATE_START---');
+        if (dynamicMarker < 0) {
+            MessageLogger.addLog(
+                t('translation:context_resync_failed_log', {
+                    error: t('translation:context_global_anchor_missing')
+                })
+            );
+            return;
+        }
+        submittedContent = (
+            `${newContent.trim()}\n\n${anchorContent.substring(dynamicMarker)}`
+        );
+    }
     
     let translationId = null;
     const currentJob = StateManager.getState('translation.currentJob');
@@ -1657,8 +1756,18 @@ window.saveContextResync = async function() {
         const btnSave = document.getElementById('btnSaveResync');
         if (btnSave) btnSave.disabled = true;
         
-        await ApiClient.resyncContextSnapshot(translationId, chunkIndex, newContent);
-        MessageLogger.addLog(t('translation:context_resync_started_log', { chunk: chunkIndex + 1 }));
+        await ApiClient.resyncContextSnapshot(
+            translationId,
+            chunkIndex,
+            submittedContent
+        );
+        MessageLogger.addLog(
+            isGlobal
+                ? t('translation:context_global_resync_started_log')
+                : t('translation:context_resync_started_log', {
+                    chunk: chunkIndex + 1
+                })
+        );
         
         // Reload tabs
         window.NovelContextUI.isEditing = false;
@@ -1668,6 +1777,9 @@ window.saveContextResync = async function() {
         // Keep displaying the edited historical snapshot, but do not replace
         // the separately tracked latest state. The resync worker will emit the
         // new canonical latest context when its forward pass completes.
+        if (isGlobal) {
+            window.NovelContextUI.globalAnchorFullContent = submittedContent;
+        }
         window.NovelContextUI.renderContextTabs(newContent, true);
         
         const btnEdit = document.getElementById('btnEditResync');
