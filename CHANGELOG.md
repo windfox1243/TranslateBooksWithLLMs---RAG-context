@@ -50,6 +50,9 @@ correction workflow instead of a context-only update.
   corrective passes remain visibly stale rather than being marked current.
 - Durable addressing or relationship entries can be removed only through an
   explicit `DELETE` delta; model omission is never interpreted as deletion.
+- Refinement replays legacy snapshots cumulatively, recovering dormant
+  relationships omitted by old batch snapshots without leaking final
+  end-of-book dynamic state into early chapters.
 - Gender remains `Unspecified` without source evidence. Character names are not
   treated as calibrated gender probabilities because multilingual,
   transliterated, unisex, title-based, and fictional names make that inference
@@ -57,7 +60,7 @@ correction workflow instead of a context-only update.
 
 ### Validation
 
-- 1,382 selected automated tests passed.
+- 1,384 selected automated tests passed.
 - Windows executable startup and local UI smoke tests passed.
 
 ## 1.4.12 - 2026-06-23

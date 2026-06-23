@@ -329,6 +329,111 @@ async def test_early_refinement_unit_receives_final_lore_and_early_state():
 
 
 @pytest.mark.asyncio
+async def test_legacy_refinement_snapshots_recover_omitted_dormant_relationships():
+    first_snapshot = build_novel_context(
+        "# GLOBAL LORE",
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Alice → Bob: source form "Bob" | target-language form "anh" | intimate\n\n'
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Alice ↔ Bob: Established romantic couple."
+        ),
+    )
+    legacy_later_snapshot = build_novel_context(
+        "# GLOBAL LORE",
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Guard → Captain: source form "Captain" | formal\n\n'
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Guard → Captain: Temporary scene relationship."
+        ),
+    )
+    tracker = RefinementContextTracker(
+        prompt_options={
+            "novel_context": build_novel_context(
+                "# GLOBAL LORE",
+                "## RELATIONSHIP EVOLUTION\n- Later → State: Must not leak backward.",
+            )
+        },
+        historical_contexts=[
+            first_snapshot,
+            legacy_later_snapshot,
+        ],
+    )
+
+    first = await tracker.next_context(
+        text="First draft.",
+        llm_client=MagicMock(),
+        model_name="model",
+        target_language="English",
+        display_index=1,
+        total_chunks=2,
+    )
+    second = await tracker.next_context(
+        text="Second draft.",
+        llm_client=MagicMock(),
+        model_name="model",
+        target_language="English",
+        display_index=2,
+        total_chunks=2,
+    )
+
+    assert "- Alice ↔ Bob: Established romantic couple." in first
+    assert "Later → State" not in first
+    assert "- Alice ↔ Bob: Established romantic couple." in second
+    assert '- Alice → Bob: source form "Bob"' in second
+    assert "- Guard → Captain: Temporary scene relationship." in second
+
+
+@pytest.mark.asyncio
+async def test_refinement_snapshot_explicit_delete_removes_durable_relationship():
+    first_snapshot = build_novel_context(
+        "# GLOBAL LORE",
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Alice → Bob: source form "Bob" | intimate\n\n'
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Alice ↔ Bob: Established romantic couple."
+        ),
+    )
+    deleted_snapshot = build_novel_context(
+        "# GLOBAL LORE",
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            "- Alice → Bob: DELETE\n\n"
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Alice ↔ Bob: DELETE"
+        ),
+    )
+    tracker = RefinementContextTracker(
+        prompt_options={
+            "novel_context": build_novel_context("# GLOBAL LORE", "")
+        },
+        historical_contexts=[first_snapshot, deleted_snapshot],
+    )
+
+    await tracker.next_context(
+        text="First draft.",
+        llm_client=MagicMock(),
+        model_name="model",
+        target_language="English",
+        display_index=1,
+        total_chunks=2,
+    )
+    second = await tracker.next_context(
+        text="Second draft.",
+        llm_client=MagicMock(),
+        model_name="model",
+        target_language="English",
+        display_index=2,
+        total_chunks=2,
+    )
+
+    assert "Alice → Bob" not in second
+    assert "Alice ↔ Bob" not in second
+
+
+@pytest.mark.asyncio
 async def test_standalone_refinement_rebuilds_context_before_refining(monkeypatch):
     from src.core import translator
 
