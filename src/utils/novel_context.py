@@ -1209,23 +1209,32 @@ def normalize_refinement_context(
     context_content: Optional[str],
     fallback_context: str = "",
 ) -> str:
-    """Return a canonical full context for refinement.
+    """Overlay final global lore onto a unit's historical dynamic state.
 
-    ``context_content`` may be a new full snapshot or a legacy dynamic-only
-    value. The latter is combined with the fallback global lore.
+    Characters, proven genders, and glossary terminology are book-wide facts
+    that later refinement units may discover after early units were translated.
+    Addressing forms and relationship evolution are time-sensitive, so those
+    remain sourced from the mapped historical snapshot.
+
+    ``context_content`` may be a full snapshot or a legacy dynamic-only value.
+    ``fallback_context`` should be the latest canonical context loaded from the
+    context file; when it has no global lore, historical lore is used as a
+    compatibility fallback.
     """
+    final_global_lore = extract_global_lore(fallback_context)
     if not context_content:
         return build_novel_context(
-            extract_global_lore(fallback_context),
+            final_global_lore,
             extract_dynamic_state_from_text(fallback_context) or "",
         )
     if DYNAMIC_STATE_START in context_content:
+        historical_global_lore = extract_global_lore(context_content)
         return build_novel_context(
-            extract_global_lore(context_content),
+            final_global_lore or historical_global_lore,
             extract_dynamic_state_from_text(context_content) or "",
         )
     return build_novel_context(
-        extract_global_lore(fallback_context),
+        final_global_lore,
         context_content,
     )
 

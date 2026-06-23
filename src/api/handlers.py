@@ -342,9 +342,24 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
 
         # PHASE 2: Configuration validation is now handled by AdaptiveContextManager during translation
 
-        # Generate unique output filename to avoid overwriting
-        tentative_output_path = os.path.join(output_dir, config['output_filename'])
-        output_filepath_on_server = get_unique_output_path(tentative_output_path)
+        # Normal jobs avoid overwriting existing files. A context re-sync
+        # correction deliberately replaces the same final output after replaying
+        # refinement from its preserved first-pass translation.
+        forced_output_path = config.get('_force_output_filepath')
+        if forced_output_path:
+            output_filepath_on_server = os.path.abspath(forced_output_path)
+            os.makedirs(
+                os.path.dirname(output_filepath_on_server),
+                exist_ok=True,
+            )
+        else:
+            tentative_output_path = os.path.join(
+                output_dir,
+                config['output_filename'],
+            )
+            output_filepath_on_server = get_unique_output_path(
+                tentative_output_path
+            )
 
         # Update config with the actual filename (may have been modified)
         actual_output_filename = os.path.basename(output_filepath_on_server)
@@ -470,13 +485,28 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             )
 
         if config.get('refine_only'):
-            _log_message_callback(
-                "refine_only_mode",
-                "✨ Refine-only mode: skipping translation, polishing the input file as-is."
+            is_context_resync_refinement = bool(
+                config.get('_context_resync_refinement')
             )
+            if is_context_resync_refinement:
+                _log_message_callback(
+                    "refinement_replay_start",
+                    "🛠️ Re-sync correction: refining the preserved first-pass "
+                    "translation with the repaired context timeline.",
+                )
+            else:
+                _log_message_callback(
+                    "refine_only_mode",
+                    "✨ Refine-only mode: skipping translation, polishing the input file as-is."
+                )
             src_lang = config.get('source_language')
             tgt_lang = config.get('target_language')
-            if src_lang and tgt_lang and src_lang != tgt_lang:
+            if (
+                not is_context_resync_refinement
+                and src_lang
+                and tgt_lang
+                and src_lang != tgt_lang
+            ):
                 _log_message_callback(
                     "refine_only_lang_mismatch",
                     f"⚠️ source_language ({src_lang}) ≠ target_language ({tgt_lang}). "
@@ -491,7 +521,11 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 checkpoint_manager=checkpoint_manager,
                 translation_id=translation_id,
                 log_callback=_log_message_callback,
-                stats_callback=_refine_only_stats_callback,
+                stats_callback=(
+                    _refine_after_stats_callback
+                    if is_context_resync_refinement
+                    else _refine_only_stats_callback
+                ),
                 check_interruption_callback=should_interrupt_current_task,
                 resume_from_index=resume_from_index,
                 llm_api_endpoint=config['llm_api_endpoint'],
@@ -508,6 +542,28 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 prompt_options=config.get('prompt_options', {}),
                 soft_limit_ratio=config.get('soft_limit_ratio'),
             )
+            refinement_failed_chunks = (
+                state_manager.get_translation_field(
+                    translation_id,
+                    'stats',
+                    {},
+                ).get('failed_chunks', 0)
+            )
+            refine_completed_cleanly = (
+                refine_success
+                and not should_interrupt_current_task()
+                and refinement_failed_chunks == 0
+            )
+            if (
+                is_context_resync_refinement
+                and refine_completed_cleanly
+            ):
+                checkpoint_manager.mark_refinement_current(translation_id)
+                _log_message_callback(
+                    "refinement_replay_complete",
+                    "✅ Corrective refinement completed; the final output now "
+                    "matches the re-synced context.",
+                )
             if not refine_success and not should_interrupt_current_task():
                 if os.path.exists(output_filepath_on_server):
                     current_stats = (
@@ -615,6 +671,26 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                     "⚠️ Refinement pass skipped because translation did not finish cleanly.",
                 )
             if should_refine_after:
+                refinement_source = (
+                    checkpoint_manager.preserve_refinement_source(
+                        translation_id,
+                        output_filepath_on_server,
+                        config,
+                    )
+                )
+                if refinement_source:
+                    _log_message_callback(
+                        "refinement_source_preserved",
+                        "💾 Preserved the first-pass translation for safe "
+                        "context re-sync refinement.",
+                    )
+                else:
+                    _log_message_callback(
+                        "refinement_source_warning",
+                        "⚠️ Could not preserve the first-pass translation; "
+                        "future context re-sync will require a manual "
+                        "refinement pass.",
+                    )
                 # Phase 2. No manual counter reset is needed: the refine-phase
                 # callback always tags emits as phase 2 with the refine engine's
                 # own counters (starting at 0), so a stale phase-1 count can
@@ -651,7 +727,20 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                     prompt_options=translation_prompt_options,
                     soft_limit_ratio=config.get('soft_limit_ratio'),
                 )
-                if refine_success:
+                refinement_failed_chunks = (
+                    state_manager.get_translation_field(
+                        translation_id,
+                        'stats',
+                        {},
+                    ).get('failed_chunks', 0)
+                )
+                refine_completed_cleanly = (
+                    refine_success
+                    and not should_interrupt_current_task()
+                    and refinement_failed_chunks == 0
+                )
+                if refine_completed_cleanly:
+                    checkpoint_manager.mark_refinement_current(translation_id)
                     _log_message_callback(
                         "refine_after_complete",
                         "✅ Refinement pass completed; final output is ready.",

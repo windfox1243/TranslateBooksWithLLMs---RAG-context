@@ -123,6 +123,92 @@ class CheckpointManager:
         except Exception as e:
             print(f"Warning: Could not preserve input file: {e}")
 
+    def preserve_refinement_source(
+        self,
+        translation_id: str,
+        translated_output_path: str,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        """Keep an immutable first-pass output for future refinement replays.
+
+        Context re-sync can invalidate a completed refinement pass. Replaying
+        refinement from the already-refined output compounds edits, so every
+        refine-after job retains the translation-phase output in its checkpoint
+        directory until the user deletes the checkpoint.
+        """
+        output_path = Path(translated_output_path)
+        if not output_path.is_file():
+            return None
+
+        job_upload_dir = self.uploads_dir / translation_id
+        job_upload_dir.mkdir(parents=True, exist_ok=True)
+        suffix = "".join(output_path.suffixes) or output_path.suffix
+        preserved_path = job_upload_dir / f"refinement_source{suffix}"
+
+        try:
+            shutil.copy2(output_path, preserved_path)
+        except Exception as e:
+            print(f"Warning: Could not preserve refinement source: {e}")
+            return None
+
+        job = self.db.get_job(translation_id) or {}
+        persisted_config = dict(job.get("config") or {})
+        if config:
+            persisted_config.update(config)
+        persisted_config["refinement_source_path"] = str(preserved_path)
+        persisted_config["output_filepath"] = str(output_path.resolve())
+        persisted_config["output_filename"] = output_path.name
+        persisted_config.setdefault("context_revision", 0)
+        persisted_config["refinement_stale"] = True
+
+        if not self.update_job_config(translation_id, persisted_config):
+            try:
+                preserved_path.unlink()
+            except OSError:
+                pass
+            return None
+
+        if config is not None:
+            config.update({
+                "refinement_source_path": str(preserved_path),
+                "output_filepath": str(output_path.resolve()),
+                "output_filename": output_path.name,
+                "context_revision": persisted_config["context_revision"],
+                "refinement_stale": True,
+            })
+        return str(preserved_path)
+
+    def mark_refinement_stale(self, translation_id: str) -> Optional[int]:
+        """Increment the context revision and invalidate any refined output."""
+        job = self.db.get_job(translation_id)
+        if not job:
+            return None
+        config = dict(job.get("config") or {})
+        try:
+            revision = int(config.get("context_revision", 0)) + 1
+        except (TypeError, ValueError):
+            revision = 1
+        config["context_revision"] = revision
+        if config.get("refine_after") or config.get("refinement_source_path"):
+            config["refinement_stale"] = True
+        if not self.update_job_config(translation_id, config):
+            return None
+        return revision
+
+    def mark_refinement_current(self, translation_id: str) -> bool:
+        """Record that the output was refined against the latest context."""
+        job = self.db.get_job(translation_id)
+        if not job:
+            return False
+        config = dict(job.get("config") or {})
+        try:
+            revision = int(config.get("context_revision", 0))
+        except (TypeError, ValueError):
+            revision = 0
+        config["refinement_context_revision"] = revision
+        config["refinement_stale"] = False
+        return self.update_job_config(translation_id, config)
+
     def save_checkpoint(
         self,
         translation_id: str,
@@ -491,16 +577,41 @@ class CheckpointManager:
     def cleanup_completed_job(self, translation_id: str) -> bool:
         """
         Automatically clean up a completed job's files (immediate cleanup).
-        Keeps the database checkpoints so history/snapshots can be viewed.
+        Keeps database checkpoints and the first-pass refinement source so
+        history can be viewed and context re-sync can replay refinement.
         """
         # Mark the status as completed in the DB so it is recorded as such
         self.mark_completed(translation_id)
 
-        # Delete preserved files in uploads directory
+        job = self.db.get_job(translation_id) or {}
+        refinement_source = (
+            (job.get("config") or {}).get("refinement_source_path")
+        )
+        refinement_source_path = None
+        if refinement_source:
+            try:
+                refinement_source_path = Path(refinement_source).resolve()
+            except OSError:
+                refinement_source_path = None
+
+        # Delete preserved files except the immutable first-pass output.
         job_upload_dir = self.uploads_dir / translation_id
         if job_upload_dir.exists():
             try:
-                shutil.rmtree(job_upload_dir)
+                if (
+                    refinement_source_path is not None
+                    and refinement_source_path.is_file()
+                    and refinement_source_path.parent == job_upload_dir.resolve()
+                ):
+                    for child in job_upload_dir.iterdir():
+                        if child.resolve() == refinement_source_path:
+                            continue
+                        if child.is_dir():
+                            shutil.rmtree(child)
+                        else:
+                            child.unlink()
+                else:
+                    shutil.rmtree(job_upload_dir)
             except Exception as e:
                 print(f"Warning: Could not delete upload directory: {e}")
         return True

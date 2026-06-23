@@ -193,6 +193,39 @@ def _available_context_chunk_indices(checkpoint_data):
     return sorted(set(indices))
 
 
+def _build_corrective_refinement_config(config, output_filepath=None):
+    """Build a one-pass refinement replay after context re-sync.
+
+    The replay always starts from the preserved first-pass translation, never
+    from the already-refined output. Returning ``None`` means the checkpoint is
+    legacy or incomplete and cannot safely replay refinement automatically.
+    """
+    if not config.get("refine_after"):
+        return None
+
+    source_path = config.get("refinement_source_path")
+    final_output_path = output_filepath or config.get("output_filepath")
+    if not source_path or not final_output_path:
+        return None
+    if not Path(source_path).is_file() or not Path(final_output_path).is_file():
+        return None
+
+    correction = copy.deepcopy(config)
+    correction.update({
+        "file_path": str(Path(source_path).resolve()),
+        "preserved_input_path": str(Path(source_path).resolve()),
+        "output_filepath": str(Path(final_output_path).resolve()),
+        "output_filename": Path(final_output_path).name,
+        "resume_from_index": 0,
+        "is_resume": True,
+        "refine_only": True,
+        "refine_after": False,
+        "_context_resync_refinement": True,
+        "_force_output_filepath": str(Path(final_output_path).resolve()),
+    })
+    return correction
+
+
 def create_translation_blueprint(state_manager, start_translation_job, output_dir, socketio=None):
     """
     Create and configure the translation blueprint
@@ -688,96 +721,301 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             _release_context_resync(translation_id)
             raise
         
+        # Any refinement produced from the previous snapshots is now stale.
+        context_revision = (
+            state_manager.checkpoint_manager.mark_refinement_stale(
+                translation_id
+            )
+        )
+        if context_revision is not None:
+            logger.info(
+                "Context revision %s recorded for translation %s.",
+                context_revision,
+                translation_id,
+            )
+
         # 2. Trigger background resync task
         from src.core.adapters.generic_translator import resync_context_snapshots_background
         
         job_status = state_manager.get_translation(translation_id)
         was_active = False
         auto_resume_callback = None
+        post_resync_callback = None
+        post_resync_message = None
+
+        def start_corrective_refinement():
+            """Replay refinement once against the fully re-synced snapshots."""
+            try:
+                fresh_checkpoint = (
+                    state_manager.checkpoint_manager.load_checkpoint(
+                        translation_id
+                    )
+                )
+                if not fresh_checkpoint:
+                    raise RuntimeError(
+                        "Translation checkpoint is unavailable."
+                    )
+
+                persisted_config = copy.deepcopy(
+                    fresh_checkpoint["job"]["config"]
+                )
+                live_output_path = state_manager.get_translation_field(
+                    translation_id,
+                    "output_filepath",
+                )
+                correction_config = _build_corrective_refinement_config(
+                    persisted_config,
+                    live_output_path,
+                )
+                if correction_config is None:
+                    raise RuntimeError(
+                        "The preserved first-pass translation or final output "
+                        "is unavailable. Run refinement manually to apply the "
+                        "re-synced context."
+                    )
+
+                live_config = (
+                    state_manager.get_translation_field(
+                        translation_id,
+                        "config",
+                    )
+                    or {}
+                )
+                provider = (
+                    correction_config.get("llm_provider") or "ollama"
+                ).lower()
+                live_key = live_config.get(f"{provider}_api_key")
+                _rehydrate_resume_credentials(
+                    correction_config,
+                    {"api_key": live_key} if live_key else None,
+                )
+                credential_error = _provider_credentials_error(
+                    correction_config
+                )
+                if credential_error is not None:
+                    raise RuntimeError(credential_error["message"])
+
+                if not state_manager.exists(translation_id):
+                    if not state_manager.restore_job_from_checkpoint(
+                        translation_id
+                    ):
+                        raise RuntimeError(
+                            "Could not restore the translation job."
+                        )
+
+                state_manager.set_interrupted(translation_id, False)
+                state_manager.set_translation_field(
+                    translation_id,
+                    "status",
+                    "running",
+                )
+                state_manager.set_translation_field(
+                    translation_id,
+                    "output_filepath",
+                    correction_config["output_filepath"],
+                )
+                state_manager.checkpoint_manager.mark_running(translation_id)
+                emit_update(
+                    socketio,
+                    translation_id,
+                    {
+                        "status": "running",
+                        "log": (
+                            "Context re-sync changed refinement inputs; "
+                            "restarting refinement from the preserved "
+                            "first-pass translation."
+                        ),
+                    },
+                    state_manager,
+                )
+                start_translation_job(
+                    translation_id,
+                    correction_config,
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to start corrective refinement: %s",
+                    e,
+                    exc_info=True,
+                )
+                if state_manager.exists(translation_id):
+                    state_manager.set_translation_field(
+                        translation_id,
+                        "status",
+                        "error",
+                    )
+                    state_manager.set_translation_field(
+                        translation_id,
+                        "error",
+                        str(e),
+                    )
+                emit_update(
+                    socketio,
+                    translation_id,
+                    {
+                        "status": "error",
+                        "error": str(e),
+                        "log": (
+                            "Context re-sync completed, but corrective "
+                            f"refinement could not start: {e}"
+                        ),
+                    },
+                    state_manager,
+                )
         
         if job_status and job_status.get('status') == 'running':
             was_active = True
             logger.info(f"Translation {translation_id} is running. Interrupting for context resync...")
             state_manager.set_interrupted(translation_id, True)
-            
-            def resume_cb():
-                logger.info(f"Auto-resuming translation {translation_id} after resync")
-                try:
-                    # Restore job into state manager
-                    restored = state_manager.restore_job_from_checkpoint(translation_id)
-                    if restored:
-                        # Get fresh checkpoint data since it might have updated during pause
-                        fresh_checkpoint = state_manager.checkpoint_manager.load_checkpoint(translation_id)
-                        job = fresh_checkpoint['job']
-                        import copy
-                        config = copy.deepcopy(job['config'])
-                        
-                        preserved_path = config.get('preserved_input_path')
-                        if not preserved_path:
-                            preserved_path = state_manager.checkpoint_manager.get_preserved_input_path(translation_id)
-                            
-                        if preserved_path:
-                            config['file_path'] = preserved_path
-                            config['resume_from_index'] = fresh_checkpoint['resume_from_index']
-                            config['is_resume'] = True
 
-                            _rehydrate_resume_credentials(config)
-                            credential_error = _provider_credentials_error(config)
-                            if credential_error is not None:
-                                logger.error(
-                                    "Auto-resume failed: provider credentials "
-                                    "could not be restored from the live configuration."
-                                )
-                                state_manager.set_translation_field(
-                                    translation_id,
-                                    'status',
-                                    'error',
-                                )
-                                state_manager.set_translation_field(
-                                    translation_id,
-                                    'error',
-                                    'Provider credentials are unavailable for auto-resume.',
-                                )
-                                emit_update(
-                                    socketio,
-                                    translation_id,
-                                    {
-                                        'status': 'error',
-                                        'error': (
-                                            'Provider credentials are unavailable '
-                                            'for auto-resume.'
-                                        ),
-                                        'log': (
-                                            'Context re-sync finished, but translation '
-                                            'could not resume because the provider '
-                                            'credentials are unavailable.'
-                                        ),
-                                    },
-                                    state_manager,
-                                )
-                                return
-                            
-                            state_manager.set_interrupted(translation_id, False)
-                            state_manager.set_translation_field(translation_id, 'status', 'running')
-                            state_manager.checkpoint_manager.mark_running(translation_id)
-                            emit_update(
-                                socketio,
-                                translation_id,
-                                {
-                                    'status': 'running',
-                                    'log': 'Translation auto-resumed after context resync.'
-                                },
-                                state_manager
+            current_phase = (job_status.get("stats") or {}).get(
+                "current_phase"
+            )
+            if (
+                checkpoint_data.get("job", {}).get("config", {}).get(
+                    "refine_after"
+                )
+                and current_phase == 2
+            ):
+                post_resync_callback = start_corrective_refinement
+                post_resync_message = (
+                    "Context timeline repaired; restarting corrective "
+                    "refinement..."
+                )
+            else:
+                def resume_cb():
+                    logger.info(
+                        "Auto-resuming translation %s after resync",
+                        translation_id,
+                    )
+                    try:
+                        fresh_checkpoint = (
+                            state_manager.checkpoint_manager.load_checkpoint(
+                                translation_id
                             )
-                            start_translation_job(translation_id, config)
-                        else:
-                            logger.error("Auto-resume failed: preserved_input_path not found")
-                    else:
-                        logger.error("Auto-resume failed: Could not restore job from checkpoint")
-                except Exception as e:
-                    logger.error(f"Failed to auto-resume translation: {e}", exc_info=True)
-            
-            auto_resume_callback = resume_cb
+                        )
+                        if not fresh_checkpoint:
+                            raise RuntimeError(
+                                "Translation checkpoint is unavailable."
+                            )
+                        config = copy.deepcopy(
+                            fresh_checkpoint["job"]["config"]
+                        )
+
+                        preserved_path = config.get(
+                            "preserved_input_path"
+                        )
+                        if not preserved_path:
+                            preserved_path = (
+                                state_manager.checkpoint_manager
+                                .get_preserved_input_path(translation_id)
+                            )
+                        if not preserved_path:
+                            raise RuntimeError(
+                                "The preserved input file is unavailable."
+                            )
+
+                        config["file_path"] = preserved_path
+                        config["resume_from_index"] = fresh_checkpoint[
+                            "resume_from_index"
+                        ]
+                        config["is_resume"] = True
+
+                        live_config = (
+                            state_manager.get_translation_field(
+                                translation_id,
+                                "config",
+                            )
+                            or {}
+                        )
+                        provider = (
+                            config.get("llm_provider") or "ollama"
+                        ).lower()
+                        live_key = live_config.get(f"{provider}_api_key")
+                        _rehydrate_resume_credentials(
+                            config,
+                            {"api_key": live_key} if live_key else None,
+                        )
+                        credential_error = _provider_credentials_error(config)
+                        if credential_error is not None:
+                            raise RuntimeError(
+                                credential_error["message"]
+                            )
+
+                        state_manager.set_interrupted(
+                            translation_id,
+                            False,
+                        )
+                        state_manager.set_translation_field(
+                            translation_id,
+                            "status",
+                            "running",
+                        )
+                        state_manager.checkpoint_manager.mark_running(
+                            translation_id
+                        )
+                        emit_update(
+                            socketio,
+                            translation_id,
+                            {
+                                "status": "running",
+                                "log": (
+                                    "Translation auto-resumed after context "
+                                    "resync."
+                                ),
+                            },
+                            state_manager,
+                        )
+                        start_translation_job(translation_id, config)
+                    except Exception as e:
+                        logger.error(
+                            "Failed to auto-resume translation: %s",
+                            e,
+                            exc_info=True,
+                        )
+                        state_manager.set_translation_field(
+                            translation_id,
+                            "status",
+                            "error",
+                        )
+                        state_manager.set_translation_field(
+                            translation_id,
+                            "error",
+                            str(e),
+                        )
+                        emit_update(
+                            socketio,
+                            translation_id,
+                            {
+                                "status": "error",
+                                "error": str(e),
+                                "log": (
+                                    "Context re-sync finished, but "
+                                    f"translation could not resume: {e}"
+                                ),
+                            },
+                            state_manager,
+                        )
+
+                auto_resume_callback = resume_cb
+        else:
+            persisted_status = (
+                checkpoint_data.get("job", {})
+                .get("progress", {})
+                .get("status")
+            )
+            persisted_config = (
+                checkpoint_data.get("job", {}).get("config", {})
+            )
+            if (
+                persisted_status == "completed"
+                and persisted_config.get("refine_after")
+            ):
+                post_resync_callback = start_corrective_refinement
+                post_resync_message = (
+                    "Context timeline repaired; starting corrective "
+                    "refinement..."
+                )
             
         logger.info(f"Dispatching background context resync thread for translation {translation_id} starting at chunk {chunk_index}")
         
@@ -791,6 +1029,8 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                     socketio,
                     was_active,
                     auto_resume_callback,
+                    post_resync_callback,
+                    post_resync_message,
                 )
             finally:
                 _release_context_resync(translation_id)
