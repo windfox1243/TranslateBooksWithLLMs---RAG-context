@@ -23,6 +23,12 @@ correction workflow instead of a context-only update.
 
 ### Fixed
 
+- Context re-sync no longer crashes with `AttributeError: 'int' object has no
+  attribute 'value'` when recording a numeric context revision.
+- The context editor now exposes a dedicated book-wide `Global Context` view.
+  Editing global characters, genders, glossary, or terminology automatically
+  anchors re-sync at the first available historical snapshot; users no longer
+  need to select an arbitrary chunk for global corrections.
 - Early refinement units could retain incomplete character or glossary lore
   even after later source text established the canonical facts.
 - Re-syncing context during or after refinement could update snapshots without
@@ -60,7 +66,7 @@ correction workflow instead of a context-only update.
 
 ### Validation
 
-- 1,384 selected automated tests passed.
+- 1,385 selected automated tests passed.
 - Windows executable startup and local UI smoke tests passed.
 
 ## 1.4.12 - 2026-06-23

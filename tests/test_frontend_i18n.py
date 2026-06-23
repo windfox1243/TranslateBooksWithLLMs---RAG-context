@@ -319,6 +319,9 @@ def test_context_preview_dynamic_strings_are_locale_reactive() -> None:
 
     assert "opt.setAttribute('data-i18n', 'translation:context_chunk_option')" in tracker
     assert "opt.setAttribute('data-i18n-params', JSON.stringify({ number: index + 1 }))" in tracker
+    assert "'translation:context_global_state'" in tracker
+    assert "setContextEditButtonMode(isGlobal)" in tracker
+    assert "window.NovelContextUI.globalAnchorChunkIndex" in tracker
     assert "btn.setAttribute('data-i18n', sec.titleKey)" in tracker
     assert "window.NovelContextUI.initializeLocaleListener()" in tracker
     assert "if (this.localizedView && !this.isEditing)" in tracker

@@ -589,7 +589,7 @@
                             <div style="display: flex; align-items: center; gap: 0.5rem;">
                                 <button id="btnEditResync" class="btn btn-warning" onclick="enableContextEdit()" style="display: none; padding: 0.25rem 0.75rem; font-size: 0.85rem; align-items: center; gap: 0.25rem;" title="Edit this snapshot and re-sync all subsequent chunks" data-i18n-attr="title:translation:context_edit_resync_title">
                                     <span class="material-symbols-outlined" style="font-size: 1rem;">edit</span>
-                                    <span data-i18n="translation:context_edit_resync_btn">Edit & Re-sync</span>
+                                    <span data-context-action-label data-i18n="translation:context_edit_resync_btn">Edit & Re-sync</span>
                                 </button>
                                 <button id="btnCancelResync" class="btn btn-secondary" onclick="cancelContextEdit()" style="display: none; padding: 0.25rem 0.75rem; font-size: 0.85rem; align-items: center; gap: 0.25rem;">
                                     <span class="material-symbols-outlined" style="font-size: 1rem;">cancel</span>
@@ -597,7 +597,7 @@
                                 </button>
                                 <button id="btnSaveResync" class="btn btn-primary" onclick="saveContextResync()" style="display: none; padding: 0.25rem 0.75rem; font-size: 0.85rem; align-items: center; gap: 0.25rem;" disabled>
                                     <span class="material-symbols-outlined" style="font-size: 1rem;">save</span>
-                                    <span data-i18n="translation:context_save_resync_btn">Save & Re-sync</span>
+                                    <span data-context-action-label data-i18n="translation:context_save_resync_btn">Save & Re-sync</span>
                                 </button>
                                 <select id="contextChunkSelector" class="form-control" style="margin-bottom: 0; padding: 0.25rem 0.5rem; font-size: 0.85rem; height: auto;" onchange="loadContextSnapshot(this.value)">
                                     <option value="latest" data-i18n="translation:context_latest_state">Latest State</option>
