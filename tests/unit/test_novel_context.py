@@ -519,6 +519,106 @@ def test_structured_dynamic_state_preserves_addressing_when_only_relationship_ch
     assert "Deep mutual trust" not in merged
 
 
+def test_dynamic_state_preserves_dormant_couple_for_arbitrary_chunk_gaps():
+    state = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Alice → Bob: source form "Bob" | target-language form "anh" | intimate\n\n'
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Alice ↔ Bob: Established romantic couple."
+    )
+
+    for index in range(1000):
+        state = merge_dynamic_state(
+            state,
+            (
+                "## CURRENT ADDRESSING FORMS\n"
+                '- Guard → Captain: source form "Captain" | formal\n\n'
+                "## RELATIONSHIP EVOLUTION\n"
+                f"- Guard → Captain: Temporary scene relationship {index}."
+            ),
+        )
+
+    assert '- Alice → Bob: source form "Bob"' in state
+    assert 'target-language form "anh" | intimate' in state
+    assert "- Alice ↔ Bob: Established romantic couple." in state
+    assert "- Guard → Captain: Temporary scene relationship 999." in state
+
+
+def test_dynamic_state_updates_existing_pair_without_erasing_dormant_pairs():
+    current = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Alice → Bob: source form "Bob" | target-language form "anh" | intimate\n'
+        '- Kriha → Valentine: source form "Major" | formal\n\n'
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Alice ↔ Bob: Established romantic couple.\n"
+        "- Kriha → Valentine: Loyal subordinate."
+    )
+    proposed = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Kriha → Valentine: source form "Valentine" | intimate\n\n'
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Kriha → Valentine: Deep mutual trust."
+    )
+
+    merged = merge_dynamic_state(current, proposed)
+
+    assert '- Alice → Bob: source form "Bob"' in merged
+    assert "- Alice ↔ Bob: Established romantic couple." in merged
+    assert 'source form "Valentine" | intimate' in merged
+    assert 'source form "Major" | formal' not in merged
+    assert "- Kriha → Valentine: Deep mutual trust." in merged
+    assert "- Kriha → Valentine: Loyal subordinate." not in merged
+
+
+def test_dynamic_state_requires_explicit_delete_for_durable_entries():
+    current = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Alice → Bob: source form "Bob" | target-language form "anh" | intimate\n'
+        '- Kriha → Valentine: source form "Major" | formal\n\n'
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Alice ↔ Bob: Established romantic couple.\n"
+        "- Kriha → Valentine: Loyal subordinate."
+    )
+    proposed = (
+        "## CURRENT ADDRESSING FORMS\n"
+        "- Alice → Bob: DELETE\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Alice ↔ Bob: DELETE"
+    )
+
+    merged = merge_dynamic_state(current, proposed)
+
+    assert "Alice → Bob" not in merged
+    assert "Alice ↔ Bob" not in merged
+    assert "- Kriha → Valentine: source form" in merged
+    assert "- Kriha → Valentine: Loyal subordinate." in merged
+
+
+def test_dynamic_state_delete_resolves_character_aliases():
+    current = (
+        "## CURRENT ADDRESSING FORMS\n"
+        "- Serena Augusta → Valentine: source form \"Major\" | formal\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Serena Augusta ↔ Valentine: Trusted allies."
+    )
+    aliases = {
+        "the emperor": "Serena Augusta",
+        "serena augusta": "Serena Augusta",
+        "valentine": "Valentine",
+    }
+    proposed = (
+        "## CURRENT ADDRESSING FORMS\n"
+        "- The Emperor → Valentine: DELETE\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- The Emperor ↔ Valentine: DELETE"
+    )
+
+    merged = merge_dynamic_state(current, proposed, aliases)
+
+    assert "Serena Augusta → Valentine" not in merged
+    assert "Serena Augusta ↔ Valentine" not in merged
+
+
 def test_context_normalization_removes_placeholders_merges_aliases_and_plain_text_arrows():
     raw_context = (
         "# GLOBAL LORE\n\n"
@@ -721,6 +821,60 @@ async def test_update_novel_context_chunk_parsing():
     assert "## RELATIONSHIP EVOLUTION" in updated_dynamic
     assert "- Li Fan → Sect Master: Respectful" in updated_dynamic
     assert any("Corrected/Updated Character 'li fan'" in log for log in logs)
+
+
+@pytest.mark.asyncio
+async def test_context_llm_delta_cannot_forget_dormant_relationships():
+    from unittest.mock import AsyncMock, MagicMock
+    from src.utils.novel_context import update_novel_context_chunk
+
+    mock_client = MagicMock()
+    mock_client.generate = AsyncMock()
+    response = MagicMock()
+    response.content = (
+        "[NEW_CHARACTERS]\n\n"
+        "[NEW_GLOSSARY]\n\n"
+        "[DYNAMIC_STATE]\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Guard → Captain: source form "Captain" | formal\n'
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Guard → Captain: Temporary scene relationship.\n"
+    )
+    mock_client.generate.return_value = response
+    current = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Alice → Bob: source form "Bob" | target-language form "anh" | intimate\n\n'
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Alice ↔ Bob: Established romantic couple."
+    )
+
+    _, updated_dynamic, _ = await update_novel_context_chunk(
+        llm_client=mock_client,
+        model_name="test-model",
+        current_global_lore="",
+        current_dynamic_state=current,
+        source_chunk="The guard saluted the captain.",
+        translated_chunk=None,
+        source_language="English",
+        target_language="Vietnamese",
+    )
+
+    assert '- Alice → Bob: source form "Bob"' in updated_dynamic
+    assert "- Alice ↔ Bob: Established romantic couple." in updated_dynamic
+    assert "- Guard → Captain: Temporary scene relationship." in updated_dynamic
+
+
+def test_context_prompts_define_durable_dynamic_state_deltas():
+    from src.utils.novel_context import (
+        SOURCE_ANALYSIS_SYSTEM_PROMPT,
+        UPDATE_SYSTEM_PROMPT,
+    )
+
+    for prompt in (SOURCE_ANALYSIS_SYSTEM_PROMPT, UPDATE_SYSTEM_PROMPT):
+        assert "Omitted entries remain stored indefinitely." in prompt
+        assert "Addressee: DELETE" in prompt
+        assert "Character A ↔ Character B: DELETE" in prompt
 
 
 @pytest.mark.asyncio

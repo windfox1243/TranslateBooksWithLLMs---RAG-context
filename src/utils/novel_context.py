@@ -818,14 +818,42 @@ def _canonical_relationship_party(value: str, alias_map: Dict[str, str]) -> str:
     return clean
 
 
+_DYNAMIC_RELATION_PATTERN = re.compile(
+    r"^(?P<prefix>\s*-\s*)?(?P<left>.+?)\s*(?P<arrow>↔|→|←)\s*"
+    r"(?P<right>.+?)\s*:\s*(?P<details>.*)$"
+)
+_DYNAMIC_DELETE_VALUES = {"delete"}
+
+
+def _parse_dynamic_relation(
+    line: str,
+    alias_map: Dict[str, str],
+) -> Optional[Tuple[Tuple[str, str, str], str, str]]:
+    """Parse one canonical addressing/relationship registry entry."""
+    match = _DYNAMIC_RELATION_PATTERN.match(line)
+    if not match:
+        return None
+
+    left = _canonical_relationship_party(match.group("left"), alias_map)
+    right = _canonical_relationship_party(match.group("right"), alias_map)
+    arrow = match.group("arrow")
+    details = _clean_inline_text(match.group("details"))
+    if _is_invalid_context_key(left) or _is_invalid_context_key(right):
+        return None
+
+    key_left = _plain_key(left)
+    key_right = _plain_key(right)
+    if arrow == "↔" and key_left > key_right:
+        key_left, key_right = key_right, key_left
+    relation_key = (key_left, arrow, key_right)
+    rendered = f"- {left} {arrow} {right}: {details}".rstrip()
+    return relation_key, rendered, details
+
+
 def _normalize_dynamic_entries(text: str, alias_map: Dict[str, str]) -> str:
     """Normalize one dynamic-state section without adding section headings."""
     output: List[str] = []
     relation_indices: Dict[Tuple[str, str, str], int] = {}
-    relation_pattern = re.compile(
-        r"^(?P<prefix>\s*-\s*)?(?P<left>.+?)\s*(?P<arrow>↔|→|←)\s*"
-        r"(?P<right>.+?)\s*:\s*(?P<details>.*)$"
-    )
 
     for raw_line in text.splitlines():
         line = raw_line.rstrip()
@@ -845,23 +873,12 @@ def _normalize_dynamic_entries(text: str, alias_map: Dict[str, str]) -> str:
             ):
                 continue
 
-        match = relation_pattern.match(line)
-        if not match:
+        parsed = _parse_dynamic_relation(line, alias_map)
+        if not parsed:
             output.append(line)
             continue
 
-        left = _canonical_relationship_party(match.group("left"), alias_map)
-        right = _canonical_relationship_party(match.group("right"), alias_map)
-        arrow = match.group("arrow")
-        details = _clean_inline_text(match.group("details"))
-        if _is_invalid_context_key(left) or _is_invalid_context_key(right):
-            continue
-        key_left = _plain_key(left)
-        key_right = _plain_key(right)
-        if arrow == "↔" and key_left > key_right:
-            key_left, key_right = key_right, key_left
-        relation_key = (key_left, arrow, key_right)
-        rendered = f"- {left} {arrow} {right}: {details}".rstrip()
+        relation_key, rendered, _ = parsed
         if relation_key in relation_indices:
             previous_index = relation_indices[relation_key]
             output[previous_index] = rendered
@@ -872,6 +889,63 @@ def _normalize_dynamic_entries(text: str, alias_map: Dict[str, str]) -> str:
     while output and output[-1] == "":
         output.pop()
     return "\n".join(output).strip()
+
+
+def _merge_dynamic_entries(
+    current_text: str,
+    proposed_text: str,
+    alias_map: Dict[str, str],
+) -> str:
+    """Apply a dynamic-state delta without deleting omitted durable entries."""
+    current = _normalize_dynamic_entries(current_text, alias_map)
+    proposed = _normalize_dynamic_entries(proposed_text, alias_map)
+    if not proposed:
+        return current
+
+    output: List[Optional[str]] = []
+    relation_indices: Dict[Tuple[str, str, str], int] = {}
+    other_lines = set()
+
+    for line in current.splitlines():
+        parsed = _parse_dynamic_relation(line, alias_map)
+        if parsed:
+            relation_key, rendered, _ = parsed
+            relation_indices[relation_key] = len(output)
+            output.append(rendered)
+        else:
+            output.append(line)
+            if line.strip():
+                other_lines.add(_plain_key(line))
+
+    for line in proposed.splitlines():
+        parsed = _parse_dynamic_relation(line, alias_map)
+        if not parsed:
+            line_key = _plain_key(line)
+            if line.strip() and line_key not in other_lines:
+                output.append(line)
+                other_lines.add(line_key)
+            continue
+
+        relation_key, rendered, details = parsed
+        is_delete = details.strip().rstrip(" .;:").casefold() in (
+            _DYNAMIC_DELETE_VALUES
+        )
+        previous_index = relation_indices.get(relation_key)
+        if is_delete:
+            if previous_index is not None:
+                output[previous_index] = None
+                relation_indices.pop(relation_key, None)
+            continue
+        if previous_index is not None:
+            output[previous_index] = rendered
+        else:
+            relation_indices[relation_key] = len(output)
+            output.append(rendered)
+
+    compacted = [line for line in output if line is not None]
+    while compacted and not compacted[-1].strip():
+        compacted.pop()
+    return "\n".join(compacted).strip()
 
 
 def _split_dynamic_sections(dynamic_state: str) -> Tuple[str, str, bool]:
@@ -929,7 +1003,12 @@ def merge_dynamic_state(
     proposed_dynamic_state: str,
     character_aliases: Optional[Dict[str, str]] = None,
 ) -> str:
-    """Accept complete states while safely applying short relationship deltas."""
+    """Merge durable addressing and relationship deltas by participant key.
+
+    Omission never deletes an existing entry, so dormant relationships survive
+    an arbitrary number of unrelated chunks. A response updates the matching
+    directional pair in place. Deletion requires an explicit ``DELETE`` value.
+    """
     aliases = character_aliases or {}
     current = normalize_dynamic_state(current_dynamic_state, aliases)
     if not str(proposed_dynamic_state or "").strip():
@@ -943,18 +1022,21 @@ def merge_dynamic_state(
     )
 
     if proposed_has_sections:
-        addressing = (
-            _normalize_dynamic_entries(proposed_addressing, aliases)
-            or current_addressing
+        addressing = _merge_dynamic_entries(
+            current_addressing,
+            proposed_addressing,
+            aliases,
         )
-        relationships = (
-            _normalize_dynamic_entries(proposed_relationships, aliases)
-            or current_relationships
+        relationships = _merge_dynamic_entries(
+            current_relationships,
+            proposed_relationships,
+            aliases,
         )
     else:
         addressing = current_addressing
-        relationships = _normalize_dynamic_entries(
-            f"{current_relationships}\n{proposed_relationships}",
+        relationships = _merge_dynamic_entries(
+            current_relationships,
+            proposed_relationships,
             aliases,
         )
 
@@ -1730,7 +1812,7 @@ Your output must follow this strict format:
 - Speaker → Addressee: source form "..." | target-language form "..." | register and reason
 ## RELATIONSHIP EVOLUTION
 - Character A ↔ Character B: concise current relationship
-(Output both headings every time. Copy still-current entries from the input and update only what changed. Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Do not duplicate these headings.)
+(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Do not duplicate these headings.)
 
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
@@ -1775,7 +1857,7 @@ Your output must follow this strict format:
 - Speaker → Addressee: source form "..." | recommended target-language form "..." | register and reason
 ## RELATIONSHIP EVOLUTION
 - Character A ↔ Character B: concise current relationship
-(Output both headings every time. Copy still-current entries from the input and update only what changed. Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Keep it concise and do not duplicate headings.)
+(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Keep it concise and do not duplicate headings.)
 
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
