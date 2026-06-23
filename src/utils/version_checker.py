@@ -17,8 +17,8 @@ from src import __version__
 
 logger = logging.getLogger(__name__)
 
-GITHUB_REPO_OWNER = "hydropix"
-GITHUB_REPO_NAME = "TranslateBooksWithLLMs"
+GITHUB_REPO_OWNER = "windfox1243"
+GITHUB_REPO_NAME = "TranslateBooksWithLLMs---RAG-context"
 GITHUB_RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/releases/latest"
 GITHUB_TAGS_API = f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/tags"
 
@@ -39,15 +39,36 @@ def _parse_version(v: str) -> Tuple[int, ...]:
     if not v:
         return (0,)
     cleaned = v.strip().lstrip("vV")
-    parts = re.findall(r"\d+", cleaned)
+    core = re.split(r"[-+]", cleaned, maxsplit=1)[0]
+    parts = re.findall(r"\d+", core)
     if not parts:
         return (0,)
     return tuple(int(p) for p in parts)
 
 
+def _prerelease_key(v: str) -> Tuple[Tuple[int, str], ...]:
+    """Return sortable prerelease identifiers; stable releases sort last."""
+    cleaned = str(v or "").strip().lstrip("vV")
+    match = re.match(r"^[0-9]+(?:\.[0-9]+)*(?:-([^+]+))?", cleaned)
+    suffix = match.group(1) if match else None
+    if suffix is None:
+        return ((2, ""),)
+    identifiers = []
+    for part in re.split(r"[.-]", suffix.casefold()):
+        if part.isdigit():
+            identifiers.append((0, f"{int(part):020d}"))
+        else:
+            identifiers.append((1, part))
+    return tuple(identifiers) or ((0, ""),)
+
+
 def _is_newer(remote: str, local: str) -> bool:
     """Return True if `remote` is strictly newer than `local`."""
-    return _parse_version(remote) > _parse_version(local)
+    remote_core = _parse_version(remote)
+    local_core = _parse_version(local)
+    if remote_core != local_core:
+        return remote_core > local_core
+    return _prerelease_key(remote) > _prerelease_key(local)
 
 
 def get_current_version() -> str:

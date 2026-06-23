@@ -1,5 +1,70 @@
 # Changelog
 
+## 1.4.12 - 2026-06-23
+
+This stable release promotes the global-context experiment after hardening
+translation, refinement, resume, profile, and context behavior across TXT,
+SRT, EPUB, and DOCX workflows.
+
+### Added
+
+- Source-first global novel context with canonical characters, genders,
+  glossary terms, addressing forms, and relationship evolution.
+- Chapter-aware translation mode with language-independent structural
+  detection and safe subdivision of oversized chapters.
+- Hidden dialogue speaker/addressee attribution for ambiguous conversations,
+  including checkpoint persistence and refinement reuse when units align.
+- Save/load translation profiles and detailed per-step context, translation,
+  re-sync, and refinement logs.
+
+### Improved
+
+- Character identity consolidation now merges title-only aliases into named
+  characters while preserving distinct named monarchs.
+- `Unspecified` genders are promoted when later source evidence directly proves
+  a specific gender, without weakening protection against unsupported flips.
+- Character descriptions are normalized into concise cumulative facts instead
+  of repeatedly appending duplicate roles.
+- Context metadata remains English and canonical when switching translation
+  models, providers, target languages, or importing a profile for continuation
+  chapters.
+- Profiles restore glossary, custom-instruction, and novel-context selections
+  only after their asynchronous option lists are ready.
+- Stable releases are compared correctly against prerelease versions, and the
+  update checker now targets this repository.
+
+### Fixed
+
+- Resuming with another model could feed stale, unnormalized snapshot lore to
+  context analysis.
+- Existing `Unspecified` entries could reject later `Male` or `Female` evidence
+  unless the model emitted an exact correction marker.
+- Title/name aliases such as `Emperor` and `Serena Augusta` could remain
+  duplicated.
+- Direct evidence retained inside a description, such as a character mourning
+  `his brother`, was not recovered when the model still returned
+  `Unspecified`.
+- Profile loading could silently lose the selected context, custom
+  instructions, or glossary because of startup timing.
+- Failed EPUB and DOCX chunks are retained as failed and retried rather than
+  appearing as completed untranslated content.
+- EPUB resume accounting, cloud API resume, context re-sync, locale-reactive
+  context controls, and refine-after context alignment regressions.
+
+### Safety and compatibility
+
+- Profiles never import old translation IDs, resume indices, context
+  snapshots, or dialogue state into a new file.
+- New jobs continue to read the current `MAX_TOKENS_PER_CHUNK` value from
+  `.env`; profiles do not freeze the previous job's chunk budget.
+- Speaker attribution remains hidden metadata and is never written into the
+  translated output or editable novel-context file.
+
+### Validation
+
+- 1,368 selected automated tests passed.
+- Windows executable startup and local UI smoke tests passed.
+
 ## 1.4.12-context-experiment.2 - 2026-06-23
 
 This prerelease adds hidden, scene-local dialogue speaker attribution to the

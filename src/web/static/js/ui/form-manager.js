@@ -13,6 +13,7 @@ import { ApiKeyUtils } from '../utils/api-key-utils.js';
 import { TranslationTracker } from '../translation/translation-tracker.js';
 import { SettingsManager } from '../core/settings-manager.js';
 import { ProviderManager } from '../providers/provider-manager.js';
+import { GlossaryManager } from '../glossary/glossary-manager.js';
 import { t } from '../i18n/i18n.js';
 
 /**
@@ -952,14 +953,44 @@ window.loadSelectedProfile = async function() {
         if (data.source_language) setDefaultLanguage('sourceLang', 'customSourceLang', data.source_language, true);
         if (data.target_language) setDefaultLanguage('targetLang', 'customTargetLang', data.target_language, true);
         
-        const glossarySelect = document.getElementById('glossarySelect');
-        if (glossarySelect && data.glossary !== undefined) glossarySelect.value = data.glossary;
-        
-        const novelContextSelect = document.getElementById('novelContextSelect');
-        if (novelContextSelect && data.novel_context_file !== undefined) novelContextSelect.value = data.novel_context_file;
-        
-        const customInstructionSelect = document.getElementById('customInstructionSelect');
-        if (customInstructionSelect && data.custom_instruction_file !== undefined) customInstructionSelect.value = data.custom_instruction_file;
+        if (data.glossary !== undefined) {
+            await GlossaryManager.refreshDropdown();
+            const glossarySelect = document.getElementById('glossarySelect');
+            if (glossarySelect) {
+                const hasGlossary = Array.from(glossarySelect.options)
+                    .some(option => option.value === String(data.glossary));
+                glossarySelect.value = hasGlossary ? String(data.glossary) : '';
+                glossarySelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+
+        // Profiles store filenames, while these dropdowns are populated by
+        // independent API requests during startup. Refresh and await both
+        // lists before assigning values so a fast profile response cannot
+        // silently clear a valid saved selection.
+        if (data.novel_context_file !== undefined) {
+            await FormManager.loadNovelContexts();
+            const novelContextSelect = document.getElementById('novelContextSelect');
+            if (novelContextSelect) {
+                const hasNovelContext = Array.from(novelContextSelect.options)
+                    .some(option => option.value === data.novel_context_file);
+                novelContextSelect.value = hasNovelContext
+                    ? data.novel_context_file
+                    : '';
+            }
+        }
+
+        if (data.custom_instruction_file !== undefined) {
+            await FormManager.loadCustomInstructions();
+            const customInstructionSelect = document.getElementById('customInstructionSelect');
+            if (customInstructionSelect) {
+                const hasCustomInstruction = Array.from(customInstructionSelect.options)
+                    .some(option => option.value === data.custom_instruction_file);
+                customInstructionSelect.value = hasCustomInstruction
+                    ? data.custom_instruction_file
+                    : '';
+            }
+        }
 
         if (data.llm_api_endpoint !== undefined) {
             const endpointId = data.llm_provider === 'openai' ? 'openaiEndpoint' : 'apiEndpoint';

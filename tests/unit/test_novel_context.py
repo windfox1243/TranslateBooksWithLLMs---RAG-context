@@ -397,6 +397,86 @@ def test_trailing_gender_correction_is_summarized_into_primary_gender():
     assert "Unspecified" not in updated_lore
 
 
+def test_unspecified_gender_is_promoted_by_later_direct_evidence():
+    from src.utils.novel_context import merge_new_lore
+
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kyle: Unspecified, loyal subordinate of Valentine.\n"
+        "- Jenny: Unspecified, Captain and subordinate of Valentine.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    updated_lore, _ = merge_new_lore(
+        initial_lore,
+        (
+            "- Kyle: Male, loyal subordinate of Valentine.\n"
+            "- Jenny: Female, Captain and loyal subordinate of Valentine."
+        ),
+        "",
+    )
+
+    assert "- Kyle: Male, loyal subordinate of Valentine" in updated_lore
+    assert "- Jenny: Female, Captain, loyal subordinate of Valentine" in updated_lore
+    assert "Unspecified" not in updated_lore
+
+
+def test_context_normalization_merges_named_unique_title_and_repairs_explicit_pronoun_evidence():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Emperor: Female, ruler of the Empire with brilliant white hair.\n"
+        "- Serena Augusta: Female, Emperor of the Empire.\n"
+        "- Private: Unspecified, a recruit who is mourning his brother.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert normalized.count("- Serena Augusta:") == 1
+    assert "- Emperor:" not in normalized
+    assert "Emperor of the Empire" in normalized
+    assert "ruler of the Empire" not in normalized
+    assert "- Private: Male, a recruit who is mourning his brother" in normalized
+
+
+def test_gender_repair_does_not_use_pronouns_that_refer_to_another_character():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric's sister: Unspecified, Eric's sibling seen in his dream.\n"
+        "- Guard: Unspecified, a bodyguard assigned to her unit.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- Eric's sister: Unspecified" in normalized
+    assert "- Guard: Unspecified" in normalized
+
+
+def test_character_details_compact_repeated_subordinate_roles():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Jenny: Female, a loyal subordinate of Valentine; "
+        "Captain and subordinate of Valentine.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- Jenny: Female, Captain, loyal subordinate of Valentine" in normalized
+    assert normalized.count("subordinate of Valentine") == 1
+
+
 def test_structured_dynamic_state_preserves_addressing_when_only_relationship_changes():
     current = (
         "## CURRENT ADDRESSING FORMS\n"
@@ -488,6 +568,42 @@ def test_save_and_load_normalize_existing_context(tmp_path):
     assert "- Kyle → Valentine: Loyal." in loaded
 
 
+def test_new_file_context_session_reuses_lore_without_importing_resume_state(tmp_path):
+    from src.utils.novel_context import open_novel_context_session
+
+    saved_context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Serena Augusta: Female, Emperor of the Empire.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n\n"
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Valentine ↔ Eric: They plan to marry."
+        ),
+    )
+    save_novel_context("continuation_context.txt", tmp_path, saved_context)
+    prompt_options = {
+        "novel_context_file": "continuation_context.txt",
+        "auto_update_context": True,
+    }
+
+    session = open_novel_context_session(
+        prompt_options=prompt_options,
+        novel_contexts_dir=tmp_path,
+        input_filename="new_chapters.epub",
+    )
+
+    assert session is not None
+    assert "Serena Augusta" in session.global_lore
+    assert "They plan to marry" in session.dynamic_state
+    assert session.dialogue_state == {}
+    assert session.dialogue_scene_key is None
+    assert "dialogue_attribution" not in prompt_options
+
+
 def test_dynamic_state_delta_updates_one_relationship_without_erasing_others():
     current = (
         "- Valentine → Eric: Cautious trust.\n"
@@ -507,6 +623,23 @@ def test_distinct_named_monarchs_are_not_merged():
         (
             "# GLOBAL LORE\n\n"
             "## CHARACTERS & GENDERS\n"
+            "- Emperor Nero: Male, ruler of the Western Empire.\n"
+            "- Emperor Claudius: Male, ruler of the Eastern Empire.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        "",
+    )
+
+    assert context.count("- Nero:") == 1
+    assert context.count("- Claudius:") == 1
+
+
+def test_title_only_monarch_does_not_collapse_two_named_monarchs():
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Emperor: Male, ruler seen in the opening scene.\n"
             "- Emperor Nero: Male, ruler of the Western Empire.\n"
             "- Emperor Claudius: Male, ruler of the Eastern Empire.\n\n"
             "## GLOSSARY & TERMINOLOGY\n"
@@ -643,6 +776,27 @@ def test_canonical_snapshot_decodes_full_and_legacy_formats():
     assert global_lore == "GLOBAL"
     assert dynamic_state == "LEGACY DYNAMIC"
     assert decoded_legacy == build_novel_context("GLOBAL", "LEGACY DYNAMIC")
+
+
+def test_snapshot_decode_returns_canonical_lore_for_resume():
+    raw = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Emperor: Female, ruler of the Empire.\n"
+            "- Serena Augusta: Female, Emperor of the Empire.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        "",
+    )
+
+    _, global_lore, _ = decode_context_snapshot(
+        compress_dynamic_state(raw),
+        "",
+    )
+
+    assert global_lore.count("- Serena Augusta:") == 1
+    assert "- Emperor:" not in global_lore
 
 
 def test_make_novel_context_filename_is_safe_for_every_input_name():
