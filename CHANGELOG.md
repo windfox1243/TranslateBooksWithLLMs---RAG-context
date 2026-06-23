@@ -17,6 +17,9 @@ correction workflow instead of a context-only update.
   being added, foreshadowed, or revealed before they appear locally.
 - Background context re-sync can reuse API credentials from the live job and
   waits according to the configured request timeout when pausing active work.
+- Addressing forms and relationship evolution now use a durable keyed registry:
+  LLM responses provide only deltas, omitted pairs remain stored for any number
+  of chunks, and matching participant pairs update deterministically.
 
 ### Fixed
 
@@ -35,6 +38,9 @@ correction workflow instead of a context-only update.
 - Corrective refinement replaces the intended final file across TXT, SRT,
   EPUB, and DOCX instead of creating a duplicate or refining an already-refined
   file.
+- Characters disappearing for many unrelated chunks could lose their saved
+  addressing forms when the context model returned a complete-looking dynamic
+  section containing only currently active relationships.
 
 ### Safety and compatibility
 
@@ -42,6 +48,8 @@ correction workflow instead of a context-only update.
   using refine-after mode and is removed when the checkpoint is deleted.
 - Context and refinement revisions are persisted so failed or interrupted
   corrective passes remain visibly stale rather than being marked current.
+- Durable addressing or relationship entries can be removed only through an
+  explicit `DELETE` delta; model omission is never interpreted as deletion.
 - Gender remains `Unspecified` without source evidence. Character names are not
   treated as calibrated gender probabilities because multilingual,
   transliterated, unisex, title-based, and fictional names make that inference
@@ -49,7 +57,7 @@ correction workflow instead of a context-only update.
 
 ### Validation
 
-- 1,376 selected automated tests passed.
+- 1,382 selected automated tests passed.
 - Windows executable startup and local UI smoke tests passed.
 
 ## 1.4.12 - 2026-06-23
