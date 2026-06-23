@@ -481,7 +481,7 @@ async def translate_chunk_with_fallback(
 
             result = placeholder_mgr.restore_to_global(translated, global_indices)
             stats.record_processed()  # Mark chunk as fully processed
-            return result
+            return _ChunkTranslationOutcome(result, succeeded=True)
         else:
             # Track placeholder error
             stats.placeholder_errors += 1
@@ -552,7 +552,7 @@ async def translate_chunk_with_fallback(
                 # 6. Restore global indices and return
                 result = placeholder_mgr.restore_to_global(result_with_placeholders, global_indices)
                 stats.record_processed()  # Mark chunk as fully processed
-                return result
+                return _ChunkTranslationOutcome(result, succeeded=True)
             else:
                 _log_error(log_callback, "phase2_validation_failed", "✗ Phase 2 validation failed")
 
@@ -573,7 +573,16 @@ async def translate_chunk_with_fallback(
     # Return the original chunk_text with global indices restored
     result_final = placeholder_mgr.restore_to_global(chunk_text, global_indices)
     stats.record_processed()  # Mark chunk as fully processed (even on failure)
-    return result_final
+    return _ChunkTranslationOutcome(result_final, succeeded=False)
+
+
+class _ChunkTranslationOutcome(str):
+    """String-compatible chunk result carrying whether translation succeeded."""
+
+    def __new__(cls, value: str, succeeded: bool):
+        instance = super().__new__(cls, value)
+        instance.succeeded = succeeded
+        return instance
 
 
 # === Private Helper Functions ===
@@ -722,6 +731,7 @@ async def _translate_all_chunks_with_checkpoint(
     global_total_chunks: Optional[int] = None,
     global_completed_chunks: Optional[int] = None,
     parallel_workers: int = 1,
+    failed_chunk_indices: Optional[List[int]] = None,
 ) -> Tuple[List[str], TranslationMetrics, bool]:
     """
     Translate all chunks with checkpoint support.
@@ -771,6 +781,12 @@ async def _translate_all_chunks_with_checkpoint(
 
     if translated_chunks is None:
         translated_chunks = []
+    failed_indices = {
+        index
+        for index in (failed_chunk_indices or [])
+        if 0 <= index < len(translated_chunks)
+    }
+    stats.failed_chunks = len(failed_indices)
 
     # Report initial stats
     if stats_callback:
@@ -823,8 +839,13 @@ async def _translate_all_chunks_with_checkpoint(
             current_dynamic_state = extract_dynamic_state_from_text(current_context_content) or ""
             
             # If resuming, restore dynamic state from the last completed chunk's snapshot
-            if (start_chunk_index > 0 or (global_completed_chunks or 0) > 0) and checkpoint_manager:
-                last_completed_global_idx = (global_completed_chunks or 0) + start_chunk_index - 1
+            context_resume_index = (
+                min(failed_indices)
+                if failed_indices
+                else start_chunk_index
+            )
+            if (context_resume_index > 0 or (global_completed_chunks or 0) > 0) and checkpoint_manager:
+                last_completed_global_idx = (global_completed_chunks or 0) + context_resume_index - 1
                 if last_completed_global_idx >= 0 and hasattr(checkpoint_manager, 'db'):
                     db_chunks = checkpoint_manager.db.get_chunks(translation_id) or []
                     for c in db_chunks:
@@ -880,7 +901,7 @@ async def _translate_all_chunks_with_checkpoint(
 
         global_stats_dict = None
         if global_total_chunks is not None and global_completed_chunks is not None:
-            completed = stats.successful_first_try + stats.successful_after_retry
+            completed = len(translated_chunks) - len(failed_indices)
             global_stats_dict = {
                 'total_chunks': global_total_chunks,
                 'completed_chunks': global_completed_chunks + completed,
@@ -908,6 +929,7 @@ async def _translate_all_chunks_with_checkpoint(
             bilingual=bilingual,
             original_chunks=original_chunks,
             protect_technical=True,
+            failed_chunk_indices=sorted(failed_indices),
             created_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
             updated_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
             global_stats=global_stats_dict,
@@ -967,7 +989,9 @@ async def _translate_all_chunks_with_checkpoint(
             prompt_options=prompt_options
         )
 
-    pending = list(range(start_chunk_index, len(chunks)))
+    pending = sorted(
+        failed_indices | set(range(start_chunk_index, len(chunks)))
+    )
     rate_limit_error = None
 
     # Continuous concurrency with in-order delivery: translated_chunks stays a
@@ -986,7 +1010,24 @@ async def _translate_all_chunks_with_checkpoint(
                 _save_state(len(translated_chunks))
             raise result
 
-        translated_chunks.append(result)
+        succeeded = getattr(result, "succeeded", True)
+        translated_text = str(result)
+        if i < len(translated_chunks):
+            translated_chunks[i] = translated_text
+        elif i == len(translated_chunks):
+            translated_chunks.append(translated_text)
+        else:
+            raise RuntimeError(
+                f"Cannot commit non-contiguous XHTML chunk {i}; "
+                f"translated prefix length is {len(translated_chunks)}"
+            )
+
+        if succeeded:
+            failed_indices.discard(i)
+        else:
+            failed_indices.add(i)
+        stats.failed_chunks = len(failed_indices)
+        stats.processed_chunks = len(translated_chunks)
         i_done = i
 
         # Save translation chunk checkpoint to SQLite for the context snapshot dropdown
@@ -1001,9 +1042,9 @@ async def _translate_all_chunks_with_checkpoint(
                 translation_id=translation_id,
                 chunk_index=global_chunk_idx,
                 original_text=chunks[i]['text'],
-                translated_text=result,
+                translated_text=translated_text,
                 chunk_data=chunk_data,
-                status='completed'
+                status='completed' if succeeded else 'failed'
             )
 
         # === HEALTH CHECK ===
@@ -1034,6 +1075,9 @@ async def _translate_all_chunks_with_checkpoint(
         if checkpoint_manager and translation_id and file_href and translated_chunks:
             _save_state(len(translated_chunks))
         raise rate_limit_error
+
+    if failed_indices:
+        _save_state(len(translated_chunks))
 
     # Interruption: the scheduler stopped launching new chunks; the appended
     # prefix is contiguous, so save resume state at the next index. translated_chunks
@@ -1218,7 +1262,9 @@ async def _translate_all_chunks(
             placeholder_format=placeholder_format,
             prompt_options=prompt_options
         )
-        translated_chunks.append(translated)
+        if not getattr(translated, "succeeded", True):
+            stats.failed_chunks += 1
+        translated_chunks.append(str(translated))
 
         # Warn loudly once if placeholder failures are piling up (see
         # _translate_all_chunks_with_checkpoint for rationale).
@@ -1959,10 +2005,27 @@ async def translate_xhtml_simplified(
         placeholder_format = resume_state.placeholder_format
         translated_chunks = resume_state.translated_chunks.copy()  # Copy to avoid mutations
         start_chunk_index = resume_state.current_chunk_index
+        failed_chunk_indices = list(resume_state.failed_chunk_indices or [])
         original_chunks = resume_state.original_chunks if resume_state.bilingual else None
 
         # Restore statistics
         stats = TranslationMetrics.from_dict(resume_state.stats) if resume_state.stats else TranslationMetrics()
+        if not failed_chunk_indices and stats.fallback_used:
+            # Compatibility with checkpoints created before failed indices
+            # were serialized. Phase-3 fallback stored the source chunk as the
+            # translated value, so recover those indices deterministically.
+            placeholder_manager = PlaceholderManager()
+            for index, translated_text in enumerate(translated_chunks):
+                if index >= len(chunks):
+                    break
+                original_global = placeholder_manager.restore_to_global(
+                    chunks[index]['text'],
+                    chunks[index]['global_indices'],
+                )
+                if translated_text == original_global:
+                    failed_chunk_indices.append(index)
+                    if len(failed_chunk_indices) >= stats.fallback_used:
+                        break
 
         # Restore tag_preserver (needed for final reconstruction)
         if container is not None:
@@ -2025,6 +2088,7 @@ async def translate_xhtml_simplified(
         # Initialize variables for new translation
         translated_chunks = []
         start_chunk_index = 0
+        failed_chunk_indices = []
         stats = TranslationMetrics()
         stats.total_chunks = len(chunks)
         original_chunks = chunks.copy() if bilingual else None
@@ -2080,6 +2144,7 @@ async def translate_xhtml_simplified(
         global_total_chunks=global_total_chunks,
         global_completed_chunks=global_completed_chunks,
         parallel_workers=parallel_workers,
+        failed_chunk_indices=failed_chunk_indices,
     )
 
     # If interrupted, return without reconstruction
@@ -2158,4 +2223,4 @@ async def translate_xhtml_simplified(
     # 8. Report stats
     _report_statistics(stats, log_callback)
 
-    return xml_success, stats
+    return xml_success and stats.failed_chunks == 0, stats

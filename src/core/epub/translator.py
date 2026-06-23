@@ -318,8 +318,17 @@ async def translate_epub_file(
 
             # 7. Final summary
             if log_callback:
-                log_callback("epub_save_success",
-                             f"✅ EPUB translation complete: {results['completed_files']} files translated, {results['failed_files']} failed")
+                if results['failed_files']:
+                    log_callback(
+                        "epub_save_partial",
+                        f"⚠️ EPUB saved with {results['failed_files']} incomplete file(s). "
+                        "Resume the checkpoint to retry untranslated chunks.",
+                    )
+                else:
+                    log_callback(
+                        "epub_save_success",
+                        f"✅ EPUB translation complete: {results['completed_files']} files translated",
+                    )
 
                 # Log layout status
                 if is_rtl_language(target_language):
@@ -957,7 +966,18 @@ async def _process_all_content_files(
                 else len(partial_state.chunks)
             )
             partial_file_completed = min(
-                max(0, partial_state.current_chunk_index),
+                max(
+                    0,
+                    partial_state.current_chunk_index
+                    - len(
+                        getattr(
+                            partial_state,
+                            'failed_chunk_indices',
+                            [],
+                        )
+                        or []
+                    ),
+                ),
                 max(0, expected_count),
             )
 
@@ -1058,14 +1078,19 @@ async def _process_all_content_files(
             parsed_xhtml_docs[file_path] = doc_root
             completed_files += 1
         elif not success and doc_root is not None:
-            # Save original document if translation failed
+            # Save the best-effort document, but stop at this file. EPUB file
+            # checkpoints must advance contiguously; translating later files
+            # would move the resume pointer past retryable failed chunks.
             parsed_xhtml_docs[file_path] = doc_root
             failed_files += 1
             if log_callback:
                 log_callback("epub_file_translate_failed",
-                             f"Failed to translate file {file_idx + 1}/{total_files}: {content_href}")
+                             f"Failed to fully translate file {file_idx + 1}/{total_files}: {content_href}. "
+                             "Checkpoint kept; resume will retry its failed chunks.")
+            break
         else:
             failed_files += 1
+            break
 
         # Save checkpoint
         if checkpoint_manager and translation_id and success and doc_root is not None:
