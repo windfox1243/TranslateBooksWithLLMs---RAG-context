@@ -188,41 +188,12 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
+        name: Global Context Experiment 1.4.12
         files: |
           TranslateBook-macOS-Intel/TranslateBook-macOS-Intel.zip
           TranslateBook-macOS-AppleSilicon/TranslateBook-macOS-AppleSilicon.zip
-        body: |
-          ## macOS Executable Release
-
-          ### Downloads
-          - **TranslateBook-macOS-AppleSilicon.zip** - For Apple Silicon Macs (M1/M2/M3/M4)
-          - **TranslateBook-macOS-Intel.zip** - For Intel-based Macs
-
-          ### Installation
-          1. Download the appropriate version for your Mac
-          2. Extract the zip file
-          3. Install [Ollama](https://ollama.ai) (required for local LLM)
-          4. Open Terminal and run `./TranslateBook`
-          5. Open http://localhost:5000 in your browser
-
-          ### First Launch - Security Authorization
-          macOS will block the app on first launch:
-          1. Double-click TranslateBook - macOS shows a warning
-          2. Open **System Settings > Privacy & Security**
-          3. Click **"Open Anyway"** next to the TranslateBook message
-
-          This only needs to be done once.
-
-          ### What's Included
-          - Single-file macOS executable (no Python installation required)
-          - Auto-generated configuration on first run
-          - Support for .txt, .epub, .srt translation
-
-          ### System Requirements
-          - macOS 11+ (Big Sur or later)
-          - Ollama installed for local LLM support
-          - Or API keys for cloud providers (OpenAI, Gemini, OpenRouter)
+        body_path: CHANGELOG.md
         draft: false
-        prerelease: false
+        prerelease: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
