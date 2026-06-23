@@ -145,28 +145,12 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/v')
       uses: softprops/action-gh-release@v1
       with:
-        files: TranslateBook-Windows.zip
-        body: |
-          ## Windows Executable Release
-
-          ### Installation
-          1. Download and extract TranslateBook-Windows.zip
-          2. Install [Ollama](https://ollama.ai) (required for local LLM)
-          3. Run TranslateBook.exe
-          4. Open http://localhost:5000 in your browser
-
-          ### What's Included
-          - Single-file Windows executable (no Python installation required)
-          - Auto-generated configuration on first run
-          - Support for .txt, .epub, .srt translation
-
-          ### System Requirements
-          - Windows 10/11 (64-bit)
-          - Ollama installed for local LLM support
-          - Or API keys for cloud providers (OpenAI, Gemini, OpenRouter)
-
-          **Size:** ${{ steps.exe_info.outputs.size_mb }} MB
+        name: Global Context Experiment 1.4.12
+        files: |
+          TranslateBook-Windows.zip
+          dist/TranslateBook.exe
+        body_path: CHANGELOG.md
         draft: false
-        prerelease: false
+        prerelease: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
