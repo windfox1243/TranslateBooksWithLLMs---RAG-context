@@ -1448,6 +1448,10 @@ class RefinementContextTracker:
         base_context = self.prompt_options.get("novel_context", "")
         self.global_lore = extract_global_lore(base_context)
         self.dynamic_state = extract_dynamic_state_from_text(base_context) or ""
+        if any(self.historical_contexts):
+            # Refinement replays historical states from the beginning. Never
+            # seed that replay with the final end-of-book dynamic state.
+            self.dynamic_state = ""
         self.auto_analyze = bool(self.prompt_options.get("auto_update_context"))
         self.dialogue_state: Dict[str, str] = {}
         self.dialogue_scene_key: Optional[str] = None
@@ -1502,12 +1506,23 @@ class RefinementContextTracker:
             )
 
         if historical:
-            full_context = normalize_refinement_context(
+            historical_context = normalize_refinement_context(
                 historical,
                 build_novel_context(self.global_lore, self.dynamic_state),
             )
-            self.global_lore = extract_global_lore(full_context)
-            self.dynamic_state = extract_dynamic_state_from_text(full_context) or ""
+            self.global_lore = extract_global_lore(historical_context)
+            historical_dynamic = (
+                extract_dynamic_state_from_text(historical_context) or ""
+            )
+            self.dynamic_state = merge_dynamic_state(
+                self.dynamic_state,
+                historical_dynamic,
+                _character_alias_map(self.global_lore),
+            )
+            full_context = build_novel_context(
+                self.global_lore,
+                self.dynamic_state,
+            )
             if self.log_callback:
                 self.log_callback(
                     "refinement_context_snapshot",
