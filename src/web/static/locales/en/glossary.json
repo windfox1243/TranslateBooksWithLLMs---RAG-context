@@ -164,7 +164,7 @@
   "ner_results_full_chars": " · {{chars}} chars in document",
 
   "preview_modal_title": "Preview prompt block",
-  "preview_modal_intro": "Paste a sample chunk to see exactly which glossary terms would be matched and how the block would be inserted into the system prompt.",
+  "preview_modal_intro": "Paste a sample chunk to see exactly which glossary terms would be matched and how the block would be inserted into the translation prompt.",
   "preview_input_placeholder": "Paste a sample chunk here...",
   "preview_render": "Render",
   "preview_output_placeholder": "(Click \"Render\" to compute the block.)",

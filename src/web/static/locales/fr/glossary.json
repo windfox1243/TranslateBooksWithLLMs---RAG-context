@@ -164,7 +164,7 @@
   "ner_results_full_chars": " · {{chars}} caractères dans le document",
 
   "preview_modal_title": "Aperçu du bloc prompt",
-  "preview_modal_intro": "Collez un échantillon de segment pour voir exactement quels termes du glossaire seraient reconnus et comment le bloc serait inséré dans le prompt système.",
+  "preview_modal_intro": "Collez un échantillon de segment pour voir exactement quels termes du glossaire seraient reconnus et comment le bloc serait inséré dans le prompt de traduction.",
   "preview_input_placeholder": "Collez ici un échantillon de segment...",
   "preview_render": "Générer",
   "preview_output_placeholder": "(Cliquez sur « Générer » pour calculer le bloc.)",

@@ -17,6 +17,7 @@ from src.core.adapters.format_adapter import FormatAdapter
 from src.core.adapters.generic_translator import GenericTranslator
 from src.core.adapters.translation_unit import TranslationUnit
 from src.persistence.checkpoint_manager import CheckpointManager
+from src.utils.novel_context import decompress_dynamic_state
 
 N_UNITS = 4
 FAILING_CONTENT = "content 1"
@@ -323,7 +324,11 @@ async def test_generic_txt_failed_unit_context_survives_and_retries(
     )
     assert retried_chunk["status"] == "completed"
     assert retried_chunk["translated_text"] == f"translated {FAILING_CONTENT}"
-    assert (retried_chunk["chunk_data"] or {}).get("context_snapshot")
+    retried_snapshot = (retried_chunk["chunk_data"] or {}).get("context_snapshot")
+    assert retried_snapshot
+    retried_context = decompress_dynamic_state(retried_snapshot)
+    assert f"seen {FAILING_CONTENT}" in retried_context
+    assert "seen content 2" not in retried_context
 
 
 @pytest.mark.asyncio

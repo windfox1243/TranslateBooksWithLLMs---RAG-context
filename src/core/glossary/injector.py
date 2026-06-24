@@ -1,5 +1,5 @@
 """
-Build the glossary block to inject into the system prompt.
+Build the glossary block to inject into the user prompt.
 
 The block style mirrors the existing prompt voice in src/prompts/prompts.py
 (numbered priorities, MANDATORY phrasing) so the LLM treats glossary entries
@@ -24,10 +24,9 @@ def build_glossary_block(
             arrow so the LLM can disambiguate homonyms (e.g. a name vs a
             place sharing the same spelling).
 
-    The block lives between the optional sections and the placeholder section
-    in the system prompt — close enough to the input text that the model will
-    not forget it, but not after the FINAL REMINDER so the output-language
-    reminder stays last.
+    The block lives in the user prompt near the source segment. This keeps the
+    system prompt cacheable while still placing required translations close
+    enough to the input text that the model will not forget them.
     """
     if not filtered_terms:
         return ""

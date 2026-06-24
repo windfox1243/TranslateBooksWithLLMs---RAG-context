@@ -114,12 +114,24 @@ _RELOADABLE_ENV_SETTINGS = (
     # Token chunk budget is editable in the web UI. The next job must use the
     # value saved to .env without requiring a server restart.
     ('MAX_TOKENS_PER_CHUNK', 'MAX_TOKENS_PER_CHUNK', '450'),
+    # Novel context prompt rendering. The full context file remains durable;
+    # this limits only the selected context block injected into each prompt.
+    ('NOVEL_CONTEXT_PROMPT_MAX_TOKENS', 'NOVEL_CONTEXT_PROMPT_MAX_TOKENS', '1800'),
+    # Auto-update cadence for source-derived novel context. 1 preserves the
+    # existing behavior (analyze every chunk); higher values analyze chunk 1,
+    # then every Nth chunk while translation uses the latest available context.
+    ('NOVEL_CONTEXT_UPDATE_INTERVAL', 'NOVEL_CONTEXT_UPDATE_INTERVAL', '1'),
 )
 
 
 _NOTIFY_BOOL_ATTRS = {'NOTIFY_ON_SUCCESS', 'NOTIFY_ON_FAILURE', 'NOTIFY_ON_INTERRUPTION'}
 _NOTIFY_INT_ATTRS = {'NOTIFY_TIMEOUT_SECONDS'}
-_INT_ATTRS = {'PARALLEL_TRANSLATIONS', 'MAX_TOKENS_PER_CHUNK'}
+_INT_ATTRS = {
+    'PARALLEL_TRANSLATIONS',
+    'MAX_TOKENS_PER_CHUNK',
+    'NOVEL_CONTEXT_PROMPT_MAX_TOKENS',
+    'NOVEL_CONTEXT_UPDATE_INTERVAL',
+}
 
 
 def _apply_reloadable_env_settings():

@@ -5,7 +5,7 @@ Provides:
 - models: Glossary, GlossaryTerm, GlossaryConfig dataclasses
 - store: SQLite CRUD operations
 - filter: chunk-aware glossary filtering (Latin word-boundary, CJK substring)
-- injector: build the glossary block injected into the system prompt
+- injector: build the glossary block injected into the user prompt
 """
 from src.core.glossary.models import (
     BulkReplaceResult,

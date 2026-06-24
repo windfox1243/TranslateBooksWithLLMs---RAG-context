@@ -3,7 +3,24 @@
 ## 1.4.14 - 2026-06-24
 
 This stable release hardens the source-derived novel context architecture
-around failed chunks, resume, re-sync, and refinement.
+around failed chunks, resume, re-sync, refinement, and prompt assembly.
+
+### Improved
+
+- Novel context is now injected into the dynamic user prompt instead of the
+  system prompt. This keeps provider-side system-prompt caching stable while
+  still giving each translation/refinement request the relevant book memory.
+- Oversized novel context is rendered through a relevance selector that keeps
+  matching characters, aliases, glossary terms, addressing forms, and dormant
+  relationships for the current unit instead of blindly sending the whole file.
+- New `.env` knobs control context prompt size and source-context update
+  cadence: `NOVEL_CONTEXT_PROMPT_MAX_TOKENS` and
+  `NOVEL_CONTEXT_UPDATE_INTERVAL`.
+- Original glossary rules remain hard requirements. Novel-context glossary or
+  terminology entries are treated as discovered hints, and the prompt now
+  explicitly says `# GLOSSARY - REQUIRED TRANSLATIONS` wins on conflict.
+- The glossary preview UI now describes the block as being inserted into the
+  translation prompt, matching the actual architecture.
 
 ### Fixed
 
@@ -21,6 +38,10 @@ around failed chunks, resume, re-sync, and refinement.
   instead of rewinding to the chunk before the first failed translation.
 - Plain-text mode now carries source-context snapshots from failed or partial
   previous units into later files/chapters.
+- Generic TXT/SRT retry paths preserve the failed unit's original
+  source-context snapshot when a same-run deferred retry succeeds.
+- GitHub release workflow metadata now uses the current tag name and publishes
+  stable releases instead of the stale `1.4.12` prerelease label.
 
 ### Safety and compatibility
 
@@ -29,12 +50,15 @@ around failed chunks, resume, re-sync, and refinement.
   final translation.
 - Context re-sync walks failed or partial source chunks for global context, but
   their translation status remains unchanged and retryable.
+- The hard glossary remains independent from source-derived novel context, so
+  existing glossary databases and NER/imported glossary terms keep their
+  priority.
 
 ### Validation
 
-- Full automated validation passed: 1,408 passed, 1 skipped, 10 deselected.
-- Windows executable built and smoke-tested locally: `/`, English locale JSON,
-  and translation tracker JavaScript all returned HTTP 200.
+- Full automated validation passed: 1,412 passed, 1 skipped, 10 deselected.
+- Windows executable built and smoke-tested locally: `/`, English glossary
+  locale JSON, and translation tracker JavaScript all returned HTTP 200.
 
 ## 1.4.13 - 2026-06-23
 

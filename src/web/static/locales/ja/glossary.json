@@ -164,7 +164,7 @@
   "ner_results_full_chars": " · ドキュメント内の文字数 {{chars}}",
 
   "preview_modal_title": "プロンプトブロックをプレビュー",
-  "preview_modal_intro": "サンプルチャンクを貼り付けて、どの用語集の用語が一致し、ブロックがシステムプロンプトにどのように挿入されるかを確認してください。",
+  "preview_modal_intro": "サンプルチャンクを貼り付けて、どの用語集の用語が一致し、ブロックが翻訳プロンプトにどのように挿入されるかを確認してください。",
   "preview_input_placeholder": "サンプルチャンクをここに貼り付け...",
   "preview_render": "レンダリング",
   "preview_output_placeholder": "(「レンダリング」をクリックしてブロックを計算します。)",

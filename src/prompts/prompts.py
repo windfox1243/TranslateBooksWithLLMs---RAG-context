@@ -163,6 +163,53 @@ def _build_dialogue_attribution_section(prompt_options: dict) -> str:
     )
 
 
+def _build_novel_context_section(
+    prompt_options: dict,
+    reference_text: str = "",
+    refinement: bool = False,
+) -> str:
+    """Build the dynamic novel context block for the user prompt.
+
+    Novel context changes per chunk, so it belongs with user content rather
+    than the system prompt. This keeps provider-side system prompt caching
+    effective while still giving each request the relevant book memory.
+    """
+    if not prompt_options:
+        return ""
+
+    novel_context = prompt_options.get('novel_context')
+    if not novel_context or not str(novel_context).strip():
+        return ""
+
+    from src.utils.novel_context import render_novel_context_for_prompt
+
+    rendered_context = render_novel_context_for_prompt(
+        novel_context,
+        reference_text=reference_text,
+        max_tokens=prompt_options.get('novel_context_prompt_max_tokens'),
+    )
+    if not rendered_context.strip():
+        return ""
+
+    guidance = """
+
+Use this context for narrative consistency: character identity, proven gender,
+aliases, relationships, addressing, and discovered terminology hints.
+If this context conflicts with `# GLOSSARY - REQUIRED TRANSLATIONS`, the
+required glossary wins."""
+    if refinement:
+        guidance += """
+
+Use book-wide character identity, proven gender, and terminology for consistency.
+The global lore may contain facts discovered later in the book: never add,
+foreshadow, or reveal any fact that is not already present in the draft or its
+immediate local context."""
+
+    return f"""# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)
+
+{rendered_context.strip()}{guidance}"""
+
+
 # ============================================================================
 # TRANSLATION PROMPT FUNCTIONS
 # ============================================================================
@@ -260,20 +307,10 @@ def generate_translation_prompt(
 
 """
 
-    # Build novel context section
-    novel_context_section = ""
-    novel_context = prompt_options.get('novel_context')
-    if novel_context and novel_context.strip():
-        novel_context_section = f"""# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)
-
-{novel_context.strip()}
-
-"""
-
     # SYSTEM PROMPT - Role and instructions (stable across requests)
     system_prompt = f"""You are a professional {target_language} translator and writer.
 
-{custom_instructions_section}{novel_context_section}# TRANSLATION PRINCIPLES
+{custom_instructions_section}# TRANSLATION PRINCIPLES
 
 Translate {source_language} to {target_language}. Output only the translation.
 
@@ -319,12 +356,26 @@ For consistency and natural flow, here's what came immediately before:
     # Glossary block lives in the user prompt: it changes per chunk, so
     # keeping it out of the system prompt lets the system prompt stay
     # stable and cacheable across chunks.
+    novel_context_section = _build_novel_context_section(
+        prompt_options,
+        reference_text="\n".join(
+            part for part in (
+                context_before,
+                main_content,
+                context_after,
+                previous_translation_context,
+            )
+            if part
+        ),
+    )
+    if novel_context_section:
+        novel_context_section = f"{novel_context_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_translation_block_text}{glossary_section}{dialogue_section}# TEXT TO TRANSLATE
+    user_prompt = f"""{previous_translation_block_text}{novel_context_section}{glossary_section}{dialogue_section}# TEXT TO TRANSLATE
 
 {INPUT_TAG_IN}
 {main_content}
@@ -499,21 +550,6 @@ def generate_refinement_prompt(
 
 {additional_instructions.strip()}"""
 
-    # Build novel context section
-    novel_context_section = ""
-    novel_context = prompt_options.get('novel_context')
-    if novel_context and novel_context.strip():
-        novel_context_section = f"""
-
-# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)
-
-{novel_context.strip()}
-
-Use book-wide character identity, proven gender, and terminology for consistency.
-The global lore may contain facts discovered later in the book: never add,
-foreshadow, or reveal any fact that is not already present in the draft or its
-immediate local context."""
-
     # SYSTEM PROMPT for refinement
     system_prompt = f"""You are an elite {target_language} literary editor and prose stylist.
 
@@ -554,7 +590,6 @@ Your job is to REWRITE it with perfect literary {target_language} style.
 {optional_sections}
 {placeholder_section}
 {additional_instructions_section}
-{novel_context_section}
 
 # CRITICAL REMINDER
 
@@ -582,12 +617,27 @@ For consistency and natural flow, here's what came immediately before:
 
     # Glossary block injected here (per-chunk dynamic) so the system prompt
     # stays cacheable across chunks.
+    novel_context_section = _build_novel_context_section(
+        prompt_options,
+        reference_text="\n".join(
+            part for part in (
+                context_before,
+                draft_translation,
+                context_after,
+                previous_refined_context,
+            )
+            if part
+        ),
+        refinement=True,
+    )
+    if novel_context_section:
+        novel_context_section = f"{novel_context_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_context_block}{glossary_section}{dialogue_section}# DRAFT TO REFINE
+    user_prompt = f"""{previous_context_block}{novel_context_section}{glossary_section}{dialogue_section}# DRAFT TO REFINE
 
 The following is a rough {target_language} translation that needs significant improvement.
 Rewrite it with elegant, literary-quality {target_language} prose:
@@ -639,21 +689,6 @@ def generate_subtitle_refinement_block_prompt(
     """
     if prompt_options is None:
         prompt_options = {}
-
-    # Build novel context section
-    novel_context_section = ""
-    novel_context = prompt_options.get('novel_context')
-    if novel_context and novel_context.strip():
-        novel_context_section = f"""
-
-# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)
-
-{novel_context.strip()}
-
-Use book-wide character identity, proven gender, and terminology for consistency.
-The global lore may contain facts discovered later in the book: never add,
-foreshadow, or reveal any fact that is not already present in the current
-subtitle block or its immediate local context."""
 
     subtitle_additional_rules = _SUBTITLE_FORMAT_RULES
     subtitle_example_format = "[0]Première ligne affinée\n[1]Deuxième ligne affinée"
@@ -709,7 +744,7 @@ preserving the index markers and the one-subtitle-per-marker structure.
 - Character names and proper nouns
 - The one-subtitle-per-[index] structure (no merging, no splitting)
 - Intentional repetitions (e.g. "No. No. No.") and dialogue dashes ("- ...\\n- ...") when present in the draft
-- Inline formatting tags and any \\n line breaks inside a subtitle{additional_instructions_section}{novel_context_section}
+- Inline formatting tags and any \\n line breaks inside a subtitle{additional_instructions_section}
 
 # CRITICAL REMINDERS
 
@@ -735,12 +770,25 @@ For continuity and consistency, here's the previous refined block:
     formatted_subtitles = [f"[{idx}]{text}" for idx, text in subtitle_blocks]
     formatted_subtitles_text = "\n".join(formatted_subtitles)
 
+    novel_context_section = _build_novel_context_section(
+        prompt_options,
+        reference_text="\n".join(
+            part for part in (
+                previous_refined_block,
+                formatted_subtitles_text,
+            )
+            if part
+        ),
+        refinement=True,
+    )
+    if novel_context_section:
+        novel_context_section = f"{novel_context_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_refined_block_text}{glossary_section}{dialogue_section}# SUBTITLES TO REFINE
+    user_prompt = f"""{previous_refined_block_text}{novel_context_section}{glossary_section}{dialogue_section}# SUBTITLES TO REFINE
 
 {INPUT_TAG_IN}
 {formatted_subtitles_text}
@@ -794,16 +842,6 @@ def generate_subtitle_block_prompt(
     if not custom_instructions:
         custom_instructions = prompt_options.get('custom_instructions', '')
 
-    # Build novel context section
-    novel_context_section = ""
-    novel_context = prompt_options.get('novel_context')
-    if novel_context and novel_context.strip():
-        novel_context_section = f"""
-
-# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)
-
-{novel_context.strip()}"""
-
     # Build the output format section outside the f-string to avoid backslash issues in Python 3.11
     subtitle_additional_rules = _SUBTITLE_FORMAT_RULES
     subtitle_example_format = "[1]第一行翻译文本\n[2]第二行翻译文本"
@@ -855,7 +893,7 @@ Your output must be in {target_language} ONLY - do NOT use any other language.
 - Condense when necessary without losing meaning
 - Use natural, spoken {target_language} (not formal written style)
 - Preserve intentional repetitions (e.g. "No. No. No.") and dialogue dashes ("- ...\\n- ...") from the source
-- Preserve inline formatting tags (<i>, <b>, <font ...>, {{\\an8}}, etc.) and any \\n line breaks inside a subtitle{custom_instructions_section}{novel_context_section}
+- Preserve inline formatting tags (<i>, <b>, <font ...>, {{\\an8}}, etc.) and any \\n line breaks inside a subtitle{custom_instructions_section}
 
 # FINAL REMINDER: YOUR OUTPUT LANGUAGE
 
@@ -882,13 +920,26 @@ For continuity and consistency, here's the previous subtitle block:
     # Join subtitles outside f-string to avoid Python 3.11 backslash issues
     formatted_subtitles_text = "\n".join(formatted_subtitles)
 
-    # Glossary block in user prompt (dynamic per chunk).
+    # Novel context and glossary blocks live in the user prompt because they
+    # vary per chunk/block.
+    novel_context_section = _build_novel_context_section(
+        prompt_options,
+        reference_text="\n".join(
+            part for part in (
+                previous_translation_block,
+                formatted_subtitles_text,
+            )
+            if part
+        ),
+    )
+    if novel_context_section:
+        novel_context_section = f"{novel_context_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_translation_block_text}{glossary_section}{dialogue_section}# SUBTITLES TO TRANSLATE
+    user_prompt = f"""{previous_translation_block_text}{novel_context_section}{glossary_section}{dialogue_section}# SUBTITLES TO TRANSLATE
 
 {INPUT_TAG_IN}
 {formatted_subtitles_text}

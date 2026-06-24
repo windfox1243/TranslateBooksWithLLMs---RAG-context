@@ -331,7 +331,10 @@ async def translate_paragraphs_plain(
 
     if novel_context_file or auto_update_context:
         from src.config import NOVEL_CONTEXTS_DIR
-        from src.utils.novel_context import open_novel_context_session
+        from src.utils.novel_context import (
+            open_novel_context_session,
+            should_update_novel_context_for_index,
+        )
         try:
             resume_snapshot = None
             resume_dialogue_state = None
@@ -406,7 +409,12 @@ async def translate_paragraphs_plain(
         if not main_content.strip():
             return ('empty', main_content)
 
-        if analyze_context and auto_update_context and context_session:
+        if (
+            analyze_context
+            and auto_update_context
+            and context_session
+            and should_update_novel_context_for_index(i, prompt_options)
+        ):
             reused_context_data_by_index.pop(i, None)
             if log_callback:
                 log_callback(

@@ -849,6 +849,7 @@ async def _translate_all_chunks_with_checkpoint(
             extract_global_lore,
             load_novel_context,
             resolve_novel_context_path,
+            should_update_novel_context_for_index,
         )
         try:
             novel_context_path = resolve_novel_context_path(novel_context_file, novel_contexts_dir)
@@ -1025,6 +1026,7 @@ async def _translate_all_chunks_with_checkpoint(
             analyze_context
             and auto_update_context
             and context_session
+            and should_update_novel_context_for_index(i, prompt_options)
             and not (
                 checkpoint_context_data
                 and latest_restored_context_global_idx is not None
@@ -1352,6 +1354,7 @@ async def _translate_all_chunks(
             extract_global_lore,
             load_novel_context,
             resolve_novel_context_path,
+            should_update_novel_context_for_index,
         )
         try:
             novel_context_path = resolve_novel_context_path(novel_context_file, novel_contexts_dir)
@@ -1392,7 +1395,11 @@ async def _translate_all_chunks(
                     log_callback("translation_interrupted", f"Translation interrupted at chunk {i}/{len(chunks)}")
                 break
 
-        if auto_update_context and context_session:
+        if (
+            auto_update_context
+            and context_session
+            and should_update_novel_context_for_index(i, prompt_options)
+        ):
             if log_callback:
                 log_callback(
                     "novel_context_updating",

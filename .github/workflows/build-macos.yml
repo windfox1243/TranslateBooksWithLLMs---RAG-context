@@ -188,12 +188,12 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        name: Global Context Experiment 1.4.12
+        name: TranslateBooksWithLLMs ${{ github.ref_name }}
         files: |
           TranslateBook-macOS-Intel/TranslateBook-macOS-Intel.zip
           TranslateBook-macOS-AppleSilicon/TranslateBook-macOS-AppleSilicon.zip
         body_path: CHANGELOG.md
         draft: false
-        prerelease: true
+        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

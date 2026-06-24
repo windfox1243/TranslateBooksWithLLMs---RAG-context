@@ -14,6 +14,7 @@ from src.utils.novel_context import (
     make_novel_context_filename,
     merge_dynamic_state,
     normalize_novel_context_content,
+    render_novel_context_for_prompt,
     normalize_novel_context_filename,
     save_novel_context,
     resolve_novel_context_path,
@@ -79,8 +80,113 @@ def test_prompt_injection_translation():
         prompt_options={"novel_context": novel_context}
     )
     
-    assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair.system
-    assert novel_context in prompt_pair.system
+    assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" not in prompt_pair.system
+    assert novel_context not in prompt_pair.system
+    assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair.user
+    assert novel_context in prompt_pair.user
+
+
+def test_novel_context_keeps_system_prompt_cacheable():
+    first = generate_translation_prompt(
+        main_content="Eric spoke.",
+        context_before="",
+        context_after="",
+        previous_translation_context="",
+        source_language="English",
+        target_language="Vietnamese",
+        prompt_options={"novel_context": "Eric: Male."},
+    )
+    second = generate_translation_prompt(
+        main_content="Eric spoke.",
+        context_before="",
+        context_after="",
+        previous_translation_context="",
+        source_language="English",
+        target_language="Vietnamese",
+        prompt_options={"novel_context": "Eric: Female."},
+    )
+
+    assert first.system == second.system
+    assert "Eric: Male." in first.user
+    assert "Eric: Female." in second.user
+
+
+def test_hard_glossary_has_priority_over_novel_context_hints():
+    prompt_pair = generate_translation_prompt(
+        main_content="The lieutenant colonel entered.",
+        context_before="",
+        context_after="",
+        previous_translation_context="",
+        source_language="English",
+        target_language="Vietnamese",
+        prompt_options={
+            "novel_context": (
+                "# GLOBAL LORE\n\n"
+                "## GLOSSARY & TERMINOLOGY\n"
+                "- lieutenant colonel: colonel"
+            )
+        },
+        glossary_block=(
+            "# GLOSSARY - REQUIRED TRANSLATIONS\n\n"
+            "MANDATORY: use these EXACT translations whenever the source term appears.\n"
+            "  - lieutenant colonel -> trung tá\n"
+        ),
+    )
+
+    assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair.user
+    assert "# GLOSSARY - REQUIRED TRANSLATIONS" in prompt_pair.user
+    assert "required glossary wins" in prompt_pair.user
+    assert prompt_pair.user.index(
+        "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)"
+    ) < prompt_pair.user.index("# GLOSSARY - REQUIRED TRANSLATIONS")
+    assert "# GLOSSARY - REQUIRED TRANSLATIONS" not in prompt_pair.system
+
+
+def test_prompt_context_selector_prefers_relevant_dormant_relationships():
+    filler_characters = "\n".join(
+        f"- Irrelevant {index}: Unspecified, background figure with a very long "
+        f"description that should be trimmed before relevant Eric context is lost."
+        for index in range(40)
+    )
+    filler_relationships = "\n".join(
+        f"- Irrelevant {index} ↔ Someone: stale background relationship."
+        for index in range(30)
+    )
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Valentine: Female, protagonist and imperial major.\n"
+            "- Eric: Male, lieutenant colonel and Valentine romantic partner.\n"
+            f"{filler_characters}\n\n"
+            "## CHARACTER ALIASES\n"
+            "- Lieutenant Colonel: Eric\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+            "- Hero Medal: Hero's Medal"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            "- Valentine → Eric: intimate romantic address.\n\n"
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Valentine ↔ Eric: deeply in love after a long separation.\n"
+            f"{filler_relationships}"
+        ),
+    )
+
+    selected = render_novel_context_for_prompt(
+        context,
+        reference_text='Eric looked at Valentine. "...Lieutenant Colonel."',
+        max_tokens=20,
+    )
+
+    assert len(selected) <= 1000
+    assert "Valentine: Female" in selected
+    assert "Eric: Male" in selected
+    assert "Lieutenant Colonel: Eric" in selected
+    assert "Valentine → Eric" in selected
+    assert "Valentine ↔ Eric" in selected
+    assert "Irrelevant 39" not in selected
+
 
 def test_prompt_injection_refinement():
     novel_context = "Li Fan is Male."
@@ -90,8 +196,10 @@ def test_prompt_injection_refinement():
         prompt_options={"novel_context": novel_context}
     )
     
-    assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair.system
-    assert novel_context in prompt_pair.system
+    assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" not in prompt_pair.system
+    assert novel_context not in prompt_pair.system
+    assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair.user
+    assert novel_context in prompt_pair.user
 
 def test_prompt_injection_subtitles():
     novel_context = "Address: Anh / Em."
@@ -105,8 +213,10 @@ def test_prompt_injection_subtitles():
         target_language="Vietnamese",
         prompt_options={"novel_context": novel_context}
     )
-    assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair_trans.system
-    assert novel_context in prompt_pair_trans.system
+    assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" not in prompt_pair_trans.system
+    assert novel_context not in prompt_pair_trans.system
+    assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair_trans.user
+    assert novel_context in prompt_pair_trans.user
     
     # Refinement
     prompt_pair_refine = generate_subtitle_refinement_block_prompt(
@@ -115,8 +225,10 @@ def test_prompt_injection_subtitles():
         target_language="Vietnamese",
         prompt_options={"novel_context": novel_context}
     )
-    assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair_refine.system
-    assert novel_context in prompt_pair_refine.system
+    assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" not in prompt_pair_refine.system
+    assert novel_context not in prompt_pair_refine.system
+    assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair_refine.user
+    assert novel_context in prompt_pair_refine.user
 
 
 @pytest.mark.asyncio
@@ -1458,6 +1570,70 @@ async def test_plain_text_context_is_prepared_before_translation(monkeypatch, tm
         snapshot = call.kwargs["chunk_data"]["context_snapshot"]
         decoded, _, _ = decode_context_snapshot(snapshot)
         assert "---DYNAMIC_STATE_START---" in decoded
+
+
+@pytest.mark.asyncio
+async def test_plain_text_context_update_interval_skips_between_updates(
+    monkeypatch,
+    tmp_path,
+):
+    from unittest.mock import MagicMock
+    from src.core.common import plain_text_pipeline
+    import src.config
+
+    analyzed = []
+    translated = []
+
+    async def fake_update(**kwargs):
+        analyzed.append(kwargs["source_chunk"])
+        return (
+            "# GLOBAL LORE\n\n## GLOSSARY & TERMINOLOGY\n- Master: Maître",
+            f"Seen {kwargs['source_chunk']}",
+            [],
+        )
+
+    async def fake_translate(*, main_content, **kwargs):
+        translated.append(main_content)
+        return f"FR::{main_content}"
+
+    monkeypatch.setattr(src.config, "NOVEL_CONTEXTS_DIR", tmp_path)
+    monkeypatch.setattr(
+        "src.utils.novel_context.update_novel_context_chunk",
+        fake_update,
+    )
+    monkeypatch.setattr(
+        plain_text_pipeline,
+        "generate_translation_request",
+        fake_translate,
+    )
+    monkeypatch.setattr(
+        plain_text_pipeline,
+        "clean_translated_text",
+        lambda value: value,
+    )
+
+    checkpoint_manager = MagicMock()
+    checkpoint_manager.db.get_chunks.return_value = []
+    output, _, interrupted = await plain_text_pipeline.translate_paragraphs_plain(
+        paragraphs=["Master arrived.", "Master waited.", "Master left."],
+        source_language="English",
+        target_language="French",
+        model_name="model",
+        llm_client=object(),
+        max_tokens_per_chunk=3,
+        prompt_options={
+            "auto_update_context": True,
+            "input_filename": "novel.txt",
+            "novel_context_update_interval": 2,
+        },
+        checkpoint_manager=checkpoint_manager,
+        translation_id="interval-job",
+    )
+
+    assert interrupted is False
+    assert all(value.startswith("FR::") for value in output)
+    assert translated == ["Master arrived.", "Master waited.", "Master left."]
+    assert analyzed == ["Master arrived.", "Master left."]
 
 
 @pytest.mark.asyncio
