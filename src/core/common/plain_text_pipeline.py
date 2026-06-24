@@ -376,6 +376,7 @@ async def translate_paragraphs_plain(
     # source order.
     translated_parts: List[Optional[str]] = [None] * len(chunks)
     previous_translation_context = ""
+    context_transactions: Dict[int, Any] = {}
 
     async def _translate_chunk(i):
         """Translate one chunk. Reads previous_translation_context only in
@@ -387,6 +388,7 @@ async def translate_paragraphs_plain(
             return ('empty', main_content)
 
         if auto_update_context and context_session:
+            context_transactions[i] = context_session.capture_state()
             if log_callback:
                 log_callback(
                     "novel_context_updating",
@@ -402,6 +404,7 @@ async def translate_paragraphs_plain(
                     chunk_index=i + 1,
                     total_chunks=len(chunks),
                     scene_key=chunks[i].get("chapter_index"),
+                    persist=False,
                 )
                 if log_callback:
                     log_callback(
@@ -420,6 +423,7 @@ async def translate_paragraphs_plain(
                         },
                     )
             except Exception as e:
+                context_session.restore_state(context_transactions.pop(i))
                 if log_callback:
                     log_callback(
                         "novel_context_update_failed",
@@ -455,6 +459,35 @@ async def translate_paragraphs_plain(
         )
         return ('done', translated)
 
+    def _rollback_context(i):
+        if not (context_session and i in context_transactions):
+            return
+        context_session.restore_state(context_transactions.pop(i))
+        if log_callback:
+            log_callback(
+                "novel_context_rollback",
+                f"Rolled back staged context for chunk {i+1}; "
+                "translation did not commit.",
+            )
+
+    def _commit_context(i):
+        if not (context_session and i in context_transactions):
+            return
+        try:
+            context_session.save()
+            if log_callback:
+                log_callback(
+                    "novel_context_committed",
+                    f"Novel context committed for chunk {i+1}.",
+                )
+        except Exception as e:
+            if log_callback:
+                log_callback(
+                    "novel_context_update_failed",
+                    f"Failed to save committed novel context: {str(e)}",
+                )
+        context_transactions.pop(i, None)
+
     def _fill_remaining_with_source():
         for j in range(len(chunks)):
             if translated_parts[j] is None:
@@ -472,10 +505,12 @@ async def translate_paragraphs_plain(
         chunk_succeeded = False
 
         if isinstance(result, RateLimitError):
+            _rollback_context(i)
             rate_limit_error = result
             break
 
         if isinstance(result, Exception):
+            _rollback_context(i)
             if log_callback:
                 log_callback(
                     "plain_text_chunk_failed",
@@ -490,6 +525,7 @@ async def translate_paragraphs_plain(
                 stats.successful_first_try += 1
                 chunk_succeeded = True
             elif value is None:
+                _rollback_context(i)
                 if log_callback:
                     log_callback(
                         "plain_text_chunk_failed",
@@ -504,6 +540,7 @@ async def translate_paragraphs_plain(
                 translated_parts[i] = cleaned
                 stats.successful_first_try += 1
                 chunk_succeeded = True
+                _commit_context(i)
                 if sequential:
                     words = cleaned.split()
                     previous_translation_context = (
@@ -516,7 +553,7 @@ async def translate_paragraphs_plain(
             and hasattr(checkpoint_manager, 'db')
         ):
             chunk_data = {}
-            if context_session:
+            if context_session and chunk_succeeded:
                 chunk_data['context_snapshot'] = context_session.snapshot()
                 chunk_data['dialogue_attribution'] = (
                     context_session.dialogue_attribution

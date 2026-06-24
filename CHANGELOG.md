@@ -53,6 +53,20 @@ correction workflow instead of a context-only update.
 - Raw source coreference such as `the Lieutenant Colonel's office` followed by
   `Eric` now supplements missed model identity links in the shared context
   updater, so the fix applies to TXT, EPUB, SRT, DOCX, and chapter mode.
+- Direct-address title dialogue such as `"Lieutenant Colonel."` followed by
+  Eric replying or acting now also supplements missed identity links.
+- Context-analysis prompts now explicitly preserve source-language title or
+  alias surface forms in identity links when non-English source text proves
+  the mapping.
+- Auto-updated context is now transactional: source facts are staged for the
+  current chunk's prompt, then committed only after that chunk translates and
+  saves successfully.
+- Failed, partial, rate-limited, or interrupted chunks roll back their staged
+  context so later chunks, re-sync, and refinement do not learn from
+  uncommitted work.
+- Refinement context mapping and background re-sync now ignore failed or
+  partial chunk snapshots, keeping those chunks retryable instead of treating
+  source-language fallback text as translated history.
 - The context editor now reports a visible localized error when Save &
   Re-sync cannot start because no editable snapshot, job, or global anchor is
   available.
@@ -99,7 +113,7 @@ correction workflow instead of a context-only update.
 
 ### Validation
 
-- 1,401 selected automated tests passed.
+- 1,405 selected automated tests passed.
 - Windows executable startup and local UI smoke tests passed.
 
 ## 1.4.12 - 2026-06-23

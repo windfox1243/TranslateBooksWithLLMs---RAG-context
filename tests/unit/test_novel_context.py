@@ -557,6 +557,26 @@ def test_source_detectors_are_file_type_agnostic_plain_text_backstops():
     )
 
 
+def test_source_identity_links_direct_addressed_title_to_named_responder():
+    from src.utils.novel_context import infer_source_identity_links
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Valentine: Female, protagonist.\n"
+        "- Eric: Male, protagonist of the game.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    source = (
+        '"...Lieutenant Colonel." "You are awake?" Eric was looking at me, '
+        "his face contorted in a deep frown."
+    )
+
+    assert infer_source_identity_links(source, lore) == (
+        "- Lieutenant Colonel: Eric"
+    )
+
+
 def test_explicit_identity_link_merges_rank_entry_and_rewrites_relationships():
     from src.utils.novel_context import build_novel_context
 

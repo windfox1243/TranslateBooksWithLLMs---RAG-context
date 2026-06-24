@@ -918,6 +918,8 @@ async def _translate_all_chunks_with_checkpoint(
     else:
         workers = max(1, int(parallel_workers))
 
+    context_transactions: Dict[int, Any] = {}
+
     def _save_state(next_index):
         """Persist resume state with current_chunk_index = next chunk to do."""
         if not (checkpoint_manager and translation_id and file_href):
@@ -964,6 +966,7 @@ async def _translate_all_chunks_with_checkpoint(
     async def _translate_one(i):
         chunk = chunks[i]
         if auto_update_context and context_session:
+            context_transactions[i] = context_session.capture_state()
             if log_callback:
                 log_callback(
                     "novel_context_updating",
@@ -979,6 +982,7 @@ async def _translate_all_chunks_with_checkpoint(
                     chunk_index=i + 1,
                     total_chunks=len(chunks),
                     scene_key=chunk.get("chapter_index"),
+                    persist=False,
                 )
                 if log_callback:
                     log_callback("novel_context_updated", f"Novel context prepared for chunk {i+1}.")
@@ -994,6 +998,7 @@ async def _translate_all_chunks_with_checkpoint(
                         },
                     )
             except Exception as e:
+                context_session.restore_state(context_transactions.pop(i))
                 if log_callback:
                     log_callback(
                         "novel_context_update_failed",
@@ -1015,6 +1020,35 @@ async def _translate_all_chunks_with_checkpoint(
             prompt_options=prompt_options
         )
 
+    def _rollback_context(i):
+        if not (context_session and i in context_transactions):
+            return
+        context_session.restore_state(context_transactions.pop(i))
+        if log_callback:
+            log_callback(
+                "novel_context_rollback",
+                f"Rolled back staged context for chunk {i+1}; "
+                "translation did not commit.",
+            )
+
+    def _commit_context(i):
+        if not (context_session and i in context_transactions):
+            return
+        try:
+            context_session.save()
+            if log_callback:
+                log_callback(
+                    "novel_context_committed",
+                    f"Novel context committed for chunk {i+1}.",
+                )
+        except Exception as e:
+            if log_callback:
+                log_callback(
+                    "novel_context_update_failed",
+                    f"Failed to save committed novel context: {str(e)}",
+                )
+        context_transactions.pop(i, None)
+
     pending = sorted(
         failed_indices | set(range(start_chunk_index, len(chunks)))
     )
@@ -1027,11 +1061,13 @@ async def _translate_all_chunks_with_checkpoint(
     ):
         if isinstance(result, RateLimitError):
             # Stop before appending this chunk so resume restarts at it.
+            _rollback_context(i)
             rate_limit_error = result
             break
         if isinstance(result, Exception):
             # Non-rate-limit errors propagate as before (after persisting the
             # contiguous prefix already appended).
+            _rollback_context(i)
             if checkpoint_manager and translation_id and file_href and translated_chunks:
                 _save_state(len(translated_chunks))
             raise result
@@ -1050,17 +1086,25 @@ async def _translate_all_chunks_with_checkpoint(
 
         if succeeded:
             failed_indices.discard(i)
+            _commit_context(i)
         else:
             failed_indices.add(i)
+            _rollback_context(i)
         stats.failed_chunks = len(failed_indices)
         stats.processed_chunks = len(translated_chunks)
         i_done = i
 
         # Save translation chunk checkpoint to SQLite for the context snapshot dropdown
-        ctx_snapshot = context_session.snapshot() if context_session else None
+        ctx_snapshot = (
+            context_session.snapshot()
+            if context_session and succeeded
+            else None
+        )
         chunks[i]['context_snapshot'] = ctx_snapshot
         dialogue_attribution = (
-            context_session.dialogue_attribution if context_session else None
+            context_session.dialogue_attribution
+            if context_session and succeeded
+            else None
         )
         chunks[i]['dialogue_attribution'] = dialogue_attribution
         
@@ -1245,7 +1289,9 @@ async def _translate_all_chunks(
                     log_callback("translation_interrupted", f"Translation interrupted at chunk {i}/{len(chunks)}")
                 break
 
+        context_state = None
         if auto_update_context and context_session:
+            context_state = context_session.capture_state()
             if log_callback:
                 log_callback(
                     "novel_context_updating",
@@ -1260,6 +1306,7 @@ async def _translate_all_chunks(
                     target_language=target_language,
                     chunk_index=i + 1,
                     total_chunks=len(chunks),
+                    persist=False,
                 )
                 if log_callback:
                     log_callback("novel_context_updated", f"Novel context prepared for chunk {i+1}.")
@@ -1275,29 +1322,59 @@ async def _translate_all_chunks(
                         },
                     )
             except Exception as e:
+                context_session.restore_state(context_state)
+                context_state = None
                 if log_callback:
                     log_callback(
                         "novel_context_update_failed",
                         f"Failed to prepare novel context: {str(e)}",
                     )
 
-        translated = await translate_chunk_with_fallback(
-            chunk_text=chunk['text'],
-            local_tag_map=chunk['local_tag_map'],
-            global_indices=chunk['global_indices'],
-            source_language=source_language,
-            target_language=target_language,
-            model_name=model_name,
-            llm_client=llm_client,
-            stats=stats,
-            log_callback=log_callback,
-            max_retries=max_retries,
-            context_manager=context_manager,
-            placeholder_format=placeholder_format,
-            prompt_options=prompt_options
-        )
+        try:
+            translated = await translate_chunk_with_fallback(
+                chunk_text=chunk['text'],
+                local_tag_map=chunk['local_tag_map'],
+                global_indices=chunk['global_indices'],
+                source_language=source_language,
+                target_language=target_language,
+                model_name=model_name,
+                llm_client=llm_client,
+                stats=stats,
+                log_callback=log_callback,
+                max_retries=max_retries,
+                context_manager=context_manager,
+                placeholder_format=placeholder_format,
+                prompt_options=prompt_options
+            )
+        except Exception:
+            if context_state is not None and context_session:
+                context_session.restore_state(context_state)
+            raise
+
         if not getattr(translated, "succeeded", True):
+            if context_state is not None and context_session:
+                context_session.restore_state(context_state)
+                if log_callback:
+                    log_callback(
+                        "novel_context_rollback",
+                        f"Rolled back staged context for chunk {i+1}; "
+                        "translation did not commit.",
+                    )
             stats.failed_chunks += 1
+        elif context_state is not None and context_session:
+            try:
+                context_session.save()
+                if log_callback:
+                    log_callback(
+                        "novel_context_committed",
+                        f"Novel context committed for chunk {i+1}.",
+                    )
+            except Exception as e:
+                if log_callback:
+                    log_callback(
+                        "novel_context_update_failed",
+                        f"Failed to save committed novel context: {str(e)}",
+                    )
         translated_chunks.append(str(translated))
 
         # Warn loudly once if placeholder failures are piling up (see
