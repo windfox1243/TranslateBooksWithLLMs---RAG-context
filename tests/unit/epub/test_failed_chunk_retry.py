@@ -118,7 +118,7 @@ async def test_phase3_fallback_remains_retryable(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_failed_xhtml_chunk_rolls_back_staged_context(
+async def test_failed_xhtml_chunk_context_survives_and_retries(
     monkeypatch,
     tmp_path,
 ):
@@ -139,11 +139,19 @@ async def test_failed_xhtml_chunk_rolls_back_staged_context(
         lines.append(f"- seen {source_chunk}")
         return "# GLOBAL LORE", "\n".join(lines), []
 
+    attempts = {}
+
     async def fake_translate(**kwargs):
         index = int(kwargs["chunk_text"].rsplit("-", 1)[1])
+        attempts[index] = attempts.get(index, 0) + 1
+        if index == 1 and attempts[index] == 1:
+            return xhtml_translator._ChunkTranslationOutcome(
+                kwargs["chunk_text"],
+                succeeded=False,
+            )
         return xhtml_translator._ChunkTranslationOutcome(
-            f"translated-{index}" if index != 1 else kwargs["chunk_text"],
-            succeeded=index != 1,
+            f"translated-{index}",
+            succeeded=True,
         )
 
     monkeypatch.setattr(config_module, "NOVEL_CONTEXTS_DIR", tmp_path / "contexts")
@@ -185,17 +193,19 @@ async def test_failed_xhtml_chunk_rolls_back_staged_context(
     )
 
     assert interrupted is False
-    assert translated == ["translated-0", "source-1", "translated-2"]
-    assert stats.failed_chunks == 1
+    assert translated == ["translated-0", "translated-1", "translated-2"]
+    assert attempts[1] == 2
+    assert stats.failed_chunks == 0
 
     context_files = list((tmp_path / "contexts").glob("*.txt"))
     assert len(context_files) == 1
     final_context = context_files[0].read_text(encoding="utf-8")
     assert "seen source-0" in final_context
-    assert "seen source-1" not in final_context
+    assert "seen source-1" in final_context
     assert "seen source-2" in final_context
 
     rows = manager.db.get_chunks("context-job")
-    failed_row = next(row for row in rows if row["original_text"] == "source-1")
-    assert failed_row["status"] == "failed"
-    assert not (failed_row["chunk_data"] or {}).get("context_snapshot")
+    retried_row = next(row for row in rows if row["original_text"] == "source-1")
+    assert retried_row["status"] == "completed"
+    assert retried_row["translated_text"] == "translated-1"
+    assert (retried_row["chunk_data"] or {}).get("context_snapshot")

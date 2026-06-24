@@ -58,15 +58,17 @@ correction workflow instead of a context-only update.
 - Context-analysis prompts now explicitly preserve source-language title or
   alias surface forms in identity links when non-English source text proves
   the mapping.
-- Auto-updated context is now transactional: source facts are staged for the
-  current chunk's prompt, then committed only after that chunk translates and
-  saves successfully.
-- Failed, partial, rate-limited, or interrupted chunks roll back their staged
-  context so later chunks, re-sync, and refinement do not learn from
-  uncommitted work.
-- Refinement context mapping and background re-sync now ignore failed or
-  partial chunk snapshots, keeping those chunks retryable instead of treating
-  source-language fallback text as translated history.
+- Auto-updated source context now remains available even when the chunk's
+  translation output fails, so later chapters can still use discovered
+  character, gender, glossary, relationship, and dialogue facts.
+- Failed TXT/SRT units, plain-text chunks, and EPUB/XHTML chunks now receive a
+  deferred automatic retry before final output is reconstructed.
+- Failed chunks remain marked retryable until their translation succeeds;
+  source-context snapshots may advance, but source-language fallback text is
+  never treated as a completed translation.
+- Refinement context mapping ignores failed or partial translated-output rows,
+  while background re-sync still walks their source text so global context is
+  not weakened by a translation failure.
 - The context editor now reports a visible localized error when Save &
   Re-sync cannot start because no editable snapshot, job, or global anchor is
   available.

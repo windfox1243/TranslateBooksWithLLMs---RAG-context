@@ -163,7 +163,7 @@ async def test_resume_with_persistent_failure_stays_partial(
     _patch_llm(monkeypatch, {FAILING_CONTENT}, calls)
     success = await _run(FakeAdapter(tmp_path), cm)
 
-    assert calls == [FAILING_CONTENT]
+    assert calls == [FAILING_CONTENT, FAILING_CONTENT]
     assert success is False
     job = cm.get_job("job")
     assert job is not None
@@ -236,12 +236,13 @@ async def test_generic_txt_context_is_prepared_before_translation_and_snapshotte
 
 
 @pytest.mark.asyncio
-async def test_generic_txt_failed_unit_rolls_back_staged_context(
+async def test_generic_txt_failed_unit_context_survives_and_retries(
     tmp_path,
     cm,
     monkeypatch,
 ):
-    prompts = {}
+    prompts = []
+    request_counts = {}
 
     async def fake_update(
         current_dynamic_state="",
@@ -260,8 +261,12 @@ async def test_generic_txt_failed_unit_rolls_back_staged_context(
         )
 
     async def fake_request(main_content=None, prompt_options=None, **kwargs):
-        prompts[main_content] = prompt_options.get("novel_context", "")
-        if main_content == FAILING_CONTENT:
+        prompts.append((main_content, prompt_options.get("novel_context", "")))
+        request_counts[main_content] = request_counts.get(main_content, 0) + 1
+        if (
+            main_content == FAILING_CONTENT
+            and request_counts[main_content] == 1
+        ):
             return None
         return f"translated {main_content}"
 
@@ -280,7 +285,7 @@ async def test_generic_txt_failed_unit_rolls_back_staged_context(
     translator = GenericTranslator(
         adapter=FakeAdapter(tmp_path),
         checkpoint_manager=cm,
-        translation_id="rollback-job",
+        translation_id="deferred-retry-job",
     )
     success = await translator.translate(
         source_language="English",
@@ -293,21 +298,26 @@ async def test_generic_txt_failed_unit_rolls_back_staged_context(
         },
     )
 
-    assert success is False
-    assert f"seen {FAILING_CONTENT}" in prompts[FAILING_CONTENT]
-    assert f"seen {FAILING_CONTENT}" not in prompts["content 2"]
+    assert success is True
+    assert request_counts[FAILING_CONTENT] == 2
+    content_2_prompt = next(
+        prompt for content, prompt in prompts
+        if content == "content 2"
+    )
+    assert f"seen {FAILING_CONTENT}" in content_2_prompt
 
     context_files = list((tmp_path / "contexts").glob("*.txt"))
     assert len(context_files) == 1
     final_context = context_files[0].read_text(encoding="utf-8")
     assert "seen content 0" in final_context
-    assert f"seen {FAILING_CONTENT}" not in final_context
+    assert f"seen {FAILING_CONTENT}" in final_context
     assert "seen content 2" in final_context
 
-    chunks = cm.db.get_chunks("rollback-job")
-    failed_chunk = next(
+    chunks = cm.db.get_chunks("deferred-retry-job")
+    retried_chunk = next(
         chunk for chunk in chunks
         if chunk["original_text"] == FAILING_CONTENT
     )
-    assert failed_chunk["status"] == "failed"
-    assert not (failed_chunk["chunk_data"] or {}).get("context_snapshot")
+    assert retried_chunk["status"] == "completed"
+    assert retried_chunk["translated_text"] == f"translated {FAILING_CONTENT}"
+    assert (retried_chunk["chunk_data"] or {}).get("context_snapshot")
