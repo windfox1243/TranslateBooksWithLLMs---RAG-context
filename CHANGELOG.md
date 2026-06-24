@@ -40,12 +40,15 @@ around failed chunks, resume, re-sync, refinement, and prompt assembly.
   previous units into later files/chapters.
 - Generic TXT/SRT retry paths preserve the failed unit's original
   source-context snapshot when a same-run deferred retry succeeds.
-- Windows EXE first-run setup now seeds `.env` from the bundled `.env.example`
-  when available, so new configuration knobs such as
-  `NOVEL_CONTEXT_PROMPT_MAX_TOKENS` and `NOVEL_CONTEXT_UPDATE_INTERVAL` appear
-  in newly generated private configs.
+- Generated `.env` files are now compact and practical instead of copying the
+  full commented `.env.example` reference. New private configs still include
+  current knobs such as `NOVEL_CONTEXT_PROMPT_MAX_TOKENS` and
+  `NOVEL_CONTEXT_UPDATE_INTERVAL`.
 - GitHub release workflow metadata now uses the current tag name and publishes
   stable releases instead of the stale `1.4.12` prerelease label.
+- GitHub release notes now use only the current changelog section and unwrap
+  source hard line breaks so the release page does not show awkward manual
+  newlines.
 
 ### Safety and compatibility
 
@@ -60,7 +63,7 @@ around failed chunks, resume, re-sync, refinement, and prompt assembly.
 
 ### Validation
 
-- Full automated validation passed: 1,412 passed, 1 skipped, 10 deselected.
+- Full automated validation passed: 1,416 passed, 1 skipped, 10 deselected.
 - Windows executable built and smoke-tested locally: `/`, English glossary
   locale JSON, and translation tracker JavaScript all returned HTTP 200.
 

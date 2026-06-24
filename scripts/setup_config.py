@@ -7,11 +7,11 @@ This script helps users create and configure their .env file.
 import sys
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.utils.env_helper import (
-    create_env_from_template,
+    create_env_file,
     validate_env_config,
     interactive_env_setup
 )
@@ -27,7 +27,7 @@ def print_banner():
 def print_menu():
     """Print main menu"""
     print("What would you like to do?\n")
-    print("  1. Quick setup (copy from .env.example)")
+    print("  1. Quick setup (create concise .env)")
     print("  2. Interactive setup wizard (guided configuration)")
     print("  3. Validate current configuration")
     print("  4. Exit\n")
@@ -44,9 +44,10 @@ def main():
             choice = input("Enter your choice (1-4): ").strip()
 
             if choice == '1':
-                print("\n📋 Quick Setup - Copying .env.example to .env...")
-                if create_env_from_template():
+                print("\n📋 Quick Setup - Creating concise .env...")
+                if create_env_file():
                     print("\n✅ Success! Please edit .env to configure your settings.")
+                    print("   Full option reference: .env.example")
                     print("   Key settings to configure:")
                     print("   • API_ENDPOINT - Your LLM server address")
                     print("   • LLM_PROVIDER - ollama, gemini, or openai")

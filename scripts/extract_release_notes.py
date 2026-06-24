@@ -7,6 +7,72 @@ import sys
 from pathlib import Path
 
 
+_ORDERED_LIST = re.compile(r"^\d+\.\s+")
+_UNORDERED_LIST = re.compile(r"^[-*+]\s+")
+_FENCE = re.compile(r"^(```|~~~)")
+
+
+def _is_list_line(line: str) -> bool:
+    stripped = line.lstrip()
+    return bool(_UNORDERED_LIST.match(stripped) or _ORDERED_LIST.match(stripped))
+
+
+def _unwrap_markdown_for_release(markdown_text: str) -> str:
+    """Remove source hard-wraps from release notes.
+
+    CHANGELOG.md is wrapped for diff readability, but GitHub release pages show
+    those soft line breaks. This formatter keeps Markdown structure while
+    joining paragraph and list-item continuation lines into normal prose.
+    """
+    output: list[str] = []
+    pending: str | None = None
+    in_fence = False
+
+    def flush_pending() -> None:
+        nonlocal pending
+        if pending is not None:
+            output.append(pending)
+            pending = None
+
+    for raw_line in markdown_text.splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+
+        if _FENCE.match(stripped):
+            flush_pending()
+            output.append(line)
+            in_fence = not in_fence
+            continue
+
+        if in_fence:
+            output.append(line)
+            continue
+
+        if not stripped:
+            flush_pending()
+            if output and output[-1] != "":
+                output.append("")
+            continue
+
+        if stripped.startswith(("#", ">")):
+            flush_pending()
+            output.append(stripped)
+            continue
+
+        if _is_list_line(stripped):
+            flush_pending()
+            pending = stripped
+            continue
+
+        if pending is None:
+            pending = stripped
+        else:
+            pending = f"{pending} {stripped}"
+
+    flush_pending()
+    return "\n".join(output).strip() + "\n"
+
+
 def extract_release_notes(changelog_text: str, tag_name: str) -> str:
     """Return the changelog section matching a release tag.
 
@@ -17,6 +83,13 @@ def extract_release_notes(changelog_text: str, tag_name: str) -> str:
     Raises:
         ValueError: If the matching changelog heading is missing.
     """
+    return _unwrap_markdown_for_release(
+        extract_release_notes_raw(changelog_text, tag_name)
+    )
+
+
+def extract_release_notes_raw(changelog_text: str, tag_name: str) -> str:
+    """Return the matching changelog section without release-page formatting."""
     version = tag_name.removeprefix("v").strip()
     if not version:
         raise ValueError("Release tag is empty.")

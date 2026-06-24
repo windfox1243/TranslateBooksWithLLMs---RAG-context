@@ -147,15 +147,17 @@ echo.
 echo [6/6] Environment Configuration...
 
 if not exist ".env" (
-    if exist ".env.example" (
-        echo     [..] Creating .env from template...
-        copy .env.example .env >nul
+    echo     [..] Creating concise .env...
+    python -m src.utils.env_helper create >nul
+    if errorlevel 1 (
+        echo     [X] Failed to create .env
+        echo     [!!] You can still read .env.example and create .env manually
+    ) else (
         echo     [OK] .env file created
         echo     [!!] Please edit .env to configure your LLM settings
+        echo     [..] Full option reference is available in .env.example
         echo.
         notepad .env
-    ) else (
-        echo     [!!] .env.example not found, skipping .env creation
     )
 ) else (
     echo     [OK] .env configuration exists
