@@ -47,6 +47,12 @@ correction workflow instead of a context-only update.
 - Bare role entries are now folded into a named character when exactly one
   named entry already carries that role as its own title; ambiguous shared
   roles remain separate unless there is an explicit identity link.
+- Reincarnated/transformed characters now keep the gender of the current
+  named form rather than the previous body, and raw source evidence can repair
+  this before context is saved for any supported file type.
+- Raw source coreference such as `the Lieutenant Colonel's office` followed by
+  `Eric` now supplements missed model identity links in the shared context
+  updater, so the fix applies to TXT, EPUB, SRT, DOCX, and chapter mode.
 - The context editor now reports a visible localized error when Save &
   Re-sync cannot start because no editable snapshot, job, or global anchor is
   available.
@@ -93,7 +99,7 @@ correction workflow instead of a context-only update.
 
 ### Validation
 
-- 1,398 selected automated tests passed.
+- 1,401 selected automated tests passed.
 - Windows executable startup and local UI smoke tests passed.
 
 ## 1.4.12 - 2026-06-23

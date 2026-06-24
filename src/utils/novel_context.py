@@ -258,6 +258,13 @@ def _role_title_keys_from_fact(fact: str) -> set[str]:
     return keys
 
 
+_SOURCE_IDENTITY_ROLE_KEYS = {
+    "lieutenant colonel",
+    "lieutenant commander",
+    "major general",
+}
+
+
 def _character_self_role_title_keys(name: str, value: str = "") -> set[str]:
     """Return role/title labels that the entry applies to itself.
 
@@ -812,9 +819,199 @@ def _remove_self_references_from_details(details: str, name: str) -> str:
 def _normalize_character_value_for_name(name: str, value: str) -> str:
     normalized = _normalize_character_value(value)
     gender, details = _split_gender_and_details(normalized)
+    if _gender_belongs_to_previous_reincarnation_body(name, gender, details):
+        gender = _current_reincarnated_form_gender(name, details) or "Unspecified"
+    details = _normalize_reincarnation_details_for_name(name, details)
     details = _remove_self_references_from_details(details, name)
     details = _merge_character_details(details, "")
     return f"{gender}, {details}".rstrip(" ,") if gender else details
+
+
+def _gender_from_body_word(value: str) -> str:
+    key = _plain_key(value)
+    if key in {"male", "man", "boy"}:
+        return "Male"
+    if key in {"female", "woman", "girl"}:
+        return "Female"
+    return ""
+
+
+def _gender_belongs_to_previous_reincarnation_body(
+    name: str,
+    gender: str,
+    details: str,
+) -> bool:
+    """Detect when the gender label describes the pre-reincarnation body.
+
+    A profile keyed by the new/current name must store the current form's
+    gender. If the details only say a man/woman reincarnated into this named
+    form, that old-body noun is not valid gender evidence for the new identity.
+    """
+    if gender.casefold() not in _SPECIFIC_GENDER_LABELS:
+        return False
+    canonical = _canonical_display_name(name)
+    if not canonical:
+        return False
+    name_pattern = re.escape(canonical)
+    match = re.search(
+        rf"\b(?P<body>male|female|man|woman|boy|girl)\b"
+        rf"(?P<middle>[^.;]{{0,120}}?)\breincarnat\w+\s+as\b"
+        rf"(?P<form>[^.;]{{0,120}}?)\bnamed\s+{name_pattern}\b",
+        details,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return False
+    old_body_gender = _gender_from_body_word(match.group("body"))
+    return old_body_gender.casefold() == gender.casefold()
+
+
+def _current_reincarnated_form_gender(name: str, details: str) -> str:
+    canonical = _canonical_display_name(name)
+    name_pattern = re.escape(canonical) if canonical else r"\w+"
+    patterns = (
+        rf"\bnamed\s+{name_pattern}\b[^.;]{{0,120}}?"
+        r"\b(?:became|become|becomes|as|into)\s+"
+        r"(?:an?\s+)?(?:[\w'-]+\s+){0,4}"
+        r"(?P<body>male|female|man|woman|boy|girl)\b",
+        r"\b(?:became|become|becomes|reincarnated\s+as|reincarnates\s+as|"
+        r"reborn\s+as|turns\s+into|turned\s+into)\s+"
+        r"(?:an?\s+)?(?:[\w'-]+\s+){0,4}"
+        r"(?P<body>male|female|man|woman|boy|girl)\b",
+    )
+    genders = {
+        _gender_from_body_word(match.group("body"))
+        for pattern in patterns
+        for match in re.finditer(pattern, details, flags=re.IGNORECASE)
+    }
+    genders.discard("")
+    return next(iter(genders)) if len(genders) == 1 else ""
+
+
+def _normalize_reincarnation_details_for_name(name: str, details: str) -> str:
+    canonical = _canonical_display_name(name)
+    if not canonical:
+        return details
+    name_pattern = re.escape(canonical)
+
+    def replace_old_body(match: re.Match) -> str:
+        old_body = _clean_inline_text(match.group("body"))
+        form = _clean_inline_text(match.group("form")).strip(" ,")
+        article = "an" if old_body[:1].lower() in {"a", "e", "i", "o", "u"} else "a"
+        form_phrase = f" as {form}" if form else ""
+        return f"reincarnated from {article} {old_body}{form_phrase}"
+
+    return re.sub(
+        rf"\b(?:an?\s+)?"
+        rf"(?P<body>(?:terminally\s+ill\s+)?(?:male|female|man|woman|boy|girl))"
+        rf"\s+who\s+reincarnates\s+as\s+"
+        rf"(?P<form>[^.;,]{{0,120}}?)\s+named\s+{name_pattern}\b",
+        replace_old_body,
+        details,
+        flags=re.IGNORECASE,
+    )
+
+
+_REFERENCE_PRONOUN_GENDERS = {
+    "her": "Female",
+    "herself": "Female",
+    "his": "Male",
+    "himself": "Male",
+}
+_REFERENCE_PRONOUN_OBJECTS = (
+    "identity",
+    "true identity",
+    "true self",
+    "secret",
+    "body",
+    "appearance",
+    "face",
+    "life",
+    "name",
+    "past",
+    "condition",
+    "status",
+)
+
+
+def _set_character_gender(value: str, gender: str) -> str:
+    clean = _normalize_character_value(value)
+    _, details = _split_gender_and_details(clean)
+    gender = _canonical_gender(gender)
+    return f"{gender}, {details}".rstrip(" ,") if details else gender
+
+
+def _name_reference_pattern(name: str) -> str:
+    escaped = re.escape(_canonical_display_name(name))
+    return rf"(?<![\w'-]){escaped}(?![\w'-])"
+
+
+def _infer_gender_reference_to_character(details: str, name: str) -> str:
+    """Infer gender from direct pronoun evidence attached to a named target.
+
+    This repairs summaries such as "superior officer to Valentine, suspicious
+    of her identity": the pronoun belongs to Valentine, not to the officer.
+    """
+    if _is_invalid_context_key(name):
+        return ""
+    text = _clean_inline_text(details)
+    if not text:
+        return ""
+    name_pattern = _name_reference_pattern(name)
+    object_pattern = "|".join(
+        re.escape(item).replace(r"\ ", r"\s+")
+        for item in sorted(
+            _REFERENCE_PRONOUN_OBJECTS,
+            key=lambda item: (-len(item), item),
+        )
+    )
+    patterns = (
+        rf"\b(?:to|of|for|with|about|toward|towards|against|around|"
+        rf"regarding)\s+{name_pattern}"
+        rf"(?!\s+(?:and|or)\b)[^.;:]{{0,100}}\b"
+        rf"(?P<pronoun>her|his)\s+(?:{object_pattern})\b",
+        rf"{name_pattern}(?!\s+(?:and|or)\b)[^.;:]{{0,100}}\b"
+        rf"(?P<pronoun>herself|himself)\b",
+    )
+    genders = {
+        _REFERENCE_PRONOUN_GENDERS[match.group("pronoun").casefold()]
+        for pattern in patterns
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE)
+    }
+    return next(iter(genders)) if len(genders) == 1 else ""
+
+
+def _apply_cross_character_gender_evidence(
+    items: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    evidence: Dict[str, set[str]] = {}
+    canonical_names = [
+        item["name"]
+        for item in items
+        if not _is_invalid_context_key(item.get("name", ""))
+    ]
+
+    for source in items:
+        _, source_details = _split_gender_and_details(
+            _normalize_character_value(source.get("value", ""))
+        )
+        for target_name in canonical_names:
+            gender = _infer_gender_reference_to_character(
+                source_details,
+                target_name,
+            )
+            if gender:
+                evidence.setdefault(target_name, set()).add(gender)
+
+    for item in items:
+        genders = evidence.get(item["name"], set())
+        if len(genders) != 1:
+            continue
+        item["value"] = _set_character_gender(
+            item["value"],
+            next(iter(genders)),
+        )
+    return items
 
 
 def _strip_character_correction_marker(value: str) -> Tuple[str, bool]:
@@ -1021,6 +1218,7 @@ def _deduplicate_character_entries(
             })
 
     normalized = _merge_role_only_entries_by_unique_self_title(normalized)
+    normalized = _apply_cross_character_gender_evidence(normalized)
 
     alias_map: Dict[str, str] = {}
     result: List[Tuple[str, str]] = []
@@ -1172,6 +1370,111 @@ def _canonical_alias_entries(
             )
         output[alias_key] = (display_alias, canonical_target)
     return list(output.values())
+
+
+def _display_role_title(role_key: str) -> str:
+    return " ".join(part.capitalize() for part in role_key.split())
+
+
+def _candidate_named_characters(
+    global_lore: str,
+    new_characters: str,
+) -> List[str]:
+    names: Dict[str, str] = {}
+    bounds = _find_lore_section(global_lore, CHARACTERS_SECTION)
+    entries: List[Tuple[str, str]] = []
+    if bounds:
+        _, body_start, body_end = bounds
+        entries.extend(_parse_bullet_entries(global_lore[body_start:body_end]))
+    entries.extend(_parse_bullet_entries(new_characters))
+    for raw_name, raw_value in entries:
+        name = _canonical_display_name(raw_name)
+        if (
+            _is_invalid_context_key(name)
+            or _role_title_key_from_name(name)
+            or _is_disposable_unnamed_character(name, raw_value)
+        ):
+            continue
+        names[_plain_key(name)] = name
+    return list(names.values())
+
+
+def infer_source_identity_links(
+    source_text: str,
+    current_global_lore: str,
+    new_characters: str = "",
+) -> str:
+    """Extract conservative title-to-character links from direct source coreference."""
+    text = _clean_inline_text(source_text)
+    if not text:
+        return ""
+    candidates = _candidate_named_characters(current_global_lore, new_characters)
+    if not candidates:
+        return ""
+
+    links: List[Tuple[str, str]] = []
+    for role_key in sorted(_SOURCE_IDENTITY_ROLE_KEYS):
+        role_pattern = re.escape(role_key).replace(r"\ ", r"\s+")
+        matched_targets: set[str] = set()
+        for name in candidates:
+            name_pattern = _name_reference_pattern(name)
+            patterns = (
+                rf"\b(?:the\s+)?{role_pattern}'s\s+"
+                r"(?:office|room|quarters|tent|desk|door|voice|expression|"
+                r"face|hand|gaze|order)\b[\s\S]{0,220}"
+                rf"{name_pattern}",
+            )
+            if any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns):
+                matched_targets.add(name)
+        if len(matched_targets) == 1:
+            links.append((_display_role_title(role_key), next(iter(matched_targets))))
+
+    return "\n".join(f"- {alias}: {target}" for alias, target in links)
+
+
+def _source_reincarnation_gender_for_name(source_text: str, name: str) -> str:
+    text = _clean_inline_text(source_text)
+    if not text or _is_invalid_context_key(name):
+        return ""
+    name_pattern = _name_reference_pattern(name)
+    body_pattern = r"(?P<body>male|female|man|woman|boy|girl)"
+    patterns = (
+        rf"{name_pattern}[\s\S]{{0,160}}\breincarnat\w+\b"
+        rf"[\s\S]{{0,600}}\b(?:became|become|becomes|becoming|"
+        rf"woke\s+up\s+as|awoke\s+as|reincarnated\s+as|reborn\s+as)\s+"
+        rf"(?:an?\s+)?(?:[\w'-]+\s+){{0,5}}{body_pattern}\b",
+        rf"{name_pattern}[\s\S]{{0,160}}\breincarnat\w+\b"
+        rf"[\s\S]{{0,600}}\b(?:very\s+)?(?:cute\s+|small\s+|ragged\s+|"
+        rf"young\s+|old\s+){{0,5}}{body_pattern}\b"
+        rf"[\s\S]{{0,160}}\b(?:is\s+this\s+me|this\s+is\s+me|my\s+body)\b",
+    )
+    genders = {
+        _gender_from_body_word(match.group("body"))
+        for pattern in patterns
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE)
+    }
+    genders.discard("")
+    return next(iter(genders)) if len(genders) == 1 else ""
+
+
+def infer_source_gender_updates(
+    source_text: str,
+    current_global_lore: str,
+    new_characters: str = "",
+) -> str:
+    """Extract conservative source-proven gender corrections from raw chunks.
+
+    This complements the LLM response for every file type because all
+    pipelines pass plain source text into the shared context updater.
+    """
+    updates: List[str] = []
+    for name in _candidate_named_characters(current_global_lore, new_characters):
+        gender = _source_reincarnation_gender_for_name(source_text, name)
+        if gender:
+            updates.append(
+                f"- {name}: CORRECTION: [{gender}, reincarnated current form.]"
+            )
+    return "\n".join(updates)
 
 
 def _normalize_glossary_entries(entries: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
@@ -2310,10 +2613,13 @@ Identity rules:
 - A title, rank, nickname, transformed state, awakened state, disguise, age qualifier, or relationship label is not a new character when it refers to an existing person. Update the existing canonical entry instead.
 - When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
 - When the latest source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
+- If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
 - Do not add one-scene unnamed soldiers, victims, hallucinations, generic crowds, or incidental job labels unless they recur and their identity/gender is required for translation consistency.
 - Never output template entries, "None", "[None]", "Unknown", "N/A", or an empty bullet.
 - Record gender only when the source states it or supplies unambiguous grammatical/pronoun evidence. Never guess gender from a name, occupation, rank, appearance, genre convention, or stereotype.
 - Gender-neutral words such as spouse, partner, lover, parent, child, sibling, officer, captain, commander, major, colonel, and lieutenant colonel never prove gender by themselves.
+- If a character reincarnates, transforms, disguises themselves, or receives a new body, record the gender of the current named form, not the previous body. Keep the previous identity only as a concise description.
+- Pronoun evidence attached to another character's relationship with a named person is evidence for that named person. For example, "suspicious of her identity" after naming Valentine proves Valentine is Female, not the suspicious officer.
 - Before writing "Unspecified", scan the whole latest source for direct evidence such as gendered nouns, pronouns, kinship grammar, or an explicit description. If an existing Unspecified character is now proven Male/Female, output that specific gender directly; this is not a correction.
 - An existing specific gender is authoritative. Change it only when the latest source explicitly proves it was wrong; write that rare update as "CORRECTION: [Gender, role, description]".
 - Write all character metadata in English, regardless of source and target language.
@@ -2363,10 +2669,13 @@ Identity rules:
 - Do not create separate characters for ranks, titles, nicknames, transformed/awakened states, disguises, age variants, or relational aliases of an existing person.
 - When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
 - When this source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
+- If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
 - Do not add one-scene unnamed soldiers, victims, generic crowds, or incidental roles unless they recur and are necessary for pronoun/address consistency.
 - Never output template entries, "None", "[None]", "Unknown", "N/A", or an empty bullet.
 - Record gender only when this source text states it or gives unambiguous grammatical/pronoun evidence. Never infer it from names, jobs, ranks, appearance, personality, or genre stereotypes.
 - Gender-neutral words such as spouse, partner, lover, parent, child, sibling, officer, captain, commander, major, colonel, and lieutenant colonel never prove gender by themselves.
+- If a character reincarnates, transforms, disguises themselves, or receives a new body, record the gender of the current named form, not the previous body. Keep the previous identity only as a concise description.
+- Pronoun evidence attached to another character's relationship with a named person is evidence for that named person. For example, "suspicious of her identity" after naming Valentine proves Valentine is Female, not the suspicious officer.
 - Before writing "Unspecified", scan the entire latest source for direct evidence such as gendered nouns, pronouns, kinship grammar, or an explicit description. If an existing Unspecified character is now proven Male/Female, output that specific gender directly; this is not a correction.
 - Treat an existing specific gender as authoritative. Change it only when this source text explicitly proves it wrong, using "CORRECTION: [Gender, role, description]".
 - Preserve source-side proper names exactly. Write character metadata descriptions in English so context remains stable when the translation model or target language changes.
@@ -2776,8 +3085,30 @@ async def update_novel_context_chunk(
         
         if chars_match:
             new_chars = chars_match.group(1).strip()
+        deterministic_gender_updates = infer_source_gender_updates(
+            source_chunk,
+            current_global_lore,
+            new_chars,
+        )
+        if deterministic_gender_updates:
+            new_chars = "\n".join(
+                part
+                for part in (new_chars, deterministic_gender_updates)
+                if part.strip()
+            )
         if aliases_match:
             new_aliases = aliases_match.group(1).strip()
+        deterministic_aliases = infer_source_identity_links(
+            source_chunk,
+            current_global_lore,
+            new_chars,
+        )
+        if deterministic_aliases:
+            new_aliases = "\n".join(
+                part
+                for part in (new_aliases, deterministic_aliases)
+                if part.strip()
+            )
         if glossary_match:
             new_glossary = glossary_match.group(1).strip()
         if dynamic_match:
