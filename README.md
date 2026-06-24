@@ -163,33 +163,28 @@ See [docs/CLI.md](docs/CLI.md) for all options (TTS voices, rates, formats, etc.
 </details>
 
 <details>
-<summary><b>Configuration (.env)</b></summary>
+    <summary><b>Configuration (.env)</b></summary>
 
-Copy `.env.example` to `.env` and edit:
+Generate a compact `.env`, then edit it. Use `.env.example` only when you want
+the full option reference:
 
 ```bash
-# Provider
+python -m src.utils.env_helper create
+```
+
+The generated file is intentionally short:
+
+```bash
+# TranslateBook configuration. Full reference: .env.example
 LLM_PROVIDER=ollama
-
-# Ollama
-API_ENDPOINT=http://localhost:11434/api/generate
 DEFAULT_MODEL=qwen3:14b
-
-# API Keys (if using cloud providers)
-OPENROUTER_API_KEY=YOUR_API_KEY_HERE
-OPENAI_API_KEY=YOUR_API_KEY_HERE
-GEMINI_API_KEY=YOUR_API_KEY_HERE
-MISTRAL_API_KEY=YOUR_API_KEY_HERE
-DEEPSEEK_API_KEY=YOUR_API_KEY_HERE
-POE_API_KEY=YOUR_API_KEY_HERE
-NIM_API_KEY=YOUR_API_KEY_HERE
-
-# Performance
-REQUEST_TIMEOUT=900
-MAX_TOKENS_PER_CHUNK=450     # Token-based chunking (default: 450 tokens)
-PARALLEL_TRANSLATIONS=1      # Concurrent chunks (cloud only; Ollama stays at 1)
-NOVEL_CONTEXT_PROMPT_MAX_TOKENS=1800  # Selected context injected per prompt
-NOVEL_CONTEXT_UPDATE_INTERVAL=1       # 1 = update context before every chunk
+API_ENDPOINT=http://localhost:11434/api/generate
+MAX_TOKENS_PER_CHUNK=450
+NOVEL_CONTEXT_PROMPT_MAX_TOKENS=1800
+NOVEL_CONTEXT_UPDATE_INTERVAL=1
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+OPENROUTER_API_KEY=
 ```
 
 **Faster on cloud providers?** Set `PARALLEL_TRANSLATIONS` (or `--parallel N`, or the "Parallel requests" field in the web UI) above 1 to translate several chunks at once. Local providers (Ollama) ignore it since a single instance serializes requests. Higher values are faster but can hit provider rate limits.

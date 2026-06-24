@@ -151,10 +151,12 @@ def check_env_file():
 
         if env_example.exists():
             print("\n TO CREATE .env FILE:")
-            print("   Option 1: Run setup wizard")
-            print("             python setup_config.py")
-            print("\n   Option 2: Copy template manually")
-            print("             copy .env.example .env")
+            print("   Option 1: Create concise config")
+            print("             python -m src.utils.env_helper create")
+            print("\n   Option 2: Run setup wizard")
+            print("             python scripts/setup_config.py")
+            print("\n   Full option reference")
+            print("             .env.example")
             print("             notepad .env")
         return False
     else:

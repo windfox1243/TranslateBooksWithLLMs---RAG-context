@@ -59,45 +59,10 @@ def setup_working_directory():
             print("="*70)
             print("\nCreating default configuration file...")
 
-            # Prefer the bundled template so first-run configs stay in sync
-            # with new supported settings without overwriting user secrets on
-            # later runs.
-            if env_example_path.exists():
-                shutil.copy(env_example_path, env_path)
-            else:
-                # Minimal fallback for broken bundles where .env.example is
-                # missing. Keep this intentionally small and secret-free.
-                default_env = """# TranslateBook with LLM Configuration
-# This file was auto-generated on first run
-
-# === LLM PROVIDER ===
-LLM_PROVIDER=ollama
-
-# === OLLAMA CONFIGURATION ===
-API_ENDPOINT=http://localhost:11434/api/generate
-DEFAULT_MODEL=qwen3:14b
-OLLAMA_NUM_CTX=4096
-
-# === SERVER CONFIGURATION ===
-PORT=5000
-HOST=127.0.0.1
-OUTPUT_DIR=translated_files
-
-# === OPTIONAL: CLOUD PROVIDERS ===
-# Uncomment and add your API keys if using cloud providers
-# OPENROUTER_API_KEY=sk-or-v1-...
-# OPENAI_API_KEY=sk-...
-# GEMINI_API_KEY=...
-
-# === PERFORMANCE ===
-REQUEST_TIMEOUT=900
-MAX_TOKENS_PER_CHUNK=450
-
-# === NOVEL CONTEXT ===
-NOVEL_CONTEXT_PROMPT_MAX_TOKENS=1800
-NOVEL_CONTEXT_UPDATE_INTERVAL=1
-"""
-                env_path.write_text(default_env, encoding='utf-8')
+            # Keep .env short and practical. The bundled .env.example remains
+            # available next to it as the full commented reference.
+            from src.utils.env_helper import write_compact_env
+            write_compact_env(env_path)
             print(f"[OK] Configuration file created at: {env_path}")
             print("\n[INFO] You can edit this file later to customize settings")
             print("="*70)

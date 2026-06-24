@@ -231,9 +231,10 @@ def warn_env_config_missing(provider=None, api_endpoint=None, model=None, port=N
 
     if _env_example.exists():
         print("📋 QUICK SETUP:")
-        print("   1. Copy the template: copy .env.example .env")
+        print("   1. Create a concise config: python -m src.utils.env_helper create")
         print("   2. Edit .env to match your configuration")
-        print("   3. Restart the application\n")
+        print("   3. Read .env.example only when you need the full reference")
+        print("   4. Restart the application\n")
     else:
         print("📋 MANUAL SETUP:")
         print(f"   1. Create a .env file in: {Path.cwd()}")

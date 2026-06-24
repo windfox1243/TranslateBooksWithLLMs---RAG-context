@@ -3,7 +3,6 @@ Utility to help users configure .env file
 """
 import os
 import sys
-import shutil
 from pathlib import Path
 
 
@@ -12,9 +11,107 @@ def _get_config_dir():
     return Path.cwd()
 
 
-def create_env_from_template(force: bool = False) -> bool:
+_DEFAULT_COMPACT_ENV_VALUES = {
+    "LLM_PROVIDER": "ollama",
+    "DEFAULT_MODEL": "qwen3:14b",
+    "API_ENDPOINT": "http://localhost:11434/api/generate",
+    "OLLAMA_API_ENDPOINT": "http://localhost:11434/api/generate",
+    "PORT": "5000",
+    "HOST": "127.0.0.1",
+    "OUTPUT_DIR": "translated_files",
+    "DEFAULT_SOURCE_LANGUAGE": "",
+    "DEFAULT_TARGET_LANGUAGE": "",
+    "REQUEST_TIMEOUT": "300",
+    "MAX_TOKENS_PER_CHUNK": "450",
+    "OLLAMA_NUM_CTX": "4096",
+    "AUTO_ADJUST_CONTEXT": "true",
+    "PARALLEL_TRANSLATIONS": "1",
+    "NOVEL_CONTEXT_PROMPT_MAX_TOKENS": "1800",
+    "NOVEL_CONTEXT_UPDATE_INTERVAL": "1",
+    "GEMINI_API_KEY": "",
+    "OPENAI_API_KEY": "",
+    "OPENROUTER_API_KEY": "",
+    "MISTRAL_API_KEY": "",
+    "DEEPSEEK_API_KEY": "",
+    "POE_API_KEY": "",
+    "NIM_API_KEY": "",
+    "GEMINI_MODEL": "gemini-2.0-flash",
+    "OPENROUTER_MODEL": "anthropic/claude-4.5-haiku",
+    "MISTRAL_MODEL": "mistral-large-latest",
+    "DEEPSEEK_MODEL": "deepseek-v4-pro",
+    "POE_MODEL": "Claude-Sonnet-4",
+    "NIM_MODEL": "meta/llama-3.1-8b-instruct",
+}
+
+_COMPACT_ENV_LAYOUT = [
+    "LLM_PROVIDER",
+    "DEFAULT_MODEL",
+    "API_ENDPOINT",
+    "OLLAMA_API_ENDPOINT",
+    "PORT",
+    "HOST",
+    "OUTPUT_DIR",
+    "DEFAULT_SOURCE_LANGUAGE",
+    "DEFAULT_TARGET_LANGUAGE",
+    "REQUEST_TIMEOUT",
+    "MAX_TOKENS_PER_CHUNK",
+    "OLLAMA_NUM_CTX",
+    "AUTO_ADJUST_CONTEXT",
+    "PARALLEL_TRANSLATIONS",
+    "NOVEL_CONTEXT_PROMPT_MAX_TOKENS",
+    "NOVEL_CONTEXT_UPDATE_INTERVAL",
+    "GEMINI_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "MISTRAL_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "POE_API_KEY",
+    "NIM_API_KEY",
+]
+
+
+def render_compact_env(overrides: dict | None = None) -> str:
+    """Render a short, practical .env file.
+
+    The full commented reference lives in .env.example. This generated .env is
+    intentionally concise so users only see values they are likely to edit.
     """
-    Create .env file from .env.example template
+    values = dict(_DEFAULT_COMPACT_ENV_VALUES)
+    for key, value in (overrides or {}).items():
+        if key in values:
+            values[key] = "" if value is None else str(value)
+
+    layout_keys = {item for item in _COMPACT_ENV_LAYOUT if item and not item.startswith("#")}
+    lines = ["# TranslateBook configuration. Full reference: .env.example"]
+    for item in _COMPACT_ENV_LAYOUT:
+        if item == "":
+            lines.append("")
+        elif item.startswith("#"):
+            lines.append(item)
+        else:
+            lines.append(f"{item}={values[item]}")
+
+    extra_keys = [
+        key
+        for key in (overrides or {})
+        if key in values and key not in layout_keys and values[key]
+    ]
+    if extra_keys:
+        lines.append("")
+        for key in extra_keys:
+            lines.append(f"{key}={values[key]}")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def write_compact_env(env_file: Path, overrides: dict | None = None) -> None:
+    """Write a concise .env file to disk."""
+    env_file.write_text(render_compact_env(overrides), encoding="utf-8")
+
+
+def create_env_file(force: bool = False) -> bool:
+    """
+    Create a concise .env file.
 
     Args:
         force: If True, overwrites existing .env file
@@ -24,25 +121,27 @@ def create_env_from_template(force: bool = False) -> bool:
     """
     config_dir = _get_config_dir()
     env_file = config_dir / '.env'
-    env_example = config_dir / '.env.example'
 
     if env_file.exists() and not force:
         print(f"❌ .env file already exists at: {env_file.absolute()}")
         print("   Use force=True to overwrite")
         return False
 
-    if not env_example.exists():
-        print(f"❌ Template file .env.example not found")
-        return False
-
     try:
-        shutil.copy(env_example, env_file)
-        print(f"✅ Created .env from template")
+        write_compact_env(env_file)
+        print("✅ Created concise .env")
         print(f"   Location: {env_file.absolute()}")
+        if (config_dir / '.env.example').exists():
+            print("   Full option reference: .env.example")
         return True
     except Exception as e:
         print(f"❌ Failed to create .env: {e}")
         return False
+
+
+def create_env_from_template(force: bool = False) -> bool:
+    """Backward-compatible alias for create_env_file()."""
+    return create_env_file(force=force)
 
 
 def validate_env_config(verbose: bool = True) -> dict:
@@ -166,57 +265,34 @@ def interactive_env_setup():
     config['DEFAULT_SOURCE_LANGUAGE'] = input("3️⃣  Default source language [English]: ").strip() or 'English'
     config['DEFAULT_TARGET_LANGUAGE'] = input("4️⃣  Default target language [Chinese]: ").strip() or 'Chinese'
 
+    overrides = {
+        'LLM_PROVIDER': config['LLM_PROVIDER'],
+        'PORT': config['PORT'],
+        'DEFAULT_SOURCE_LANGUAGE': config['DEFAULT_SOURCE_LANGUAGE'],
+        'DEFAULT_TARGET_LANGUAGE': config['DEFAULT_TARGET_LANGUAGE'],
+    }
+    if config['LLM_PROVIDER'] == 'ollama':
+        overrides['API_ENDPOINT'] = config['API_ENDPOINT']
+        overrides['OLLAMA_API_ENDPOINT'] = config['API_ENDPOINT']
+        overrides['DEFAULT_MODEL'] = config['DEFAULT_MODEL']
+    elif config['LLM_PROVIDER'] == 'gemini':
+        overrides['GEMINI_API_KEY'] = config.get('GEMINI_API_KEY', '')
+        overrides['GEMINI_MODEL'] = config.get('GEMINI_MODEL', 'gemini-2.0-flash')
+    elif config['LLM_PROVIDER'] == 'openai':
+        overrides['OPENAI_API_KEY'] = config.get('OPENAI_API_KEY', '')
+        overrides['API_ENDPOINT'] = config.get(
+            'API_ENDPOINT',
+            'https://api.openai.com/v1/chat/completions',
+        )
+        overrides['DEFAULT_MODEL'] = config.get('DEFAULT_MODEL', 'gpt-4o')
+
     # Write .env file
     try:
-        with open(env_file, 'w', encoding='utf-8') as f:
-            f.write("# Translation API Configuration\n")
-
-            if config['LLM_PROVIDER'] == 'ollama':
-                f.write(f"API_ENDPOINT={config['API_ENDPOINT']}\n")
-                f.write(f"DEFAULT_MODEL={config['DEFAULT_MODEL']}\n")
-
-            f.write("\n# Server Configuration\n")
-            f.write(f"PORT={config['PORT']}\n")
-            f.write("HOST=127.0.0.1\n")
-            f.write("OUTPUT_DIR=translated_files\n")
-
-            f.write("\n# LLM Provider Settings\n")
-            f.write(f"LLM_PROVIDER={config['LLM_PROVIDER']}\n")
-
-            if config['LLM_PROVIDER'] == 'gemini':
-                f.write(f"GEMINI_API_KEY={config.get('GEMINI_API_KEY', '')}\n")
-                f.write(f"GEMINI_MODEL={config.get('GEMINI_MODEL', 'gemini-2.0-flash')}\n")
-            else:
-                f.write("GEMINI_API_KEY=\n")
-                f.write("GEMINI_MODEL=gemini-2.0-flash\n")
-
-            if config['LLM_PROVIDER'] == 'openai':
-                f.write(f"OPENAI_API_KEY={config.get('OPENAI_API_KEY', '')}\n")
-            else:
-                f.write("OPENAI_API_KEY=\n")
-
-            f.write("\n# Translation Settings\n")
-            f.write(f"DEFAULT_SOURCE_LANGUAGE={config['DEFAULT_SOURCE_LANGUAGE']}\n")
-            f.write(f"DEFAULT_TARGET_LANGUAGE={config['DEFAULT_TARGET_LANGUAGE']}\n")
-            f.write("MAIN_CHUNK_SIZE=1000\n")
-            f.write("REQUEST_TIMEOUT=900\n")
-
-            f.write("\n# Context Management\n")
-            f.write("OLLAMA_NUM_CTX=8192\n")
-            f.write("AUTO_ADJUST_CONTEXT=true\n")
-            f.write("MIN_CHUNK_SIZE=5\n")
-            f.write("MAX_CHUNK_SIZE=100\n")
-
-            f.write("\n# Advanced\n")
-            f.write("MAX_TRANSLATION_ATTEMPTS=3\n")
-
-            f.write("\n# SRT-specific configuration\n")
-            f.write("# Subtitles per LLM block, shared by translate and refine.\n")
-            f.write("# Lower for tiny models (e.g. 5 for 4B params), higher for big-context models.\n")
-            f.write("SRT_LINES_PER_BLOCK=10\n")
+        write_compact_env(env_file, overrides)
 
         print("\n✅ .env file created successfully!")
         print(f"   Location: {env_file.absolute()}")
+        print("   Full option reference: .env.example")
         print("\n💡 You can edit this file manually at any time to adjust settings.\n")
 
     except Exception as e:
@@ -231,7 +307,7 @@ if __name__ == '__main__':
         command = sys.argv[1]
 
         if command == 'create':
-            create_env_from_template()
+            raise SystemExit(0 if create_env_file() else 1)
         elif command == 'validate':
             validate_env_config()
         elif command == 'setup':
@@ -241,6 +317,6 @@ if __name__ == '__main__':
             print("Available commands: create, validate, setup")
     else:
         print("\nUsage:")
-        print("  python -m src.utils.env_helper create   - Create .env from template")
+        print("  python -m src.utils.env_helper create   - Create concise .env")
         print("  python -m src.utils.env_helper validate - Check current configuration")
         print("  python -m src.utils.env_helper setup    - Interactive setup wizard")
