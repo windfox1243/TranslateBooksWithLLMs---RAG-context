@@ -186,7 +186,7 @@ def _available_context_chunk_indices(checkpoint_data):
         index = chunk.get('chunk_index')
         if (
             isinstance(index, int)
-            and chunk.get('status') in ('completed', 'partial')
+            and chunk.get('status') in ('completed', 'partial', 'failed')
             and chunk_data.get('context_snapshot')
         ):
             indices.append(index)
@@ -706,8 +706,10 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
 
         target_chunk = chunks[target_chunk_idx]
         status = target_chunk.get('status')
-        if status not in ('completed', 'partial'):
-            return jsonify({"error": "Only completed chunks can be resynced"}), 409
+        if status not in ('completed', 'partial', 'failed'):
+            return jsonify({"error": "Only chunks with context snapshots can be resynced"}), 409
+        if not (target_chunk.get('chunk_data') or {}).get('context_snapshot'):
+            return jsonify({"error": "Chunk has no context snapshot to resync"}), 409
         if not _claim_context_resync(translation_id):
             return jsonify({"error": "A context resync is already running for this translation"}), 409
 

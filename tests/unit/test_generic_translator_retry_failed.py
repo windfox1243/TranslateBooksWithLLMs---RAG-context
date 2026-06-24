@@ -243,12 +243,14 @@ async def test_generic_txt_failed_unit_context_survives_and_retries(
 ):
     prompts = []
     request_counts = {}
+    context_updates = {}
 
     async def fake_update(
         current_dynamic_state="",
         source_chunk="",
         **kwargs,
     ):
+        context_updates[source_chunk] = context_updates.get(source_chunk, 0) + 1
         lines = [
             line for line in current_dynamic_state.splitlines()
             if line.strip()
@@ -300,6 +302,7 @@ async def test_generic_txt_failed_unit_context_survives_and_retries(
 
     assert success is True
     assert request_counts[FAILING_CONTENT] == 2
+    assert context_updates[FAILING_CONTENT] == 1
     content_2_prompt = next(
         prompt for content, prompt in prompts
         if content == "content 2"
@@ -320,4 +323,82 @@ async def test_generic_txt_failed_unit_context_survives_and_retries(
     )
     assert retried_chunk["status"] == "completed"
     assert retried_chunk["translated_text"] == f"translated {FAILING_CONTENT}"
+    assert (retried_chunk["chunk_data"] or {}).get("context_snapshot")
+
+
+@pytest.mark.asyncio
+async def test_resume_reuses_failed_unit_source_context_without_reanalysis(
+    tmp_path,
+    cm,
+    monkeypatch,
+):
+    context_updates = {}
+
+    async def fake_update(
+        current_dynamic_state="",
+        source_chunk="",
+        **kwargs,
+    ):
+        context_updates[source_chunk] = context_updates.get(source_chunk, 0) + 1
+        lines = [
+            line for line in current_dynamic_state.splitlines()
+            if line.strip()
+        ]
+        lines.append(f"- seen {source_chunk}")
+        return "# GLOBAL LORE", "\n".join(lines), []
+
+    monkeypatch.setattr(config_module, "NOVEL_CONTEXTS_DIR", tmp_path / "contexts")
+    monkeypatch.setattr(llm_client_module, "LLMClient", FakeLLMClient)
+    monkeypatch.setattr(
+        "src.utils.novel_context.update_novel_context_chunk",
+        fake_update,
+    )
+
+    first_calls = []
+    _patch_llm(monkeypatch, {FAILING_CONTENT}, first_calls)
+    translator = GenericTranslator(
+        adapter=FakeAdapter(tmp_path),
+        checkpoint_manager=cm,
+        translation_id="resume-context-job",
+    )
+    first_success = await translator.translate(
+        source_language="English",
+        target_language="French",
+        model_name="fake-model",
+        llm_provider="ollama",
+        prompt_options={
+            "auto_update_context": True,
+            "input_filename": "novel.txt",
+        },
+    )
+
+    assert first_success is False
+    assert context_updates[FAILING_CONTENT] == 1
+
+    second_calls = []
+    _patch_llm(monkeypatch, set(), second_calls)
+    resumed = GenericTranslator(
+        adapter=FakeAdapter(tmp_path),
+        checkpoint_manager=cm,
+        translation_id="resume-context-job",
+    )
+    second_success = await resumed.translate(
+        source_language="English",
+        target_language="French",
+        model_name="fake-model",
+        llm_provider="ollama",
+        prompt_options={
+            "auto_update_context": True,
+            "input_filename": "novel.txt",
+        },
+    )
+
+    assert second_success is True
+    assert second_calls == [FAILING_CONTENT]
+    assert context_updates[FAILING_CONTENT] == 1
+    retried_chunk = next(
+        chunk for chunk in cm.db.get_chunks("resume-context-job")
+        if chunk["original_text"] == FAILING_CONTENT
+    )
+    assert retried_chunk["status"] == "completed"
     assert (retried_chunk["chunk_data"] or {}).get("context_snapshot")

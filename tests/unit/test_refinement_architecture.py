@@ -309,6 +309,82 @@ def test_context_resync_route_accepts_numeric_context_revision(
     thread.start.assert_called_once()
 
 
+def test_context_resync_route_accepts_failed_source_snapshot(
+    monkeypatch,
+    tmp_path,
+):
+    from src.api.blueprints.translation_routes import (
+        create_translation_blueprint,
+    )
+
+    edited = build_novel_context(
+        "# GLOBAL LORE",
+        "## RELATIONSHIP EVOLUTION\n- Alice ↔ Bob: Close friends.",
+    )
+    checkpoint_manager = MagicMock()
+    checkpoint_manager.load_checkpoint.return_value = {
+        "job": {
+            "config": {
+                "prompt_options": {},
+                "refine_after": False,
+            },
+            "progress": {"status": "partial"},
+        },
+        "chunks": [{
+            "chunk_index": 2,
+            "status": "failed",
+            "original_text": "Source with useful context",
+            "translated_text": "Source with useful context",
+            "chunk_data": {
+                "context_snapshot": compress_dynamic_state(edited),
+            },
+        }],
+    }
+    checkpoint_manager.mark_refinement_stale.return_value = 3
+    checkpoint_manager.db = MagicMock()
+
+    state_manager = MagicMock()
+    state_manager.checkpoint_manager = checkpoint_manager
+    state_manager.get_translation.return_value = None
+
+    thread = MagicMock()
+    monkeypatch.setattr(
+        "src.api.blueprints.translation_routes._claim_context_resync",
+        lambda _translation_id: True,
+    )
+    monkeypatch.setattr(
+        "src.api.blueprints.translation_routes._release_context_resync",
+        lambda _translation_id: None,
+    )
+    monkeypatch.setattr(
+        "src.api.blueprints.translation_routes.threading.Thread",
+        lambda **_kwargs: thread,
+    )
+
+    app = Flask(__name__)
+    app.register_blueprint(
+        create_translation_blueprint(
+            state_manager,
+            lambda *_args, **_kwargs: None,
+            str(tmp_path),
+        )
+    )
+
+    with app.test_client() as client:
+        available = client.get("/api/translation/job/context/2")
+        response = client.post(
+            "/api/translation/job/context/2/resync",
+            json={"context_content": edited},
+        )
+
+    assert available.status_code == 200
+    assert available.get_json()["available_chunk_indices"] == [2]
+    assert response.status_code == 200
+    assert response.get_json()["context_revision"] == 3
+    checkpoint_manager.db.save_chunk.assert_called_once()
+    thread.start.assert_called_once()
+
+
 def test_refinement_source_survives_completed_checkpoint_cleanup(tmp_path):
     manager = CheckpointManager(db_path=str(tmp_path / "jobs.db"))
     manager.uploads_dir = tmp_path / "uploads"

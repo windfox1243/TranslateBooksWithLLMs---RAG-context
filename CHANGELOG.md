@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.4.14 - 2026-06-24
+
+This stable release hardens the source-derived novel context architecture
+around failed chunks, resume, re-sync, and refinement.
+
+### Fixed
+
+- Deferred failed-chunk retries no longer re-run source context analysis for
+  the same chunk, preventing duplicated character, glossary, dialogue, or
+  relationship updates.
+- Failed-chunk retries now preserve the original per-chunk source-context
+  snapshot instead of overwriting it with later/final context.
+- Resume now restores the latest available source-context snapshot, including
+  snapshots from failed or partial chunks, while keeping failed translation
+  output retryable.
+- Failed chunks with source-context snapshots are now visible in the context
+  selector and can be edited/re-synced like completed source snapshots.
+- EPUB resume now restores source context from the latest processed snapshot
+  instead of rewinding to the chunk before the first failed translation.
+- Plain-text mode now carries source-context snapshots from failed or partial
+  previous units into later files/chapters.
+
+### Safety and compatibility
+
+- Refinement still ignores failed or partial translated-output rows, so source
+  facts can help later chapters without treating untranslated fallback text as
+  final translation.
+- Context re-sync walks failed or partial source chunks for global context, but
+  their translation status remains unchanged and retryable.
+
+### Validation
+
+- Full automated validation passed: 1,408 passed, 1 skipped, 10 deselected.
+- Windows executable built and smoke-tested locally: `/`, English locale JSON,
+  and translation tracker JavaScript all returned HTTP 200.
+
 ## 1.4.13 - 2026-06-23
 
 This stable release makes refinement consume the final canonical lore while

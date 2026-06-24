@@ -227,7 +227,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             for row in rows
             if (
                 isinstance(row.get('chunk_index'), int)
-                and row.get('status') in ('completed', 'partial')
+                and row.get('status') in ('completed', 'partial', 'failed')
                 and (row.get('chunk_data') or {}).get('context_snapshot')
             )
         })
