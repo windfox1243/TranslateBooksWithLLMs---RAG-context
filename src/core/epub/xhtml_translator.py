@@ -824,6 +824,21 @@ async def _translate_all_chunks_with_checkpoint(
     current_dynamic_state = ""
     current_dialogue_state = {}
     current_dialogue_scene_key = None
+    latest_restored_context_global_idx = None
+    checkpoint_rows = []
+    checkpoint_context_data_by_global_index = {}
+    if checkpoint_manager and translation_id and hasattr(checkpoint_manager, 'db'):
+        checkpoint_rows = checkpoint_manager.db.get_chunks(translation_id) or []
+        for row in checkpoint_rows:
+            row_data = row.get('chunk_data') or {}
+            row_index = row.get('chunk_index')
+            if (
+                isinstance(row_index, int)
+                and row.get('status') in ('completed', 'partial', 'failed')
+                and row_data.get('context_snapshot')
+            ):
+                checkpoint_context_data_by_global_index[row_index] = dict(row_data)
+
     if novel_context_file:
         from src.utils.novel_context import (
             NovelContextSession,
@@ -841,48 +856,61 @@ async def _translate_all_chunks_with_checkpoint(
             current_global_lore = extract_global_lore(current_context_content)
             current_dynamic_state = extract_dynamic_state_from_text(current_context_content) or ""
             
-            # If resuming, restore dynamic state from the last completed chunk's snapshot
-            context_resume_index = (
-                min(failed_indices)
-                if failed_indices
-                else start_chunk_index
+            # If resuming, restore source-derived context from the latest
+            # already processed snapshot, including failed/partial chunks.
+            # Their output stays retryable, but their source facts remain
+            # valid context for retry and later chapters.
+            context_resume_count = max(
+                len(translated_chunks or []),
+                start_chunk_index,
             )
-            if (context_resume_index > 0 or (global_completed_chunks or 0) > 0) and checkpoint_manager:
-                last_completed_global_idx = (global_completed_chunks or 0) + context_resume_index - 1
-                if last_completed_global_idx >= 0 and hasattr(checkpoint_manager, 'db'):
-                    db_chunks = checkpoint_manager.db.get_chunks(translation_id) or []
-                    for c in db_chunks:
-                        if c.get('chunk_index') == last_completed_global_idx:
-                            chunk_data = c.get('chunk_data') or {}
-                            compressed_snapshot = chunk_data.get('context_snapshot')
-                            if compressed_snapshot:
-                                _, current_global_lore, current_dynamic_state = decode_context_snapshot(
-                                    compressed_snapshot,
-                                    current_context_content,
-                                )
-                                if log_callback:
-                                    log_callback("novel_context_resume", f"Restored context from global chunk {last_completed_global_idx} snapshot.")
-                            current_dialogue_state = dict(
-                                (
-                                    chunk_data.get("dialogue_attribution") or {}
-                                ).get("state_after")
-                                or {}
+            if (context_resume_count > 0 or (global_completed_chunks or 0) > 0) and checkpoint_manager:
+                latest_global_idx = (global_completed_chunks or 0) + context_resume_count - 1
+                if latest_global_idx >= 0 and hasattr(checkpoint_manager, 'db'):
+                    candidates = [
+                        c for c in checkpoint_rows
+                        if c.get('status') in ('completed', 'partial', 'failed')
+                        and isinstance(c.get('chunk_index'), int)
+                        and c.get('chunk_index') <= latest_global_idx
+                        and (c.get('chunk_data') or {}).get('context_snapshot')
+                    ]
+                    if candidates:
+                        latest_context_chunk = max(
+                            candidates,
+                            key=lambda c: c.get('chunk_index', -1),
+                        )
+                        latest_restored_context_global_idx = (
+                            latest_context_chunk.get('chunk_index')
+                        )
+                        chunk_data = latest_context_chunk.get('chunk_data') or {}
+                        compressed_snapshot = chunk_data.get('context_snapshot')
+                        if compressed_snapshot:
+                            _, current_global_lore, current_dynamic_state = decode_context_snapshot(
+                                compressed_snapshot,
+                                current_context_content,
                             )
-                            from src.utils.dialogue_attribution import (
-                                canonicalize_dialogue_state,
-                            )
-                            current_dialogue_state = (
-                                canonicalize_dialogue_state(
-                                    current_dialogue_state,
-                                    character_alias_map(
-                                        current_global_lore
-                                    ),
-                                )
-                            )
-                            current_dialogue_scene_key = (
+                            if log_callback:
+                                log_callback("novel_context_resume", f"Restored context from global chunk {latest_context_chunk.get('chunk_index')} snapshot.")
+                        current_dialogue_state = dict(
+                            (
                                 chunk_data.get("dialogue_attribution") or {}
-                            ).get("scene_key")
-                            break
+                            ).get("state_after")
+                            or {}
+                        )
+                        from src.utils.dialogue_attribution import (
+                            canonicalize_dialogue_state,
+                        )
+                        current_dialogue_state = (
+                            canonicalize_dialogue_state(
+                                current_dialogue_state,
+                                character_alias_map(
+                                    current_global_lore
+                                ),
+                            )
+                        )
+                        current_dialogue_scene_key = (
+                            chunk_data.get("dialogue_attribution") or {}
+                        ).get("scene_key")
             
             prompt_options['novel_context'] = build_novel_context(
                 current_global_lore,
@@ -961,9 +989,50 @@ async def _translate_all_chunks_with_checkpoint(
         )
         checkpoint_manager.save_xhtml_partial_state(translation_id, file_href, state)
 
-    async def _translate_one(i):
+    def _global_chunk_index(local_index):
+        return (global_completed_chunks or 0) + local_index
+
+    reused_context_data_by_index = {}
+
+    def _context_data_for_save(local_index):
+        checkpoint_data = reused_context_data_by_index.get(local_index)
+        if checkpoint_data:
+            chunk_data = dict(checkpoint_data)
+            return (
+                chunk_data.get('context_snapshot'),
+                chunk_data.get('dialogue_attribution'),
+                chunk_data,
+            )
+
+        ctx_snapshot = context_session.snapshot() if context_session else None
+        dialogue_attribution = (
+            context_session.dialogue_attribution if context_session else None
+        )
+        chunk_data = {}
+        if ctx_snapshot:
+            chunk_data['context_snapshot'] = ctx_snapshot
+        if dialogue_attribution:
+            chunk_data['dialogue_attribution'] = dialogue_attribution
+        return ctx_snapshot, dialogue_attribution, chunk_data
+
+    async def _translate_one(i, analyze_context=True):
         chunk = chunks[i]
-        if auto_update_context and context_session:
+        global_chunk_idx = _global_chunk_index(i)
+        checkpoint_context_data = checkpoint_context_data_by_global_index.get(
+            global_chunk_idx
+        )
+        should_analyze_context = (
+            analyze_context
+            and auto_update_context
+            and context_session
+            and not (
+                checkpoint_context_data
+                and latest_restored_context_global_idx is not None
+                and latest_restored_context_global_idx >= global_chunk_idx
+            )
+        )
+        if should_analyze_context:
+            reused_context_data_by_index.pop(i, None)
             if log_callback:
                 log_callback(
                     "novel_context_updating",
@@ -999,6 +1068,8 @@ async def _translate_all_chunks_with_checkpoint(
                         "novel_context_update_failed",
                         f"Failed to prepare novel context: {str(e)}",
                     )
+        elif checkpoint_context_data:
+            reused_context_data_by_index[i] = dict(checkpoint_context_data)
         return await translate_chunk_with_fallback(
             chunk_text=chunk['text'],
             local_tag_map=chunk['local_tag_map'],
@@ -1057,20 +1128,16 @@ async def _translate_all_chunks_with_checkpoint(
         i_done = i
 
         # Save translation chunk checkpoint to SQLite for the context snapshot dropdown
-        ctx_snapshot = context_session.snapshot() if context_session else None
+        ctx_snapshot, dialogue_attribution, chunk_data = _context_data_for_save(i)
         chunks[i]['context_snapshot'] = ctx_snapshot
-        dialogue_attribution = (
-            context_session.dialogue_attribution if context_session else None
-        )
         chunks[i]['dialogue_attribution'] = dialogue_attribution
         
         if checkpoint_manager and translation_id and hasattr(checkpoint_manager, 'db'):
-            chunk_data = {}
-            if ctx_snapshot:
-                chunk_data['context_snapshot'] = ctx_snapshot
-            if dialogue_attribution:
-                chunk_data['dialogue_attribution'] = dialogue_attribution
-            global_chunk_idx = (global_completed_chunks or 0) + i
+            global_chunk_idx = _global_chunk_index(i)
+            if chunk_data.get('context_snapshot'):
+                checkpoint_context_data_by_global_index[global_chunk_idx] = (
+                    dict(chunk_data)
+                )
             
             checkpoint_manager.db.save_chunk(
                 translation_id=translation_id,
@@ -1142,7 +1209,7 @@ async def _translate_all_chunks_with_checkpoint(
                 _save_state(len(translated_chunks))
                 return translated_chunks, stats, True
 
-            result = await _translate_one(i)
+            result = await _translate_one(i, analyze_context=False)
             if isinstance(result, RateLimitError):
                 if checkpoint_manager and translation_id and file_href and translated_chunks:
                     _save_state(len(translated_chunks))
@@ -1179,20 +1246,16 @@ async def _translate_all_chunks_with_checkpoint(
             stats.failed_chunks = len(failed_indices)
             stats.processed_chunks = len(translated_chunks)
 
-            ctx_snapshot = context_session.snapshot() if context_session else None
+            ctx_snapshot, dialogue_attribution, chunk_data = _context_data_for_save(i)
             chunks[i]['context_snapshot'] = ctx_snapshot
-            dialogue_attribution = (
-                context_session.dialogue_attribution if context_session else None
-            )
             chunks[i]['dialogue_attribution'] = dialogue_attribution
 
             if checkpoint_manager and translation_id and hasattr(checkpoint_manager, 'db'):
-                chunk_data = {}
-                if ctx_snapshot:
-                    chunk_data['context_snapshot'] = ctx_snapshot
-                if dialogue_attribution:
-                    chunk_data['dialogue_attribution'] = dialogue_attribution
-                global_chunk_idx = (global_completed_chunks or 0) + i
+                global_chunk_idx = _global_chunk_index(i)
+                if chunk_data.get('context_snapshot'):
+                    checkpoint_context_data_by_global_index[global_chunk_idx] = (
+                        dict(chunk_data)
+                    )
                 checkpoint_manager.db.save_chunk(
                     translation_id=translation_id,
                     chunk_index=global_chunk_idx,

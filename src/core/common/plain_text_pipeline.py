@@ -312,6 +312,23 @@ async def translate_paragraphs_plain(
         prompt_options = {}
 
     context_session = None
+    checkpoint_context_data_by_index: Dict[int, Dict] = {}
+    if checkpoint_manager and translation_id and hasattr(checkpoint_manager, "db"):
+        for row in checkpoint_manager.db.get_chunks(translation_id) or []:
+            row_index = row.get("chunk_index")
+            row_data = row.get("chunk_data") or {}
+            if (
+                isinstance(row_index, int)
+                and global_chunk_offset
+                <= row_index
+                < global_chunk_offset + len(chunks)
+                and row.get("status") in ("completed", "partial", "failed")
+                and row_data.get("context_snapshot")
+            ):
+                checkpoint_context_data_by_index[
+                    row_index - global_chunk_offset
+                ] = dict(row_data)
+
     if novel_context_file or auto_update_context:
         from src.config import NOVEL_CONTEXTS_DIR
         from src.utils.novel_context import open_novel_context_session
@@ -330,8 +347,9 @@ async def translate_paragraphs_plain(
                     for row in (
                         checkpoint_manager.db.get_chunks(translation_id) or []
                     )
-                    if row.get("status") == "completed"
+                    if row.get("status") in ("completed", "partial", "failed")
                     and row.get("chunk_index", -1) < global_chunk_offset
+                    and (row.get("chunk_data") or {}).get("context_snapshot")
                 ]
                 if previous_rows:
                     previous_row = max(
@@ -377,8 +395,9 @@ async def translate_paragraphs_plain(
     translated_parts: List[Optional[str]] = [None] * len(chunks)
     previous_translation_context = ""
     failed_indices = set()
+    reused_context_data_by_index: Dict[int, Dict] = {}
 
-    async def _translate_chunk(i):
+    async def _translate_chunk(i, analyze_context=True):
         """Translate one chunk. Reads previous_translation_context only in
         sequential mode (parallel runs have no stable previous chunk)."""
         if log_callback:
@@ -387,7 +406,8 @@ async def translate_paragraphs_plain(
         if not main_content.strip():
             return ('empty', main_content)
 
-        if auto_update_context and context_session:
+        if analyze_context and auto_update_context and context_session:
+            reused_context_data_by_index.pop(i, None)
             if log_callback:
                 log_callback(
                     "novel_context_updating",
@@ -426,6 +446,10 @@ async def translate_paragraphs_plain(
                         "novel_context_update_failed",
                         f"Failed to prepare novel context: {str(e)}",
                     )
+        elif i in checkpoint_context_data_by_index:
+            reused_context_data_by_index[i] = dict(
+                checkpoint_context_data_by_index[i]
+            )
 
         translated = await generate_translation_request(
             main_content=main_content,
@@ -468,12 +492,14 @@ async def translate_paragraphs_plain(
             and hasattr(checkpoint_manager, 'db')
         ):
             return
-        chunk_data = {}
-        if context_session:
+        chunk_data = dict(reused_context_data_by_index.get(i) or {})
+        if not chunk_data and context_session:
             chunk_data['context_snapshot'] = context_session.snapshot()
             chunk_data['dialogue_attribution'] = (
                 context_session.dialogue_attribution
             )
+        if chunk_data.get('context_snapshot'):
+            checkpoint_context_data_by_index[i] = dict(chunk_data)
         checkpoint_manager.db.save_chunk(
             translation_id=translation_id,
             chunk_index=global_chunk_offset + i,
@@ -581,7 +607,7 @@ async def translate_paragraphs_plain(
             chunk_succeeded = False
             main_content = chunks[i].get('main_content', '')
             try:
-                retry_result = await _translate_chunk(i)
+                retry_result = await _translate_chunk(i, analyze_context=False)
             except RateLimitError:
                 _fill_remaining_with_source()
                 raise

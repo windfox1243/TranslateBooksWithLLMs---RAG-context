@@ -4,6 +4,7 @@ import src.config as config_module
 from src.core.epub import xhtml_translator
 from src.core.epub.translation_metrics import TranslationMetrics
 from src.persistence.checkpoint_manager import CheckpointManager
+from src.utils.novel_context import decompress_dynamic_state
 
 
 def _chunks(count):
@@ -132,6 +133,7 @@ async def test_failed_xhtml_chunk_context_survives_and_retries(
         source_chunk="",
         **kwargs,
     ):
+        context_updates[source_chunk] = context_updates.get(source_chunk, 0) + 1
         lines = [
             line for line in current_dynamic_state.splitlines()
             if line.strip()
@@ -140,6 +142,7 @@ async def test_failed_xhtml_chunk_context_survives_and_retries(
         return "# GLOBAL LORE", "\n".join(lines), []
 
     attempts = {}
+    context_updates = {}
 
     async def fake_translate(**kwargs):
         index = int(kwargs["chunk_text"].rsplit("-", 1)[1])
@@ -195,6 +198,7 @@ async def test_failed_xhtml_chunk_context_survives_and_retries(
     assert interrupted is False
     assert translated == ["translated-0", "translated-1", "translated-2"]
     assert attempts[1] == 2
+    assert context_updates["source-1"] == 1
     assert stats.failed_chunks == 0
 
     context_files = list((tmp_path / "contexts").glob("*.txt"))
@@ -208,4 +212,8 @@ async def test_failed_xhtml_chunk_context_survives_and_retries(
     retried_row = next(row for row in rows if row["original_text"] == "source-1")
     assert retried_row["status"] == "completed"
     assert retried_row["translated_text"] == "translated-1"
-    assert (retried_row["chunk_data"] or {}).get("context_snapshot")
+    retried_snapshot = (retried_row["chunk_data"] or {}).get("context_snapshot")
+    assert retried_snapshot
+    retried_context = decompress_dynamic_state(retried_snapshot)
+    assert "seen source-1" in retried_context
+    assert "seen source-2" not in retried_context

@@ -223,29 +223,77 @@ class GenericTranslator:
             resume_snapshot_index = None
             resume_dialogue_state = None
             resume_dialogue_scene_key = None
-            if restored_completed and checkpoint_data:
-                resume_snapshot_index = max(restored_completed)
+            analyzed_context_indices = set()
+            checkpoint_context_data_by_index = {}
+            if checkpoint_data:
+                context_rows = []
                 for checkpoint_chunk in checkpoint_data.get('chunks', []):
-                    if checkpoint_chunk.get('chunk_index') == resume_snapshot_index:
-                        checkpoint_chunk_data = (
-                            checkpoint_chunk.get('chunk_data') or {}
+                    checkpoint_chunk_data = (
+                        checkpoint_chunk.get('chunk_data') or {}
+                    )
+                    chunk_index = checkpoint_chunk.get('chunk_index')
+                    if (
+                        isinstance(chunk_index, int)
+                        and checkpoint_chunk_data.get('context_snapshot')
+                        and checkpoint_chunk.get('status') in (
+                            'completed',
+                            'partial',
+                            'failed',
                         )
-                        resume_snapshot = checkpoint_chunk_data.get(
-                            'context_snapshot'
+                    ):
+                        analyzed_context_indices.add(chunk_index)
+                        checkpoint_context_data_by_index[chunk_index] = (
+                            dict(checkpoint_chunk_data)
                         )
-                        resume_dialogue_state = (
-                            (
-                                checkpoint_chunk_data.get(
-                                    'dialogue_attribution'
-                                ) or {}
-                            ).get('state_after')
-                        )
-                        resume_dialogue_scene_key = (
+                        context_rows.append(checkpoint_chunk)
+
+                if context_rows:
+                    resume_chunk = max(
+                        context_rows,
+                        key=lambda chunk: chunk.get('chunk_index', -1),
+                    )
+                    resume_snapshot_index = resume_chunk.get('chunk_index')
+                    checkpoint_chunk_data = (
+                        resume_chunk.get('chunk_data') or {}
+                    )
+                    resume_snapshot = checkpoint_chunk_data.get(
+                        'context_snapshot'
+                    )
+                    resume_dialogue_state = (
+                        (
                             checkpoint_chunk_data.get(
                                 'dialogue_attribution'
                             ) or {}
-                        ).get('scene_key')
-                        break
+                        ).get('state_after')
+                    )
+                    resume_dialogue_scene_key = (
+                        checkpoint_chunk_data.get(
+                            'dialogue_attribution'
+                        ) or {}
+                    ).get('scene_key')
+                elif restored_completed:
+                    resume_snapshot_index = max(restored_completed)
+                    for checkpoint_chunk in checkpoint_data.get('chunks', []):
+                        if checkpoint_chunk.get('chunk_index') == resume_snapshot_index:
+                            checkpoint_chunk_data = (
+                                checkpoint_chunk.get('chunk_data') or {}
+                            )
+                            resume_snapshot = checkpoint_chunk_data.get(
+                                'context_snapshot'
+                            )
+                            resume_dialogue_state = (
+                                (
+                                    checkpoint_chunk_data.get(
+                                        'dialogue_attribution'
+                                    ) or {}
+                                ).get('state_after')
+                            )
+                            resume_dialogue_scene_key = (
+                                checkpoint_chunk_data.get(
+                                    'dialogue_attribution'
+                                ) or {}
+                            ).get('scene_key')
+                            break
 
             try:
                 context_session = open_novel_context_session(
@@ -286,7 +334,7 @@ class GenericTranslator:
             completed_count = len(restored_completed)
             failed_indices = set()
 
-            async def _translate_unit(i):
+            async def _translate_unit(i, analyze_context=True):
                 """Translate one unit. Reads last_context only in sequential mode
                 (parallel runs have no stable 'previous translation').
 
@@ -303,7 +351,17 @@ class GenericTranslator:
                 attempt_options = prompt_options
                 result = None
 
-                if auto_update_context and context_session:
+                should_analyze_context = (
+                    analyze_context
+                    and auto_update_context
+                    and context_session
+                    and not (
+                        i in analyzed_context_indices
+                        and resume_snapshot_index is not None
+                        and resume_snapshot_index >= i
+                    )
+                )
+                if should_analyze_context:
                     if log_callback:
                         log_callback(
                             "novel_context_updating",
@@ -344,12 +402,17 @@ class GenericTranslator:
                         unit.metadata['context_snapshot'] = (
                             context_session.snapshot()
                         )
+                        analyzed_context_indices.add(i)
                     except Exception as e:
                         if log_callback:
                             log_callback(
                                 "novel_context_update_failed",
                                 f"Failed to prepare novel context: {str(e)}",
                             )
+                elif i in checkpoint_context_data_by_index:
+                    if unit.metadata is None:
+                        unit.metadata = {}
+                    unit.metadata.update(checkpoint_context_data_by_index[i])
 
                 for attempt in range(max_validation_attempts):
                     same_previous_chapter = (
@@ -585,7 +648,7 @@ class GenericTranslator:
                         return False
 
                     unit = units[i]
-                    result = await _translate_unit(i)
+                    result = await _translate_unit(i, analyze_context=False)
 
                     if isinstance(result, RateLimitError):
                         raise result

@@ -1461,6 +1461,84 @@ async def test_plain_text_context_is_prepared_before_translation(monkeypatch, tm
 
 
 @pytest.mark.asyncio
+async def test_plain_text_retry_preserves_failed_chunk_context_snapshot(
+    monkeypatch,
+    tmp_path,
+):
+    from unittest.mock import MagicMock
+    from src.core.common import plain_text_pipeline
+    import src.config
+
+    attempts = {}
+    context_updates = {}
+
+    async def fake_update(current_dynamic_state="", source_chunk="", **kwargs):
+        context_updates[source_chunk] = context_updates.get(source_chunk, 0) + 1
+        lines = [
+            line for line in current_dynamic_state.splitlines()
+            if line.strip()
+        ]
+        lines.append(f"- seen {source_chunk}")
+        return "# GLOBAL LORE", "\n".join(lines), []
+
+    async def fake_translate(*, main_content, **kwargs):
+        attempts[main_content] = attempts.get(main_content, 0) + 1
+        if main_content == "source-1" and attempts[main_content] == 1:
+            return None
+        return f"FR::{main_content}"
+
+    monkeypatch.setattr(src.config, "NOVEL_CONTEXTS_DIR", tmp_path)
+    monkeypatch.setattr(
+        "src.utils.novel_context.update_novel_context_chunk",
+        fake_update,
+    )
+    monkeypatch.setattr(
+        plain_text_pipeline,
+        "generate_translation_request",
+        fake_translate,
+    )
+    monkeypatch.setattr(
+        plain_text_pipeline,
+        "clean_translated_text",
+        lambda value: value,
+    )
+
+    checkpoint_manager = MagicMock()
+    checkpoint_manager.db.get_chunks.return_value = []
+    output, stats, interrupted = await plain_text_pipeline.translate_paragraphs_plain(
+        paragraphs=["source-0", "source-1", "source-2"],
+        source_language="English",
+        target_language="French",
+        model_name="model",
+        llm_client=object(),
+        max_tokens_per_chunk=3,
+        prompt_options={
+            "auto_update_context": True,
+            "input_filename": "novel.txt",
+        },
+        checkpoint_manager=checkpoint_manager,
+        translation_id="plain-retry-job",
+    )
+
+    assert interrupted is False
+    assert output == ["FR::source-0", "FR::source-1", "FR::source-2"]
+    assert stats.failed_chunks == 0
+    assert attempts["source-1"] == 2
+    assert context_updates["source-1"] == 1
+
+    final_source_1_call = [
+        call for call in checkpoint_manager.db.save_chunk.call_args_list
+        if call.kwargs["original_text"] == "source-1"
+    ][-1]
+    assert final_source_1_call.kwargs["status"] == "completed"
+    decoded, _, _ = decode_context_snapshot(
+        final_source_1_call.kwargs["chunk_data"]["context_snapshot"]
+    )
+    assert "seen source-1" in decoded
+    assert "seen source-2" not in decoded
+
+
+@pytest.mark.asyncio
 async def test_xhtml_context_is_prepared_before_translation(monkeypatch, tmp_path):
     from src.core.epub import xhtml_translator
     import src.config
