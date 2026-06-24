@@ -164,7 +164,7 @@
   "ner_results_full_chars": " · 문서 내 {{chars}}자",
 
   "preview_modal_title": "프롬프트 블록 미리보기",
-  "preview_modal_intro": "샘플 청크를 붙여넣어 어떤 용어집 용어가 일치하고 블록이 시스템 프롬프트에 어떻게 삽입되는지 정확히 확인하세요.",
+  "preview_modal_intro": "샘플 청크를 붙여넣어 어떤 용어집 용어가 일치하고 블록이 번역 프롬프트에 어떻게 삽입되는지 정확히 확인하세요.",
   "preview_input_placeholder": "여기에 샘플 청크를 붙여넣으세요...",
   "preview_render": "렌더링",
   "preview_output_placeholder": "(블록을 계산하려면 \"렌더링\"을 클릭하세요.)",

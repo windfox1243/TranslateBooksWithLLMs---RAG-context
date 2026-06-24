@@ -164,7 +164,7 @@
   "ner_results_full_chars": " · {{chars}} caracteres en el documento",
 
   "preview_modal_title": "Vista previa del bloque del prompt",
-  "preview_modal_intro": "Pega un fragmento de muestra para ver exactamente qué términos del glosario coincidirían y cómo se insertaría el bloque en el prompt del sistema.",
+  "preview_modal_intro": "Pega un fragmento de muestra para ver exactamente qué términos del glosario coincidirían y cómo se insertaría el bloque en el prompt de traducción.",
   "preview_input_placeholder": "Pega aquí un fragmento de muestra...",
   "preview_render": "Renderizar",
   "preview_output_placeholder": "(Pulsa «Renderizar» para calcular el bloque.)",

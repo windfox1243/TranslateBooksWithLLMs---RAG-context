@@ -217,7 +217,10 @@ class GenericTranslator:
             auto_update_context = prompt_options.get('auto_update_context', False)
 
             from src.config import NOVEL_CONTEXTS_DIR
-            from src.utils.novel_context import open_novel_context_session
+            from src.utils.novel_context import (
+                open_novel_context_session,
+                should_update_novel_context_for_index,
+            )
 
             resume_snapshot = None
             resume_snapshot_index = None
@@ -333,6 +336,7 @@ class GenericTranslator:
             failed_count = 0
             completed_count = len(restored_completed)
             failed_indices = set()
+            reused_context_data_by_index = {}
 
             async def _translate_unit(i, analyze_context=True):
                 """Translate one unit. Reads last_context only in sequential mode
@@ -355,6 +359,7 @@ class GenericTranslator:
                     analyze_context
                     and auto_update_context
                     and context_session
+                    and should_update_novel_context_for_index(i, prompt_options)
                     and not (
                         i in analyzed_context_indices
                         and resume_snapshot_index is not None
@@ -412,7 +417,16 @@ class GenericTranslator:
                 elif i in checkpoint_context_data_by_index:
                     if unit.metadata is None:
                         unit.metadata = {}
-                    unit.metadata.update(checkpoint_context_data_by_index[i])
+                    reused_context_data_by_index[i] = dict(
+                        checkpoint_context_data_by_index[i]
+                    )
+                    unit.metadata.update(reused_context_data_by_index[i])
+                elif (
+                    not analyze_context
+                    and unit.metadata
+                    and unit.metadata.get('context_snapshot')
+                ):
+                    reused_context_data_by_index[i] = dict(unit.metadata)
 
                 for attempt in range(max_validation_attempts):
                     same_previous_chapter = (
@@ -528,6 +542,9 @@ class GenericTranslator:
                     return
                 if unit.metadata is None:
                     unit.metadata = {}
+                if i in reused_context_data_by_index:
+                    unit.metadata.update(reused_context_data_by_index[i])
+                    return
                 unit.metadata['dialogue_attribution'] = (
                     context_session.dialogue_attribution
                 )

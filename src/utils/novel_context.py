@@ -2042,6 +2042,321 @@ def build_novel_context(global_lore: str, dynamic_state: str) -> str:
     ).strip()
 
 
+def _context_prompt_budget_chars(max_tokens: Optional[int]) -> int:
+    if max_tokens is None:
+        try:
+            from src import config as _config
+            max_tokens = int(
+                getattr(_config, "NOVEL_CONTEXT_PROMPT_MAX_TOKENS", 1800)
+            )
+        except Exception:
+            max_tokens = 1800
+    try:
+        token_budget = int(max_tokens)
+    except (TypeError, ValueError):
+        token_budget = 1800
+    if token_budget <= 0:
+        return 0
+    # Conservative tokenizer-free estimate. This renderer runs inside prompt
+    # construction, so avoid importing heavier tokenizers or model-specific
+    # encoders here. The durable context file remains complete.
+    return max(1000, token_budget * 4)
+
+
+def _section_body(text: str, section_name: str) -> str:
+    bounds = _find_lore_section(text, section_name)
+    if not bounds:
+        return ""
+    _, body_start, body_end = bounds
+    return text[body_start:body_end].strip()
+
+
+def _text_mentions(value: str, reference_text: str) -> bool:
+    value = _strip_balanced_brackets(value)
+    if _is_invalid_context_key(value):
+        return False
+    folded_reference = str(reference_text or "").casefold()
+    if not folded_reference.strip():
+        return False
+    folded_value = value.casefold()
+    return bool(folded_value and folded_value in folded_reference)
+
+
+def _entry_mentions_reference(
+    name: str,
+    value: str,
+    reference_text: str,
+) -> bool:
+    return _text_mentions(name, reference_text) or _text_mentions(
+        value,
+        reference_text,
+    )
+
+
+def _split_selected_entries(
+    entries: List[Tuple[str, str]],
+    reference_text: str,
+    selected_names: Optional[set[str]] = None,
+) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+    selected: List[Tuple[str, str]] = []
+    remaining: List[Tuple[str, str]] = []
+    selected_keys = selected_names or set()
+    for name, value in entries:
+        name_key = _plain_key(name)
+        if (
+            name_key in selected_keys
+            or _entry_mentions_reference(name, value, reference_text)
+        ):
+            selected.append((name, value))
+        else:
+            remaining.append((name, value))
+    return selected, remaining
+
+
+def _append_line_with_budget(
+    lines: List[str],
+    line: str,
+    max_chars: int,
+    reserved_chars: int,
+) -> bool:
+    candidate = lines + [line]
+    if len("\n".join(candidate)) + reserved_chars <= max_chars:
+        lines.append(line)
+        return True
+    return False
+
+
+def _append_section_with_budget(
+    lines: List[str],
+    section_name: str,
+    entries: List[str],
+    max_chars: int,
+    reserved_chars: int,
+) -> None:
+    if not entries:
+        return
+    if not _append_line_with_budget(lines, "", max_chars, reserved_chars):
+        return
+    if not _append_line_with_budget(lines, section_name, max_chars, reserved_chars):
+        return
+    for entry in entries:
+        _append_line_with_budget(lines, entry, max_chars, reserved_chars)
+
+
+def render_novel_context_for_prompt(
+    context_content: str,
+    reference_text: str = "",
+    max_tokens: Optional[int] = None,
+) -> str:
+    """Render a prompt-sized view of a durable novel context document.
+
+    The context file remains the complete source of truth. This function only
+    selects the text injected into the user prompt. Small contexts pass through
+    unchanged; oversized contexts prefer entries mentioned by the current chunk
+    or draft, and fall back to the beginning of the context when no entry
+    matches.
+    """
+    normalized = normalize_novel_context_content(context_content)
+    if not normalized:
+        return ""
+
+    max_chars = _context_prompt_budget_chars(max_tokens)
+    if not max_chars or len(normalized) <= max_chars:
+        return normalized
+
+    global_lore = extract_global_lore(normalized)
+    dynamic_state = extract_dynamic_state_from_text(normalized) or ""
+
+    character_entries = _parse_bullet_entries(
+        _section_body(global_lore, CHARACTERS_SECTION)
+    )
+    alias_entries = _parse_alias_entries(
+        _section_body(global_lore, ALIASES_SECTION)
+    )
+    glossary_entries = _parse_bullet_entries(
+        _section_body(global_lore, GLOSSARY_SECTION)
+    )
+    if not any((
+        character_entries,
+        alias_entries,
+        glossary_entries,
+        dynamic_state.strip(),
+    )):
+        return normalized[:max_chars].rstrip()
+
+    selected_character_keys: set[str] = set()
+    for name, value in character_entries:
+        if _entry_mentions_reference(name, value, reference_text):
+            selected_character_keys.add(_plain_key(name))
+
+    for alias, target in alias_entries:
+        if _entry_mentions_reference(alias, target, reference_text):
+            selected_character_keys.add(_plain_key(target))
+
+    selected_characters, remaining_characters = _split_selected_entries(
+        character_entries,
+        reference_text,
+        selected_character_keys,
+    )
+    selected_aliases, remaining_aliases = _split_selected_entries(
+        alias_entries,
+        reference_text,
+        selected_character_keys,
+    )
+    selected_glossary, remaining_glossary = _split_selected_entries(
+        glossary_entries,
+        reference_text,
+    )
+
+    addressing, relationships, _ = _split_dynamic_sections(dynamic_state)
+    dynamic_reference_names = {
+        name for name, _ in selected_characters
+    } | {
+        alias for alias, _ in selected_aliases
+    } | {
+        target for _, target in selected_aliases
+    }
+
+    def split_dynamic_lines(text: str) -> Tuple[List[str], List[str]]:
+        selected_lines: List[str] = []
+        remaining_lines: List[str] = []
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if any(
+                _text_mentions(token, line)
+                for token in dynamic_reference_names
+            ) or _entry_mentions_reference(line, "", reference_text):
+                selected_lines.append(line)
+            else:
+                remaining_lines.append(line)
+        return selected_lines, remaining_lines
+
+    selected_addressing, remaining_addressing = split_dynamic_lines(addressing)
+    selected_relationships, remaining_relationships = split_dynamic_lines(
+        relationships
+    )
+
+    selected_character_lines = [
+        _format_character_line(name, value)
+        for name, value in selected_characters
+    ]
+    remaining_character_lines = [
+        _format_character_line(name, value)
+        for name, value in remaining_characters
+    ]
+    selected_alias_lines = [
+        f"- {alias}: {target}"
+        for alias, target in selected_aliases
+    ]
+    remaining_alias_lines = [
+        f"- {alias}: {target}"
+        for alias, target in remaining_aliases
+    ]
+    selected_glossary_lines = [
+        f"- {name}: {value}"
+        for name, value in selected_glossary
+    ]
+    remaining_glossary_lines = [
+        f"- {name}: {value}"
+        for name, value in remaining_glossary
+    ]
+
+    has_selection = any((
+        selected_character_lines,
+        selected_alias_lines,
+        selected_glossary_lines,
+        selected_addressing,
+        selected_relationships,
+    ))
+    if not has_selection:
+        selected_character_lines = remaining_character_lines
+        selected_alias_lines = remaining_alias_lines
+        selected_glossary_lines = remaining_glossary_lines
+        selected_addressing = remaining_addressing
+        selected_relationships = remaining_relationships
+
+    reserved = len(
+        f"\n\n{DYNAMIC_STATE_START}\n# DYNAMIC RELATIONSHIP STATE\n"
+        f"{DYNAMIC_STATE_END}"
+    )
+    rendered_lines: List[str] = ["# GLOBAL LORE"]
+    _append_section_with_budget(
+        rendered_lines,
+        CHARACTERS_SECTION,
+        selected_character_lines,
+        max_chars,
+        reserved,
+    )
+    _append_section_with_budget(
+        rendered_lines,
+        ALIASES_SECTION,
+        selected_alias_lines,
+        max_chars,
+        reserved,
+    )
+    _append_section_with_budget(
+        rendered_lines,
+        GLOSSARY_SECTION,
+        selected_glossary_lines,
+        max_chars,
+        reserved,
+    )
+
+    rendered_lines.extend(["", DYNAMIC_STATE_START, "# DYNAMIC RELATIONSHIP STATE"])
+    _append_section_with_budget(
+        rendered_lines,
+        ADDRESSING_SECTION,
+        selected_addressing,
+        max_chars,
+        len(DYNAMIC_STATE_END),
+    )
+    _append_section_with_budget(
+        rendered_lines,
+        RELATIONSHIP_SECTION,
+        selected_relationships,
+        max_chars,
+        len(DYNAMIC_STATE_END),
+    )
+    rendered_lines.append(DYNAMIC_STATE_END)
+    return "\n".join(rendered_lines).strip()
+
+
+def resolve_novel_context_update_interval(
+    prompt_options: Optional[Dict[str, Any]] = None,
+) -> int:
+    """Return the auto-update cadence for source-derived context analysis."""
+    prompt_options = prompt_options or {}
+    raw_value = (
+        prompt_options.get("novel_context_update_interval")
+        or prompt_options.get("context_update_interval")
+    )
+    if raw_value is None:
+        try:
+            from src import config as _config
+            raw_value = getattr(_config, "NOVEL_CONTEXT_UPDATE_INTERVAL", 1)
+        except Exception:
+            raw_value = 1
+    try:
+        return max(1, int(raw_value))
+    except (TypeError, ValueError):
+        return 1
+
+
+def should_update_novel_context_for_index(
+    zero_based_index: int,
+    prompt_options: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Return True when auto context analysis should run for this unit.
+
+    Index 0 always updates. With interval N, subsequent updates happen at
+    indices N, 2N, ... so the user-facing chunks are 1, N+1, 2N+1, ...
+    """
+    interval = resolve_novel_context_update_interval(prompt_options)
+    return zero_based_index <= 0 or zero_based_index % interval == 0
+
+
 def make_novel_context_filename(input_filename: str, fallback: str = "translation") -> str:
     """Create a safe, deterministic context filename from an input filename."""
     stem = Path(input_filename or "").stem

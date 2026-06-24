@@ -164,7 +164,7 @@
   "ner_results_full_chars": " · {{chars}} Zeichen im Dokument",
 
   "preview_modal_title": "Prompt-Block-Vorschau",
-  "preview_modal_intro": "Fügen Sie ein Beispielsegment ein, um genau zu sehen, welche Glossarbegriffe erkannt würden und wie der Block in den System-Prompt eingefügt würde.",
+  "preview_modal_intro": "Fügen Sie ein Beispielsegment ein, um genau zu sehen, welche Glossarbegriffe erkannt würden und wie der Block in den Übersetzungs-Prompt eingefügt würde.",
   "preview_input_placeholder": "Beispielsegment hier einfügen...",
   "preview_render": "Rendern",
   "preview_output_placeholder": "(Klicken Sie auf „Rendern“, um den Block zu berechnen.)",

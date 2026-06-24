@@ -164,7 +164,7 @@
   "ner_results_full_chars": " · 文档共 {{chars}} 个字符",
 
   "preview_modal_title": "预览提示词块",
-  "preview_modal_intro": "粘贴一个示例分段，可精确查看哪些术语会被匹配，以及该块如何被插入到系统提示词中。",
+  "preview_modal_intro": "粘贴一个示例分段，可精确查看哪些术语会被匹配，以及该块如何被插入到翻译提示词中。",
   "preview_input_placeholder": "在此粘贴一个示例分段...",
   "preview_render": "渲染",
   "preview_output_placeholder": "（点击\"渲染\"以计算该块。）",
