@@ -21,6 +21,12 @@ around failed chunks, resume, re-sync, refinement, and prompt assembly.
   explicitly says `# GLOSSARY - REQUIRED TRANSLATIONS` wins on conflict.
 - The glossary preview UI now describes the block as being inserted into the
   translation prompt, matching the actual architecture.
+- Context analysis prompts now explicitly tell the LLM to correct stale stored
+  gender when the latest source proves the current named form's gender, and to
+  avoid saving prompt/control labels as character facts.
+- Chapter-aware translation help now explains that short chapters are not
+  merged together, so request count can be higher than normal chunking while
+  preserving chapter/refinement alignment.
 
 ### Fixed
 
@@ -49,6 +55,12 @@ around failed chunks, resume, re-sync, refinement, and prompt assembly.
 - GitHub release notes now use only the current changelog section and unwrap
   source hard line breaks so the release page does not show awkward manual
   newlines.
+- Source-proven pronoun evidence such as `Eric suspected Valentine ... her
+  identity` can now repair a stale character gender without incorrectly
+  flipping the sentence subject.
+- Character profiles now discard context prompt/control fragments such as
+  `current rank and title` or `title/nickname for Eric` instead of persisting
+  them as lore.
 
 ### Safety and compatibility
 
@@ -63,9 +75,10 @@ around failed chunks, resume, re-sync, refinement, and prompt assembly.
 
 ### Validation
 
-- Full automated validation passed: 1,416 passed, 1 skipped, 10 deselected.
-- Windows executable built and smoke-tested locally: `/`, English glossary
-  locale JSON, and translation tracker JavaScript all returned HTTP 200.
+- Full automated validation passed: 1,419 passed, 1 skipped, 10 deselected.
+- Windows executable built and smoke-tested locally: `/`, English settings
+  locale JSON, and translation batch JavaScript all returned HTTP 200. A fresh
+  first-run folder generated the compact `.env` with the current context knobs.
 
 ## 1.4.13 - 2026-06-23
 
