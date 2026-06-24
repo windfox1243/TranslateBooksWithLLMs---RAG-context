@@ -1,7 +1,9 @@
+import json
 import pytest
 import tempfile
 import shutil
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 from src.utils.novel_context import (
     build_novel_context,
     compress_dynamic_state,
@@ -427,6 +429,198 @@ def test_unspecified_gender_is_promoted_by_later_direct_evidence():
     assert "Unspecified" not in updated_lore
 
 
+def test_character_evidence_notes_are_removed_without_rewriting_existing_gender():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kyle: Male, Captain and subordinate of Valentine "
+        '(Gender confirmed by source text "Captain Kyle, please take your '
+        'spouse away" and context of military roles).\n\n'
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- Kyle: Male, Captain, subordinate of Valentine." in normalized
+    assert "Gender confirmed" not in normalized
+    assert "source text" not in normalized
+
+
+def test_direct_gendered_noun_in_description_promotes_unspecified_gender():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kriha: Unspecified, subordinate of Valentine; described as a "
+        "blonde-haired girl.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- Kriha: Female," in normalized
+    assert "blonde-haired girl" in normalized
+    assert "Unspecified" not in normalized
+
+
+def test_embedded_gender_fragments_collapse_to_one_canonical_gender():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Valentine: Male, reincarnation into the game world; "
+        "Female, reincarnation of Kim Ji-an.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- Valentine: Female," in normalized
+    assert "Male, reincarnation" not in normalized
+    assert "; Female," not in normalized
+    assert "reincarnation of Kim Ji-an into the game world" in normalized
+
+
+def test_unique_self_title_merges_role_entry_without_explicit_alias():
+    from src.utils.novel_context import character_alias_map, normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, suspicious of Valentine; main protagonist of the game "
+        "world; Lieutenant Colonel, superior officer of Valentine and Eric "
+        "who suspects her true identity.\n"
+        "- Lieutenant Colonel: Unspecified, superior officer of Valentine and "
+        "Eric who suspects her true identity.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert normalized.count("- Eric:") == 1
+    assert "- Lieutenant Colonel:" not in normalized
+    assert "Lieutenant Colonel, superior officer of Valentine who suspects" in normalized
+    assert "and Eric who suspects" not in normalized
+    assert character_alias_map(normalized)["lieutenant colonel"] == "Eric"
+
+
+def test_explicit_identity_link_merges_rank_entry_and_rewrites_relationships():
+    from src.utils.novel_context import build_novel_context
+
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Eric: Male, vampire hunter and imperial officer.\n"
+            "- Lieutenant Colonel: Unspecified, superior officer of Valentine.\n\n"
+            "## CHARACTER ALIASES\n"
+            "- Lieutenant Colonel: Eric\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Valentine → Lieutenant Colonel: source form "Lieutenant Colonel" '
+            "| formal\n\n"
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Lieutenant Colonel ↔ Valentine: Mutual suspicion."
+        ),
+    )
+
+    assert context.count("- Eric:") == 1
+    assert "- Lieutenant Colonel: Unspecified" not in context
+    assert "- Lieutenant Colonel: Eric" in context
+    assert "- Valentine → Eric:" in context
+    assert "- Eric ↔ Valentine:" in context
+
+
+def test_identity_link_update_merges_existing_rank_entry_into_named_character():
+    from src.utils.novel_context import merge_new_lore
+
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, vampire hunter and imperial officer.\n"
+        "- Lieutenant Colonel: Unspecified, superior officer of Valentine.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    updated, _ = merge_new_lore(
+        initial_lore,
+        "",
+        "",
+        "- Lieutenant Colonel: Eric",
+    )
+
+    assert updated.count("- Eric:") == 1
+    assert "- Lieutenant Colonel: Unspecified" not in updated
+    assert "- Lieutenant Colonel: Eric" in updated
+    assert "superior officer of Valentine" in updated
+
+
+def test_generic_rank_entries_remain_distinct_without_source_proven_link():
+    from src.utils.novel_context import normalize_global_lore
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, imperial officer.\n"
+        "- Lieutenant Colonel: Unspecified, superior officer in another unit.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(lore)
+
+    assert normalized.count("- Eric:") == 1
+    assert normalized.count("- Lieutenant Colonel:") == 1
+
+
+def test_save_and_load_preserve_explicit_identity_links(tmp_path):
+    from src.utils.novel_context import load_novel_context, save_novel_context
+
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Eric: Male, imperial officer.\n"
+            "- Lieutenant Colonel: Unspecified, superior officer.\n\n"
+            "## CHARACTER ALIASES\n"
+            "- Lieutenant Colonel: Eric\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        "- Lieutenant Colonel → Valentine: Formal command.",
+    )
+
+    save_novel_context("identity.txt", tmp_path, context)
+    loaded = load_novel_context("identity.txt", tmp_path)
+
+    assert loaded.count("- Eric:") == 1
+    assert "- Lieutenant Colonel: Eric" in loaded
+    assert "- Lieutenant Colonel →" not in loaded
+    assert "- Eric → Valentine: Formal command." in loaded
+
+
+def test_identity_links_support_non_latin_source_aliases():
+    from src.utils.novel_context import character_alias_map
+
+    lore = normalize_novel_context_content(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Eric: Male, imperial officer.\n\n"
+            "## CHARACTER ALIASES\n"
+            "- 中佐: Eric\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        )
+    )
+
+    assert "- 中佐: Eric" in lore
+    assert character_alias_map(lore)["中佐"] == "Eric"
+
+
 def test_context_normalization_merges_named_unique_title_and_repairs_explicit_pronoun_evidence():
     from src.utils.novel_context import normalize_global_lore
 
@@ -785,6 +979,7 @@ async def test_update_novel_context_chunk_parsing():
     response_content = (
         "[NEW_CHARACTERS]\n"
         "- Li Fan: Male, possessed.\n\n"
+        "[IDENTITY_LINKS]\n\n"
         "[NEW_GLOSSARY]\n"
         "- Apple: Trái Táo\n\n"
         "[DYNAMIC_STATE]\n"
@@ -821,6 +1016,72 @@ async def test_update_novel_context_chunk_parsing():
     assert "## RELATIONSHIP EVOLUTION" in updated_dynamic
     assert "- Li Fan → Sect Master: Respectful" in updated_dynamic
     assert any("Corrected/Updated Character 'li fan'" in log for log in logs)
+
+
+@pytest.mark.asyncio
+async def test_update_chunk_identity_link_canonicalizes_every_context_layer():
+    from src.utils.dialogue_attribution import detect_dialogue_turns
+    from src.utils.novel_context import update_novel_context_chunk
+
+    candidates = detect_dialogue_turns("“Stand down,” the Lieutenant Colonel said.")
+    response = MagicMock()
+    response.content = (
+        "[NEW_CHARACTERS]\n"
+        "- Lieutenant Colonel: Unspecified, superior officer of Valentine.\n\n"
+        "[IDENTITY_LINKS]\n"
+        "- Lieutenant Colonel: Eric\n\n"
+        "[NEW_GLOSSARY]\n\n"
+        "[DYNAMIC_STATE]\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Valentine → Lieutenant Colonel: source form "Lieutenant Colonel" '
+        "| formal\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Lieutenant Colonel ↔ Valentine: Mutual suspicion.\n\n"
+        "[DIALOGUE_ATTRIBUTION]\n"
+        + json.dumps({
+            "turns": [{
+                "id": candidates[0]["id"],
+                "speaker": "Lieutenant Colonel",
+                "addressee": "Valentine",
+                "confidence": 0.98,
+            }],
+            "state_after": {
+                "speaker": "Lieutenant Colonel",
+                "addressee": "Valentine",
+            },
+        })
+    )
+    client = MagicMock()
+    client.generate = AsyncMock(return_value=response)
+    sink = {}
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, vampire hunter and imperial officer.\n"
+        "- Valentine: Female, protagonist.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    lore, dynamic, _ = await update_novel_context_chunk(
+        llm_client=client,
+        model_name="model",
+        current_global_lore=initial_lore,
+        current_dynamic_state="",
+        source_chunk="“Stand down,” the Lieutenant Colonel said.",
+        translated_chunk=None,
+        source_language="English",
+        target_language="Vietnamese",
+        dialogue_turns=candidates,
+        dialogue_attribution_sink=sink,
+    )
+
+    assert lore.count("- Eric:") == 1
+    assert "- Lieutenant Colonel: Unspecified" not in lore
+    assert "- Lieutenant Colonel: Eric" in lore
+    assert "- Valentine → Eric:" in dynamic
+    assert "- Eric ↔ Valentine:" in dynamic
+    assert sink["turns"][0]["speaker"] == "Eric"
+    assert sink["state_after"]["speaker"] == "Eric"
 
 
 @pytest.mark.asyncio

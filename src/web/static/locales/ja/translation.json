@@ -231,6 +231,7 @@
   "context_edit_global_btn": "グローバルコンテキストを編集",
   "context_save_global_btn": "保存して再同期",
   "context_global_anchor_missing": "最初の履歴コンテキストスナップショットを利用できません。",
+  "context_resync_unavailable": "編集可能なコンテキストスナップショットが選択されていません。",
   "context_global_resync_started_log": "[システム] グローバルコンテキストを保存しました。最初に利用可能なスナップショットからコンテキストのタイムラインを再同期します。",
   "context_latest_state": "最新の状態",
   "context_open_folder_btn": "フォルダを開く",

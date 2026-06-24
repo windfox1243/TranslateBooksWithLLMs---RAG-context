@@ -144,11 +144,22 @@ def _build_dialogue_attribution_section(prompt_options: dict) -> str:
     if not prompt_options:
         return ""
     from src.utils.dialogue_attribution import (
+        canonicalize_dialogue_attribution,
         format_dialogue_attribution_for_prompt,
     )
+    from src.utils.novel_context import character_alias_map
 
+    attribution = prompt_options.get("dialogue_attribution")
+    aliases = character_alias_map(
+        prompt_options.get("novel_context", "")
+    )
+    if aliases:
+        attribution = canonicalize_dialogue_attribution(
+            attribution,
+            aliases,
+        )
     return format_dialogue_attribution_for_prompt(
-        prompt_options.get("dialogue_attribution")
+        attribution
     )
 
 

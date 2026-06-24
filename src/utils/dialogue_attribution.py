@@ -205,6 +205,55 @@ def _canonical_character(
     return "Unknown"
 
 
+def canonicalize_dialogue_state(
+    state: Optional[Dict[str, Any]],
+    character_aliases: Dict[str, str],
+) -> Dict[str, str]:
+    """Resolve persisted scene state through the latest canonical registry."""
+    result: Dict[str, str] = {}
+    for field in ("speaker", "addressee"):
+        canonical = _canonical_character(
+            (state or {}).get(field),
+            character_aliases,
+        )
+        if canonical != "Unknown":
+            result[field] = canonical
+    return result
+
+
+def canonicalize_dialogue_attribution(
+    attribution: Optional[Dict[str, Any]],
+    character_aliases: Dict[str, str],
+) -> Dict[str, Any]:
+    """Migrate a saved dialogue map to current canonical character names."""
+    source = attribution or {}
+    result: Dict[str, Any] = {
+        "version": source.get("version", 1),
+        "turns": [],
+        "state_after": canonicalize_dialogue_state(
+            source.get("state_after"),
+            character_aliases,
+        ),
+    }
+    for raw_turn in source.get("turns") or []:
+        if not isinstance(raw_turn, dict):
+            continue
+        turn = dict(raw_turn)
+        turn["speaker"] = _canonical_character(
+            raw_turn.get("speaker"),
+            character_aliases,
+        )
+        turn["addressee"] = _canonical_character(
+            raw_turn.get("addressee"),
+            character_aliases,
+        )
+        turn["confidence"] = _confidence(raw_turn.get("confidence"))
+        result["turns"].append(turn)
+    if source.get("scene_key") is not None:
+        result["scene_key"] = source.get("scene_key")
+    return result
+
+
 def _confidence(value: Any) -> float:
     try:
         numeric = float(value)
@@ -230,7 +279,10 @@ def parse_dialogue_attribution(
     result: Dict[str, Any] = {
         "version": 1,
         "turns": [],
-        "state_after": dict(previous_state or {}),
+        "state_after": canonicalize_dialogue_state(
+            previous_state,
+            character_aliases,
+        ),
     }
     if not raw_block.strip() or not candidate_by_id:
         return result

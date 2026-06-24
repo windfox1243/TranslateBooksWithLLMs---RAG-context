@@ -231,6 +231,7 @@
   "context_edit_global_btn": "Modifier le contexte global",
   "context_save_global_btn": "Enregistrer & Resynchroniser",
   "context_global_anchor_missing": "Le premier instantané de contexte historique est indisponible.",
+  "context_resync_unavailable": "Aucun instantané de contexte modifiable n'est sélectionné.",
   "context_global_resync_started_log": "[Système] Contexte global enregistré. La chronologie du contexte sera resynchronisée depuis son premier instantané disponible.",
   "context_latest_state": "Dernier état",
   "context_open_folder_btn": "Ouvrir le dossier",

@@ -231,6 +231,7 @@
   "context_edit_global_btn": "Globalen Kontext bearbeiten",
   "context_save_global_btn": "Speichern & Neu synchronisieren",
   "context_global_anchor_missing": "Der erste historische Kontext-Snapshot ist nicht verfügbar.",
+  "context_resync_unavailable": "Es ist kein bearbeitbarer Kontext-Snapshot ausgewählt.",
   "context_global_resync_started_log": "[System] Globaler Kontext gespeichert. Die Kontextzeitleiste wird ab dem ersten verfügbaren Snapshot neu synchronisiert.",
   "context_latest_state": "Neueste Version",
   "context_open_folder_btn": "Ordner öffnen",

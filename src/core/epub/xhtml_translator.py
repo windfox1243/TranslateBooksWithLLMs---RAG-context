@@ -828,6 +828,7 @@ async def _translate_all_chunks_with_checkpoint(
         from src.utils.novel_context import (
             NovelContextSession,
             build_novel_context,
+            character_alias_map,
             decode_context_snapshot,
             extract_dynamic_state_from_text,
             extract_global_lore,
@@ -866,6 +867,17 @@ async def _translate_all_chunks_with_checkpoint(
                                     chunk_data.get("dialogue_attribution") or {}
                                 ).get("state_after")
                                 or {}
+                            )
+                            from src.utils.dialogue_attribution import (
+                                canonicalize_dialogue_state,
+                            )
+                            current_dialogue_state = (
+                                canonicalize_dialogue_state(
+                                    current_dialogue_state,
+                                    character_alias_map(
+                                        current_global_lore
+                                    ),
+                                )
                             )
                             current_dialogue_scene_key = (
                                 chunk_data.get("dialogue_attribution") or {}
