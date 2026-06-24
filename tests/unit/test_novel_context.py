@@ -508,6 +508,55 @@ def test_unique_self_title_merges_role_entry_without_explicit_alias():
     assert character_alias_map(normalized)["lieutenant colonel"] == "Eric"
 
 
+def test_reincarnated_current_form_gender_overrides_previous_body_gender():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Valentine: Male, protagonist, a terminally ill man who reincarnates "
+        "as a vampire named Valentine; vampire, the reincarnated form of "
+        "Kim Ji-an serving as a Major in the imperial army.\n"
+        "- Lieutenant Colonel: Male, superior officer to Valentine, suspicious "
+        "of her identity.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- Valentine: Female," in normalized
+    assert "terminally ill man who reincarnates" not in normalized
+    assert "reincarnated from a terminally ill man as a vampire" in normalized
+
+
+def test_source_detectors_are_file_type_agnostic_plain_text_backstops():
+    from src.utils.novel_context import (
+        infer_source_gender_updates,
+        infer_source_identity_links,
+    )
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Valentine: Male, protagonist.\n"
+        "- Eric: Male, protagonist of the game.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    source = (
+        "[Valentine, starting reincarnation.] When I woke up again, I had "
+        "become a girl with a very small build.\n"
+        "The Lieutenant Colonel's office was silent. I stared at Eric, who "
+        "had dragged me into the room."
+    )
+
+    assert infer_source_gender_updates(source, lore) == (
+        "- Valentine: CORRECTION: [Female, reincarnated current form.]"
+    )
+    assert infer_source_identity_links(source, lore) == (
+        "- Lieutenant Colonel: Eric"
+    )
+
+
 def test_explicit_identity_link_merges_rank_entry_and_rewrites_relationships():
     from src.utils.novel_context import build_novel_context
 
@@ -1082,6 +1131,57 @@ async def test_update_chunk_identity_link_canonicalizes_every_context_layer():
     assert "- Eric ↔ Valentine:" in dynamic
     assert sink["turns"][0]["speaker"] == "Eric"
     assert sink["state_after"]["speaker"] == "Eric"
+
+
+@pytest.mark.asyncio
+async def test_update_chunk_repairs_model_missed_reincarnation_gender_and_title_alias():
+    from src.utils.novel_context import update_novel_context_chunk
+
+    response = MagicMock()
+    response.content = (
+        "[NEW_CHARACTERS]\n"
+        "- Valentine: Male, protagonist, a terminally ill man who "
+        "reincarnates as a vampire named Valentine.\n"
+        "- Lieutenant Colonel: Male, superior officer to Valentine, "
+        "suspicious of her identity.\n\n"
+        "[IDENTITY_LINKS]\n\n"
+        "[NEW_GLOSSARY]\n\n"
+        "[DYNAMIC_STATE]\n"
+        "## CURRENT ADDRESSING FORMS\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+    )
+    client = MagicMock()
+    client.generate = AsyncMock(return_value=response)
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Valentine: Unspecified, protagonist.\n"
+        "- Eric: Male, protagonist of the game.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    source = (
+        "[Valentine, starting reincarnation.] When I woke up again, I had "
+        "become a girl with a very small build.\n"
+        "The Lieutenant Colonel's office was silent. I stared at Eric, who "
+        "had dragged me into the room."
+    )
+
+    lore, _dynamic, _logs = await update_novel_context_chunk(
+        llm_client=client,
+        model_name="model",
+        current_global_lore=initial_lore,
+        current_dynamic_state="",
+        source_chunk=source,
+        translated_chunk=None,
+        source_language="English",
+        target_language="Vietnamese",
+    )
+
+    assert "- Valentine: Female," in lore
+    assert "terminally ill man who reincarnates" not in lore
+    assert "- Lieutenant Colonel: Eric" in lore
+    assert "- Lieutenant Colonel: Male" not in lore
+    assert lore.count("- Eric:") == 1
 
 
 @pytest.mark.asyncio
