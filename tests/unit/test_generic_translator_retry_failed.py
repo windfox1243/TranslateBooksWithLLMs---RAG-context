@@ -233,3 +233,81 @@ async def test_generic_txt_context_is_prepared_before_translation_and_snapshotte
     for chunk in chunks:
         snapshot = (chunk["chunk_data"] or {}).get("context_snapshot")
         assert snapshot
+
+
+@pytest.mark.asyncio
+async def test_generic_txt_failed_unit_rolls_back_staged_context(
+    tmp_path,
+    cm,
+    monkeypatch,
+):
+    prompts = {}
+
+    async def fake_update(
+        current_dynamic_state="",
+        source_chunk="",
+        **kwargs,
+    ):
+        lines = [
+            line for line in current_dynamic_state.splitlines()
+            if line.strip()
+        ]
+        lines.append(f"- seen {source_chunk}")
+        return (
+            "# GLOBAL LORE",
+            "\n".join(lines),
+            [],
+        )
+
+    async def fake_request(main_content=None, prompt_options=None, **kwargs):
+        prompts[main_content] = prompt_options.get("novel_context", "")
+        if main_content == FAILING_CONTENT:
+            return None
+        return f"translated {main_content}"
+
+    monkeypatch.setattr(config_module, "NOVEL_CONTEXTS_DIR", tmp_path / "contexts")
+    monkeypatch.setattr(llm_client_module, "LLMClient", FakeLLMClient)
+    monkeypatch.setattr(
+        "src.utils.novel_context.update_novel_context_chunk",
+        fake_update,
+    )
+    monkeypatch.setattr(
+        translator_module,
+        "generate_translation_request",
+        fake_request,
+    )
+
+    translator = GenericTranslator(
+        adapter=FakeAdapter(tmp_path),
+        checkpoint_manager=cm,
+        translation_id="rollback-job",
+    )
+    success = await translator.translate(
+        source_language="English",
+        target_language="French",
+        model_name="fake-model",
+        llm_provider="ollama",
+        prompt_options={
+            "auto_update_context": True,
+            "input_filename": "novel.txt",
+        },
+    )
+
+    assert success is False
+    assert f"seen {FAILING_CONTENT}" in prompts[FAILING_CONTENT]
+    assert f"seen {FAILING_CONTENT}" not in prompts["content 2"]
+
+    context_files = list((tmp_path / "contexts").glob("*.txt"))
+    assert len(context_files) == 1
+    final_context = context_files[0].read_text(encoding="utf-8")
+    assert "seen content 0" in final_context
+    assert f"seen {FAILING_CONTENT}" not in final_context
+    assert "seen content 2" in final_context
+
+    chunks = cm.db.get_chunks("rollback-job")
+    failed_chunk = next(
+        chunk for chunk in chunks
+        if chunk["original_text"] == FAILING_CONTENT
+    )
+    assert failed_chunk["status"] == "failed"
+    assert not (failed_chunk["chunk_data"] or {}).get("context_snapshot")

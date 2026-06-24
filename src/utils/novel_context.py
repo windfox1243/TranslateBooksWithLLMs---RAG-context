@@ -10,6 +10,7 @@ import re
 import os
 import logging
 import base64
+import copy
 import zlib
 import unicodedata
 from dataclasses import dataclass, field
@@ -1423,6 +1424,12 @@ def infer_source_identity_links(
                 r"(?:office|room|quarters|tent|desk|door|voice|expression|"
                 r"face|hand|gaze|order)\b[\s\S]{0,220}"
                 rf"{name_pattern}",
+                rf"(?:[\"'“”‘’]\s*)?[.…\s]*{role_pattern}"
+                rf"[.!?。…]*\s*(?:[\"'“”‘’])[\s\S]{{0,240}}"
+                rf"{name_pattern}\s+"
+                r"(?:was|were|is|are|said|asked|replied|answered|muttered|"
+                r"whispered|looked|stared|gazed|frowned|sighed|smiled|"
+                r"continued|spoke)\b",
             )
             if any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns):
                 matched_targets.add(name)
@@ -2135,6 +2142,11 @@ def map_context_snapshots_for_refinement(
         db_chunks or [],
         key=lambda item: item.get("chunk_index", -1),
     ):
+        status = chunk.get("status")
+        if status is not None and status != "completed":
+            continue
+        if status == "completed" and chunk.get("translated_text") is None:
+            continue
         snapshot = (chunk.get("chunk_data") or {}).get("context_snapshot")
         if snapshot:
             last_snapshot = snapshot
@@ -2444,6 +2456,50 @@ class NovelContextSession:
         save_novel_context(self.path.name, self.path.parent, content)
         return content
 
+    def capture_state(self) -> Dict[str, Any]:
+        """Capture the committed context before staging a source update."""
+        return {
+            "global_lore": self.global_lore,
+            "dynamic_state": self.dynamic_state,
+            "dialogue_state": copy.deepcopy(self.dialogue_state),
+            "dialogue_attribution": copy.deepcopy(self.dialogue_attribution),
+            "dialogue_scene_key": self.dialogue_scene_key,
+            "prompt_had_novel_context": "novel_context" in self.prompt_options,
+            "prompt_novel_context": self.prompt_options.get("novel_context"),
+            "prompt_had_dialogue_attribution": (
+                "dialogue_attribution" in self.prompt_options
+            ),
+            "prompt_dialogue_attribution": copy.deepcopy(
+                self.prompt_options.get("dialogue_attribution")
+            ),
+        }
+
+    def restore_state(self, state: Dict[str, Any]) -> None:
+        """Rollback a staged source update without touching the context file."""
+        self.global_lore = state.get("global_lore", "")
+        self.dynamic_state = state.get("dynamic_state", "")
+        self.dialogue_state = copy.deepcopy(
+            state.get("dialogue_state") or {}
+        )
+        self.dialogue_attribution = copy.deepcopy(
+            state.get("dialogue_attribution") or {}
+        )
+        self.dialogue_scene_key = state.get("dialogue_scene_key")
+
+        if state.get("prompt_had_novel_context"):
+            self.prompt_options["novel_context"] = (
+                state.get("prompt_novel_context") or ""
+            )
+        else:
+            self.prompt_options.pop("novel_context", None)
+
+        if state.get("prompt_had_dialogue_attribution"):
+            self.prompt_options["dialogue_attribution"] = copy.deepcopy(
+                state.get("prompt_dialogue_attribution")
+            )
+        else:
+            self.prompt_options.pop("dialogue_attribution", None)
+
     def snapshot(self) -> str:
         """Return a compressed full-context snapshot."""
         return compress_dynamic_state(self.content)
@@ -2458,6 +2514,7 @@ class NovelContextSession:
         chunk_index: int,
         total_chunks: int,
         scene_key: Optional[Any] = None,
+        persist: bool = True,
     ) -> List[str]:
         """Analyze source text before translating it and expose the new context."""
         from src.utils.dialogue_attribution import (
@@ -2531,7 +2588,10 @@ class NovelContextSession:
             )
             logger.info(message)
             print(message)
-        self.save()
+        if persist:
+            self.save()
+        else:
+            self.sync_prompt()
         return change_logs
 
 
@@ -2614,6 +2674,7 @@ Identity rules:
 - When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
 - When the latest source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
 - If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
+- For non-English source titles or aliases, preserve the exact source surface label under IDENTITY_LINKS when it is source-proven (for example, "- 중령: Eric"). If the English normalized title also appears in the model's character summary, link that title too.
 - Do not add one-scene unnamed soldiers, victims, hallucinations, generic crowds, or incidental job labels unless they recur and their identity/gender is required for translation consistency.
 - Never output template entries, "None", "[None]", "Unknown", "N/A", or an empty bullet.
 - Record gender only when the source states it or supplies unambiguous grammatical/pronoun evidence. Never guess gender from a name, occupation, rank, appearance, genre convention, or stereotype.
@@ -2670,6 +2731,7 @@ Identity rules:
 - When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
 - When this source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
 - If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
+- For non-English source titles or aliases, preserve the exact source surface label under IDENTITY_LINKS when it is source-proven (for example, "- 중령: Eric"). If the English normalized title also appears in the model's character summary, link that title too.
 - Do not add one-scene unnamed soldiers, victims, generic crowds, or incidental roles unless they recur and are necessary for pronoun/address consistency.
 - Never output template entries, "None", "[None]", "Unknown", "N/A", or an empty bullet.
 - Record gender only when this source text states it or gives unambiguous grammatical/pronoun evidence. Never infer it from names, jobs, ranks, appearance, personality, or genre stereotypes.

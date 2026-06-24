@@ -66,6 +66,55 @@ def test_refinement_context_mapping_uses_translated_text_position():
     assert mapped == [context_a, context_a, context_b]
 
 
+def test_refinement_context_mapping_ignores_failed_or_partial_snapshots():
+    context_a = build_novel_context("CONTEXT A", "STATE A")
+    failed_context = build_novel_context("FAILED", "POISONED STATE")
+    partial_context = build_novel_context("PARTIAL", "PARTIAL STATE")
+    context_b = build_novel_context("CONTEXT B", "STATE B")
+    db_chunks = [
+        {
+            "chunk_index": 0,
+            "status": "completed",
+            "translated_text": "translated a",
+            "chunk_data": {
+                "context_snapshot": compress_dynamic_state(context_a),
+            },
+        },
+        {
+            "chunk_index": 1,
+            "status": "failed",
+            "translated_text": "source fallback",
+            "chunk_data": {
+                "context_snapshot": compress_dynamic_state(failed_context),
+            },
+        },
+        {
+            "chunk_index": 2,
+            "status": "partial",
+            "translated_text": "source fallback",
+            "chunk_data": {
+                "context_snapshot": compress_dynamic_state(partial_context),
+            },
+        },
+        {
+            "chunk_index": 3,
+            "status": "completed",
+            "translated_text": "translated b",
+            "chunk_data": {
+                "context_snapshot": compress_dynamic_state(context_b),
+            },
+        },
+    ]
+
+    mapped = map_context_snapshots_for_refinement(
+        total_chunks=2,
+        db_chunks=db_chunks,
+        fallback_context="",
+    )
+
+    assert mapped == [context_a, context_b]
+
+
 def test_refinement_context_uses_final_lore_with_historical_dynamic_state():
     historical = build_novel_context(
         (

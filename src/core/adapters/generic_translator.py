@@ -284,6 +284,7 @@ class GenericTranslator:
             last_context = ""
             failed_count = 0
             completed_count = len(restored_completed)
+            context_transactions = {}
 
             async def _translate_unit(i):
                 """Translate one unit. Reads last_context only in sequential mode
@@ -303,6 +304,7 @@ class GenericTranslator:
                 result = None
 
                 if auto_update_context and context_session:
+                    context_transactions[i] = context_session.capture_state()
                     if log_callback:
                         log_callback(
                             "novel_context_updating",
@@ -318,6 +320,7 @@ class GenericTranslator:
                             chunk_index=i + 1,
                             total_chunks=total_units,
                             scene_key=unit.metadata.get("chapter_index"),
+                            persist=False,
                         )
                         if log_callback:
                             log_callback(
@@ -336,16 +339,14 @@ class GenericTranslator:
                                 },
                             )
                     except Exception as e:
+                        context_session.restore_state(
+                            context_transactions.pop(i)
+                        )
                         if log_callback:
                             log_callback(
                                 "novel_context_update_failed",
                                 f"Failed to prepare novel context: {str(e)}",
                             )
-                    if unit.metadata is None:
-                        unit.metadata = {}
-                    unit.metadata['dialogue_attribution'] = (
-                        context_session.dialogue_attribution
-                    )
 
                 for attempt in range(max_validation_attempts):
                     same_previous_chapter = (
@@ -454,6 +455,43 @@ class GenericTranslator:
                         'failed_chunks': failed_count
                     })
 
+            def _rollback_context(i):
+                if not (context_session and i in context_transactions):
+                    return
+                context_session.restore_state(context_transactions.pop(i))
+                if log_callback:
+                    log_callback(
+                        "novel_context_rollback",
+                        f"Rolled back staged context for unit {i+1}; "
+                        "translation did not commit.",
+                    )
+
+            def _commit_context(i, unit):
+                if not context_session:
+                    return
+                if unit.metadata is None:
+                    unit.metadata = {}
+                unit.metadata['dialogue_attribution'] = (
+                    context_session.dialogue_attribution
+                )
+                unit.metadata['context_snapshot'] = context_session.snapshot()
+                if i not in context_transactions:
+                    return
+                try:
+                    context_session.save()
+                    if log_callback:
+                        log_callback(
+                            "novel_context_committed",
+                            f"Novel context committed for unit {i+1}.",
+                        )
+                except Exception as e:
+                    if log_callback:
+                        log_callback(
+                            "novel_context_update_failed",
+                            f"Failed to save committed novel context: {str(e)}",
+                        )
+                context_transactions.pop(i, None)
+
             # Everything without a committed translation is (re)translated:
             # never-attempted units AND previously failed ones.
             pending = [i for i in range(total_units) if i not in restored_completed]
@@ -473,12 +511,14 @@ class GenericTranslator:
 
                 if isinstance(result, RateLimitError):
                     # Stop before committing this unit so resume restarts at it.
+                    _rollback_context(i)
                     rate_limit_error = result
                     break
 
                 remaining -= 1
 
                 if isinstance(result, Exception):
+                    _rollback_context(i)
                     if log_callback:
                         log_callback("unit_error",
                             f"Error translating unit {i+1}/{total_units}: {str(result)}")
@@ -491,6 +531,7 @@ class GenericTranslator:
                     # back) so the output stays best-effort, but record the
                     # unit as failed: the job ends 'partial' and the unit is
                     # fully retranslated on retry (issue #204 mechanics).
+                    _rollback_context(i)
                     await self.adapter.save_unit_translation(
                         unit.unit_id, result.content
                     )
@@ -507,17 +548,13 @@ class GenericTranslator:
                         if log_callback:
                             log_callback("save_failed",
                                 f"Failed to save translation for unit {unit.unit_id}")
+                        _rollback_context(i)
                         failed_count += 1
                         next_index = i + 1
                         continue
 
                     completed_count += 1
-                    
-                    # Save the full context snapshot in the chunk checkpoint
-                    if context_session:
-                        if unit.metadata is None:
-                            unit.metadata = {}
-                        unit.metadata['context_snapshot'] = context_session.snapshot()
+                    _commit_context(i, unit)
 
                     self.checkpoint_manager.save_checkpoint(
                         translation_id=self.translation_id,
@@ -546,6 +583,7 @@ class GenericTranslator:
                         log_callback("unit_complete",
                             f"Unit {i+1}/{total_units} translated successfully")
                 else:
+                    _rollback_context(i)
                     _record_failure(i, unit)
 
                 next_index = i + 1
@@ -783,8 +821,15 @@ async def _resync_context_snapshots_async(
     config = checkpoint_data.get('job', {}).get('config', {})
     chunks = checkpoint_data.get('chunks', [])
     
-    # We only re-sync completed chunks that are ahead of start_chunk_index
-    completed_chunks = [c for c in chunks if c.get('status') in ('completed', 'partial') and c.get('chunk_index') is not None]
+    # We only re-sync successfully completed chunks. Failed/partial chunks may
+    # contain source-language fallback text and must remain retryable instead of
+    # teaching the context pass facts from uncommitted work.
+    completed_chunks = [
+        c for c in chunks
+        if c.get('status') == 'completed'
+        and c.get('translated_text') is not None
+        and c.get('chunk_index') is not None
+    ]
     completed_chunks.sort(key=lambda x: x['chunk_index'])
     
     chunks_to_process = [c for c in completed_chunks if c['chunk_index'] > start_chunk_index]
@@ -992,7 +1037,8 @@ async def _resync_context_snapshots_async(
                 latest_completed = [
                     c.get('chunk_index')
                     for c in latest_cp['chunks']
-                    if c.get('status') in ('completed', 'partial')
+                    if c.get('status') == 'completed'
+                    and c.get('translated_text') is not None
                 ]
                 if path and latest_completed and idx == max(latest_completed):
                     try:

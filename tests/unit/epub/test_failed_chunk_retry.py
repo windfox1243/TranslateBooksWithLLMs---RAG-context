@@ -1,5 +1,6 @@
 import pytest
 
+import src.config as config_module
 from src.core.epub import xhtml_translator
 from src.core.epub.translation_metrics import TranslationMetrics
 from src.persistence.checkpoint_manager import CheckpointManager
@@ -114,3 +115,87 @@ async def test_phase3_fallback_remains_retryable(monkeypatch, tmp_path):
     assert [
         row["status"] for row in manager.db.get_chunks("job")
     ] == ["completed", "completed", "completed"]
+
+
+@pytest.mark.asyncio
+async def test_failed_xhtml_chunk_rolls_back_staged_context(
+    monkeypatch,
+    tmp_path,
+):
+    manager = CheckpointManager(db_path=str(tmp_path / "jobs.db"))
+    manager.uploads_dir = tmp_path / "uploads"
+    manager.uploads_dir.mkdir()
+    manager.start_job("context-job", "epub", {}, None)
+
+    async def fake_update(
+        current_dynamic_state="",
+        source_chunk="",
+        **kwargs,
+    ):
+        lines = [
+            line for line in current_dynamic_state.splitlines()
+            if line.strip()
+        ]
+        lines.append(f"- seen {source_chunk}")
+        return "# GLOBAL LORE", "\n".join(lines), []
+
+    async def fake_translate(**kwargs):
+        index = int(kwargs["chunk_text"].rsplit("-", 1)[1])
+        return xhtml_translator._ChunkTranslationOutcome(
+            f"translated-{index}" if index != 1 else kwargs["chunk_text"],
+            succeeded=index != 1,
+        )
+
+    monkeypatch.setattr(config_module, "NOVEL_CONTEXTS_DIR", tmp_path / "contexts")
+    monkeypatch.setattr(
+        "src.utils.novel_context.update_novel_context_chunk",
+        fake_update,
+    )
+    monkeypatch.setattr(
+        xhtml_translator,
+        "translate_chunk_with_fallback",
+        fake_translate,
+    )
+
+    chunks = _chunks(3)
+    stats = TranslationMetrics(total_chunks=3)
+
+    translated, stats, interrupted = await (
+        xhtml_translator._translate_all_chunks_with_checkpoint(
+            chunks=chunks,
+            source_language="English",
+            target_language="French",
+            model_name="model",
+            llm_client=object(),
+            max_retries=1,
+            context_manager=None,
+            placeholder_format=("[id", "]"),
+            checkpoint_manager=manager,
+            translation_id="context-job",
+            file_href="chapter.xhtml",
+            file_path="chapter.xhtml",
+            translated_chunks=[],
+            global_tag_map={},
+            stats=stats,
+            prompt_options={
+                "auto_update_context": True,
+                "input_filename": "book.epub",
+            },
+        )
+    )
+
+    assert interrupted is False
+    assert translated == ["translated-0", "source-1", "translated-2"]
+    assert stats.failed_chunks == 1
+
+    context_files = list((tmp_path / "contexts").glob("*.txt"))
+    assert len(context_files) == 1
+    final_context = context_files[0].read_text(encoding="utf-8")
+    assert "seen source-0" in final_context
+    assert "seen source-1" not in final_context
+    assert "seen source-2" in final_context
+
+    rows = manager.db.get_chunks("context-job")
+    failed_row = next(row for row in rows if row["original_text"] == "source-1")
+    assert failed_row["status"] == "failed"
+    assert not (failed_row["chunk_data"] or {}).get("context_snapshot")
