@@ -40,6 +40,10 @@ around failed chunks, resume, re-sync, refinement, and prompt assembly.
   previous units into later files/chapters.
 - Generic TXT/SRT retry paths preserve the failed unit's original
   source-context snapshot when a same-run deferred retry succeeds.
+- Windows EXE first-run setup now seeds `.env` from the bundled `.env.example`
+  when available, so new configuration knobs such as
+  `NOVEL_CONTEXT_PROMPT_MAX_TOKENS` and `NOVEL_CONTEXT_UPDATE_INTERVAL` appear
+  in newly generated private configs.
 - GitHub release workflow metadata now uses the current tag name and publishes
   stable releases instead of the stale `1.4.12` prerelease label.
 
