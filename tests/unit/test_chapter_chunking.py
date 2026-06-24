@@ -67,6 +67,31 @@ def test_txt_chapter_mode_never_leaks_neighbor_context():
             assert "Alpha" not in chunk["context_before"]
 
 
+def test_chapter_mode_may_create_more_units_to_preserve_short_chapter_boundaries():
+    text = (
+        "Chapter 1\n\nAlpha opening.\n\n"
+        "Chapter 2\n\nBeta opening."
+    )
+
+    normal_chunks = split_text_into_chunks(
+        text,
+        max_tokens_per_chunk=1000,
+        chapter_mode=False,
+    )
+    chapter_chunks = split_text_into_chunks(
+        text,
+        max_tokens_per_chunk=1000,
+        chapter_mode=True,
+    )
+
+    assert len(normal_chunks) == 1
+    assert len(chapter_chunks) == 2
+    assert "Chapter 1" in chapter_chunks[0]["main_content"]
+    assert "Chapter 2" not in chapter_chunks[0]["main_content"]
+    assert "Chapter 2" in chapter_chunks[1]["main_content"]
+    assert "Chapter 1" not in chapter_chunks[1]["main_content"]
+
+
 def test_plain_segments_use_epub_or_docx_heading_kinds():
     paragraphs = ["Opening", "Body A", "Unknown-language title", "Body B"]
     kinds = ["h1", "p", "h1", "p"]

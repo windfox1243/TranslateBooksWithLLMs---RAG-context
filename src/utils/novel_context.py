@@ -813,7 +813,35 @@ def _remove_self_references_from_details(details: str, name: str) -> str:
         clean,
         flags=re.IGNORECASE,
     )
+
+    filtered_facts: List[str] = []
+    for raw_fact in re.split(r"\s*;\s*", clean):
+        fact = _clean_inline_text(raw_fact).strip(" ;,").rstrip(" .")
+        if not fact:
+            continue
+        if _is_character_meta_fact(fact, canonical_name):
+            continue
+        filtered_facts.append(fact)
+    clean = "; ".join(filtered_facts)
     return _clean_inline_text(clean).strip(" ;,")
+
+
+def _is_character_meta_fact(fact: str, name: str) -> bool:
+    """Drop prompt/control descriptions that are not actual character facts."""
+    if not fact:
+        return False
+    escaped = re.escape(_canonical_display_name(name))
+    patterns = (
+        rf"^(?:{escaped}'s\s+)?current\s+(?:rank\s+and\s+title|"
+        r"title\s+and\s+rank|rank|title|nickname)$",
+        rf"^(?:source\s+)?(?:rank|title|nickname)(?:\s*/\s*|"
+        rf"\s+or\s+|\s+and\s+)?(?:rank|title|nickname)?\s+for\s+{escaped}$",
+        rf"^title\s*/\s*nickname\s+for\s+{escaped}$",
+        rf"^title\s+or\s+nickname\s+for\s+{escaped}$",
+        rf"^{escaped}'s\s+(?:rank|title|nickname)(?:\s*/\s*|"
+        r"\s+or\s+|\s+and\s+)?(?:rank|title|nickname)?$",
+    )
+    return any(re.search(pattern, fact, flags=re.IGNORECASE) for pattern in patterns)
 
 
 def _normalize_character_value_for_name(name: str, value: str) -> str:
@@ -968,6 +996,15 @@ def _infer_gender_reference_to_character(details: str, name: str) -> str:
     patterns = (
         rf"\b(?:to|of|for|with|about|toward|towards|against|around|"
         rf"regarding)\s+{name_pattern}"
+        rf"(?!\s+(?:and|or)\b)[^.;:]{{0,100}}\b"
+        rf"(?P<pronoun>her|his)\s+(?:{object_pattern})\b",
+        rf"\b(?:suspect(?:s|ed)?|accuse(?:s|d)?|question(?:s|ed)?|"
+        rf"doubt(?:s|ed)?|confront(?:s|ed)?|investigate(?:s|d)?|"
+        rf"examine(?:s|d)?|interrogate(?:s|d)?|track(?:s|ed)?|"
+        rf"watch(?:es|ed)?|recognize(?:s|d)?|identif(?:y|ies|ied)|"
+        rf"discover(?:s|ed)?|find(?:s|ing)?|found|protect(?:s|ed)?|"
+        rf"rescue(?:s|d)?|help(?:s|ed)?|attack(?:s|ed)?|follow(?:s|ed)?)"
+        rf"\s+{name_pattern}"
         rf"(?!\s+(?:and|or)\b)[^.;:]{{0,100}}\b"
         rf"(?P<pronoun>her|his)\s+(?:{object_pattern})\b",
         rf"{name_pattern}(?!\s+(?:and|or)\b)[^.;:]{{0,100}}\b"
@@ -1463,6 +1500,11 @@ def _source_reincarnation_gender_for_name(source_text: str, name: str) -> str:
     return next(iter(genders)) if len(genders) == 1 else ""
 
 
+def _source_direct_gender_for_name(source_text: str, name: str) -> str:
+    """Infer a character gender from raw source pronoun evidence."""
+    return _infer_gender_reference_to_character(source_text, name)
+
+
 def infer_source_gender_updates(
     source_text: str,
     current_global_lore: str,
@@ -1479,6 +1521,12 @@ def infer_source_gender_updates(
         if gender:
             updates.append(
                 f"- {name}: CORRECTION: [{gender}, reincarnated current form.]"
+            )
+            continue
+        gender = _source_direct_gender_for_name(source_text, name)
+        if gender:
+            updates.append(
+                f"- {name}: CORRECTION: [{gender}, source pronoun evidence.]"
             )
     return "\n".join(updates)
 
@@ -2947,11 +2995,12 @@ Identity rules:
 - Gender-neutral words such as spouse, partner, lover, parent, child, sibling, officer, captain, commander, major, colonel, and lieutenant colonel never prove gender by themselves.
 - If a character reincarnates, transforms, disguises themselves, or receives a new body, record the gender of the current named form, not the previous body. Keep the previous identity only as a concise description.
 - Pronoun evidence attached to another character's relationship with a named person is evidence for that named person. For example, "suspicious of her identity" after naming Valentine proves Valentine is Female, not the suspicious officer.
+- If CURRENT GLOBAL LORE has the wrong gender for the current named form and the latest source proves the correction, output that canonical character under NEW_CHARACTERS as "CORRECTION: [Gender, concise role, concise description]". Do not preserve stale gender just because it is already stored.
 - Before writing "Unspecified", scan the whole latest source for direct evidence such as gendered nouns, pronouns, kinship grammar, or an explicit description. If an existing Unspecified character is now proven Male/Female, output that specific gender directly; this is not a correction.
 - An existing specific gender is authoritative. Change it only when the latest source explicitly proves it was wrong; write that rare update as "CORRECTION: [Gender, role, description]".
 - Write all character metadata in English, regardless of source and target language.
 - For an existing character, output one concise cumulative replacement description containing the important old and new facts. Summarize repeated roles instead of appending duplicate phrases.
-- Character descriptions must contain only the normalized result. Never append evidence notes, quotations, reasoning, confidence, "Gender confirmed...", "Correction...", or parenthetical explanations.
+- Character descriptions must contain only the normalized result. Never append evidence notes, quotations, reasoning, confidence, "Gender confirmed...", "Correction...", parenthetical explanations, or prompt/control labels such as "current rank and title" or "title/nickname for X".
 
 Input provided:
 1. CURRENT GLOBAL LORE (Characters & Glossary)
@@ -3004,11 +3053,12 @@ Identity rules:
 - Gender-neutral words such as spouse, partner, lover, parent, child, sibling, officer, captain, commander, major, colonel, and lieutenant colonel never prove gender by themselves.
 - If a character reincarnates, transforms, disguises themselves, or receives a new body, record the gender of the current named form, not the previous body. Keep the previous identity only as a concise description.
 - Pronoun evidence attached to another character's relationship with a named person is evidence for that named person. For example, "suspicious of her identity" after naming Valentine proves Valentine is Female, not the suspicious officer.
+- If CURRENT GLOBAL LORE has the wrong gender for the current named form and this source proves the correction, output that canonical character under NEW_CHARACTERS as "CORRECTION: [Gender, concise role, concise description]". Do not preserve stale gender just because it is already stored.
 - Before writing "Unspecified", scan the entire latest source for direct evidence such as gendered nouns, pronouns, kinship grammar, or an explicit description. If an existing Unspecified character is now proven Male/Female, output that specific gender directly; this is not a correction.
 - Treat an existing specific gender as authoritative. Change it only when this source text explicitly proves it wrong, using "CORRECTION: [Gender, role, description]".
 - Preserve source-side proper names exactly. Write character metadata descriptions in English so context remains stable when the translation model or target language changes.
 - For an existing character, output one concise cumulative replacement description containing the important old and new facts. Summarize repeated roles instead of appending duplicate phrases.
-- Character descriptions must contain only the normalized result. Never append evidence notes, quotations, reasoning, confidence, "Gender confirmed...", "Correction...", or parenthetical explanations.
+- Character descriptions must contain only the normalized result. Never append evidence notes, quotations, reasoning, confidence, "Gender confirmed...", "Correction...", parenthetical explanations, or prompt/control labels such as "current rank and title" or "title/nickname for X".
 
 Input provided:
 1. CURRENT GLOBAL LORE (Characters & Glossary)
@@ -3413,28 +3463,28 @@ async def update_novel_context_chunk(
         
         if chars_match:
             new_chars = chars_match.group(1).strip()
-        deterministic_gender_updates = infer_source_gender_updates(
+        source_backstop_gender_updates = infer_source_gender_updates(
             source_chunk,
             current_global_lore,
             new_chars,
         )
-        if deterministic_gender_updates:
+        if source_backstop_gender_updates:
             new_chars = "\n".join(
                 part
-                for part in (new_chars, deterministic_gender_updates)
+                for part in (new_chars, source_backstop_gender_updates)
                 if part.strip()
             )
         if aliases_match:
             new_aliases = aliases_match.group(1).strip()
-        deterministic_aliases = infer_source_identity_links(
+        source_backstop_aliases = infer_source_identity_links(
             source_chunk,
             current_global_lore,
             new_chars,
         )
-        if deterministic_aliases:
+        if source_backstop_aliases:
             new_aliases = "\n".join(
                 part
-                for part in (new_aliases, deterministic_aliases)
+                for part in (new_aliases, source_backstop_aliases)
                 if part.strip()
             )
         if glossary_match:

@@ -1070,7 +1070,7 @@
                             <div>
                                 <span class="option-item__title" data-i18n="settings:option_chapter_mode_title">Chapter-aware Translation (TXT / EPUB / DOCX)</span>
                                 <p class="option-item__description" data-i18n="settings:option_chapter_mode_description">
-                                    Uses detected chapter headings as stable translation boundaries. A complete chapter is sent in one request when it fits the token budget; oversized chapters are split only inside that chapter. This improves narrative consistency and keeps translation and refinement aligned. Subtitle files keep their normal cue-based grouping.
+                                    Uses detected chapter headings as stable translation boundaries. A complete chapter is sent in one request when it fits the token budget; oversized chapters are split only inside that chapter. Short chapters are not merged together, so this can create more requests than normal chunking while keeping translation and refinement aligned. Subtitle files keep their normal cue-based grouping.
                                 </p>
                             </div>
                         </label>

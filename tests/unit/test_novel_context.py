@@ -669,6 +669,50 @@ def test_source_detectors_are_file_type_agnostic_plain_text_backstops():
     )
 
 
+def test_source_pronoun_correction_targets_named_object_not_sentence_subject():
+    from src.utils.novel_context import infer_source_gender_updates
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Valentine: Male, protagonist.\n"
+        "- Eric: Male, imperial officer.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    source = "Eric suspected Valentine of using blood magic and hiding her identity."
+
+    assert infer_source_gender_updates(source, lore) == (
+        "- Valentine: CORRECTION: [Female, source pronoun evidence.]"
+    )
+
+
+def test_cross_character_pronoun_repair_drops_context_control_text():
+    from src.utils.novel_context import merge_new_lore
+
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Valentine: Male, protagonist, a terminally ill man who reincarnates "
+        "as Valentine.\n"
+        "- Eric: Male, protagonist of the game \"Glory of Victory\", a "
+        "vengeful soldier currently holding the rank of Second Lieutenant.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    update = (
+        "- Eric: Male, superior officer who suspects Valentine of using blood "
+        "magic and her identity; Eric's current rank and title; "
+        "title/nickname for Eric; a soldier known for his reckless combat style."
+    )
+
+    updated_lore, _ = merge_new_lore(initial_lore, update, "")
+
+    assert "- Valentine: Female," in updated_lore
+    assert "- Eric: Male," in updated_lore
+    assert "current rank and title" not in updated_lore
+    assert "title/nickname for Eric" not in updated_lore
+    assert "reckless combat style" in updated_lore
+
+
 def test_source_identity_links_direct_addressed_title_to_named_responder():
     from src.utils.novel_context import infer_source_identity_links
 
