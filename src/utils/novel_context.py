@@ -10,7 +10,6 @@ import re
 import os
 import logging
 import base64
-import copy
 import zlib
 import unicodedata
 from dataclasses import dataclass, field
@@ -2456,50 +2455,6 @@ class NovelContextSession:
         save_novel_context(self.path.name, self.path.parent, content)
         return content
 
-    def capture_state(self) -> Dict[str, Any]:
-        """Capture the committed context before staging a source update."""
-        return {
-            "global_lore": self.global_lore,
-            "dynamic_state": self.dynamic_state,
-            "dialogue_state": copy.deepcopy(self.dialogue_state),
-            "dialogue_attribution": copy.deepcopy(self.dialogue_attribution),
-            "dialogue_scene_key": self.dialogue_scene_key,
-            "prompt_had_novel_context": "novel_context" in self.prompt_options,
-            "prompt_novel_context": self.prompt_options.get("novel_context"),
-            "prompt_had_dialogue_attribution": (
-                "dialogue_attribution" in self.prompt_options
-            ),
-            "prompt_dialogue_attribution": copy.deepcopy(
-                self.prompt_options.get("dialogue_attribution")
-            ),
-        }
-
-    def restore_state(self, state: Dict[str, Any]) -> None:
-        """Rollback a staged source update without touching the context file."""
-        self.global_lore = state.get("global_lore", "")
-        self.dynamic_state = state.get("dynamic_state", "")
-        self.dialogue_state = copy.deepcopy(
-            state.get("dialogue_state") or {}
-        )
-        self.dialogue_attribution = copy.deepcopy(
-            state.get("dialogue_attribution") or {}
-        )
-        self.dialogue_scene_key = state.get("dialogue_scene_key")
-
-        if state.get("prompt_had_novel_context"):
-            self.prompt_options["novel_context"] = (
-                state.get("prompt_novel_context") or ""
-            )
-        else:
-            self.prompt_options.pop("novel_context", None)
-
-        if state.get("prompt_had_dialogue_attribution"):
-            self.prompt_options["dialogue_attribution"] = copy.deepcopy(
-                state.get("prompt_dialogue_attribution")
-            )
-        else:
-            self.prompt_options.pop("dialogue_attribution", None)
-
     def snapshot(self) -> str:
         """Return a compressed full-context snapshot."""
         return compress_dynamic_state(self.content)
@@ -2514,7 +2469,6 @@ class NovelContextSession:
         chunk_index: int,
         total_chunks: int,
         scene_key: Optional[Any] = None,
-        persist: bool = True,
     ) -> List[str]:
         """Analyze source text before translating it and expose the new context."""
         from src.utils.dialogue_attribution import (
@@ -2588,10 +2542,7 @@ class NovelContextSession:
             )
             logger.info(message)
             print(message)
-        if persist:
-            self.save()
-        else:
-            self.sync_prompt()
+        self.save()
         return change_logs
 
 

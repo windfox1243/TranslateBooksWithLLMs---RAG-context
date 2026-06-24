@@ -136,7 +136,7 @@ async def test_persistent_missing_marker_marks_unit_failed(
     success, output_file = await _run(tmp_path, cm, logs)
 
     assert success is False
-    assert len(calls) == 3  # 1 attempt + 2 retries
+    assert len(calls) == 6  # initial validation attempts + deferred retry pass
     assert any(t == "unit_validation_exhausted" for t, _ in logs)
 
     # The job is partial and the unit is recorded failed, hence retryable.

@@ -376,7 +376,7 @@ async def translate_paragraphs_plain(
     # source order.
     translated_parts: List[Optional[str]] = [None] * len(chunks)
     previous_translation_context = ""
-    context_transactions: Dict[int, Any] = {}
+    failed_indices = set()
 
     async def _translate_chunk(i):
         """Translate one chunk. Reads previous_translation_context only in
@@ -388,7 +388,6 @@ async def translate_paragraphs_plain(
             return ('empty', main_content)
 
         if auto_update_context and context_session:
-            context_transactions[i] = context_session.capture_state()
             if log_callback:
                 log_callback(
                     "novel_context_updating",
@@ -404,7 +403,6 @@ async def translate_paragraphs_plain(
                     chunk_index=i + 1,
                     total_chunks=len(chunks),
                     scene_key=chunks[i].get("chapter_index"),
-                    persist=False,
                 )
                 if log_callback:
                     log_callback(
@@ -423,7 +421,6 @@ async def translate_paragraphs_plain(
                         },
                     )
             except Exception as e:
-                context_session.restore_state(context_transactions.pop(i))
                 if log_callback:
                     log_callback(
                         "novel_context_update_failed",
@@ -459,39 +456,32 @@ async def translate_paragraphs_plain(
         )
         return ('done', translated)
 
-    def _rollback_context(i):
-        if not (context_session and i in context_transactions):
-            return
-        context_session.restore_state(context_transactions.pop(i))
-        if log_callback:
-            log_callback(
-                "novel_context_rollback",
-                f"Rolled back staged context for chunk {i+1}; "
-                "translation did not commit.",
-            )
-
-    def _commit_context(i):
-        if not (context_session and i in context_transactions):
-            return
-        try:
-            context_session.save()
-            if log_callback:
-                log_callback(
-                    "novel_context_committed",
-                    f"Novel context committed for chunk {i+1}.",
-                )
-        except Exception as e:
-            if log_callback:
-                log_callback(
-                    "novel_context_update_failed",
-                    f"Failed to save committed novel context: {str(e)}",
-                )
-        context_transactions.pop(i, None)
-
     def _fill_remaining_with_source():
         for j in range(len(chunks)):
             if translated_parts[j] is None:
                 translated_parts[j] = chunks[j].get('main_content', '')
+
+    def _save_chunk_checkpoint(i, chunk_succeeded):
+        if not (
+            checkpoint_manager
+            and translation_id
+            and hasattr(checkpoint_manager, 'db')
+        ):
+            return
+        chunk_data = {}
+        if context_session:
+            chunk_data['context_snapshot'] = context_session.snapshot()
+            chunk_data['dialogue_attribution'] = (
+                context_session.dialogue_attribution
+            )
+        checkpoint_manager.db.save_chunk(
+            translation_id=translation_id,
+            chunk_index=global_chunk_offset + i,
+            original_text=chunks[i].get('main_content', ''),
+            translated_text=translated_parts[i],
+            chunk_data=chunk_data,
+            status='completed' if chunk_succeeded else 'partial',
+        )
 
     pending = list(range(len(chunks)))
     rate_limit_error = None
@@ -505,19 +495,18 @@ async def translate_paragraphs_plain(
         chunk_succeeded = False
 
         if isinstance(result, RateLimitError):
-            _rollback_context(i)
             rate_limit_error = result
             break
 
         if isinstance(result, Exception):
-            _rollback_context(i)
             if log_callback:
                 log_callback(
                     "plain_text_chunk_failed",
                     f"Chunk {i + 1}/{len(chunks)} failed ({result}) - keeping original text"
                 )
             translated_parts[i] = main_content
-            stats.failed_chunks += 1
+            failed_indices.add(i)
+            stats.failed_chunks = len(failed_indices)
         else:
             kind, value = result
             if kind == 'empty':
@@ -525,14 +514,14 @@ async def translate_paragraphs_plain(
                 stats.successful_first_try += 1
                 chunk_succeeded = True
             elif value is None:
-                _rollback_context(i)
                 if log_callback:
                     log_callback(
                         "plain_text_chunk_failed",
                         f"Chunk {i + 1}/{len(chunks)} failed - keeping original text"
                     )
                 translated_parts[i] = main_content
-                stats.failed_chunks += 1
+                failed_indices.add(i)
+                stats.failed_chunks = len(failed_indices)
             else:
                 cleaned = clean_translated_text(value)
                 cleaned = strip_hallucinated_markup(
@@ -540,33 +529,13 @@ async def translate_paragraphs_plain(
                 translated_parts[i] = cleaned
                 stats.successful_first_try += 1
                 chunk_succeeded = True
-                _commit_context(i)
                 if sequential:
                     words = cleaned.split()
                     previous_translation_context = (
                         " ".join(words[-25:]) if len(words) > 25 else cleaned
                     )
 
-        if (
-            checkpoint_manager
-            and translation_id
-            and hasattr(checkpoint_manager, 'db')
-        ):
-            chunk_data = {}
-            if context_session and chunk_succeeded:
-                chunk_data['context_snapshot'] = context_session.snapshot()
-                chunk_data['dialogue_attribution'] = (
-                    context_session.dialogue_attribution
-                )
-            translated_value = translated_parts[i]
-            checkpoint_manager.db.save_chunk(
-                translation_id=translation_id,
-                chunk_index=global_chunk_offset + i,
-                original_text=main_content,
-                translated_text=translated_value,
-                chunk_data=chunk_data,
-                status='completed' if chunk_succeeded else 'partial',
-            )
+        _save_chunk_checkpoint(i, chunk_succeeded)
 
         stats.record_processed()
         if stats_callback:
@@ -590,6 +559,67 @@ async def translate_paragraphs_plain(
         _fill_remaining_with_source()
         safe_parts = [p if p is not None else "" for p in translated_parts]
         return _reassemble(segments, safe_parts, source), stats, True
+
+    if failed_indices:
+        retry_targets = sorted(failed_indices)
+        if log_callback:
+            log_callback(
+                "failed_chunk_retry_start",
+                f"Retrying {len(retry_targets)} failed plain-text chunk(s) before final output...",
+            )
+        for i in retry_targets:
+            if check_interruption_callback and check_interruption_callback():
+                if log_callback:
+                    log_callback(
+                        "plain_text_translation_interrupted",
+                        f"⏸️ Plain-text translation interrupted before retrying chunk {i + 1}/{len(chunks)}",
+                    )
+                _fill_remaining_with_source()
+                safe_parts = [p if p is not None else "" for p in translated_parts]
+                return _reassemble(segments, safe_parts, source), stats, True
+
+            chunk_succeeded = False
+            main_content = chunks[i].get('main_content', '')
+            try:
+                retry_result = await _translate_chunk(i)
+            except RateLimitError:
+                _fill_remaining_with_source()
+                raise
+            except Exception as exc:
+                if log_callback:
+                    log_callback(
+                        "plain_text_chunk_failed",
+                        f"Retry failed for chunk {i + 1}/{len(chunks)} ({exc}) - keeping original text",
+                    )
+                translated_parts[i] = main_content
+                _save_chunk_checkpoint(i, False)
+                continue
+
+            kind, value = retry_result
+            if kind == 'empty':
+                translated_parts[i] = value
+                chunk_succeeded = True
+                failed_indices.discard(i)
+                stats.failed_chunks = len(failed_indices)
+            elif value is not None:
+                cleaned = clean_translated_text(value)
+                cleaned = strip_hallucinated_markup(
+                    cleaned, chunks[i].get('main_content', ''))
+                translated_parts[i] = cleaned
+                chunk_succeeded = True
+                failed_indices.discard(i)
+                stats.failed_chunks = len(failed_indices)
+                if log_callback:
+                    log_callback(
+                        "failed_chunk_retry_success",
+                        f"Failed plain-text chunk {i + 1}/{len(chunks)} translated successfully on retry.",
+                    )
+            else:
+                translated_parts[i] = main_content
+
+            _save_chunk_checkpoint(i, chunk_succeeded)
+            if stats_callback:
+                stats_callback(stats.to_dict())
 
     # Any None left (shouldn't happen) falls back to empty string.
     safe_parts = [p if p is not None else "" for p in translated_parts]
