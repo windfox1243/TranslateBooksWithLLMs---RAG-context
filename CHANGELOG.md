@@ -8,6 +8,15 @@ correction workflow instead of a context-only update.
 
 ### Improved
 
+- Character identity is now represented by a shared canonical alias registry.
+  Source-proven titles, ranks, nicknames, and multilingual aliases resolve to
+  the same character across global lore, relationship/addressing state,
+  dialogue attribution, translation, re-sync, resume, and refinement.
+- Context analysis now emits explicit identity links only when the source
+  establishes stable identity; ambiguous or transferable bare ranks remain
+  separate instead of being merged by role similarity.
+- Saved dialogue maps and scene speaker state are re-canonicalized against the
+  latest identity registry before prompt injection.
 - Every refinement unit now receives the final book-wide character identities,
   source-proven genders, and glossary terminology.
 - Historical addressing forms, relationship evolution, and dialogue
@@ -23,6 +32,24 @@ correction workflow instead of a context-only update.
 
 ### Fixed
 
+- Character profiles no longer retain explanations such as `Gender confirmed
+  by source text ...`; durable profiles store only the normalized result.
+- Context-analysis prompts explicitly reject gender-neutral words such as
+  `spouse`, military rank, occupation, or role context as new gender evidence.
+- Direct gendered descriptions retained in metadata, such as `a blonde-haired
+  girl`, now promote an earlier `Unspecified` entry deterministically.
+- A source-proven title identity such as `Lieutenant Colonel` → `Eric` now
+  merges duplicate character entries and rewrites relationship, addressing,
+  and dialogue references to the canonical name.
+- Malformed character entries with embedded contradictory gender fragments,
+  such as `Male, ...; Female, ...`, are collapsed into one canonical gender
+  and concise cumulative description.
+- Bare role entries are now folded into a named character when exactly one
+  named entry already carries that role as its own title; ambiguous shared
+  roles remain separate unless there is an explicit identity link.
+- The context editor now reports a visible localized error when Save &
+  Re-sync cannot start because no editable snapshot, job, or global anchor is
+  available.
 - Context re-sync no longer crashes with `AttributeError: 'int' object has no
   attribute 'value'` when recording a numeric context revision.
 - The context editor now exposes a dedicated book-wide `Global Context` view.
@@ -66,7 +93,7 @@ correction workflow instead of a context-only update.
 
 ### Validation
 
-- 1,385 selected automated tests passed.
+- 1,398 selected automated tests passed.
 - Windows executable startup and local UI smoke tests passed.
 
 ## 1.4.12 - 2026-06-23

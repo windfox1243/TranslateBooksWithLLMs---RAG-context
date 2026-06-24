@@ -1406,6 +1406,14 @@ function setContextEditButtonMode(isGlobal) {
     }
 }
 
+function logContextResyncFailure(errorKey, params = {}) {
+    MessageLogger.addLog(
+        t('translation:context_resync_failed_log', {
+            error: t(errorKey, params)
+        })
+    );
+}
+
 window.loadContextSnapshot = async function(chunkValue) {
     const btnEdit = document.getElementById('btnEditResync');
     const btnSave = document.getElementById('btnSaveResync');
@@ -1697,7 +1705,10 @@ window.cancelContextEdit = function() {
 
 window.saveContextResync = async function() {
     const selector = document.getElementById('contextChunkSelector');
-    if (!selector || selector.value === 'latest') return;
+    if (!selector || selector.value === 'latest') {
+        logContextResyncFailure('translation:context_resync_unavailable');
+        return;
+    }
     
     let newContent = "";
     if (window.NovelContextUI.editSections) {
@@ -1711,7 +1722,10 @@ window.saveContextResync = async function() {
         });
     } else {
         const textarea = document.getElementById('contextResyncEditor');
-        if (!textarea) return;
+        if (!textarea) {
+            logContextResyncFailure('translation:context_resync_unavailable');
+            return;
+        }
         newContent = textarea.value;
     }
     
@@ -1719,18 +1733,17 @@ window.saveContextResync = async function() {
     const chunkIndex = isGlobal
         ? window.NovelContextUI.globalAnchorChunkIndex
         : parseInt(selector.value);
-    if (!Number.isInteger(chunkIndex)) return;
+    if (!Number.isInteger(chunkIndex)) {
+        logContextResyncFailure('translation:context_resync_unavailable');
+        return;
+    }
 
     let submittedContent = newContent;
     if (isGlobal) {
         const anchorContent = window.NovelContextUI.globalAnchorFullContent || '';
         const dynamicMarker = anchorContent.indexOf('---DYNAMIC_STATE_START---');
         if (dynamicMarker < 0) {
-            MessageLogger.addLog(
-                t('translation:context_resync_failed_log', {
-                    error: t('translation:context_global_anchor_missing')
-                })
-            );
+            logContextResyncFailure('translation:context_global_anchor_missing');
             return;
         }
         submittedContent = (
@@ -1749,6 +1762,7 @@ window.saveContextResync = async function() {
     
     if (!translationId) {
         console.warn('[Context] No translationId available for resync');
+        logContextResyncFailure('translation:context_no_job_body');
         return;
     }
     

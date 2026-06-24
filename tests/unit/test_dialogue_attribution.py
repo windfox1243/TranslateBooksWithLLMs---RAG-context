@@ -10,6 +10,7 @@ from src.prompts.prompts import (
     generate_translation_prompt,
 )
 from src.utils.dialogue_attribution import (
+    canonicalize_dialogue_attribution,
     detect_dialogue_turns,
     dialogue_attribution_stats,
     format_dialogue_attribution_for_prompt,
@@ -18,6 +19,7 @@ from src.utils.dialogue_attribution import (
 from src.utils.novel_context import (
     RefinementContextTracker,
     build_novel_context,
+    character_alias_map,
     map_dialogue_attributions_for_refinement,
     update_novel_context_chunk,
 )
@@ -109,6 +111,114 @@ def test_attribution_rejects_unknown_characters_and_low_confidence_guesses():
     }
 
 
+def test_dialogue_attribution_resolves_explicit_title_alias_to_canonical_name():
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, imperial officer.\n\n"
+        "## CHARACTER ALIASES\n"
+        "- Lieutenant Colonel: Eric\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    candidates = detect_dialogue_turns("“Stand down.”")
+    raw = json.dumps(
+        {
+            "turns": [{
+                "id": candidates[0]["id"],
+                "speaker": "Lieutenant Colonel",
+                "addressee": "Eric",
+                "confidence": 0.97,
+            }],
+            "state_after": {
+                "speaker": "Lieutenant Colonel",
+                "addressee": "Eric",
+            },
+        }
+    )
+
+    parsed = parse_dialogue_attribution(
+        raw,
+        candidates,
+        character_alias_map(lore),
+    )
+
+    assert parsed["turns"][0]["speaker"] == "Eric"
+    assert parsed["turns"][0]["addressee"] == "Eric"
+    assert parsed["state_after"] == {
+        "speaker": "Eric",
+        "addressee": "Eric",
+    }
+
+
+def test_saved_dialogue_map_is_recanonicalized_after_identity_merge():
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, imperial officer.\n\n"
+        "## CHARACTER ALIASES\n"
+        "- Lieutenant Colonel: Eric\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    saved = {
+        "version": 1,
+        "turns": [{
+            "id": "dlg-old",
+            "cue": "Stand down.",
+            "speaker": "Lieutenant Colonel",
+            "addressee": "Valentine",
+            "confidence": 0.9,
+        }],
+        "state_after": {
+            "speaker": "Lieutenant Colonel",
+            "addressee": "Valentine",
+        },
+    }
+
+    migrated = canonicalize_dialogue_attribution(
+        saved,
+        {
+            **character_alias_map(lore),
+            "valentine": "Valentine",
+        },
+    )
+
+    assert migrated["turns"][0]["speaker"] == "Eric"
+    assert migrated["state_after"]["speaker"] == "Eric"
+
+
+def test_translation_prompt_recanonicalizes_legacy_dialogue_aliases():
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, imperial officer.\n\n"
+        "## CHARACTER ALIASES\n"
+        "- Lieutenant Colonel: Eric\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    prompt = generate_translation_prompt(
+        main_content="“Stand down.”",
+        context_before="",
+        context_after="",
+        previous_translation_context="",
+        prompt_options={
+            "novel_context": build_novel_context(lore, ""),
+            "dialogue_attribution": {
+                "version": 1,
+                "turns": [{
+                    "id": "dlg-old",
+                    "cue": "“Stand down.”",
+                    "speaker": "Lieutenant Colonel",
+                    "addressee": "Eric",
+                    "confidence": 0.95,
+                }],
+            },
+        },
+    )
+
+    assert '"speaker":"Eric"' in prompt.user
+    assert '"speaker":"Lieutenant Colonel"' not in prompt.user
+
+
 def test_prompt_metadata_contains_no_output_labels_instruction():
     candidates = detect_dialogue_turns("“Stay.”")
     attribution = {
@@ -161,6 +271,7 @@ async def test_source_analysis_returns_hidden_attribution_without_polluting_lore
     response = MagicMock()
     response.content = (
         "[NEW_CHARACTERS]\n\n"
+        "[IDENTITY_LINKS]\n\n"
         "[NEW_GLOSSARY]\n\n"
         "[DYNAMIC_STATE]\n"
         "## CURRENT ADDRESSING FORMS\n\n"

@@ -685,6 +685,7 @@ async def _resync_context_snapshots_async(
     from src.api.translation_state import get_state_manager
     from src.utils.novel_context import (
         build_novel_context,
+        character_alias_map,
         compress_dynamic_state,
         decode_context_snapshot,
         load_novel_context,
@@ -821,6 +822,11 @@ async def _resync_context_snapshots_async(
         ).get('state_after')
         or {}
     )
+    from src.utils.dialogue_attribution import canonicalize_dialogue_state
+    current_dialogue_state = canonicalize_dialogue_state(
+        current_dialogue_state,
+        character_alias_map(global_lore),
+    )
     current_dialogue_scene_key = (
         (
             ((initial_chunk or {}).get('chunk_data') or {}).get(
@@ -895,6 +901,7 @@ async def _resync_context_snapshots_async(
             logger.info(msg_resync)
             append_and_emit(f"🔄 {msg_resync}")
             from src.utils.dialogue_attribution import (
+                canonicalize_dialogue_state,
                 detect_dialogue_turns,
                 dialogue_attribution_stats,
             )
@@ -929,7 +936,11 @@ async def _resync_context_snapshots_async(
                 dialogue_attribution_sink=dialogue_sink,
             )
             current_dialogue_state = dict(
-                dialogue_sink.get('state_after') or current_dialogue_state
+                canonicalize_dialogue_state(
+                    dialogue_sink.get('state_after')
+                    or current_dialogue_state,
+                    character_alias_map(global_lore),
+                )
             )
             if normalized_scene_key is not None:
                 dialogue_sink['scene_key'] = normalized_scene_key

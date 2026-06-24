@@ -23,6 +23,7 @@ DYNAMIC_STATE_START = "---DYNAMIC_STATE_START---"
 DYNAMIC_STATE_END = "---DYNAMIC_STATE_END---"
 
 CHARACTERS_SECTION = "## CHARACTERS & GENDERS"
+ALIASES_SECTION = "## CHARACTER ALIASES"
 GLOSSARY_SECTION = "## GLOSSARY & TERMINOLOGY"
 ADDRESSING_SECTION = "## CURRENT ADDRESSING FORMS"
 RELATIONSHIP_SECTION = "## RELATIONSHIP EVOLUTION"
@@ -72,14 +73,29 @@ _NAME_TITLES = {
     "general",
     "king",
     "lady",
+    "lieutenant",
     "lord",
     "major",
+    "marshal",
     "prince",
     "princess",
     "professor",
     "queen",
     "sergeant",
 }
+_MULTIWORD_NAME_TITLES = (
+    ("lieutenant", "colonel"),
+    ("lieutenant", "commander"),
+    ("major", "general"),
+)
+_ROLE_ONLY_TITLES = _NAME_TITLES | {
+    "lieutenant colonel",
+    "lieutenant commander",
+    "major general",
+}
+_ROLE_TITLE_KEYS = tuple(
+    sorted(_ROLE_ONLY_TITLES, key=lambda item: (-len(item.split()), item))
+)
 _UNIQUE_ROLE_TITLES = {"emperor", "empress", "king", "queen"}
 _RELATIVE_AGE_WORDS = {
     "elder",
@@ -149,6 +165,15 @@ def _strip_leading_article(name: str) -> str:
 
 def _strip_name_title(name: str) -> str:
     parts = name.split()
+    folded_parts = [part.rstrip(".").casefold() for part in parts]
+    for title_parts in _MULTIWORD_NAME_TITLES:
+        if tuple(folded_parts) == title_parts:
+            return name
+        if (
+            len(parts) > len(title_parts)
+            and tuple(folded_parts[:len(title_parts)]) == title_parts
+        ):
+            return " ".join(parts[len(title_parts):]).strip()
     if len(parts) >= 2 and parts[0].rstrip(".").casefold() in _NAME_TITLES:
         return " ".join(parts[1:]).strip()
     return name
@@ -200,6 +225,55 @@ def _monarch_role(name: str) -> str:
 
 def _is_role_only_name(name: str) -> bool:
     return _plain_key(_canonical_display_name(name)) in _UNIQUE_ROLE_TITLES
+
+
+def _role_title_key_from_name(name: str) -> str:
+    key = _plain_key(_canonical_display_name(name))
+    return key if key in _ROLE_ONLY_TITLES else ""
+
+
+def _role_title_keys_from_fact(fact: str) -> set[str]:
+    clean = _clean_inline_text(fact)
+    if not clean:
+        return set()
+    keys: set[str] = set()
+    for title_key in _ROLE_TITLE_KEYS:
+        title_pattern = re.escape(title_key).replace(r"\ ", r"\s+")
+        if re.search(
+            rf"^(?:the\s+)?{title_pattern}\b"
+            r"(?=\s*(?:,|;|and\b|of\b|who\b|with\b|$))",
+            clean,
+            flags=re.IGNORECASE,
+        ):
+            keys.add(title_key)
+            continue
+        if re.search(
+            r"\b(?:is|was|becomes|became|serves\s+as|introduced\s+as|"
+            r"identified\s+as|revealed\s+as|known\s+as)\s+"
+            rf"(?:the\s+)?{title_pattern}\b",
+            clean,
+            flags=re.IGNORECASE,
+        ):
+            keys.add(title_key)
+    return keys
+
+
+def _character_self_role_title_keys(name: str, value: str = "") -> set[str]:
+    """Return role/title labels that the entry applies to itself.
+
+    These are deterministic aliases, but only when the role appears as the
+    character's own title. Phrases like "suspicious of the Lieutenant Colonel"
+    deliberately do not match.
+    """
+    keys: set[str] = set()
+    role_key = _role_title_key_from_name(name)
+    if role_key:
+        keys.add(role_key)
+
+    _, details = _split_gender_and_details(_normalize_character_value(value))
+    for fact in re.split(r"\s*;\s*", details):
+        keys.update(_role_title_keys_from_fact(fact))
+    return keys
 
 
 def _character_names_match(first: str, second: str) -> bool:
@@ -254,7 +328,7 @@ def _character_identities_match(
 def _name_specificity(name: str) -> Tuple[int, int, int]:
     canonical = _canonical_display_name(name)
     key = _plain_key(canonical)
-    role_only = int(key not in _UNIQUE_ROLE_TITLES)
+    role_only = int(key not in _ROLE_ONLY_TITLES)
     no_parenthetical = int("(" not in name and ")" not in name)
     return role_only, len(canonical.split()), no_parenthetical
 
@@ -301,12 +375,18 @@ def _infer_gender_from_character_details(details: str) -> str:
     )
     male_patterns = (
         r"^(?:an?\s+)?(?:young\s+|old\s+)?(?:male|man|boy)\b",
+        r"(?:^|[;,]\s*)an?\s+(?:[\w'-]+\s+){0,5}(?:man|boy)\b",
+        r"\b(?:described|identified|revealed|introduced|referred\s+to)\s+as\s+"
+        r"(?:an?\s+)?(?:[\w'-]+\s+){0,5}(?:man|boy)\b",
         r"(?:^|[.;,]\s*)he\b",
         r"\bhimself\b",
         rf"\bwho\b[^.;]{{0,80}}\bhis\s+{kinship_object}\b",
     )
     female_patterns = (
         r"^(?:an?\s+)?(?:young\s+|old\s+)?(?:female|woman|girl)\b",
+        r"(?:^|[;,]\s*)an?\s+(?:[\w'-]+\s+){0,5}(?:woman|girl)\b",
+        r"\b(?:described|identified|revealed|introduced|referred\s+to)\s+as\s+"
+        r"(?:an?\s+)?(?:[\w'-]+\s+){0,5}(?:woman|girl)\b",
         r"(?:^|[.;,]\s*)she\b",
         r"\bherself\b",
         rf"\bwho\b[^.;]{{0,80}}\bher\s+{kinship_object}\b",
@@ -504,57 +584,257 @@ def _merge_character_details(first: str, second: str) -> str:
             facts[redundant_index] = fact
     facts = _compact_subordinate_facts(facts)
     facts = _compact_unique_role_facts(facts)
+    facts = _compact_reincarnation_facts(facts)
     return "; ".join(facts)
 
 
-def _normalize_character_value(value: str) -> str:
+def _compact_reincarnation_facts(facts: List[str]) -> List[str]:
+    """Merge common split reincarnation facts into one concise description."""
+    source_index: Optional[int] = None
+    world_index: Optional[int] = None
+    source = ""
+    world = ""
+
+    for index, fact in enumerate(facts):
+        source_match = re.match(
+            r"^(?:a\s+|the\s+)?reincarnation\s+of\s+(.+?)\.?$",
+            fact,
+            flags=re.IGNORECASE,
+        )
+        if source_match and source_index is None:
+            source_index = index
+            source = source_match.group(1).strip().rstrip(" .")
+            continue
+
+        world_match = re.match(
+            r"^(?:a\s+|the\s+)?reincarnation\s+into\s+(.+?)\.?$",
+            fact,
+            flags=re.IGNORECASE,
+        )
+        if world_match and world_index is None:
+            world_index = index
+            world = world_match.group(1).strip().rstrip(" .")
+
+    if source_index is None or world_index is None:
+        return facts
+
+    replacement = f"reincarnation of {source} into {world}"
+    first_index = min(source_index, world_index)
+    compacted = [
+        fact
+        for index, fact in enumerate(facts)
+        if index not in {source_index, world_index}
+    ]
+    compacted.insert(first_index, replacement)
+    return compacted
+
+
+def _gender_from_evidence_note(note: str) -> str:
+    text = _clean_inline_text(note).casefold()
+    explicit = re.search(
+        r"\b(?:as|to\s+be)\s+(male|female|non[- ]?binary)\b",
+        text,
+    )
+    return (
+        _canonical_gender(explicit.group(1).replace(" ", "-"))
+        if explicit
+        else ""
+    )
+
+
+def _strip_character_evidence_notes(
+    value: str,
+) -> Tuple[str, str, bool]:
+    """Remove model explanations from canonical character metadata.
+
+    Returns ``(clean_value, evidence_gender, correction)``.
+    Evidence belongs in the analysis response, never in the durable profile.
+    """
     clean = _strip_balanced_brackets(value).strip()
-    gender, details = _split_gender_and_details(clean)
-    gender = _canonical_gender(gender)
+    evidence_gender = ""
+    correction = False
+
+    note_pattern = re.compile(
+        r"""(?is)
+        \s*[\(\[]\s*
+        (?P<note>
+            (?:(?:explicit\s+)?correction\s*:\s*)?
+            (?:
+                (?:gender\s+)?
+                (?:confirmed|proven|established|determined|inferred|deduced)
+                \b
+                .*?
+            )
+        )
+        \s*[\)\]]\s*[.;]?
+        """
+        ,
+        flags=re.VERBOSE,
+    )
+
+    notes: List[str] = []
+
+    def remove_note(match: re.Match) -> str:
+        notes.append(match.group("note"))
+        return " "
+
+    clean = note_pattern.sub(remove_note, clean)
+    trailing_pattern = re.compile(
+        r"""(?is)
+        \s*(?:;|\.|\-)\s*
+        (?P<note>
+            (?:(?:explicit\s+)?correction\s*:\s*)?
+            (?:gender\s+)?
+            (?:confirmed|proven|established|determined|inferred|deduced)
+            \b.*
+        )$
+        """
+        ,
+        flags=re.VERBOSE,
+    )
+    trailing = trailing_pattern.search(clean)
+    if trailing:
+        notes.append(trailing.group("note"))
+        clean = clean[:trailing.start()]
+
+    for note in notes:
+        note_gender = _gender_from_evidence_note(note)
+        if note_gender:
+            evidence_gender = note_gender
+        if re.search(r"\bcorrection\s*:", note, flags=re.IGNORECASE):
+            correction = True
+
+    return (
+        _clean_inline_text(clean).strip(" .;,"),
+        evidence_gender,
+        correction,
+    )
+
+
+def _split_embedded_character_value_fragments(value: str) -> List[str]:
+    """Split malformed one-line entries that contain multiple gender headers."""
+    parts = [
+        _strip_balanced_brackets(part).strip()
+        for part in re.split(r"\s*;\s*", value)
+        if part.strip()
+    ]
+    if not parts:
+        return []
+
+    fragments = [parts[0]]
+    embedded_header = re.compile(
+        r"(?is)^(?:(?:explicit\s+)?(?:gender\s+)?correction\s*:|"
+        r"(?:male|female|non[- ]?binary|nonbinary|unknown|unspecified)\s*,)"
+    )
+    for part in parts[1:]:
+        if embedded_header.match(part):
+            fragments.append(part)
+        else:
+            fragments[-1] = f"{fragments[-1]}; {part}"
+    return fragments
+
+
+def _normalize_character_value(value: str) -> str:
+    clean, evidence_gender, _ = (
+        _strip_character_evidence_notes(value)
+    )
+    fragments = _split_embedded_character_value_fragments(clean)
+    gender = ""
+    detail_fragments: List[str] = []
+
+    for index, fragment in enumerate(fragments or [clean]):
+        correction_match = re.match(
+            r"(?is)^(?:explicit\s+)?(?:gender\s+)?correction\s*:\s*(.+)$",
+            fragment,
+        )
+        is_correction = bool(correction_match)
+        if correction_match:
+            fragment = _strip_balanced_brackets(correction_match.group(1))
+
+        fragment_gender, fragment_details = _split_gender_and_details(fragment)
+        fragment_gender = _canonical_gender(fragment_gender)
+        if fragment_gender:
+            fragment_key = fragment_gender.casefold()
+            current_key = gender.casefold()
+            if fragment_key in _SPECIFIC_GENDER_LABELS:
+                if (
+                    not gender
+                    or is_correction
+                    or current_key not in _SPECIFIC_GENDER_LABELS
+                    or index > 0
+                ):
+                    gender = fragment_gender
+            elif not gender:
+                gender = fragment_gender
+        else:
+            fragment_details = fragment
+
+        if fragment_details:
+            detail_fragments.append(fragment_details)
+
+    details = _merge_character_details("; ".join(detail_fragments), "")
     if gender.casefold() in {"unknown", "unspecified"}:
-        gender = _infer_gender_from_character_details(details) or "Unspecified"
+        gender = (
+            evidence_gender
+            or _infer_gender_from_character_details(details)
+            or "Unspecified"
+        )
+    elif not gender and (evidence_gender or details):
+        gender = (
+            evidence_gender
+            or _infer_gender_from_character_details(details)
+        )
+    return f"{gender}, {details}".rstrip(" ,") if gender else details
+
+
+def _remove_self_references_from_details(details: str, name: str) -> str:
+    """Remove accidental self-listing from merged role descriptions."""
+    canonical_name = _canonical_display_name(name)
+    if not canonical_name:
+        return details
+    clean = details
+    escaped = re.escape(canonical_name)
+    clean = re.sub(
+        rf"\s+\band\s+{escaped}\b(?=\s*(?:who\b|with\b|,|;|\.|$))",
+        "",
+        clean,
+        flags=re.IGNORECASE,
+    )
+    clean = re.sub(
+        rf"\b{escaped}\s+and\s+(?=\w)",
+        "",
+        clean,
+        flags=re.IGNORECASE,
+    )
+    return _clean_inline_text(clean).strip(" ;,")
+
+
+def _normalize_character_value_for_name(name: str, value: str) -> str:
+    normalized = _normalize_character_value(value)
+    gender, details = _split_gender_and_details(normalized)
+    details = _remove_self_references_from_details(details, name)
     details = _merge_character_details(details, "")
     return f"{gender}, {details}".rstrip(" ,") if gender else details
 
 
 def _strip_character_correction_marker(value: str) -> Tuple[str, bool]:
-    clean = _strip_balanced_brackets(value).strip()
+    clean, evidence_gender, evidence_correction = (
+        _strip_character_evidence_notes(value)
+    )
     match = re.match(
         r"(?is)^(?:explicit\s+)?(?:gender\s+)?correction\s*:\s*(.+)$",
         clean,
     )
     if not match:
-        trailing_correction = re.search(
-            r"""(?is)
-            \s*[\(\[]\s*
-            correction\s*:\s*
-            gender\s+(?:is\s+)?confirmed\s+as\s+
-            (?P<gender>male|female|non[- ]?binary)
-            \b(?P<evidence>.*?)
-            \s*[\)\]]\s*[.;]?\s*$
-            """,
-            clean,
-            flags=re.VERBOSE,
-        )
-        if not trailing_correction:
-            return clean, False
-
-        gender = trailing_correction.group("gender")
-        normalized_gender = {
-            "male": "Male",
-            "female": "Female",
-            "non-binary": "Non-binary",
-            "non binary": "Non-binary",
-            "nonbinary": "Non-binary",
-        }[gender.casefold()]
-        base = clean[:trailing_correction.start()].strip().rstrip(" .;,")
-        _, details = _split_gender_and_details(base)
-        corrected = (
-            f"{normalized_gender}, {details}"
-            if details
-            else normalized_gender
-        )
-        return corrected, True
+        if evidence_gender:
+            current_gender, details = _split_gender_and_details(clean)
+            if current_gender.casefold() not in _SPECIFIC_GENDER_LABELS:
+                clean = (
+                    f"{evidence_gender}, {details}"
+                    if details
+                    else evidence_gender
+                )
+        return clean, evidence_correction
 
     return _strip_balanced_brackets(match.group(1)).strip(), True
 
@@ -606,7 +886,7 @@ def _merge_character_values(
 
 
 def _format_character_line(name: str, value: str) -> str:
-    normalized = _normalize_character_value(value)
+    normalized = _normalize_character_value_for_name(name, value)
     if normalized and not normalized.endswith((".", "!", "?")):
         normalized = f"{normalized}."
     return f"- {name}: {normalized}"
@@ -649,13 +929,21 @@ def _replace_lore_section(lore: str, section_name: str, lines: List[str]) -> str
     replacement = section_name + (f"\n{body}" if body else "")
     bounds = _find_lore_section(lore, section_name)
     if bounds is None:
-        if section_name == CHARACTERS_SECTION:
-            glossary_bounds = _find_lore_section(lore, GLOSSARY_SECTION)
-            if glossary_bounds:
-                glossary_start = glossary_bounds[0]
+        if section_name in {CHARACTERS_SECTION, ALIASES_SECTION}:
+            next_section = (
+                _find_lore_section(lore, ALIASES_SECTION)
+                if section_name == CHARACTERS_SECTION
+                else None
+            )
+            next_section = next_section or _find_lore_section(
+                lore,
+                GLOSSARY_SECTION,
+            )
+            if next_section:
+                next_start = next_section[0]
                 return (
-                    f"{lore[:glossary_start].rstrip()}\n\n{replacement}\n\n"
-                    f"{lore[glossary_start:].lstrip()}"
+                    f"{lore[:next_start].rstrip()}\n\n{replacement}\n\n"
+                    f"{lore[next_start:].lstrip()}"
                 ).strip() + "\n"
         separator = "\n\n" if lore.strip() else ""
         return f"{lore.rstrip()}{separator}{replacement}\n"
@@ -666,8 +954,10 @@ def _replace_lore_section(lore: str, section_name: str, lines: List[str]) -> str
 
 def _deduplicate_character_entries(
     entries: List[Tuple[str, str]],
+    explicit_aliases: Optional[Dict[str, str]] = None,
 ) -> Tuple[List[Tuple[str, str]], Dict[str, str]]:
     normalized: List[Dict[str, Any]] = []
+    explicit_aliases = explicit_aliases or {}
 
     for raw_name, raw_value in entries:
         if (
@@ -675,7 +965,17 @@ def _deduplicate_character_entries(
             or _is_disposable_unnamed_character(raw_name, raw_value)
         ):
             continue
-        aliases = _character_alias_keys(raw_name)
+        raw_aliases = _character_alias_keys(raw_name)
+        forced_name = next(
+            (
+                explicit_aliases[alias]
+                for alias in raw_aliases
+                if alias in explicit_aliases
+            ),
+            None,
+        )
+        effective_name = forced_name or raw_name
+        aliases = raw_aliases | _character_alias_keys(effective_name)
         matching_indices = {
             index
             for index, item in enumerate(normalized)
@@ -684,7 +984,7 @@ def _deduplicate_character_entries(
                 or _character_identities_match(
                     item["name"],
                     item["value"],
-                    raw_name,
+                    effective_name,
                     raw_value,
                 )
             )
@@ -692,7 +992,11 @@ def _deduplicate_character_entries(
         if matching_indices:
             index = min(matching_indices)
             item = normalized[index]
-            item["name"] = _preferred_character_name(item["name"], raw_name)
+            item["name"] = (
+                _canonical_display_name(forced_name)
+                if forced_name
+                else _preferred_character_name(item["name"], effective_name)
+            )
             item["value"] = _merge_character_values(item["value"], raw_value)
             item["aliases"].update(aliases)
             for duplicate_index in sorted(
@@ -711,19 +1015,163 @@ def _deduplicate_character_entries(
                 item["aliases"].update(duplicate["aliases"])
         else:
             normalized.append({
-                "name": _canonical_display_name(raw_name),
+                "name": _canonical_display_name(effective_name),
                 "value": _normalize_character_value(raw_value),
                 "aliases": set(aliases),
             })
+
+    normalized = _merge_role_only_entries_by_unique_self_title(normalized)
 
     alias_map: Dict[str, str] = {}
     result: List[Tuple[str, str]] = []
     for item in normalized:
         name = item["name"]
-        result.append((name, item["value"]))
-        for alias in item["aliases"] | _character_alias_keys(name):
+        value = _normalize_character_value_for_name(name, item["value"])
+        result.append((name, value))
+        for alias in (
+            item["aliases"]
+            | _character_alias_keys(name)
+            | _character_self_role_title_keys(name, value)
+        ):
             alias_map[alias] = name
+    for alias, target in explicit_aliases.items():
+        canonical_target = next(
+            (
+                name
+                for name, value in result
+                if _character_identities_match(
+                    name,
+                    value,
+                    target,
+                    "",
+                )
+            ),
+            None,
+        )
+        if alias and canonical_target:
+            alias_map[alias] = canonical_target
     return result, alias_map
+
+
+def _merge_role_only_entries_by_unique_self_title(
+    items: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Merge a bare role entry into the only named character carrying it.
+
+    This fixes durable context pollution such as a separate "Lieutenant
+    Colonel" character after Eric's own entry already says he is the
+    Lieutenant Colonel. Ambiguous titles remain separate unless the model or
+    user supplies an explicit alias.
+    """
+    normalized = list(items)
+    changed = True
+    while changed:
+        changed = False
+        title_to_named_indices: Dict[str, List[int]] = {}
+        role_indices: List[Tuple[int, str]] = []
+
+        for index, item in enumerate(normalized):
+            role_key = _role_title_key_from_name(item["name"])
+            if role_key:
+                role_indices.append((index, role_key))
+                continue
+
+            for title_key in _character_self_role_title_keys(
+                item["name"],
+                item["value"],
+            ):
+                title_to_named_indices.setdefault(title_key, []).append(index)
+
+        for role_index, role_key in role_indices:
+            candidates = sorted(set(title_to_named_indices.get(role_key, [])))
+            if len(candidates) != 1:
+                continue
+
+            target_index = candidates[0]
+            if target_index == role_index:
+                continue
+
+            role_item = normalized[role_index]
+            target_item = normalized[target_index]
+            target_item["value"] = _merge_character_values(
+                target_item["value"],
+                role_item["value"],
+            )
+            target_item["aliases"].update(role_item["aliases"])
+            target_item["aliases"].update(
+                _character_alias_keys(role_item["name"])
+            )
+            normalized.pop(role_index)
+            changed = True
+            break
+
+    return normalized
+
+
+def _parse_alias_entries(text: str) -> List[Tuple[str, str]]:
+    return [
+        (_strip_balanced_brackets(alias), _strip_balanced_brackets(target))
+        for alias, target in _parse_bullet_entries(text)
+        if (
+            not _is_invalid_context_key(alias)
+            and not _is_invalid_context_key(target)
+        )
+    ]
+
+
+def _alias_entries_to_map(
+    entries: List[Tuple[str, str]],
+) -> Dict[str, str]:
+    aliases: Dict[str, str] = {}
+    for alias, target in entries:
+        target_name = _canonical_display_name(target)
+        if (
+            _is_invalid_context_key(alias)
+            or _is_invalid_context_key(target_name)
+            or _character_names_match(alias, target_name)
+        ):
+            continue
+        for alias_key in _character_alias_keys(alias):
+            aliases[alias_key] = target_name
+    return aliases
+
+
+def _canonical_alias_entries(
+    aliases: Dict[str, str],
+    characters: List[Tuple[str, str]],
+    display_aliases: Optional[Dict[str, str]] = None,
+) -> List[Tuple[str, str]]:
+    """Render explicit aliases once, pointing at canonical character names."""
+    canonical_by_key: Dict[str, str] = {}
+    for name, _ in characters:
+        for key in _character_alias_keys(name):
+            canonical_by_key[key] = name
+
+    output: Dict[str, Tuple[str, str]] = {}
+    for alias_key, target in aliases.items():
+        canonical_target = next(
+            (
+                canonical_by_key[key]
+                for key in _character_alias_keys(target)
+                if key in canonical_by_key
+            ),
+            None,
+        )
+        if (
+            not alias_key
+            or not canonical_target
+            or _is_invalid_context_key(canonical_target)
+            or alias_key in _character_alias_keys(canonical_target)
+        ):
+            continue
+        display_alias = (display_aliases or {}).get(alias_key)
+        if not display_alias:
+            display_alias = " ".join(
+                part.capitalize() if part.islower() else part
+                for part in alias_key.split()
+            )
+        output[alias_key] = (display_alias, canonical_target)
+    return list(output.values())
 
 
 def _normalize_glossary_entries(entries: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
@@ -745,16 +1193,43 @@ def normalize_global_lore(global_lore: str) -> str:
     if not lore:
         return ""
 
+    alias_bounds = _find_lore_section(lore, ALIASES_SECTION)
+    alias_entries = (
+        _parse_alias_entries(lore[alias_bounds[1]:alias_bounds[2]])
+        if alias_bounds
+        else []
+    )
+    explicit_aliases = _alias_entries_to_map(alias_entries)
+    alias_displays = {
+        alias_key: alias
+        for alias, _ in alias_entries
+        for alias_key in _character_alias_keys(alias)
+    }
+
     character_bounds = _find_lore_section(lore, CHARACTERS_SECTION)
+    characters: List[Tuple[str, str]] = []
     if character_bounds:
         _, body_start, body_end = character_bounds
         characters, _ = _deduplicate_character_entries(
-            _parse_bullet_entries(lore[body_start:body_end])
+            _parse_bullet_entries(lore[body_start:body_end]),
+            explicit_aliases,
         )
         lore = _replace_lore_section(
             lore,
             CHARACTERS_SECTION,
             [_format_character_line(name, value) for name, value in characters],
+        )
+
+    if alias_bounds or explicit_aliases:
+        aliases = _canonical_alias_entries(
+            explicit_aliases,
+            characters,
+            alias_displays,
+        )
+        lore = _replace_lore_section(
+            lore,
+            ALIASES_SECTION,
+            [f"- {alias}: {target}" for alias, target in aliases],
         )
 
     glossary_bounds = _find_lore_section(lore, GLOSSARY_SECTION)
@@ -771,15 +1246,28 @@ def normalize_global_lore(global_lore: str) -> str:
     return lore.strip()
 
 
-def _character_alias_map(global_lore: str) -> Dict[str, str]:
+def character_alias_map(global_lore: str) -> Dict[str, str]:
+    """Return every deterministic and explicit alias for canonical characters."""
     bounds = _find_lore_section(global_lore, CHARACTERS_SECTION)
     if not bounds:
         return {}
+    alias_bounds = _find_lore_section(global_lore, ALIASES_SECTION)
+    explicit_aliases = _alias_entries_to_map(
+        _parse_alias_entries(
+            global_lore[alias_bounds[1]:alias_bounds[2]]
+        )
+        if alias_bounds
+        else []
+    )
     _, body_start, body_end = bounds
     _, aliases = _deduplicate_character_entries(
-        _parse_bullet_entries(global_lore[body_start:body_end])
+        _parse_bullet_entries(global_lore[body_start:body_end]),
+        explicit_aliases,
     )
     return aliases
+
+
+_character_alias_map = character_alias_map
 
 
 def _normalize_relationship_notation(text: str) -> str:
@@ -1123,6 +1611,7 @@ def load_novel_context(filename: str, novel_contexts_dir: Path) -> str:
                 "# GLOBAL LORE\n"
                 "(Characters, genders, and terminology; canonical names only.)\n\n"
                 f"{CHARACTERS_SECTION}\n\n"
+                f"{ALIASES_SECTION}\n\n"
                 f"{GLOSSARY_SECTION}"
             ),
             (
@@ -1480,6 +1969,7 @@ class RefinementContextTracker:
             else None
         )
         from src.utils.dialogue_attribution import (
+            canonicalize_dialogue_attribution,
             detect_dialogue_turns,
             dialogue_attribution_stats,
             empty_dialogue_attribution,
@@ -1495,13 +1985,18 @@ class RefinementContextTracker:
             self.dialogue_state = {}
         if normalized_scene_key is not None:
             self.dialogue_scene_key = normalized_scene_key
+        current_aliases = _character_alias_map(self.global_lore)
         self.current_dialogue_attribution = (
-            historical_dialogue
-            or empty_dialogue_attribution(self.dialogue_state)
+            canonicalize_dialogue_attribution(
+                historical_dialogue,
+                current_aliases,
+            )
+            if historical_dialogue
+            else empty_dialogue_attribution(self.dialogue_state)
         )
         if historical_dialogue:
             self.dialogue_state = dict(
-                historical_dialogue.get("state_after")
+                self.current_dialogue_attribution.get("state_after")
                 or self.dialogue_state
             )
 
@@ -1511,6 +2006,17 @@ class RefinementContextTracker:
                 build_novel_context(self.global_lore, self.dynamic_state),
             )
             self.global_lore = extract_global_lore(historical_context)
+            refreshed_aliases = _character_alias_map(self.global_lore)
+            self.current_dialogue_attribution = (
+                canonicalize_dialogue_attribution(
+                    self.current_dialogue_attribution,
+                    refreshed_aliases,
+                )
+            )
+            self.dialogue_state = dict(
+                self.current_dialogue_attribution.get("state_after")
+                or self.dialogue_state
+            )
             historical_dynamic = (
                 extract_dynamic_state_from_text(historical_context) or ""
             )
@@ -1763,6 +2269,12 @@ def open_novel_context_session(
         global_lore = extract_global_lore(current_content)
         dynamic_state = extract_dynamic_state_from_text(current_content) or ""
 
+    from src.utils.dialogue_attribution import canonicalize_dialogue_state
+    resume_dialogue_state = canonicalize_dialogue_state(
+        resume_dialogue_state,
+        _character_alias_map(global_lore),
+    )
+
     session = NovelContextSession(
         path=path,
         prompt_options=prompt_options,
@@ -1797,13 +2309,16 @@ Identity rules:
 - Reuse the exact canonical name already present in CURRENT GLOBAL LORE.
 - A title, rank, nickname, transformed state, awakened state, disguise, age qualifier, or relationship label is not a new character when it refers to an existing person. Update the existing canonical entry instead.
 - When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
+- When the latest source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
 - Do not add one-scene unnamed soldiers, victims, hallucinations, generic crowds, or incidental job labels unless they recur and their identity/gender is required for translation consistency.
 - Never output template entries, "None", "[None]", "Unknown", "N/A", or an empty bullet.
 - Record gender only when the source states it or supplies unambiguous grammatical/pronoun evidence. Never guess gender from a name, occupation, rank, appearance, genre convention, or stereotype.
+- Gender-neutral words such as spouse, partner, lover, parent, child, sibling, officer, captain, commander, major, colonel, and lieutenant colonel never prove gender by themselves.
 - Before writing "Unspecified", scan the whole latest source for direct evidence such as gendered nouns, pronouns, kinship grammar, or an explicit description. If an existing Unspecified character is now proven Male/Female, output that specific gender directly; this is not a correction.
 - An existing specific gender is authoritative. Change it only when the latest source explicitly proves it was wrong; write that rare update as "CORRECTION: [Gender, role, description]".
 - Write all character metadata in English, regardless of source and target language.
 - For an existing character, output one concise cumulative replacement description containing the important old and new facts. Summarize repeated roles instead of appending duplicate phrases.
+- Character descriptions must contain only the normalized result. Never append evidence notes, quotations, reasoning, confidence, "Gender confirmed...", "Correction...", or parenthetical explanations.
 
 Input provided:
 1. CURRENT GLOBAL LORE (Characters & Glossary)
@@ -1816,6 +2331,10 @@ Your output must follow this strict format:
 [NEW_CHARACTERS]
 - Canonical Name: [Gender, role, and concise description]
 (Use "Unspecified" rather than guessing when a recurring character must be tracked before gender is explicit. Use "CORRECTION: [Gender, role, description]" only for a source-proven correction. Use "- Canonical Name: DELETE" to delete an obsolete entry. If there are no changes, output no bullet under this header.)
+
+[IDENTITY_LINKS]
+- Source title, rank, nickname, or alias: Canonical Name
+(Only include identity links directly established by the latest source. The right side must be one exact canonical character name from CURRENT GLOBAL LORE or NEW_CHARACTERS. Use "- Alias: DELETE" to remove a wrong link. If there are no changes, output no bullet under this header.)
 
 [NEW_GLOSSARY]
 - Source Term: [Target Term]
@@ -1831,7 +2350,7 @@ Your output must follow this strict format:
 
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
-(Classify only the supplied dialogue candidates. Infer from narration, turn-taking, current scene state, voice, and addressing forms. Use only canonical character names already present in CURRENT GLOBAL LORE, including characters added in this response. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates.)
+(Classify only the supplied dialogue candidates. Infer from narration, turn-taking, current scene state, voice, and addressing forms. Resolve titles and aliases through CURRENT GLOBAL LORE and IDENTITY_LINKS, but output only canonical character names already present in CURRENT GLOBAL LORE or NEW_CHARACTERS. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates.)
 
 Do not include any other explanations, markdown fences, or extra text outside these blocks.
 """
@@ -1843,13 +2362,16 @@ Identity rules:
 - Reuse the exact canonical name already present in CURRENT GLOBAL LORE.
 - Do not create separate characters for ranks, titles, nicknames, transformed/awakened states, disguises, age variants, or relational aliases of an existing person.
 - When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
+- When this source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
 - Do not add one-scene unnamed soldiers, victims, generic crowds, or incidental roles unless they recur and are necessary for pronoun/address consistency.
 - Never output template entries, "None", "[None]", "Unknown", "N/A", or an empty bullet.
 - Record gender only when this source text states it or gives unambiguous grammatical/pronoun evidence. Never infer it from names, jobs, ranks, appearance, personality, or genre stereotypes.
+- Gender-neutral words such as spouse, partner, lover, parent, child, sibling, officer, captain, commander, major, colonel, and lieutenant colonel never prove gender by themselves.
 - Before writing "Unspecified", scan the entire latest source for direct evidence such as gendered nouns, pronouns, kinship grammar, or an explicit description. If an existing Unspecified character is now proven Male/Female, output that specific gender directly; this is not a correction.
 - Treat an existing specific gender as authoritative. Change it only when this source text explicitly proves it wrong, using "CORRECTION: [Gender, role, description]".
 - Preserve source-side proper names exactly. Write character metadata descriptions in English so context remains stable when the translation model or target language changes.
 - For an existing character, output one concise cumulative replacement description containing the important old and new facts. Summarize repeated roles instead of appending duplicate phrases.
+- Character descriptions must contain only the normalized result. Never append evidence notes, quotations, reasoning, confidence, "Gender confirmed...", "Correction...", or parenthetical explanations.
 
 Input provided:
 1. CURRENT GLOBAL LORE (Characters & Glossary)
@@ -1861,6 +2383,10 @@ Your output must follow this strict format:
 [NEW_CHARACTERS]
 - Canonical Name: [Gender, role, and concise description]
 (Use "Unspecified" rather than guessing when a recurring character must be tracked before gender is explicit. Use "CORRECTION: [Gender, role, description]" only for a source-proven correction. Use "- Canonical Name: DELETE" to delete an obsolete entry. If there are no changes, output no bullet under this header.)
+
+[IDENTITY_LINKS]
+- Source title, rank, nickname, or alias: Canonical Name
+(Only include identity links directly established by this source. The right side must be one exact canonical character name from CURRENT GLOBAL LORE or NEW_CHARACTERS. Use "- Alias: DELETE" to remove a wrong link. If there are no changes, output no bullet under this header.)
 
 [NEW_GLOSSARY]
 - Source Term: [Recommended Target Term]
@@ -1876,7 +2402,7 @@ Your output must follow this strict format:
 
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
-(Classify only the supplied dialogue candidates. Infer from narration, turn-taking, current scene state, voice, and addressing forms. Use only canonical character names already present in CURRENT GLOBAL LORE, including characters added in this response. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates.)
+(Classify only the supplied dialogue candidates. Infer from narration, turn-taking, current scene state, voice, and addressing forms. Resolve titles and aliases through CURRENT GLOBAL LORE and IDENTITY_LINKS, but output only canonical character names already present in CURRENT GLOBAL LORE or NEW_CHARACTERS. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates.)
 
 Do not translate the whole passage. Do not include explanations, markdown fences, or text outside these blocks.
 """
@@ -1926,7 +2452,12 @@ SOURCE_ANALYSIS_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
 Analyze the source for context needed by its translation. Output ONLY the strictly formatted blocks."""
 
 
-def merge_new_lore(global_lore: str, new_characters: str, new_glossary: str) -> Tuple[str, List[str]]:
+def merge_new_lore(
+    global_lore: str,
+    new_characters: str,
+    new_glossary: str,
+    new_aliases: str = "",
+) -> Tuple[str, List[str]]:
     """Merge context updates through canonical character and glossary identities."""
     change_logs: List[str] = []
     lore = normalize_global_lore(global_lore)
@@ -1936,11 +2467,63 @@ def merge_new_lore(global_lore: str, new_characters: str, new_glossary: str) -> 
         logger.info(message)
         print(message)
 
+    alias_bounds = _find_lore_section(lore, ALIASES_SECTION)
+    alias_entries = (
+        _parse_alias_entries(lore[alias_bounds[1]:alias_bounds[2]])
+        if alias_bounds
+        else []
+    )
+    explicit_aliases = _alias_entries_to_map(alias_entries)
+    alias_displays = {
+        alias_key: alias
+        for alias, _ in alias_entries
+        for alias_key in _character_alias_keys(alias)
+    }
+
+    for raw_alias, raw_target in _parse_bullet_entries(new_aliases):
+        alias_keys = _character_alias_keys(raw_alias)
+        if not alias_keys:
+            continue
+        is_delete = _strip_balanced_brackets(raw_target).casefold() == "delete"
+        if is_delete:
+            removed = False
+            for alias_key in alias_keys:
+                if alias_key in explicit_aliases:
+                    explicit_aliases.pop(alias_key, None)
+                    alias_displays.pop(alias_key, None)
+                    removed = True
+            if removed:
+                record(
+                    "[Novel Context] Deleted obsolete identity link "
+                    f"'{_plain_key(raw_alias)}'"
+                )
+            continue
+
+        target = _canonical_display_name(raw_target)
+        if (
+            _is_invalid_context_key(target)
+            or _character_names_match(raw_alias, target)
+        ):
+            continue
+        changed = any(
+            explicit_aliases.get(alias_key) != target
+            for alias_key in alias_keys
+        )
+        for alias_key in alias_keys:
+            explicit_aliases[alias_key] = target
+            alias_displays[alias_key] = _strip_balanced_brackets(raw_alias)
+        if changed:
+            record(
+                "[Novel Context] Linked identity alias "
+                f"'{_plain_key(raw_alias)}' -> '{target}'"
+            )
+
     character_bounds = _find_lore_section(lore, CHARACTERS_SECTION)
     if character_bounds:
         _, body_start, body_end = character_bounds
         characters, _ = _deduplicate_character_entries(
-            _parse_bullet_entries(lore[body_start:body_end])
+            _parse_bullet_entries(lore[body_start:body_end]),
+            explicit_aliases,
         )
     else:
         characters = []
@@ -1949,6 +2532,16 @@ def merge_new_lore(global_lore: str, new_characters: str, new_glossary: str) -> 
         if _is_disposable_unnamed_character(raw_name, raw_value):
             continue
         incoming_aliases = _character_alias_keys(raw_name)
+        forced_name = next(
+            (
+                explicit_aliases[alias]
+                for alias in incoming_aliases
+                if alias in explicit_aliases
+            ),
+            None,
+        )
+        effective_name = forced_name or raw_name
+        incoming_aliases |= _character_alias_keys(effective_name)
         match_index = None
         for index, (existing_name, existing_value) in enumerate(characters):
             if (
@@ -1956,7 +2549,7 @@ def merge_new_lore(global_lore: str, new_characters: str, new_glossary: str) -> 
                 or _character_identities_match(
                     existing_name,
                     existing_value,
-                    raw_name,
+                    effective_name,
                     raw_value,
                 )
             ):
@@ -1971,7 +2564,7 @@ def merge_new_lore(global_lore: str, new_characters: str, new_glossary: str) -> 
                 record(f"[Novel Context] Deleted obsolete Character '{log_key}'")
             continue
 
-        canonical_name = _canonical_display_name(raw_name)
+        canonical_name = _canonical_display_name(effective_name)
         clean_value, explicit_correction = _strip_character_correction_marker(
             raw_value
         )
@@ -1985,7 +2578,11 @@ def merge_new_lore(global_lore: str, new_characters: str, new_glossary: str) -> 
             continue
 
         old_name, old_value = characters[match_index]
-        merged_name = _preferred_character_name(old_name, canonical_name)
+        merged_name = (
+            canonical_name
+            if forced_name
+            else _preferred_character_name(old_name, canonical_name)
+        )
         merged_value = _merge_character_values(
             old_value,
             clean_value,
@@ -1999,12 +2596,29 @@ def merge_new_lore(global_lore: str, new_characters: str, new_glossary: str) -> 
             )
         characters[match_index] = (merged_name, merged_value)
 
-    characters, _ = _deduplicate_character_entries(characters)
+    characters, _ = _deduplicate_character_entries(
+        characters,
+        explicit_aliases,
+    )
     lore = _replace_lore_section(
         lore,
         CHARACTERS_SECTION,
         [_format_character_line(name, value) for name, value in characters],
     )
+    canonical_aliases = _canonical_alias_entries(
+        explicit_aliases,
+        characters,
+        alias_displays,
+    )
+    if alias_bounds or canonical_aliases:
+        lore = _replace_lore_section(
+            lore,
+            ALIASES_SECTION,
+            [
+                f"- {alias}: {target}"
+                for alias, target in canonical_aliases
+            ],
+        )
 
     glossary_bounds = _find_lore_section(lore, GLOSSARY_SECTION)
     if glossary_bounds:
@@ -2126,12 +2740,29 @@ async def update_novel_context_chunk(
         
         # Parse blocks
         new_chars = ""
+        new_aliases = ""
         new_glossary = ""
         new_dynamic = current_dynamic_state
         
         import re
-        chars_match = re.search(r'\[NEW_CHARACTERS\]\s*(.*?)\s*(?=\[NEW_GLOSSARY\]|\[DYNAMIC_STATE\]|$)', content, re.DOTALL)
-        glossary_match = re.search(r'\[NEW_GLOSSARY\]\s*(.*?)\s*(?=\[DYNAMIC_STATE\]|\[NEW_CHARACTERS\]|$)', content, re.DOTALL)
+        chars_match = re.search(
+            r'\[NEW_CHARACTERS\]\s*(.*?)\s*'
+            r'(?=\[IDENTITY_LINKS\]|\[NEW_GLOSSARY\]|\[DYNAMIC_STATE\]|$)',
+            content,
+            re.DOTALL,
+        )
+        aliases_match = re.search(
+            r'\[IDENTITY_LINKS\]\s*(.*?)\s*'
+            r'(?=\[NEW_GLOSSARY\]|\[DYNAMIC_STATE\]|\[NEW_CHARACTERS\]|$)',
+            content,
+            re.DOTALL,
+        )
+        glossary_match = re.search(
+            r'\[NEW_GLOSSARY\]\s*(.*?)\s*'
+            r'(?=\[DYNAMIC_STATE\]|\[IDENTITY_LINKS\]|\[NEW_CHARACTERS\]|$)',
+            content,
+            re.DOTALL,
+        )
         dynamic_match = re.search(
             r'\[DYNAMIC_STATE\]\s*(.*?)\s*(?=\[DIALOGUE_ATTRIBUTION\]|$)',
             content,
@@ -2145,6 +2776,8 @@ async def update_novel_context_chunk(
         
         if chars_match:
             new_chars = chars_match.group(1).strip()
+        if aliases_match:
+            new_aliases = aliases_match.group(1).strip()
         if glossary_match:
             new_glossary = glossary_match.group(1).strip()
         if dynamic_match:
@@ -2170,7 +2803,12 @@ async def update_novel_context_chunk(
             
             new_dynamic = "\n".join(cleaned_lines).strip()
             
-        updated_global_lore, change_logs = merge_new_lore(current_global_lore, new_chars, new_glossary)
+        updated_global_lore, change_logs = merge_new_lore(
+            current_global_lore,
+            new_chars,
+            new_glossary,
+            new_aliases,
+        )
         new_dynamic = merge_dynamic_state(
             current_dynamic_state,
             new_dynamic,
