@@ -160,6 +160,32 @@ _RECURRING_CHARACTER_MARKERS = {
     "returns later",
     "source-named",
 }
+_WORK_ENTITY_WORDS = {
+    "advertisement",
+    "anime",
+    "app",
+    "book",
+    "film",
+    "game",
+    "manga",
+    "movie",
+    "novel",
+    "series",
+    "story",
+    "website",
+    "webtoon",
+}
+_WORK_ENTITY_NON_PERSON_ROLES = {
+    "administrator",
+    "avatar",
+    "character",
+    "entity",
+    "manager",
+    "operator",
+    "player",
+    "protagonist",
+    "user",
+}
 _NARRATIVE_ROLE_NAME_PATTERN = re.compile(
     r"^(?:the\s+)?(?:(?:main\s+)?protagonist|main\s+character|"
     r"hero|player\s+character|fictional\s+character)\s+"
@@ -246,6 +272,31 @@ def _is_disposable_unnamed_character(name: str, value: str) -> bool:
     if _is_numbered_generic_role_name(name):
         return True
     return any(marker in description for marker in _INCIDENTAL_CHARACTER_MARKERS)
+
+
+def _is_non_character_work_entry(name: str, value: str) -> bool:
+    """Reject works/apps that the model put in the character registry."""
+    del name
+    _, details = _split_gender_and_details(_normalize_character_value(value))
+    key = _plain_key(details)
+    if not key:
+        return False
+
+    words = re.findall(r"\w+", key)
+    if not words:
+        return False
+    if words[0] in _WORK_ENTITY_WORDS:
+        if len(words) > 1 and words[1] in _WORK_ENTITY_NON_PERSON_ROLES:
+            return False
+        return True
+
+    return bool(
+        re.search(
+            r"\b(?:game|novel|story|series|book|webtoon|manga|anime|"
+            r"film|movie|app|website)\s+(?:title|work|setting)\b",
+            key,
+        )
+    )
 
 
 def _is_descriptive_role_name(name: str) -> bool:
@@ -1114,11 +1165,11 @@ def _current_reincarnated_form_gender(name: str, details: str) -> str:
     patterns = (
         rf"\bnamed\s+{name_pattern}\b[^.;]{{0,120}}?"
         r"\b(?:became|become|becomes|as|into)\s+"
-        r"(?:an?\s+)?(?:[\w'-]+\s+){0,4}"
+        r"(?:an?\s+)?(?:[\w'-]+[,\s]+){0,6}"
         r"(?P<body>male|female|man|woman|boy|girl)\b",
         r"\b(?:became|become|becomes|reincarnated\s+as|reincarnates\s+as|"
         r"reborn\s+as|turns\s+into|turned\s+into)\s+"
-        r"(?:an?\s+)?(?:[\w'-]+\s+){0,4}"
+        r"(?:an?\s+)?(?:[\w'-]+[,\s]+){0,6}"
         r"(?P<body>male|female|man|woman|boy|girl)\b",
     )
     genders = {
@@ -1417,6 +1468,7 @@ def _deduplicate_character_entries(
     for raw_name, raw_value in regular_entries + descriptive_entries:
         if (
             _is_invalid_context_key(raw_name)
+            or _is_non_character_work_entry(raw_name, raw_value)
             or _is_disposable_unnamed_character(raw_name, raw_value)
         ):
             continue
@@ -1662,6 +1714,7 @@ def _candidate_named_characters(
         name = _canonical_display_name(raw_name)
         if (
             _is_invalid_context_key(name)
+            or _is_non_character_work_entry(name, raw_value)
             or _is_descriptive_role_name(name)
             or _role_title_key_from_name(name)
             or _is_disposable_unnamed_character(name, raw_value)
@@ -1811,7 +1864,10 @@ def _discarded_incidental_character_aliases(
         aliases = _character_alias_keys(raw_name)
         if aliases & retained_keys:
             continue
-        if _is_disposable_unnamed_character(raw_name, raw_value):
+        if (
+            _is_non_character_work_entry(raw_name, raw_value)
+            or _is_disposable_unnamed_character(raw_name, raw_value)
+        ):
             discarded.update(aliases)
     return discarded
 
@@ -2225,6 +2281,93 @@ def normalize_novel_context_content(content: str) -> str:
     return normalize_global_lore(text)
 
 
+def _current_form_fact_from_details(source_name: str, details: str) -> str:
+    match = re.search(
+        r"\breincarnat\w+\s+as\s+(?P<form>[^.;]+)",
+        details,
+        flags=re.IGNORECASE,
+    )
+    form = _clean_inline_text(match.group("form")).strip(" ,") if match else ""
+    fact = f"reincarnated form of {_canonical_display_name(source_name)}"
+    return f"{fact} as {form}" if form else fact
+
+
+def _dynamic_links_reincarnated_form(
+    dynamic_state: str,
+    source_name: str,
+    target_name: str,
+) -> bool:
+    source_pattern = _name_reference_pattern(source_name)
+    target_pattern = _name_reference_pattern(target_name)
+    for raw_line in _normalize_relationship_notation(dynamic_state).splitlines():
+        line = _clean_inline_text(raw_line)
+        if not line or "reincarnat" not in line.casefold():
+            continue
+        if re.search(
+            rf"{source_pattern}[\s\S]{{0,180}}\breincarnat\w+"
+            rf"[\s\S]{{0,160}}\b(?:into|as)\b[\s\S]{{0,120}}"
+            rf"{target_pattern}",
+            line,
+            flags=re.IGNORECASE,
+        ):
+            return True
+    return False
+
+
+def _apply_dynamic_reincarnation_gender_links(
+    global_lore: str,
+    dynamic_state: str,
+) -> str:
+    bounds = _find_lore_section(global_lore, CHARACTERS_SECTION)
+    if not bounds or not str(dynamic_state or "").strip():
+        return global_lore
+
+    _, body_start, body_end = bounds
+    characters = _parse_bullet_entries(global_lore[body_start:body_end])
+    if len(characters) < 2:
+        return global_lore
+
+    updated = list(characters)
+    changed = False
+    for source_name, source_value in characters:
+        _, source_details = _split_gender_and_details(
+            _normalize_character_value_for_name(source_name, source_value)
+        )
+        current_form_gender = _current_reincarnated_form_gender(
+            source_name,
+            source_details,
+        )
+        if current_form_gender.casefold() not in _SPECIFIC_GENDER_LABELS:
+            continue
+
+        for target_index, (target_name, target_value) in enumerate(updated):
+            if _character_names_match(source_name, target_name):
+                continue
+            if not _dynamic_links_reincarnated_form(
+                dynamic_state,
+                source_name,
+                target_name,
+            ):
+                continue
+            repaired_value = _merge_character_values(
+                target_value,
+                f"{current_form_gender}, "
+                f"{_current_form_fact_from_details(source_name, source_details)}",
+                allow_gender_correction=True,
+            )
+            if repaired_value != target_value:
+                updated[target_index] = (target_name, repaired_value)
+                changed = True
+
+    if not changed:
+        return global_lore
+    return _replace_lore_section(
+        global_lore,
+        CHARACTERS_SECTION,
+        [_format_character_line(name, value) for name, value in updated],
+    )
+
+
 def is_safe_filename(filename: str) -> bool:
     """Whitelist filenames to alphanumerics + `_-.` with .txt extension."""
     return bool(SAFE_FILENAME_RE.match(filename or ""))
@@ -2406,6 +2549,10 @@ def build_novel_context(
 ) -> str:
     """Build the canonical full context representation used by every pipeline."""
     normalized_global = normalize_global_lore(global_lore)
+    normalized_global = _apply_dynamic_reincarnation_gender_links(
+        normalized_global,
+        dynamic_state,
+    )
     normalized_dynamic = normalize_dynamic_state(
         dynamic_state,
         _character_alias_map(normalized_global),
@@ -2418,6 +2565,50 @@ def build_novel_context(
         f"{normalized_dynamic.strip()}\n"
         f"{DYNAMIC_STATE_END}"
     ).strip()
+
+
+def _source_memory_budget_chars() -> int:
+    try:
+        from src import config as _config
+        raw_value = getattr(_config, "NOVEL_CONTEXT_SOURCE_MEMORY_CHARS", 6000)
+        return max(0, int(raw_value))
+    except Exception:
+        return 6000
+
+
+def _clean_source_memory_chunk(source_chunk: str) -> str:
+    return _clean_inline_text(source_chunk).strip()
+
+
+def _bounded_source_memory(chunks: List[str], max_chars: Optional[int] = None) -> str:
+    budget = _source_memory_budget_chars() if max_chars is None else int(max_chars)
+    if budget <= 0:
+        return ""
+
+    separator = "\n\n--- Previous source chunk ---\n\n"
+    selected: List[str] = []
+    total = 0
+    for chunk in reversed(chunks):
+        clean = _clean_source_memory_chunk(chunk)
+        if not clean:
+            continue
+        extra = len(clean) + (len(separator) if selected else 0)
+        if selected and total + extra > budget:
+            break
+        if not selected and len(clean) > budget:
+            clean = clean[-budget:].lstrip()
+            extra = len(clean)
+        selected.append(clean)
+        total += extra
+    return separator.join(reversed(selected))
+
+
+def _compose_source_analysis_text(source_context: str, source_chunk: str) -> str:
+    parts = [
+        _clean_source_memory_chunk(source_context),
+        _clean_source_memory_chunk(source_chunk),
+    ]
+    return "\n\n".join(part for part in parts if part)
 
 
 def _context_prompt_budget_chars(max_tokens: Optional[int]) -> int:
@@ -3133,6 +3324,7 @@ class NovelContextSession:
     dialogue_state: Dict[str, str] = field(default_factory=dict)
     dialogue_attribution: Dict[str, Any] = field(default_factory=dict)
     dialogue_scene_key: Optional[str] = None
+    source_memory: List[str] = field(default_factory=list)
 
     @property
     def content(self) -> str:
@@ -3182,6 +3374,7 @@ class NovelContextSession:
         if normalized_scene_key is not None:
             self.dialogue_scene_key = normalized_scene_key
 
+        source_context = _bounded_source_memory(self.source_memory)
         dialogue_turns = detect_dialogue_turns(source_chunk)
         dialogue_sink: Dict[str, Any] = {}
         self.global_lore, self.dynamic_state, change_logs = await update_novel_context_chunk(
@@ -3195,10 +3388,24 @@ class NovelContextSession:
             target_language=target_language,
             chunk_index=chunk_index,
             total_chunks=total_chunks,
+            source_context=source_context,
             dialogue_turns=dialogue_turns,
             current_dialogue_state=self.dialogue_state,
             dialogue_attribution_sink=dialogue_sink,
         )
+        clean_source = _clean_source_memory_chunk(source_chunk)
+        if clean_source:
+            self.source_memory.append(clean_source)
+            self.source_memory = [
+                chunk for chunk in self.source_memory
+                if chunk.strip()
+            ]
+            bounded = _bounded_source_memory(self.source_memory)
+            self.source_memory = (
+                bounded.split("\n\n--- Previous source chunk ---\n\n")
+                if bounded
+                else []
+            )
         self.dialogue_attribution = (
             dialogue_sink
             or empty_dialogue_attribution(self.dialogue_state)
@@ -3337,8 +3544,9 @@ Identity rules:
 Input provided:
 1. CURRENT GLOBAL LORE (Characters & Glossary)
 2. CURRENT DYNAMIC RELATIONSHIP STATE
-3. LATEST SOURCE TEXT
-4. LATEST TRANSLATION
+3. RECENT SOURCE MEMORY (bounded previous chunks)
+4. LATEST SOURCE TEXT
+5. LATEST TRANSLATION
 
 Your output must follow this strict format:
 
@@ -3397,7 +3605,8 @@ Identity rules:
 Input provided:
 1. CURRENT GLOBAL LORE (Characters & Glossary)
 2. CURRENT DYNAMIC RELATIONSHIP STATE
-3. LATEST SOURCE TEXT
+3. RECENT SOURCE MEMORY (bounded previous chunks)
+4. LATEST SOURCE TEXT
 
 Your output must follow this strict format:
 
@@ -3436,6 +3645,9 @@ UPDATE_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
 
 ### TRANSLATION PROGRESS: Segment {chunk_index} of {total_chunks}
 
+### RECENT SOURCE MEMORY ({source_language}, previous chunks only):
+{source_context}
+
 ### LATEST SOURCE TEXT ({source_language}):
 {source_chunk}
 
@@ -3457,6 +3669,9 @@ SOURCE_ANALYSIS_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
 {current_dynamic_state}
 
 ### TRANSLATION PROGRESS: Segment {chunk_index} of {total_chunks}
+
+### RECENT SOURCE MEMORY ({source_language}, previous chunks only):
+{source_context}
 
 ### LATEST SOURCE TEXT ({source_language}):
 {source_chunk}
@@ -3560,7 +3775,10 @@ def merge_new_lore(
     ]
 
     for raw_name, raw_value in regular_incoming + descriptive_incoming:
-        if _is_disposable_unnamed_character(raw_name, raw_value):
+        if (
+            _is_non_character_work_entry(raw_name, raw_value)
+            or _is_disposable_unnamed_character(raw_name, raw_value)
+        ):
             continue
         incoming_aliases = _character_alias_keys(raw_name)
         forced_name = next(
@@ -3722,6 +3940,7 @@ async def update_novel_context_chunk(
     target_language: str,
     chunk_index: int = 0,
     total_chunks: int = 0,
+    source_context: str = "",
     dialogue_turns: Optional[List[Dict[str, str]]] = None,
     current_dialogue_state: Optional[Dict[str, str]] = None,
     dialogue_attribution_sink: Optional[Dict[str, Any]] = None,
@@ -3744,6 +3963,7 @@ async def update_novel_context_chunk(
         "current_dynamic_state": current_dynamic_state,
         "source_language": source_language,
         "target_language": target_language,
+        "source_context": source_context or "(none)",
         "source_chunk": source_chunk,
         "translated_chunk": translated_chunk or "",
         "chunk_index": chunk_index if chunk_index > 0 else "?",
@@ -3815,8 +4035,12 @@ async def update_novel_context_chunk(
         
         if chars_match:
             new_chars = chars_match.group(1).strip()
-        source_backstop_gender_updates = infer_source_gender_updates(
+        source_analysis_text = _compose_source_analysis_text(
+            source_context,
             source_chunk,
+        )
+        source_backstop_gender_updates = infer_source_gender_updates(
+            source_analysis_text,
             current_global_lore,
             new_chars,
         )
@@ -3829,7 +4053,7 @@ async def update_novel_context_chunk(
         if aliases_match:
             new_aliases = aliases_match.group(1).strip()
         source_backstop_aliases = infer_source_identity_links(
-            source_chunk,
+            source_analysis_text,
             current_global_lore,
             new_chars,
         )

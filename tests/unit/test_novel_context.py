@@ -825,6 +825,152 @@ def test_real_vampire_source_backstops_repair_current_form_gender_and_title_alia
     )
 
 
+def test_vampire_context_normalization_removes_work_and_repairs_current_form():
+    from src.utils.novel_context import normalize_novel_context_content
+
+    raw_context = (
+        "# GLOBAL LORE\n"
+        "(Characters, genders, and terminology; canonical names only.)\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kim Ji-an: Female, protagonist, a patient suffering from "
+        "blood-related diseases; protagonist, reincarnated as a small, "
+        "ragged vampire girl in the game world.\n"
+        "- Glory of Victory: Unspecified, game, a strategy mobile game about "
+        "a protagonist seeking revenge against a Vampire Kingdom.\n"
+        "- Valentine: Male, protagonist, the user identity for the game "
+        "Glory of Victory.\n"
+        "- Operator: Unspecified, game administrator, the entity managing the "
+        "beta test for Glory of Victory.\n\n"
+        "## CHARACTER ALIASES\n"
+        "- glory of victory 2: Glory of Victory\n"
+        "- Glovic: Glory of Victory\n"
+        "- Captain: Valentine\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- Glovic: Glovic\n\n"
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        "- Operator → Valentine: formal monitoring.\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Kim Ji-an ↔ Glory of Victory: former obsession with the game.\n"
+        "- Kim Ji-an ↔ Valentine: Kim Ji-an is the human host currently "
+        "undergoing the reincarnation process into the game character "
+        "Valentine.\n"
+        "---DYNAMIC_STATE_END---"
+    )
+
+    normalized = normalize_novel_context_content(raw_context)
+
+    assert "- Glory of Victory:" not in normalized
+    assert "- Valentine: Female," in normalized
+    assert "reincarnated form of Kim Ji-an as a small, ragged vampire girl" in normalized
+    assert "- Operator: Unspecified, game administrator" in normalized
+    assert "Glovic: Glory of Victory" not in normalized
+    assert "- Glovic: Glovic" in normalized
+    assert "Kim Ji-an ↔ Glory of Victory" not in normalized
+
+
+@pytest.mark.asyncio
+async def test_source_memory_backstop_repairs_gender_across_chunk_boundary():
+    from src.utils.novel_context import update_novel_context_chunk
+
+    response = MagicMock()
+    response.content = (
+        "[NEW_CHARACTERS]\n\n"
+        "[IDENTITY_LINKS]\n\n"
+        "[NEW_GLOSSARY]\n\n"
+        "[DYNAMIC_STATE]\n"
+        "## CURRENT ADDRESSING FORMS\n\n"
+        "## RELATIONSHIP EVOLUTION\n\n"
+        "[DIALOGUE_ATTRIBUTION]\n"
+        '{"turns":[],"state_after":{}}'
+    )
+    client = MagicMock()
+    client.generate = AsyncMock(return_value=response)
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Valentine: Male, protagonist, the user identity for the game.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    previous_source = (
+        "I thought I would die like that. [Valentine, starting "
+        "reincarnation.] With that phrase, I fell asleep."
+    )
+    current_source = (
+        "When I woke up again, I had become a girl with a very small build. "
+        "Moreover, a ragged girl in tattered clothes."
+    )
+
+    updated_lore, _dynamic, _logs = await update_novel_context_chunk(
+        llm_client=client,
+        model_name="model",
+        current_global_lore=lore,
+        current_dynamic_state="",
+        source_context=previous_source,
+        source_chunk=current_source,
+        translated_chunk=None,
+        source_language="English",
+        target_language="Vietnamese",
+    )
+
+    assert "- Valentine: Female," in updated_lore
+
+
+@pytest.mark.asyncio
+async def test_context_session_passes_bounded_previous_source_memory(tmp_path):
+    from src.utils.novel_context import NovelContextSession
+
+    response = MagicMock()
+    response.content = (
+        "[NEW_CHARACTERS]\n\n"
+        "[IDENTITY_LINKS]\n\n"
+        "[NEW_GLOSSARY]\n\n"
+        "[DYNAMIC_STATE]\n"
+        "## CURRENT ADDRESSING FORMS\n\n"
+        "## RELATIONSHIP EVOLUTION\n\n"
+        "[DIALOGUE_ATTRIBUTION]\n"
+        '{"turns":[],"state_after":{}}'
+    )
+    client = MagicMock()
+    client.generate = AsyncMock(return_value=response)
+    session = NovelContextSession(
+        path=tmp_path / "novel.txt",
+        prompt_options={},
+        global_lore=(
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Valentine: Male, protagonist.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        dynamic_state="",
+    )
+
+    await session.analyze_source(
+        llm_client=client,
+        model_name="model",
+        source_chunk="[Valentine, starting reincarnation.]",
+        source_language="English",
+        target_language="Vietnamese",
+        chunk_index=1,
+        total_chunks=2,
+    )
+    await session.analyze_source(
+        llm_client=client,
+        model_name="model",
+        source_chunk="When I woke up again, I had become a girl.",
+        source_language="English",
+        target_language="Vietnamese",
+        chunk_index=2,
+        total_chunks=2,
+    )
+
+    second_prompt = client.generate.call_args_list[1].kwargs["prompt"]
+    assert "### RECENT SOURCE MEMORY" in second_prompt
+    assert "[Valentine, starting reincarnation.]" in second_prompt
+    assert "When I woke up again, I had become a girl." in second_prompt
+
+
 def test_source_identity_links_direct_addressed_title_to_named_responder():
     from src.utils.novel_context import infer_source_identity_links
 
