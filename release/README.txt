@@ -1,6 +1,6 @@
 # TranslateBook Windows Executable
 
-Version: 1.4.16
+Version: 1.4.17
 
 ## Quick Start
 
@@ -15,4 +15,4 @@ The app creates a TranslateBook_Data folder next to the executable, including a 
 
 ## Novel Context
 
-This release includes bounded previous-source memory for context analysis through NOVEL_CONTEXT_SOURCE_MEMORY_CHARS. New compact .env files now include that setting by default, matching .env.example and the runtime default.
+This release includes bounded previous-source memory for context analysis through NOVEL_CONTEXT_SOURCE_MEMORY_CHARS. New compact .env files now include that setting by default, matching .env.example and the runtime default. It also blocks ambiguous narrative-role labels such as Protagonist from becoming canonical character identities.

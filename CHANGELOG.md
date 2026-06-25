@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.17 - 2026-06-25
+
+### Fixed
+
+- Novel context no longer accepts bare narrative-role labels such as
+  `Protagonist`, `Hero`, or `Main Character` as canonical character names or
+  identity links. This prevents in-story uses of "protagonist" from merging the
+  main character into a different named character.
+- Factions, nations, companies, and one-off advertisement/job labels are now
+  filtered out of `CHARACTERS & GENDERS` instead of being stored as people.
+
 ## 1.4.16 - 2026-06-25
 
 ### Fixed
