@@ -494,6 +494,82 @@ def test_character_gender_does_not_flip_without_explicit_correction():
     assert "- Alex: Female," in corrected_lore
 
 
+def test_source_gate_downgrades_unproven_new_character_gender_guess():
+    from src.utils.novel_context import merge_new_lore
+
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    source = (
+        "During a regular health checkup, the doctor addressed Kim Ji-an. "
+        "The lover I trusted abandoned me. Seeing a sick person hurts her "
+        "heart, she said. She just cheated on me with a healthy guy."
+    )
+    model_guess = (
+        "- Kim Ji-an: Female, protagonist, suffering from various "
+        "blood-related diseases and anemia.\n"
+        "- Ex-lover: Female, former romantic partner who abandoned Kim Ji-an."
+    )
+
+    updated_lore, _ = merge_new_lore(
+        initial_lore,
+        model_guess,
+        "",
+        source_text=source,
+    )
+
+    assert (
+        "- Kim Ji-an: Unspecified, protagonist, suffering from various "
+        "blood-related diseases and anemia."
+    ) in updated_lore
+    assert "- Kim Ji-an: Female" not in updated_lore
+    assert "- Ex-lover: Female," in updated_lore
+
+
+def test_source_gate_accepts_source_proven_new_character_gender():
+    from src.utils.novel_context import merge_new_lore
+
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    source = "Eric suspected Kriha of hiding her identity."
+
+    updated_lore, _ = merge_new_lore(
+        initial_lore,
+        "- Kriha: Female, soldier subordinate of Valentine.",
+        "",
+        source_text=source,
+    )
+
+    assert "- Kriha: Female, soldier subordinate of Valentine." in updated_lore
+
+
+def test_source_gate_rejects_unproven_explicit_gender_correction():
+    from src.utils.novel_context import merge_new_lore
+
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Alex: Male, veteran investigator.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    source = "Alex interviewed the witness before leaving the station."
+
+    updated_lore, _ = merge_new_lore(
+        initial_lore,
+        "- Alex: CORRECTION: [Female, veteran investigator with a new lead.]",
+        "",
+        source_text=source,
+    )
+
+    assert "- Alex: Male, veteran investigator" in updated_lore
+    assert "- Alex: Female" not in updated_lore
+
+
 def test_trailing_gender_correction_is_summarized_into_primary_gender():
     from src.utils.novel_context import merge_new_lore
 

@@ -2082,6 +2082,41 @@ def _source_relationship_pronoun_gender_for_name(
     return next(iter(genders)) if len(genders) == 1 else ""
 
 
+def _source_romantic_role_gender_for_name(source_text: str, name: str) -> str:
+    """Infer gender for role labels such as Ex-lover from local pronouns."""
+    text = _clean_inline_text(source_text)
+    key = _plain_key(name)
+    if not text or key not in {
+        "ex",
+        "ex girlfriend",
+        "ex lover",
+        "ex partner",
+        "ex-girlfriend",
+        "ex-lover",
+        "ex-partner",
+        "former girlfriend",
+        "former lover",
+        "former partner",
+        "girlfriend",
+        "lover",
+        "partner",
+    }:
+        return ""
+
+    role_pattern = (
+        r"(?:ex[-\s]?)?(?:girl\s*friend|boy\s*friend|lover|partner)|"
+        r"former\s+(?:girl\s*friend|boy\s*friend|lover|partner)"
+    )
+    genders: set[str] = set()
+    for match in re.finditer(role_pattern, text, flags=re.IGNORECASE):
+        window = text[match.start(): match.end() + 220]
+        if re.search(r"\b(?:she|her|hers)\b", window, flags=re.IGNORECASE):
+            genders.add("Female")
+        if re.search(r"\b(?:he|him|his)\b", window, flags=re.IGNORECASE):
+            genders.add("Male")
+    return next(iter(genders)) if len(genders) == 1 else ""
+
+
 def infer_source_gender_updates(
     source_text: str,
     current_global_lore: str,
@@ -2105,10 +2140,82 @@ def infer_source_gender_updates(
         if gender:
             updates.append(f"- {name}: CORRECTION: [{gender}]")
             continue
+        gender = _source_romantic_role_gender_for_name(source_text, name)
+        if gender:
+            updates.append(f"- {name}: CORRECTION: [{gender}]")
+            continue
         gender = _source_direct_gender_for_name(source_text, name)
         if gender:
             updates.append(f"- {name}: CORRECTION: [{gender}]")
     return "\n".join(updates)
+
+
+def _source_proven_gender_for_name(source_text: str, name: str) -> str:
+    """Return only deterministic source-backed gender evidence for a name."""
+    for detector in (
+        _source_reincarnation_gender_for_name,
+        _source_relationship_pronoun_gender_for_name,
+        _source_romantic_role_gender_for_name,
+        _source_direct_gender_for_name,
+    ):
+        gender = detector(source_text, name)
+        if gender:
+            return gender
+    return ""
+
+
+def _gate_unproven_character_gender(
+    name: str,
+    value: str,
+    source_text: str,
+    existing_value: str = "",
+    explicit_correction: bool = False,
+) -> str:
+    """Prevent model-guessed genders from entering durable lore.
+
+    Source-analysis prompts already tell the LLM not to guess, but small models
+    still borrow nearby pronouns from another character. When raw source text is
+    available, a new specific gender must be backed by deterministic evidence.
+    Existing specific genders remain authoritative unless the source proves a
+    correction; this gate only rejects an incoming unsupported claim.
+    """
+    if not source_text:
+        return value
+
+    incoming_gender, incoming_details = _split_gender_and_details(
+        _normalize_character_value(value)
+    )
+    incoming_gender = _canonical_gender(incoming_gender)
+    if incoming_gender.casefold() not in _SPECIFIC_GENDER_LABELS:
+        return value
+
+    existing_gender, _ = _split_gender_and_details(
+        _normalize_character_value(existing_value)
+    )
+    existing_gender = _canonical_gender(existing_gender)
+
+    source_gender = _source_proven_gender_for_name(source_text, name)
+    if source_gender.casefold() == incoming_gender.casefold():
+        return value
+    if source_gender:
+        return (
+            f"{source_gender}, {incoming_details}".rstrip(" ,")
+            if incoming_details
+            else source_gender
+        )
+    if existing_gender.casefold() in _SPECIFIC_GENDER_LABELS:
+        if explicit_correction:
+            return (
+                f"{existing_gender}, {incoming_details}".rstrip(" ,")
+                if incoming_details
+                else existing_gender
+            )
+        return value
+    return (
+        f"Unspecified, {incoming_details}".rstrip(" ,")
+        if incoming_details
+        else "Unspecified"
+    )
 
 
 def _normalize_glossary_entries(entries: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
@@ -4000,6 +4107,7 @@ def merge_new_lore(
     new_characters: str,
     new_glossary: str,
     new_aliases: str = "",
+    source_text: str = "",
 ) -> Tuple[str, List[str]]:
     """Merge context updates through canonical character and glossary identities."""
     change_logs: List[str] = []
@@ -4132,6 +4240,13 @@ def merge_new_lore(
             raw_value
         )
         clean_value = _normalize_character_value(clean_value)
+        clean_value = _gate_unproven_character_gender(
+            canonical_name,
+            clean_value,
+            source_text,
+            characters[match_index][1] if match_index is not None else "",
+            explicit_correction,
+        )
         if match_index is None:
             if descriptive_name:
                 continue
@@ -4403,6 +4518,7 @@ async def update_novel_context_chunk(
             new_chars,
             new_glossary,
             new_aliases,
+            source_analysis_text,
         )
         new_dynamic = merge_dynamic_state(
             current_dynamic_state,
