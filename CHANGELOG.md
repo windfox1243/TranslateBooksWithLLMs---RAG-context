@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.16 - 2026-06-25
+
+### Fixed
+
+- Generated compact `.env` files now include
+  `NOVEL_CONTEXT_SOURCE_MEMORY_CHARS`, matching `.env.example`, the docs, and
+  the runtime default.
+
 ## 1.4.15 - 2026-06-25
 
 ### Improved

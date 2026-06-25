@@ -11,6 +11,7 @@ def test_compact_env_contains_current_knobs_without_reference_wall():
 
     assert "NOVEL_CONTEXT_PROMPT_MAX_TOKENS=1800" in text
     assert "NOVEL_CONTEXT_UPDATE_INTERVAL=1" in text
+    assert "NOVEL_CONTEXT_SOURCE_MEMORY_CHARS=6000" in text
     assert "MAX_TOKENS_PER_CHUNK=450" in text
     assert "GEMINI_MODEL=" not in text
     assert "Multi-key support" not in text
@@ -30,6 +31,7 @@ def test_create_env_file_does_not_copy_env_example(tmp_path, monkeypatch):
 
     assert "NOVEL_CONTEXT_PROMPT_MAX_TOKENS=1800" in text
     assert "NOVEL_CONTEXT_UPDATE_INTERVAL=1" in text
+    assert "NOVEL_CONTEXT_SOURCE_MEMORY_CHARS=6000" in text
     assert "MULTI_KEY_SUPPORT_DOCS=1" not in text
 
 
@@ -61,5 +63,6 @@ def test_launcher_first_run_writes_compact_env_with_reference_copy(
 
     assert "NOVEL_CONTEXT_PROMPT_MAX_TOKENS=1800" in env_text
     assert "NOVEL_CONTEXT_UPDATE_INTERVAL=1" in env_text
+    assert "NOVEL_CONTEXT_SOURCE_MEMORY_CHARS=6000" in env_text
     assert "REFERENCE_ONLY=1" not in env_text
     assert "REFERENCE_ONLY=1" in example_text
