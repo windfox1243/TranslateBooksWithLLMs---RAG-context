@@ -860,6 +860,7 @@ async def _resync_context_snapshots_async(
         resolve_novel_context_path,
         save_novel_context,
         update_novel_context_chunk,
+        _bounded_source_memory,
     )
     from src.core.llm_client import LLMClient
     from src.config import NOVEL_CONTEXTS_DIR
@@ -1065,6 +1066,11 @@ async def _resync_context_snapshots_async(
         append_and_emit(f"❌ {err_msg}")
         return False
     
+    source_memory_chunks = [
+        c.get('original_text') or ''
+        for c in completed_chunks
+        if c.get('chunk_index', -1) <= start_chunk_index
+    ]
     for chunk in chunks_to_process:
         idx = chunk['chunk_index']
         source_text = chunk.get('original_text') or ''
@@ -1104,10 +1110,19 @@ async def _resync_context_snapshots_async(
                 target_language=config.get('target_language'),
                 chunk_index=idx + 1,
                 total_chunks=len(chunks),
+                source_context=_bounded_source_memory(source_memory_chunks),
                 dialogue_turns=dialogue_turns,
                 current_dialogue_state=current_dialogue_state,
                 dialogue_attribution_sink=dialogue_sink,
             )
+            if source_text.strip():
+                source_memory_chunks.append(source_text)
+                bounded_source_memory = _bounded_source_memory(source_memory_chunks)
+                source_memory_chunks = (
+                    bounded_source_memory.split("\n\n--- Previous source chunk ---\n\n")
+                    if bounded_source_memory
+                    else []
+                )
             current_dialogue_state = dict(
                 canonicalize_dialogue_state(
                     dialogue_sink.get('state_after')

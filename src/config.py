@@ -121,6 +121,9 @@ _RELOADABLE_ENV_SETTINGS = (
     # existing behavior (analyze every chunk); higher values analyze chunk 1,
     # then every Nth chunk while translation uses the latest available context.
     ('NOVEL_CONTEXT_UPDATE_INTERVAL', 'NOVEL_CONTEXT_UPDATE_INTERVAL', '1'),
+    # Bounded previous-source tail injected only into context-analysis prompts.
+    # This lets the analyzer resolve facts that span nearby chunk boundaries.
+    ('NOVEL_CONTEXT_SOURCE_MEMORY_CHARS', 'NOVEL_CONTEXT_SOURCE_MEMORY_CHARS', '6000'),
 )
 
 
@@ -131,6 +134,7 @@ _INT_ATTRS = {
     'MAX_TOKENS_PER_CHUNK',
     'NOVEL_CONTEXT_PROMPT_MAX_TOKENS',
     'NOVEL_CONTEXT_UPDATE_INTERVAL',
+    'NOVEL_CONTEXT_SOURCE_MEMORY_CHARS',
 }
 
 

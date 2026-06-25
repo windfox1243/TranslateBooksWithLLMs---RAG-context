@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.15 - 2026-06-25
+
+### Improved
+
+- Novel context source analysis now receives a bounded rolling memory of
+  previous source chunks via `NOVEL_CONTEXT_SOURCE_MEMORY_CHARS`, helping it
+  resolve identities and genders that are split across chunk boundaries.
+
+### Fixed
+
+- Work titles such as games, novels, or series are no longer persisted in
+  `CHARACTERS & GENDERS` when the model describes them as non-character works.
+- Reincarnation context can now repair a stale target identity gender when one
+  context entry stores the current-form gender and the dynamic state links that
+  source identity to the current named form.
+
 ## 1.4.14 - 2026-06-24
 
 This stable release hardens the source-derived novel context architecture
