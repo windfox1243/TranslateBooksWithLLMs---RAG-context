@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.18 - 2026-06-25
+
+### Fixed
+
+- Novel context now gates new or corrective character genders against
+  deterministic source evidence before merging them into durable lore. This
+  prevents early chunks from saving nearby pronouns from another character as a
+  character's gender, such as storing Kim Ji-an as female when chunk 1 does not
+  prove that.
+
 ## 1.4.17 - 2026-06-25
 
 ### Fixed
