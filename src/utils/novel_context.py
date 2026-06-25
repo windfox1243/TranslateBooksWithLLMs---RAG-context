@@ -109,6 +109,7 @@ _GENERIC_ROLE_WORDS = {
     "attendant",
     "civilian",
     "commander",
+    "corporal",
     "doctor",
     "guard",
     "medic",
@@ -116,24 +117,31 @@ _GENERIC_ROLE_WORDS = {
     "private",
     "sergeant",
     "soldier",
+    "soldiers",
     "victim",
 }
 _INCIDENTAL_CHARACTER_MARKERS = {
     "abdominal wound",
     "attending physician",
     "background",
+    "body collection",
+    "deceased",
+    "doctor treating",
     "dying",
     "fallen",
     "generic",
     "incidental",
+    "killed",
     "medical professional",
     "missing leg",
     "new recruit",
     "one scene",
     "one-scene",
+    "physician",
     "screaming in pain",
     "searching for",
     "severed arm",
+    "soldier",
     "unnamed",
     "wounded",
 }
@@ -245,6 +253,24 @@ def _is_descriptive_role_name(name: str) -> bool:
     return bool(_NARRATIVE_ROLE_NAME_PATTERN.match(_plain_key(name)))
 
 
+def _is_unstable_identity_alias(alias: str) -> bool:
+    """Reject scene-local descriptions that are not stable identity labels."""
+    key = _plain_key(alias)
+    unstable = {
+        "boy",
+        "girl",
+        "hero",
+        "protagonist",
+        "the boy",
+        "the girl",
+        "the hero",
+        "the protagonist",
+        "the user",
+        "user",
+    }
+    return key in unstable or _is_descriptive_role_name(alias)
+
+
 def _narrative_work_keys(name: str, value: str = "") -> set[str]:
     text = _clean_inline_text(f"{name}; {value}")
     keys = set()
@@ -254,6 +280,17 @@ def _narrative_work_keys(name: str, value: str = "") -> set[str]:
         if work and work not in _INVALID_CONTEXT_KEYS:
             keys.add(work)
     return keys
+
+
+def _character_narrative_role_alias_keys(name: str, value: str = "") -> set[str]:
+    """Return deterministic aliases such as 'Protagonist of <work>'."""
+    keys: set[str] = set()
+    works = _narrative_work_keys(name, value)
+    for work in works:
+        for role in ("protagonist", "main protagonist", "main character", "hero"):
+            keys.add(_plain_key(f"{role} of {work}"))
+            keys.add(_plain_key(f"the {role} of {work}"))
+    return {key for key in keys if key and key not in _INVALID_CONTEXT_KEYS}
 
 
 def _strip_trailing_qualifier(name: str) -> str:
@@ -1459,6 +1496,7 @@ def _deduplicate_character_entries(
             item["aliases"]
             | _character_alias_keys(name)
             | _character_self_role_title_keys(name, value)
+            | _character_narrative_role_alias_keys(name, value)
         ):
             alias_map[alias] = name
     for alias, target in explicit_aliases.items():
@@ -1556,6 +1594,7 @@ def _alias_entries_to_map(
             _is_invalid_context_key(alias)
             or _is_invalid_context_key(target_name)
             or _character_names_match(alias, target_name)
+            or _is_unstable_identity_alias(alias)
         ):
             continue
         for alias_key in _character_alias_keys(alias):
@@ -1574,7 +1613,7 @@ def _canonical_alias_entries(
         for key in _character_alias_keys(name):
             canonical_by_key[key] = name
 
-    output: Dict[str, Tuple[str, str]] = {}
+    output: Dict[Tuple[str, str], Tuple[str, str]] = {}
     for alias_key, target in aliases.items():
         canonical_target = next(
             (
@@ -1597,7 +1636,10 @@ def _canonical_alias_entries(
                 part.capitalize() if part.islower() else part
                 for part in alias_key.split()
             )
-        output[alias_key] = (display_alias, canonical_target)
+        output[(_plain_key(display_alias), canonical_target)] = (
+            display_alias,
+            canonical_target,
+        )
     return list(output.values())
 
 
@@ -1620,6 +1662,7 @@ def _candidate_named_characters(
         name = _canonical_display_name(raw_name)
         if (
             _is_invalid_context_key(name)
+            or _is_descriptive_role_name(name)
             or _role_title_key_from_name(name)
             or _is_disposable_unnamed_character(name, raw_value)
         ):
@@ -1730,6 +1773,47 @@ def _normalize_glossary_entries(entries: List[Tuple[str, str]]) -> List[Tuple[st
             _strip_balanced_brackets(raw_value),
         )
     return list(ordered.values())
+
+
+def _character_alias_keys_from_lore(global_lore: str) -> set[str]:
+    bounds = _find_lore_section(global_lore, CHARACTERS_SECTION)
+    if not bounds:
+        return set()
+    _, body_start, body_end = bounds
+    keys: set[str] = set()
+    for name, value in _parse_bullet_entries(global_lore[body_start:body_end]):
+        keys.update(_character_alias_keys(name))
+        keys.update(_character_self_role_title_keys(name, value))
+        keys.update(_character_narrative_role_alias_keys(name, value))
+    alias_bounds = _find_lore_section(global_lore, ALIASES_SECTION)
+    if alias_bounds:
+        for alias, _ in _parse_alias_entries(
+            global_lore[alias_bounds[1]:alias_bounds[2]]
+        ):
+            keys.update(_character_alias_keys(alias))
+    return {key for key in keys if key}
+
+
+def _discarded_incidental_character_aliases(
+    original_global_lore: str,
+    normalized_global_lore: str,
+) -> set[str]:
+    """Return aliases for incidental entries removed during normalization."""
+    original_bounds = _find_lore_section(original_global_lore, CHARACTERS_SECTION)
+    if not original_bounds:
+        return set()
+    retained_keys = _character_alias_keys_from_lore(normalized_global_lore)
+    _, body_start, body_end = original_bounds
+    discarded: set[str] = set()
+    for raw_name, raw_value in _parse_bullet_entries(
+        original_global_lore[body_start:body_end]
+    ):
+        aliases = _character_alias_keys(raw_name)
+        if aliases & retained_keys:
+            continue
+        if _is_disposable_unnamed_character(raw_name, raw_value):
+            discarded.update(aliases)
+    return discarded
 
 
 def normalize_global_lore(global_lore: str) -> str:
@@ -1851,6 +1935,20 @@ def _canonical_relationship_party(value: str, alias_map: Dict[str, str]) -> str:
     return clean
 
 
+def _is_disposable_dynamic_party(value: str, alias_map: Dict[str, str]) -> bool:
+    """Drop dynamic rows that point only at filtered generic background roles."""
+    clean = _strip_balanced_brackets(value).strip()
+    if not clean:
+        return False
+    for alias in _character_alias_keys(clean):
+        if alias in alias_map:
+            return False
+    key = _plain_key(clean)
+    return bool(_is_numbered_generic_role_name(clean) or any(
+        marker in key for marker in _INCIDENTAL_CHARACTER_MARKERS
+    ))
+
+
 _DYNAMIC_RELATION_PATTERN = re.compile(
     r"^(?P<prefix>\s*-\s*)?(?P<left>.+?)\s*(?P<arrow>↔|→|←)\s*"
     r"(?P<right>.+?)\s*:\s*(?P<details>.*)$"
@@ -1883,7 +1981,32 @@ def _parse_dynamic_relation(
     return relation_key, rendered, details
 
 
-def _normalize_dynamic_entries(text: str, alias_map: Dict[str, str]) -> str:
+def _dynamic_relation_has_disposable_party(
+    line: str,
+    alias_map: Dict[str, str],
+    discarded_aliases: Optional[set[str]] = None,
+) -> bool:
+    match = _DYNAMIC_RELATION_PATTERN.match(line)
+    if not match:
+        return False
+    left = _canonical_relationship_party(match.group("left"), alias_map)
+    right = _canonical_relationship_party(match.group("right"), alias_map)
+    discarded_aliases = discarded_aliases or set()
+    left_aliases = _character_alias_keys(left)
+    right_aliases = _character_alias_keys(right)
+    if (left_aliases | right_aliases) & discarded_aliases:
+        return True
+    return (
+        _is_disposable_dynamic_party(left, alias_map)
+        or _is_disposable_dynamic_party(right, alias_map)
+    )
+
+
+def _normalize_dynamic_entries(
+    text: str,
+    alias_map: Dict[str, str],
+    discarded_aliases: Optional[set[str]] = None,
+) -> str:
     """Normalize one dynamic-state section without adding section headings."""
     output: List[str] = []
     relation_indices: Dict[Tuple[str, str, str], int] = {}
@@ -1905,6 +2028,13 @@ def _normalize_dynamic_entries(text: str, alias_map: Dict[str, str]) -> str:
                 flags=re.IGNORECASE,
             ):
                 continue
+
+        if _dynamic_relation_has_disposable_party(
+            line,
+            alias_map,
+            discarded_aliases,
+        ):
+            continue
 
         parsed = _parse_dynamic_relation(line, alias_map)
         if not parsed:
@@ -2021,13 +2151,15 @@ def _format_dynamic_sections(addressing: str, relationships: str) -> str:
 def normalize_dynamic_state(
     dynamic_state: str,
     character_aliases: Optional[Dict[str, str]] = None,
+    discarded_character_aliases: Optional[set[str]] = None,
 ) -> str:
     """Normalize dynamic context into stable addressing and relationship sections."""
     alias_map = character_aliases or {}
+    discarded_aliases = discarded_character_aliases or set()
     addressing, relationships, _ = _split_dynamic_sections(dynamic_state)
     return _format_dynamic_sections(
-        _normalize_dynamic_entries(addressing, alias_map),
-        _normalize_dynamic_entries(relationships, alias_map),
+        _normalize_dynamic_entries(addressing, alias_map, discarded_aliases),
+        _normalize_dynamic_entries(relationships, alias_map, discarded_aliases),
     )
 
 
@@ -2082,9 +2214,14 @@ def normalize_novel_context_content(content: str) -> str:
     if not text:
         return ""
     if DYNAMIC_STATE_START in text and DYNAMIC_STATE_END in text:
-        global_lore = normalize_global_lore(extract_global_lore(text))
+        original_global_lore = extract_global_lore(text)
+        global_lore = normalize_global_lore(original_global_lore)
         dynamic_state = extract_dynamic_state_from_text(text) or ""
-        return build_novel_context(global_lore, dynamic_state)
+        discarded_aliases = _discarded_incidental_character_aliases(
+            original_global_lore,
+            global_lore,
+        )
+        return build_novel_context(global_lore, dynamic_state, discarded_aliases)
     return normalize_global_lore(text)
 
 
@@ -2262,12 +2399,17 @@ def decompress_dynamic_state(b64_compressed_state: str) -> str:
         return ""
 
 
-def build_novel_context(global_lore: str, dynamic_state: str) -> str:
+def build_novel_context(
+    global_lore: str,
+    dynamic_state: str,
+    discarded_character_aliases: Optional[set[str]] = None,
+) -> str:
     """Build the canonical full context representation used by every pipeline."""
     normalized_global = normalize_global_lore(global_lore)
     normalized_dynamic = normalize_dynamic_state(
         dynamic_state,
         _character_alias_map(normalized_global),
+        discarded_character_aliases,
     )
     return (
         f"{normalized_global.strip()}\n\n"

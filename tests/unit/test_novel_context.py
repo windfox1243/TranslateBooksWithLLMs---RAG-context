@@ -714,9 +714,9 @@ def test_cross_character_pronoun_repair_drops_context_control_text():
 
 
 def test_context_normalization_drops_proof_labels_descriptor_names_and_background_roles():
-    from src.utils.novel_context import normalize_global_lore
+    from src.utils.novel_context import normalize_novel_context_content
 
-    raw_lore = (
+    raw_context = (
         "# GLOBAL LORE\n\n"
         "## CHARACTERS & GENDERS\n"
         "- Protagonist of Glory of Victory: Male, fictional character, a "
@@ -735,13 +735,31 @@ def test_context_normalization_drops_proof_labels_descriptor_names_and_backgroun
         "screaming in pain.\n"
         "- Wounded Soldier 4: Unspecified, imperial soldier, a soldier with a "
         "severe abdominal wound.\n\n"
+        "## CHARACTER ALIASES\n"
+        "- The protagonist: Eric\n"
+        "- The protagonist: Eric\n"
+        "- The girl: Kim Ji-an\n\n"
         "## GLOSSARY & TERMINOLOGY\n"
+        "\n"
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        "- Kim Ji-an → Protagonist of Glory of Victory: narrative reference.\n"
+        "- Valentine → Wounded Soldier 1: background casualty.\n"
+        "- Wounded Soldier 2 → Valentine: background casualty.\n"
+        "- Valentine → Doctor: one-off medical scene.\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Kim Ji-an ↔ Protagonist of Glory of Victory: former fan.\n"
+        "- Valentine ↔ Wounded Soldier 3: background casualty.\n"
+        "---DYNAMIC_STATE_END---"
     )
 
-    normalized = normalize_global_lore(raw_lore)
+    normalized = normalize_novel_context_content(raw_context)
 
     assert "- Eric: Male," in normalized
     assert "Protagonist of Glory of Victory" not in normalized
+    assert "The protagonist" not in normalized
+    assert "The girl" not in normalized
     assert "source pronoun evidence" not in normalized
     assert "fictional character" not in normalized
     assert normalized.count("- Serena Augusta:") == 1
@@ -749,6 +767,7 @@ def test_context_normalization_drops_proof_labels_descriptor_names_and_backgroun
     assert "ruler of the Empire, character from" not in normalized
     assert "- Doctor:" not in normalized
     assert "Wounded Soldier" not in normalized
+    assert "- Kim Ji-an ↔ Eric: former fan." in normalized
 
 
 def test_recurring_or_named_generic_roles_are_preserved():
@@ -766,6 +785,44 @@ def test_recurring_or_named_generic_roles_are_preserved():
 
     assert "- Doctor: Female, recurring physician" in normalized
     assert "- Soldier 76: Male, source-named callsign" in normalized
+
+
+def test_real_vampire_source_backstops_repair_current_form_gender_and_title_alias():
+    from src.utils.novel_context import (
+        infer_source_gender_updates,
+        infer_source_identity_links,
+    )
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kim Ji-an: Female, protagonist, a patient suffering from "
+        "blood-related diseases; protagonist, reincarnated as a vampire girl "
+        "with a small build.\n"
+        "- Valentine: Male, user of the game, a patient suffering from "
+        "terminal illness.\n"
+        "- Eric: Male, protagonist of Glory of Victory, a soldier currently "
+        "holding the rank of Second Lieutenant.\n"
+        "- Lieutenant Colonel: Male, superior officer, a vampire killer who "
+        "suspects Valentine's identity.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    reincarnation_source = (
+        "[Valentine, starting reincarnation.] When I woke up again, I had "
+        "become a girl with a very small build. Moreover, a ragged girl in "
+        "tattered clothes."
+    )
+    office_source = (
+        "The Lieutenant Colonel's office was silent. I stared at Eric, who "
+        "had dragged me into the room."
+    )
+
+    assert infer_source_gender_updates(reincarnation_source, lore) == (
+        "- Valentine: CORRECTION: [Female]"
+    )
+    assert infer_source_identity_links(office_source, lore) == (
+        "- Lieutenant Colonel: Eric"
+    )
 
 
 def test_source_identity_links_direct_addressed_title_to_named_responder():
