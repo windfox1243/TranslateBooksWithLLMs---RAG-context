@@ -24,6 +24,11 @@ around failed chunks, resume, re-sync, refinement, and prompt assembly.
 - Context analysis prompts now explicitly tell the LLM to correct stale stored
   gender when the latest source proves the current named form's gender, and to
   avoid saving prompt/control labels as character facts.
+- Context analysis now treats descriptor-only labels such as `Protagonist of X`
+  or `character from X` as merge-only hints instead of durable character names.
+- Context analysis now tells the LLM to omit numbered/background casualties and
+  generic staff labels unless they are source-named, recurring, or needed for a
+  durable addressing/relationship choice.
 - Chapter-aware translation help now explains that short chapters are not
   merged together, so request count can be higher than normal chunking while
   preserving chapter/refinement alignment.
@@ -61,6 +66,16 @@ around failed chunks, resume, re-sync, refinement, and prompt assembly.
 - Character profiles now discard context prompt/control fragments such as
   `current rank and title` or `title/nickname for Eric` instead of persisting
   them as lore.
+- Internal correction reasons such as `source pronoun evidence` and
+  `reincarnated current form` are no longer saved as character descriptions.
+- Descriptor-only role entries now merge into the named character when a shared
+  source-work role proves the identity, without renaming the character to the
+  descriptor.
+- Ruler/title descriptions such as `ruler of the Empire; Emperor, ruler of the
+  Empire` now compact into one concise title fact.
+- Incidental numbered/background roles such as wounded soldiers and generic
+  one-off doctors are filtered out of durable global lore, while recurring or
+  source-named generic roles remain preserved.
 
 ### Safety and compatibility
 
@@ -75,7 +90,7 @@ around failed chunks, resume, re-sync, refinement, and prompt assembly.
 
 ### Validation
 
-- Full automated validation passed: 1,419 passed, 1 skipped, 10 deselected.
+- Full automated validation passed: 1,421 passed, 1 skipped, 10 deselected.
 - Windows executable built and smoke-tested locally: `/`, English settings
   locale JSON, and translation batch JavaScript all returned HTTP 200. A fresh
   first-run folder generated the compact `.env` with the current context knobs.
