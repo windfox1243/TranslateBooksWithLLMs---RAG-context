@@ -26,6 +26,9 @@ around failed chunks, resume, re-sync, refinement, and prompt assembly.
   avoid saving prompt/control labels as character facts.
 - Context analysis now treats descriptor-only labels such as `Protagonist of X`
   or `character from X` as merge-only hints instead of durable character names.
+- Narrative-role phrases such as `Protagonist of X` can still resolve
+  addressing and relationship rows to the named character without being saved
+  as noisy aliases.
 - Context analysis now tells the LLM to omit numbered/background casualties and
   generic staff labels unless they are source-named, recurring, or needed for a
   durable addressing/relationship choice.
@@ -71,11 +74,16 @@ around failed chunks, resume, re-sync, refinement, and prompt assembly.
 - Descriptor-only role entries now merge into the named character when a shared
   source-work role proves the identity, without renaming the character to the
   descriptor.
+- Scene-local aliases such as `the girl`, `the protagonist`, or `user` are no
+  longer persisted as character aliases.
 - Ruler/title descriptions such as `ruler of the Empire; Emperor, ruler of the
   Empire` now compact into one concise title fact.
 - Incidental numbered/background roles such as wounded soldiers and generic
   one-off doctors are filtered out of durable global lore, while recurring or
   source-named generic roles remain preserved.
+- Legacy context normalization now also removes relationship/addressing rows
+  that point only at discarded background characters, while preserving arbitrary
+  dormant relationships for any number of chunks.
 
 ### Safety and compatibility
 
@@ -90,7 +98,7 @@ around failed chunks, resume, re-sync, refinement, and prompt assembly.
 
 ### Validation
 
-- Full automated validation passed: 1,421 passed, 1 skipped, 10 deselected.
+- Full automated validation passed: 1,422 passed, 1 skipped, 10 deselected.
 - Windows executable built and smoke-tested locally: `/`, English settings
   locale JSON, and translation batch JavaScript all returned HTTP 200. A fresh
   first-run folder generated the compact `.env` with the current context knobs.
