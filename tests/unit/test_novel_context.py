@@ -727,6 +727,10 @@ def test_context_normalization_drops_proof_labels_descriptor_names_and_backgroun
         "- Serena Augusta: Female, ruler of the Empire, character from Glory "
         "of Victory; Emperor, ruler of the Empire.\n"
         "- Doctor: Male, medical professional, attending physician of Kim Ji-an.\n"
+        "- Vampire Kingdom: Unspecified, faction, the enemy nation in the "
+        "game Glory of Victory.\n"
+        "- Marketing Manager: Unspecified, employee of the game company, "
+        "author of the advertisement text.\n"
         "- Wounded Soldier 1: Male, imperial soldier, a soldier suffering from "
         "a severed arm.\n"
         "- Wounded Soldier 2: Male, imperial soldier, a soldier searching for "
@@ -766,8 +770,86 @@ def test_context_normalization_drops_proof_labels_descriptor_names_and_backgroun
     assert "Emperor of the Empire" in normalized
     assert "ruler of the Empire, character from" not in normalized
     assert "- Doctor:" not in normalized
+    assert "- Vampire Kingdom:" not in normalized
+    assert "- Marketing Manager:" not in normalized
     assert "Wounded Soldier" not in normalized
     assert "- Kim Ji-an ↔ Eric: former fan." in normalized
+
+
+def test_bare_protagonist_entries_and_aliases_cannot_hijack_characters():
+    from src.utils.novel_context import merge_new_lore, normalize_global_lore
+
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kim Ji-an: Male, terminally ill beta tester using the account "
+        "name Valentine.\n"
+        "- Valentine: Female, reincarnated vampire girl and current named "
+        "form of Kim Ji-an.\n"
+        "- Eric: Male, protagonist of Glory of Victory and imperial vampire "
+        "hunter.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    normalized = normalize_global_lore(
+        initial_lore.replace(
+            "## CHARACTERS & GENDERS\n",
+            "## CHARACTERS & GENDERS\n"
+            "- Protagonist: Male, the dying man who is a beta tester. "
+            "(Merged Kim Ji-an and Valentine).\n",
+        )
+    )
+
+    assert "- Protagonist:" not in normalized
+    assert "Merged Kim Ji-an and Valentine" not in normalized
+
+    updated_lore, _ = merge_new_lore(
+        normalized,
+        "- Eric: Male, protagonist of the game Glory of Victory, currently "
+        "Second Lieutenant.",
+        "",
+        "- Protagonist: Eric\n- The protagonist: Eric\n- Valentine: Protagonist",
+    )
+
+    assert "- Eric: Male," in updated_lore
+    assert "Second Lieutenant" in updated_lore
+    assert "Merged Kim Ji-an and Valentine" not in updated_lore
+    assert "Protagonist: Eric" not in updated_lore
+    assert "The protagonist" not in updated_lore
+    assert "Valentine: Protagonist" not in updated_lore
+    assert "- Kim Ji-an: Male, terminally ill beta tester" in updated_lore
+    assert "- Valentine: Female, reincarnated vampire girl" in updated_lore
+
+
+def test_bare_protagonist_dynamic_rows_are_dropped_when_unresolved():
+    from src.utils.novel_context import normalize_novel_context_content
+
+    raw_context = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Valentine: Female, reincarnated vampire girl.\n"
+        "- Eric: Male, protagonist of Glory of Victory.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "\n"
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        "- Doctor → Protagonist: \"Kim Ji-an\" | \"Kim Ji-an\" | old scene.\n"
+        "- Protagonist → Doctor: (none used) | (none used) | old scene.\n"
+        "- Eric → Valentine: \"Captain\" | \"Đại úy\" | hostile.\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Protagonist ↔ Eric: player and game character.\n"
+        "- Valentine ↔ Eric: hostile superior and subordinate.\n"
+        "---DYNAMIC_STATE_END---"
+    )
+
+    normalized = normalize_novel_context_content(raw_context)
+
+    assert "Protagonist →" not in normalized
+    assert "→ Protagonist" not in normalized
+    assert "Protagonist ↔" not in normalized
+    assert "↔ Protagonist" not in normalized
+    assert "- Eric → Valentine:" in normalized
+    assert "- Valentine ↔ Eric:" in normalized
 
 
 def test_recurring_or_named_generic_roles_are_preserved():

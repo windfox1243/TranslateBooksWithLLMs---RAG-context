@@ -45,6 +45,18 @@ _INVALID_CONTEXT_KEYS = {
     "source term",
     "target term",
 }
+_BARE_NARRATIVE_ROLE_NAMES = {
+    "hero",
+    "main character",
+    "main protagonist",
+    "player character",
+    "protagonist",
+    "the hero",
+    "the main character",
+    "the main protagonist",
+    "the player character",
+    "the protagonist",
+}
 _GENDER_LABELS = {
     "male",
     "female",
@@ -112,6 +124,7 @@ _GENERIC_ROLE_WORDS = {
     "corporal",
     "doctor",
     "guard",
+    "manager",
     "medic",
     "officer",
     "private",
@@ -122,7 +135,9 @@ _GENERIC_ROLE_WORDS = {
 }
 _INCIDENTAL_CHARACTER_MARKERS = {
     "abdominal wound",
+    "advertisement",
     "attending physician",
+    "author of the advertisement",
     "background",
     "body collection",
     "deceased",
@@ -144,6 +159,25 @@ _INCIDENTAL_CHARACTER_MARKERS = {
     "soldier",
     "unnamed",
     "wounded",
+}
+_GROUP_ENTITY_WORDS = {
+    "army",
+    "battalion",
+    "clan",
+    "company",
+    "country",
+    "empire",
+    "faction",
+    "force",
+    "government",
+    "guild",
+    "kingdom",
+    "military",
+    "nation",
+    "organization",
+    "party",
+    "squad",
+    "unit",
 }
 _RECURRING_CHARACTER_MARKERS = {
     "appears repeatedly",
@@ -222,7 +256,11 @@ def _plain_key(value: str) -> str:
 
 def _is_invalid_context_key(value: str) -> bool:
     key = _plain_key(value)
-    return key in _INVALID_CONTEXT_KEYS or not re.search(r"\w", key, re.UNICODE)
+    return (
+        key in _INVALID_CONTEXT_KEYS
+        or key in _BARE_NARRATIVE_ROLE_NAMES
+        or not re.search(r"\w", key, re.UNICODE)
+    )
 
 
 def _has_recurring_character_marker(name: str, value: str) -> bool:
@@ -299,9 +337,33 @@ def _is_non_character_work_entry(name: str, value: str) -> bool:
     )
 
 
+def _is_non_character_group_entry(name: str, value: str) -> bool:
+    """Reject factions, countries, companies, and military units as characters."""
+    name_key = _plain_key(name)
+    _, details = _split_gender_and_details(_normalize_character_value(value))
+    details_key = _plain_key(details)
+    if not name_key or not details_key:
+        return False
+
+    name_words = set(re.findall(r"\w+", name_key))
+    if not (name_words & _GROUP_ENTITY_WORDS):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:army|battalion|clan|company|country|empire|faction|"
+            r"force|government|guild|kingdom|military|nation|organization|"
+            r"party|squad|unit)\b",
+            details_key,
+        )
+    )
+
+
 def _is_descriptive_role_name(name: str) -> bool:
     """Detect analysis labels that describe a role instead of naming a person."""
-    return bool(_NARRATIVE_ROLE_NAME_PATTERN.match(_plain_key(name)))
+    key = _plain_key(name)
+    return key in _BARE_NARRATIVE_ROLE_NAMES or bool(
+        _NARRATIVE_ROLE_NAME_PATTERN.match(key)
+    )
 
 
 def _is_unstable_identity_alias(alias: str) -> bool:
@@ -402,7 +464,7 @@ def _character_alias_keys(name: str) -> set[str]:
         _plain_key(no_title),
         _normalize_relative_name_key(no_title),
     }
-    return {alias for alias in aliases if alias and alias not in _INVALID_CONTEXT_KEYS}
+    return {alias for alias in aliases if alias and not _is_invalid_context_key(alias)}
 
 
 def _monarch_role(name: str) -> str:
@@ -1469,6 +1531,7 @@ def _deduplicate_character_entries(
         if (
             _is_invalid_context_key(raw_name)
             or _is_non_character_work_entry(raw_name, raw_value)
+            or _is_non_character_group_entry(raw_name, raw_value)
             or _is_disposable_unnamed_character(raw_name, raw_value)
         ):
             continue
@@ -1715,6 +1778,7 @@ def _candidate_named_characters(
         if (
             _is_invalid_context_key(name)
             or _is_non_character_work_entry(name, raw_value)
+            or _is_non_character_group_entry(name, raw_value)
             or _is_descriptive_role_name(name)
             or _role_title_key_from_name(name)
             or _is_disposable_unnamed_character(name, raw_value)
@@ -1866,6 +1930,7 @@ def _discarded_incidental_character_aliases(
             continue
         if (
             _is_non_character_work_entry(raw_name, raw_value)
+            or _is_non_character_group_entry(raw_name, raw_value)
             or _is_disposable_unnamed_character(raw_name, raw_value)
         ):
             discarded.update(aliases)
@@ -1996,6 +2061,8 @@ def _is_disposable_dynamic_party(value: str, alias_map: Dict[str, str]) -> bool:
     clean = _strip_balanced_brackets(value).strip()
     if not clean:
         return False
+    if _is_invalid_context_key(clean):
+        return True
     for alias in _character_alias_keys(clean):
         if alias in alias_map:
             return False
@@ -3522,7 +3589,7 @@ Your task is to analyze the latest source text and its translation, and detect a
 Identity rules:
 - Reuse the exact canonical name already present in CURRENT GLOBAL LORE.
 - A title, rank, nickname, transformed state, awakened state, disguise, age qualifier, or relationship label is not a new character when it refers to an existing person. Update the existing canonical entry instead.
-- A descriptor-only label such as "Protagonist of X", "Hero of X", "main character of X", "fictional character", or "character from X" is not a canonical character name. Merge it into the named character when source-proven, otherwise omit it.
+- A descriptor-only label such as "Protagonist", "Hero", "Main Character", "Player Character", "Protagonist of X", "Hero of X", "fictional character", or "character from X" is not a canonical character name or identity link. Use source names such as Kim Ji-an, Valentine, or Eric; otherwise omit it.
 - When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
 - When the latest source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
 - If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
@@ -3583,7 +3650,7 @@ Analyze the latest SOURCE text before it is translated. Detect new or corrected 
 Identity rules:
 - Reuse the exact canonical name already present in CURRENT GLOBAL LORE.
 - Do not create separate characters for ranks, titles, nicknames, transformed/awakened states, disguises, age variants, or relational aliases of an existing person.
-- A descriptor-only label such as "Protagonist of X", "Hero of X", "main character of X", "fictional character", or "character from X" is not a canonical character name. Merge it into the named character when source-proven, otherwise omit it.
+- A descriptor-only label such as "Protagonist", "Hero", "Main Character", "Player Character", "Protagonist of X", "Hero of X", "fictional character", or "character from X" is not a canonical character name or identity link. Use source names such as Kim Ji-an, Valentine, or Eric; otherwise omit it.
 - When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
 - When this source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
 - If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
@@ -3717,6 +3784,8 @@ def merge_new_lore(
     }
 
     for raw_alias, raw_target in _parse_bullet_entries(new_aliases):
+        if _is_invalid_context_key(raw_alias) or _is_unstable_identity_alias(raw_alias):
+            continue
         alias_keys = _character_alias_keys(raw_alias)
         if not alias_keys:
             continue
@@ -3777,6 +3846,7 @@ def merge_new_lore(
     for raw_name, raw_value in regular_incoming + descriptive_incoming:
         if (
             _is_non_character_work_entry(raw_name, raw_value)
+            or _is_non_character_group_entry(raw_name, raw_value)
             or _is_disposable_unnamed_character(raw_name, raw_value)
         ):
             continue
