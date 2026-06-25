@@ -662,7 +662,7 @@ def test_source_detectors_are_file_type_agnostic_plain_text_backstops():
     )
 
     assert infer_source_gender_updates(source, lore) == (
-        "- Valentine: CORRECTION: [Female, reincarnated current form.]"
+        "- Valentine: CORRECTION: [Female]"
     )
     assert infer_source_identity_links(source, lore) == (
         "- Lieutenant Colonel: Eric"
@@ -682,7 +682,7 @@ def test_source_pronoun_correction_targets_named_object_not_sentence_subject():
     source = "Eric suspected Valentine of using blood magic and hiding her identity."
 
     assert infer_source_gender_updates(source, lore) == (
-        "- Valentine: CORRECTION: [Female, source pronoun evidence.]"
+        "- Valentine: CORRECTION: [Female]"
     )
 
 
@@ -711,6 +711,61 @@ def test_cross_character_pronoun_repair_drops_context_control_text():
     assert "current rank and title" not in updated_lore
     assert "title/nickname for Eric" not in updated_lore
     assert "reckless combat style" in updated_lore
+
+
+def test_context_normalization_drops_proof_labels_descriptor_names_and_background_roles():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Protagonist of Glory of Victory: Male, fictional character, a "
+        "soldier who rises to the rank of Lieutenant Colonel in the imperial "
+        "army to seek revenge against the Vampire Kingdom.\n"
+        "- Eric: Male, protagonist of Glory of Victory, vampire killer and "
+        "imperial officer; source pronoun evidence.\n"
+        "- Serena Augusta: Female, ruler of the Empire, character from Glory "
+        "of Victory; Emperor, ruler of the Empire.\n"
+        "- Doctor: Male, medical professional, attending physician of Kim Ji-an.\n"
+        "- Wounded Soldier 1: Male, imperial soldier, a soldier suffering from "
+        "a severed arm.\n"
+        "- Wounded Soldier 2: Male, imperial soldier, a soldier searching for "
+        "his missing leg.\n"
+        "- Wounded Soldier 3: Unspecified, imperial soldier, a soldier "
+        "screaming in pain.\n"
+        "- Wounded Soldier 4: Unspecified, imperial soldier, a soldier with a "
+        "severe abdominal wound.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- Eric: Male," in normalized
+    assert "Protagonist of Glory of Victory" not in normalized
+    assert "source pronoun evidence" not in normalized
+    assert "fictional character" not in normalized
+    assert normalized.count("- Serena Augusta:") == 1
+    assert "Emperor of the Empire" in normalized
+    assert "ruler of the Empire, character from" not in normalized
+    assert "- Doctor:" not in normalized
+    assert "Wounded Soldier" not in normalized
+
+
+def test_recurring_or_named_generic_roles_are_preserved():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Doctor: Female, recurring physician and mentor to the protagonist.\n"
+        "- Soldier 76: Male, source-named callsign and recurring squad leader.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- Doctor: Female, recurring physician" in normalized
+    assert "- Soldier 76: Male, source-named callsign" in normalized
 
 
 def test_source_identity_links_direct_addressed_title_to_named_responder():

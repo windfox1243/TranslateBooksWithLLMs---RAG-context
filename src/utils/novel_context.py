@@ -118,6 +118,52 @@ _GENERIC_ROLE_WORDS = {
     "soldier",
     "victim",
 }
+_INCIDENTAL_CHARACTER_MARKERS = {
+    "abdominal wound",
+    "attending physician",
+    "background",
+    "dying",
+    "fallen",
+    "generic",
+    "incidental",
+    "medical professional",
+    "missing leg",
+    "new recruit",
+    "one scene",
+    "one-scene",
+    "screaming in pain",
+    "searching for",
+    "severed arm",
+    "unnamed",
+    "wounded",
+}
+_RECURRING_CHARACTER_MARKERS = {
+    "appears repeatedly",
+    "canonical",
+    "callsign",
+    "code name",
+    "codename",
+    "important",
+    "major character",
+    "mentor",
+    "named",
+    "recurring",
+    "repeatedly",
+    "returns later",
+    "source-named",
+}
+_NARRATIVE_ROLE_NAME_PATTERN = re.compile(
+    r"^(?:the\s+)?(?:(?:main\s+)?protagonist|main\s+character|"
+    r"hero|player\s+character|fictional\s+character)\s+"
+    r"(?:of|in|from)\s+.+$",
+    flags=re.IGNORECASE,
+)
+_NARRATIVE_WORK_PATTERN = re.compile(
+    r"\b(?:(?:main\s+)?protagonist|main\s+character|hero|player\s+character)"
+    r"\s+(?:of|in|from)\s+(?:the\s+)?(?:(?:game|novel|story|series)\s+)?"
+    r"[\"'“”‘’]?(?P<work>[^;,.\"'“”‘’]+)",
+    flags=re.IGNORECASE,
+)
 
 
 def _clean_inline_text(value: str) -> str:
@@ -145,13 +191,69 @@ def _is_invalid_context_key(value: str) -> bool:
     return key in _INVALID_CONTEXT_KEYS or not re.search(r"\w", key, re.UNICODE)
 
 
+def _has_recurring_character_marker(name: str, value: str) -> bool:
+    text = _plain_key(f"{name} {value}")
+    if "unnamed" in text:
+        return False
+    for marker in _RECURRING_CHARACTER_MARKERS:
+        if marker == "named":
+            if re.search(r"\bnamed\b", text):
+                return True
+            continue
+        if marker in text:
+            return True
+    return False
+
+
+def _generic_role_base_key(name: str) -> str:
+    key = _plain_key(name).replace("'s", "")
+    key = re.sub(r"\s+(?:#?\d+|[ivxlcdm]+)$", "", key)
+    key = re.sub(
+        r"\b(?:allied|background|dead|dying|enemy|fallen|female|generic|"
+        r"imperial|injured|male|republic|screaming|unnamed|vampire|"
+        r"wounded|young|old)\b",
+        " ",
+        key,
+    )
+    words = [word for word in key.split() if word]
+    return words[-1] if words and words[-1] in _GENERIC_ROLE_WORDS else ""
+
+
+def _is_numbered_generic_role_name(name: str) -> bool:
+    key = _plain_key(name)
+    return bool(
+        re.search(r"(?:^|\s)(?:#?\d+|[ivxlcdm]+)$", key)
+        and _generic_role_base_key(name)
+    )
+
+
 def _is_disposable_unnamed_character(name: str, value: str) -> bool:
     """Reject explicit one-off unnamed roles that cannot anchor consistency."""
-    description = _plain_key(value)
-    if not any(marker in description for marker in ("unnamed", "one-scene", "one scene")):
+    if _has_recurring_character_marker(name, value):
         return False
-    name_words = _plain_key(name).replace("'s", "").split()
-    return bool(name_words and name_words[-1] in _GENERIC_ROLE_WORDS)
+    description = _plain_key(value)
+    role_key = _generic_role_base_key(name)
+    if not role_key:
+        return False
+    if _is_numbered_generic_role_name(name):
+        return True
+    return any(marker in description for marker in _INCIDENTAL_CHARACTER_MARKERS)
+
+
+def _is_descriptive_role_name(name: str) -> bool:
+    """Detect analysis labels that describe a role instead of naming a person."""
+    return bool(_NARRATIVE_ROLE_NAME_PATTERN.match(_plain_key(name)))
+
+
+def _narrative_work_keys(name: str, value: str = "") -> set[str]:
+    text = _clean_inline_text(f"{name}; {value}")
+    keys = set()
+    for match in _NARRATIVE_WORK_PATTERN.finditer(text):
+        work = _plain_key(match.group("work"))
+        work = re.sub(r"^(?:the\s+)?(?:game|novel|story|series)\s+", "", work)
+        if work and work not in _INVALID_CONTEXT_KEYS:
+            keys.add(work)
+    return keys
 
 
 def _strip_trailing_qualifier(name: str) -> str:
@@ -322,6 +424,15 @@ def _character_identities_match(
     """Match deterministic aliases, including a unique title revealed in lore."""
     if _character_names_match(first_name, second_name):
         return True
+    first_descriptive = _is_descriptive_role_name(first_name)
+    second_descriptive = _is_descriptive_role_name(second_name)
+    if first_descriptive != second_descriptive:
+        shared_works = (
+            _narrative_work_keys(first_name, first_value)
+            & _narrative_work_keys(second_name, second_value)
+        )
+        if shared_works:
+            return True
     shared_roles = (
         _character_unique_roles(first_name, first_value)
         & _character_unique_roles(second_name, second_value)
@@ -447,6 +558,51 @@ def _detail_is_redundant(first: str, second: str) -> bool:
     return overlap >= 0.85
 
 
+def _is_context_evidence_fact(fact: str) -> bool:
+    """Proof labels are internal reasons, not durable character metadata."""
+    key = _detail_key(fact)
+    if not key:
+        return False
+    evidence_facts = {
+        "explicit source evidence",
+        "pronoun evidence",
+        "raw source evidence",
+        "reincarnated current form",
+        "source evidence",
+        "source pronoun evidence",
+        "source proven correction",
+    }
+    return key in evidence_facts or key.endswith(" pronoun evidence")
+
+
+def _strip_low_value_fact_fragments(fact: str) -> str:
+    """Remove model-analysis filler while keeping real role facts."""
+    clean = _clean_inline_text(fact)
+    clean = re.sub(
+        r"(?i)^(?:an?\s+)?fictional\s+character\s*,\s*",
+        "",
+        clean,
+    )
+    clean = re.sub(
+        r"(?i)\s*,?\s*(?:an?\s+)?fictional\s+character\s*$",
+        "",
+        clean,
+    )
+    clean = re.sub(
+        r"(?i)\s*,\s*character\s+from\s+[\"'“”‘’]?[^;,.\"'“”‘’]+"
+        r"[\"'“”‘’]?\s*$",
+        "",
+        clean,
+    )
+    clean = re.sub(
+        r"(?i)^character\s+from\s+[\"'“”‘’]?[^;,.\"'“”‘’]+"
+        r"[\"'“”‘’]?\s*,\s*",
+        "",
+        clean,
+    )
+    return _clean_inline_text(clean).strip(" ;,").rstrip(" .")
+
+
 def _compact_subordinate_facts(facts: List[str]) -> List[str]:
     """Combine repeated English subordinate clauses into one cumulative fact."""
     grouped: Dict[str, Dict[str, Any]] = {}
@@ -516,8 +672,8 @@ def _split_monarch_fact(
 ) -> Optional[Tuple[str, str]]:
     prefix = r"(?:the\s+)?ruler" if ruler else rf"(?:the\s+)?{re.escape(role or '')}"
     match = re.match(
-        rf"^{prefix}\s+of\s+(?P<realm>.+?)"
-        r"(?P<tail>\s+(?:with|who|known\s+for|known\s+as)\b.*)?$",
+        rf"^{prefix}\s+of\s+(?P<realm>[^,.;]+?)"
+        r"(?P<tail>\s*(?:,\s*|\s+(?:with|who|known\s+for|known\s+as)\b).*)?$",
         fact.strip(),
         flags=re.IGNORECASE,
     )
@@ -525,13 +681,29 @@ def _split_monarch_fact(
         return None
     return (
         match.group("realm").strip().rstrip(" ."),
-        (match.group("tail") or "").strip().rstrip(" ."),
+        (match.group("tail") or "").strip(" ,").rstrip(" ."),
     )
+
+
+def _normalize_unique_role_fact(fact: str) -> str:
+    match = re.match(
+        r"^(?P<role>emperor|empress|king|queen)\s*,\s*"
+        r"(?:the\s+)?ruler\s+of\s+(?P<realm>[^,.;]+)"
+        r"(?P<tail>\s*,\s*.+)?$",
+        fact.strip(),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return fact
+    role = match.group("role").title()
+    realm = match.group("realm").strip().rstrip(" .")
+    tail = (match.group("tail") or "").strip(" ,").rstrip(" .")
+    return f"{role} of {realm}" + (f", {tail}" if tail else "")
 
 
 def _compact_unique_role_facts(facts: List[str]) -> List[str]:
     """Prefer a named monarch title over a duplicate generic ruler phrase."""
-    compacted = list(facts)
+    compacted = [_normalize_unique_role_fact(fact) for fact in facts]
     for role in _UNIQUE_ROLE_TITLES:
         title_match = next(
             (
@@ -573,7 +745,10 @@ def _merge_character_details(first: str, second: str) -> str:
     facts: List[str] = []
     for raw_fact in re.split(r"\s*;\s*", f"{first};{second}"):
         fact = _clean_inline_text(raw_fact).strip(" ;").rstrip(" .;,")
+        fact = _strip_low_value_fact_fragments(fact)
         if not fact:
+            continue
+        if _is_context_evidence_fact(fact):
             continue
         redundant_index = next(
             (
@@ -830,6 +1005,8 @@ def _is_character_meta_fact(fact: str, name: str) -> bool:
     """Drop prompt/control descriptions that are not actual character facts."""
     if not fact:
         return False
+    if _is_context_evidence_fact(fact):
+        return True
     escaped = re.escape(_canonical_display_name(name))
     patterns = (
         rf"^(?:{escaped}'s\s+)?current\s+(?:rank\s+and\s+title|"
@@ -1192,8 +1369,15 @@ def _deduplicate_character_entries(
 ) -> Tuple[List[Tuple[str, str]], Dict[str, str]]:
     normalized: List[Dict[str, Any]] = []
     explicit_aliases = explicit_aliases or {}
-
+    regular_entries: List[Tuple[str, str]] = []
+    descriptive_entries: List[Tuple[str, str]] = []
     for raw_name, raw_value in entries:
+        if _is_descriptive_role_name(raw_name):
+            descriptive_entries.append((raw_name, raw_value))
+        else:
+            regular_entries.append((raw_name, raw_value))
+
+    for raw_name, raw_value in regular_entries + descriptive_entries:
         if (
             _is_invalid_context_key(raw_name)
             or _is_disposable_unnamed_character(raw_name, raw_value)
@@ -1209,6 +1393,10 @@ def _deduplicate_character_entries(
             None,
         )
         effective_name = forced_name or raw_name
+        descriptive_name = bool(
+            _is_descriptive_role_name(raw_name)
+            and not forced_name
+        )
         aliases = raw_aliases | _character_alias_keys(effective_name)
         matching_indices = {
             index
@@ -1229,6 +1417,8 @@ def _deduplicate_character_entries(
             item["name"] = (
                 _canonical_display_name(forced_name)
                 if forced_name
+                else item["name"]
+                if descriptive_name
                 else _preferred_character_name(item["name"], effective_name)
             )
             item["value"] = _merge_character_values(item["value"], raw_value)
@@ -1247,6 +1437,8 @@ def _deduplicate_character_entries(
                     duplicate["value"],
                 )
                 item["aliases"].update(duplicate["aliases"])
+        elif descriptive_name:
+            continue
         else:
             normalized.append({
                 "name": _canonical_display_name(effective_name),
@@ -1519,15 +1711,11 @@ def infer_source_gender_updates(
     for name in _candidate_named_characters(current_global_lore, new_characters):
         gender = _source_reincarnation_gender_for_name(source_text, name)
         if gender:
-            updates.append(
-                f"- {name}: CORRECTION: [{gender}, reincarnated current form.]"
-            )
+            updates.append(f"- {name}: CORRECTION: [{gender}]")
             continue
         gender = _source_direct_gender_for_name(source_text, name)
         if gender:
-            updates.append(
-                f"- {name}: CORRECTION: [{gender}, source pronoun evidence.]"
-            )
+            updates.append(f"- {name}: CORRECTION: [{gender}]")
     return "\n".join(updates)
 
 
@@ -2985,11 +3173,13 @@ Your task is to analyze the latest source text and its translation, and detect a
 Identity rules:
 - Reuse the exact canonical name already present in CURRENT GLOBAL LORE.
 - A title, rank, nickname, transformed state, awakened state, disguise, age qualifier, or relationship label is not a new character when it refers to an existing person. Update the existing canonical entry instead.
+- A descriptor-only label such as "Protagonist of X", "Hero of X", "main character of X", "fictional character", or "character from X" is not a canonical character name. Merge it into the named character when source-proven, otherwise omit it.
 - When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
 - When the latest source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
 - If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
 - For non-English source titles or aliases, preserve the exact source surface label under IDENTITY_LINKS when it is source-proven (for example, "- 중령: Eric"). If the English normalized title also appears in the model's character summary, link that title too.
 - Do not add one-scene unnamed soldiers, victims, hallucinations, generic crowds, or incidental job labels unless they recur and their identity/gender is required for translation consistency.
+- Do not add numbered/background casualties or generic staff labels such as "Wounded Soldier 1", "Guard 2", "Doctor", or "Private" unless the person is source-named, recurring, or needed for a durable addressing/relationship choice.
 - Never output template entries, "None", "[None]", "Unknown", "N/A", or an empty bullet.
 - Record gender only when the source states it or supplies unambiguous grammatical/pronoun evidence. Never guess gender from a name, occupation, rank, appearance, genre convention, or stereotype.
 - Gender-neutral words such as spouse, partner, lover, parent, child, sibling, officer, captain, commander, major, colonel, and lieutenant colonel never prove gender by themselves.
@@ -3000,7 +3190,7 @@ Identity rules:
 - An existing specific gender is authoritative. Change it only when the latest source explicitly proves it was wrong; write that rare update as "CORRECTION: [Gender, role, description]".
 - Write all character metadata in English, regardless of source and target language.
 - For an existing character, output one concise cumulative replacement description containing the important old and new facts. Summarize repeated roles instead of appending duplicate phrases.
-- Character descriptions must contain only the normalized result. Never append evidence notes, quotations, reasoning, confidence, "Gender confirmed...", "Correction...", parenthetical explanations, or prompt/control labels such as "current rank and title" or "title/nickname for X".
+- Character descriptions must contain only the normalized result. Never append evidence notes, quotations, reasoning, confidence, "source pronoun evidence", "reincarnated current form", "Gender confirmed...", "Correction...", parenthetical explanations, or prompt/control labels such as "current rank and title" or "title/nickname for X".
 
 Input provided:
 1. CURRENT GLOBAL LORE (Characters & Glossary)
@@ -3043,11 +3233,13 @@ Analyze the latest SOURCE text before it is translated. Detect new or corrected 
 Identity rules:
 - Reuse the exact canonical name already present in CURRENT GLOBAL LORE.
 - Do not create separate characters for ranks, titles, nicknames, transformed/awakened states, disguises, age variants, or relational aliases of an existing person.
+- A descriptor-only label such as "Protagonist of X", "Hero of X", "main character of X", "fictional character", or "character from X" is not a canonical character name. Merge it into the named character when source-proven, otherwise omit it.
 - When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
 - When this source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
 - If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
 - For non-English source titles or aliases, preserve the exact source surface label under IDENTITY_LINKS when it is source-proven (for example, "- 중령: Eric"). If the English normalized title also appears in the model's character summary, link that title too.
 - Do not add one-scene unnamed soldiers, victims, generic crowds, or incidental roles unless they recur and are necessary for pronoun/address consistency.
+- Do not add numbered/background casualties or generic staff labels such as "Wounded Soldier 1", "Guard 2", "Doctor", or "Private" unless the person is source-named, recurring, or needed for a durable addressing/relationship choice.
 - Never output template entries, "None", "[None]", "Unknown", "N/A", or an empty bullet.
 - Record gender only when this source text states it or gives unambiguous grammatical/pronoun evidence. Never infer it from names, jobs, ranks, appearance, personality, or genre stereotypes.
 - Gender-neutral words such as spouse, partner, lover, parent, child, sibling, officer, captain, commander, major, colonel, and lieutenant colonel never prove gender by themselves.
@@ -3058,7 +3250,7 @@ Identity rules:
 - Treat an existing specific gender as authoritative. Change it only when this source text explicitly proves it wrong, using "CORRECTION: [Gender, role, description]".
 - Preserve source-side proper names exactly. Write character metadata descriptions in English so context remains stable when the translation model or target language changes.
 - For an existing character, output one concise cumulative replacement description containing the important old and new facts. Summarize repeated roles instead of appending duplicate phrases.
-- Character descriptions must contain only the normalized result. Never append evidence notes, quotations, reasoning, confidence, "Gender confirmed...", "Correction...", parenthetical explanations, or prompt/control labels such as "current rank and title" or "title/nickname for X".
+- Character descriptions must contain only the normalized result. Never append evidence notes, quotations, reasoning, confidence, "source pronoun evidence", "reincarnated current form", "Gender confirmed...", "Correction...", parenthetical explanations, or prompt/control labels such as "current rank and title" or "title/nickname for X".
 
 Input provided:
 1. CURRENT GLOBAL LORE (Characters & Glossary)
@@ -3215,7 +3407,17 @@ def merge_new_lore(
     else:
         characters = []
 
-    for raw_name, raw_value in _parse_bullet_entries(new_characters):
+    incoming_character_entries = _parse_bullet_entries(new_characters)
+    regular_incoming = [
+        entry for entry in incoming_character_entries
+        if not _is_descriptive_role_name(entry[0])
+    ]
+    descriptive_incoming = [
+        entry for entry in incoming_character_entries
+        if _is_descriptive_role_name(entry[0])
+    ]
+
+    for raw_name, raw_value in regular_incoming + descriptive_incoming:
         if _is_disposable_unnamed_character(raw_name, raw_value):
             continue
         incoming_aliases = _character_alias_keys(raw_name)
@@ -3228,6 +3430,10 @@ def merge_new_lore(
             None,
         )
         effective_name = forced_name or raw_name
+        descriptive_name = bool(
+            _is_descriptive_role_name(raw_name)
+            and not forced_name
+        )
         incoming_aliases |= _character_alias_keys(effective_name)
         match_index = None
         for index, (existing_name, existing_value) in enumerate(characters):
@@ -3257,6 +3463,8 @@ def merge_new_lore(
         )
         clean_value = _normalize_character_value(clean_value)
         if match_index is None:
+            if descriptive_name:
+                continue
             characters.append((canonical_name, clean_value))
             record(
                 f"[Novel Context] Added Character: "
@@ -3268,6 +3476,8 @@ def merge_new_lore(
         merged_name = (
             canonical_name
             if forced_name
+            else old_name
+            if descriptive_name
             else _preferred_character_name(old_name, canonical_name)
         )
         merged_value = _merge_character_values(
