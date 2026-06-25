@@ -952,6 +952,116 @@ def test_vampire_context_normalization_removes_work_and_repairs_current_form():
     assert "Kim Ji-an ↔ Glory of Victory" not in normalized
 
 
+def test_source_relationship_pronoun_backstop_promotes_kim_jian_gender():
+    from src.utils.novel_context import infer_source_gender_updates
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kim Ji-an: Unspecified, protagonist, suffering from blood-related "
+        "diseases and facing terminal illness.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    source = "Kim Ji-an's ex-girlfriend cheated on him and abandoned him."
+
+    assert infer_source_gender_updates(source, lore) == (
+        "- Kim Ji-an: CORRECTION: [Male]"
+    )
+
+
+def test_source_relationship_label_alone_does_not_promote_gender():
+    from src.utils.novel_context import infer_source_gender_updates
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kim Ji-an: Unspecified, protagonist, suffering from blood-related "
+        "diseases and facing terminal illness.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    source = "Kim Ji-an's ex-girlfriend moved away without saying goodbye."
+
+    assert infer_source_gender_updates(source, lore) == ""
+
+
+def test_named_ex_girlfriend_descriptor_does_not_flip_to_object_gender():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Yuna: Unspecified, Kim Ji-an's ex-girlfriend who cheated on him.\n"
+        "- Kim Ji-an: Male, terminally ill beta tester.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert (
+        "- Yuna: Female, Kim Ji-an's ex-girlfriend who cheated on him."
+        in normalized
+    )
+    assert "- Yuna: Male," not in normalized
+
+
+def test_romantic_alias_and_unresolved_lover_relation_are_dropped():
+    from src.utils.novel_context import normalize_novel_context_content
+
+    raw_context = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kim Ji-an: Unspecified, protagonist, suffering from blood-related "
+        "diseases and facing terminal illness.\n\n"
+        "## CHARACTER ALIASES\n"
+        "- Lover: Kim Ji-an\n\n"
+        "## GLOSSARY & TERMINOLOGY\n\n"
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Kim Ji-an ↔ Lover: Broken up; she cheated on him and abandoned him.\n"
+        "- Kim Ji-an ↔ Kim Ji-an: Broken up; she cheated on him and abandoned him.\n"
+        "---DYNAMIC_STATE_END---"
+    )
+
+    normalized = normalize_novel_context_content(raw_context)
+
+    assert "Lover: Kim Ji-an" not in normalized
+    assert "Kim Ji-an ↔ Lover" not in normalized
+    assert "Kim Ji-an ↔ Kim Ji-an" not in normalized
+
+
+def test_old_identity_does_not_absorb_reincarnated_girl_body_gender():
+    from src.utils.novel_context import normalize_novel_context_content
+
+    raw_context = (
+        "# GLOBAL LORE\n"
+        "(Characters, genders, and terminology; canonical names only.)\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kim Ji-an: Female, protagonist, a terminally ill man suffering "
+        "from blood-related diseases and facing terminal illness; his "
+        "ex-girlfriend cheated on him and abandoned him; reincarnated as a "
+        "small, ragged Vampire girl in the world of Glory of Victory 2.\n"
+        "- Valentine: Male, protagonist, the user identity for the game "
+        "Glory of Victory.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n\n"
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Kim Ji-an ↔ Valentine: Kim Ji-an is the human host currently "
+        "undergoing the reincarnation process into the game character "
+        "Valentine.\n"
+        "---DYNAMIC_STATE_END---"
+    )
+
+    normalized = normalize_novel_context_content(raw_context)
+
+    assert "- Kim Ji-an: Male," in normalized
+    assert "- Kim Ji-an: Female," not in normalized
+    assert "- Valentine: Female," in normalized
+
+
 @pytest.mark.asyncio
 async def test_source_memory_backstop_repairs_gender_across_chunk_boundary():
     from src.utils.novel_context import update_novel_context_chunk
