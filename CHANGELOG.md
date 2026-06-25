@@ -10,6 +10,15 @@
   main character into a different named character.
 - Factions, nations, companies, and one-off advertisement/job labels are now
   filtered out of `CHARACTERS & GENDERS` instead of being stored as people.
+- Novel context now rejects bare romantic/family labels such as `Lover` or
+  `Ex-girlfriend` as durable identity aliases, and drops relationship rows that
+  collapse to the same character after alias resolution.
+- Source-side relationship clauses such as `Kim Ji-an's ex-girlfriend cheated
+  on him` can repair Kim Ji-an's gender from direct pronoun evidence without
+  treating the existence of an ex-girlfriend as gender proof by itself.
+- Reincarnation cleanup now prevents the original human identity from absorbing
+  the gender of the current reincarnated body while still allowing the current
+  named form to be repaired from source-proven body evidence.
 
 ## 1.4.16 - 2026-06-25
 

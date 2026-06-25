@@ -194,6 +194,52 @@ _RECURRING_CHARACTER_MARKERS = {
     "returns later",
     "source-named",
 }
+_ROMANTIC_RELATION_LABELS = {
+    "beloved",
+    "boyfriend",
+    "ex boyfriend",
+    "ex girlfriend",
+    "ex lover",
+    "ex partner",
+    "fiance",
+    "fiancee",
+    "fiancé",
+    "fiancée",
+    "former boyfriend",
+    "former girlfriend",
+    "former lover",
+    "former partner",
+    "girlfriend",
+    "husband",
+    "lover",
+    "partner",
+    "romantic partner",
+    "significant other",
+    "spouse",
+    "wife",
+}
+_GENDERED_ROMANTIC_RELATION_LABELS = {
+    "boyfriend": "Male",
+    "ex boyfriend": "Male",
+    "fiance": "Male",
+    "fiancé": "Male",
+    "former boyfriend": "Male",
+    "girlfriend": "Female",
+    "ex girlfriend": "Female",
+    "fiancee": "Female",
+    "fiancée": "Female",
+    "former girlfriend": "Female",
+    "wife": "Female",
+    "husband": "Male",
+}
+_ROMANTIC_RELATION_PATTERN = (
+    r"(?:(?:ex|former)[-\s]+)?(?:girlfriend|boyfriend|lover|partner|"
+    r"spouse|wife|husband|romantic\s+partner|significant\s+other|"
+    r"beloved|fianc[eé]e?)"
+)
+_RELATIONSHIP_OBJECT_PRONOUN_VERBS = (
+    r"cheated\s+on|abandoned|left|betrayed|dumped|broke\s+up\s+with"
+)
 _WORK_ENTITY_WORDS = {
     "advertisement",
     "anime",
@@ -252,6 +298,11 @@ def _plain_key(value: str) -> str:
     value = value.replace("’", "'").replace("`", "'")
     value = re.sub(r"\s+", " ", value).strip(" \t\r\n.:;,-").casefold()
     return value
+
+
+def _relation_label_key(value: str) -> str:
+    """Normalize hyphen/space variants of relationship labels."""
+    return re.sub(r"\s+", " ", _plain_key(value).replace("-", " ")).strip()
 
 
 def _is_invalid_context_key(value: str) -> bool:
@@ -381,7 +432,11 @@ def _is_unstable_identity_alias(alias: str) -> bool:
         "the user",
         "user",
     }
-    return key in unstable or _is_descriptive_role_name(alias)
+    return (
+        key in unstable
+        or _relation_label_key(alias) in _ROMANTIC_RELATION_LABELS
+        or _is_descriptive_role_name(alias)
+    )
 
 
 def _narrative_work_keys(name: str, value: str = "") -> set[str]:
@@ -628,6 +683,30 @@ def _canonical_gender(gender: str) -> str:
     }.get(str(gender or "").casefold(), str(gender or "").strip())
 
 
+def _infer_gender_from_subject_relationship_label(details: str) -> str:
+    """Infer subject gender from a relationship noun used as a descriptor."""
+    text = _clean_inline_text(details)
+    if not text:
+        return ""
+    pattern = (
+        r"(?:^|[;,]\s*)"
+        r"(?:(?:an?|the)\s+)?"
+        r"(?:(?:[\w.-]+\s+){0,5}[\w.-]+['’]s\s+|"
+        r"(?:his|her|their)\s+)?"
+        rf"(?P<label>{_ROMANTIC_RELATION_PATTERN})\b"
+        r"(?=\s*(?:,|;|who\b|and\b|$))"
+    )
+    genders = {
+        _GENDERED_ROMANTIC_RELATION_LABELS.get(
+            _relation_label_key(match.group("label")),
+            "",
+        )
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE)
+    }
+    genders.discard("")
+    return next(iter(genders)) if len(genders) == 1 else ""
+
+
 def _infer_gender_from_character_details(details: str) -> str:
     """Recover explicit English evidence that a model left after Unspecified.
 
@@ -637,6 +716,11 @@ def _infer_gender_from_character_details(details: str) -> str:
     text = _clean_inline_text(details).casefold()
     if not text:
         return ""
+    relationship_gender = _infer_gender_from_subject_relationship_label(
+        details
+    )
+    if relationship_gender:
+        return relationship_gender
 
     kinship_object = (
         r"(?:own|brother|sister|mother|father|family|wife|husband|son|daughter)"
@@ -1174,7 +1258,11 @@ def _is_character_meta_fact(fact: str, name: str) -> bool:
 def _normalize_character_value_for_name(name: str, value: str) -> str:
     normalized = _normalize_character_value(value)
     gender, details = _split_gender_and_details(normalized)
-    if _gender_belongs_to_previous_reincarnation_body(name, gender, details):
+    if _gender_belongs_to_reincarnated_current_body(name, gender, details):
+        gender = _infer_previous_reincarnation_identity_gender(
+            details
+        ) or "Unspecified"
+    elif _gender_belongs_to_previous_reincarnation_body(name, gender, details):
         gender = _current_reincarnated_form_gender(name, details) or "Unspecified"
     details = _normalize_reincarnation_details_for_name(name, details)
     details = _remove_self_references_from_details(details, name)
@@ -1219,6 +1307,108 @@ def _gender_belongs_to_previous_reincarnation_body(
         return False
     old_body_gender = _gender_from_body_word(match.group("body"))
     return old_body_gender.casefold() == gender.casefold()
+
+
+def _looks_like_previous_reincarnation_identity(details: str) -> bool:
+    key = _plain_key(details)
+    if "reincarnat" not in key and "reborn" not in key and "transmigrat" not in key:
+        return False
+    previous_identity_markers = {
+        "beta tester",
+        "blood-related",
+        "blood related",
+        "blood disease",
+        "dying",
+        "former self",
+        "human host",
+        "illness",
+        "original self",
+        "patient",
+        "previous body",
+        "terminal",
+        "terminally ill",
+    }
+    return any(marker in key for marker in previous_identity_markers)
+
+
+def _current_reincarnation_body_matches_gender(
+    details: str,
+    gender: str,
+    name: str,
+) -> bool:
+    canonical = _canonical_display_name(name)
+    name_pattern = re.escape(canonical) if canonical else ""
+    body_pattern = r"(?P<body>male|female|man|woman|boy|girl)"
+    patterns = (
+        r"\b(?:reincarnat\w+|reborn|transmigrat\w+)\s+(?:as|into)\s+"
+        r"(?:an?\s+)?(?:[\w'-]+[,\s]+){0,7}"
+        rf"{body_pattern}\b(?P<tail>[^.;]{{0,120}})",
+        r"\b(?:became|become|becomes|becoming|woke\s+up\s+as|awoke\s+as|"
+        r"turns\s+into|turned\s+into)\s+"
+        r"(?:an?\s+)?(?:[\w'-]+[,\s]+){0,7}"
+        rf"{body_pattern}\b(?P<tail>[^.;]{{0,120}})",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, details, flags=re.IGNORECASE):
+            body_gender = _gender_from_body_word(match.group("body"))
+            if body_gender.casefold() != gender.casefold():
+                continue
+            tail = match.group("tail") or ""
+            if name_pattern and re.search(
+                rf"\bnamed\s+{name_pattern}\b",
+                tail,
+                flags=re.IGNORECASE,
+            ):
+                continue
+            return True
+    return False
+
+
+def _gender_belongs_to_reincarnated_current_body(
+    name: str,
+    gender: str,
+    details: str,
+) -> bool:
+    """Detect old-identity entries that borrowed the new body's gender.
+
+    If a durable entry is the pre-reincarnation human/profile (for example a
+    terminal patient or beta tester), a phrase like "reincarnated as a girl"
+    describes the later body, not the original identity keyed by that name.
+    """
+    if gender.casefold() not in _SPECIFIC_GENDER_LABELS:
+        return False
+    if not _looks_like_previous_reincarnation_identity(details):
+        return False
+    return _current_reincarnation_body_matches_gender(details, gender, name)
+
+
+def _details_without_current_reincarnation_body(details: str) -> str:
+    clean = _clean_inline_text(details)
+    body_pattern = r"(?:male|female|man|woman|boy|girl)"
+    replacements = (
+        (
+            r"\b(?:reincarnat\w+|reborn|transmigrat\w+)\s+(?:as|into)\s+"
+            r"(?:an?\s+)?(?:[\w'-]+[,\s]+){0,7}"
+            rf"{body_pattern}\b",
+            "reincarnated",
+        ),
+        (
+            r"\b(?:became|become|becomes|becoming|woke\s+up\s+as|awoke\s+as|"
+            r"turns\s+into|turned\s+into)\s+"
+            r"(?:an?\s+)?(?:[\w'-]+[,\s]+){0,7}"
+            rf"{body_pattern}\b",
+            "changed form",
+        ),
+    )
+    for pattern, replacement in replacements:
+        clean = re.sub(pattern, replacement, clean, flags=re.IGNORECASE)
+    return _clean_inline_text(clean)
+
+
+def _infer_previous_reincarnation_identity_gender(details: str) -> str:
+    return _infer_gender_from_character_details(
+        _details_without_current_reincarnation_body(details)
+    )
 
 
 def _current_reincarnated_form_gender(name: str, details: str) -> str:
@@ -1857,6 +2047,41 @@ def _source_direct_gender_for_name(source_text: str, name: str) -> str:
     return _infer_gender_reference_to_character(source_text, name)
 
 
+def _source_relationship_pronoun_gender_for_name(
+    source_text: str,
+    name: str,
+) -> str:
+    """Infer gender from source relationship clauses with direct pronouns.
+
+    Relationship labels alone are not gender evidence. This only fires when a
+    named person's romantic/partner relation is paired with a pronoun such as
+    "him" or "her" in the same local clause.
+    """
+    text = _clean_inline_text(source_text)
+    if not text or _is_invalid_context_key(name):
+        return ""
+    canonical = _canonical_display_name(name)
+    name_pattern = (
+        rf"(?<![\w'-]){re.escape(canonical)}(?:['’]s)?(?![\w'-])"
+        if canonical
+        else ""
+    )
+    genders: set[str] = set()
+    pattern = (
+        rf"{name_pattern}[\s\S]{{0,100}}\b"
+        rf"{_ROMANTIC_RELATION_PATTERN}\b[\s\S]{{0,160}}\b"
+        rf"(?:{_RELATIONSHIP_OBJECT_PRONOUN_VERBS})\s+"
+        rf"(?P<pronoun>him|her)\b"
+    )
+    for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+        pronoun = match.group("pronoun").casefold()
+        if pronoun == "him":
+            genders.add("Male")
+        elif pronoun == "her":
+            genders.add("Female")
+    return next(iter(genders)) if len(genders) == 1 else ""
+
+
 def infer_source_gender_updates(
     source_text: str,
     current_global_lore: str,
@@ -1870,6 +2095,13 @@ def infer_source_gender_updates(
     updates: List[str] = []
     for name in _candidate_named_characters(current_global_lore, new_characters):
         gender = _source_reincarnation_gender_for_name(source_text, name)
+        if gender:
+            updates.append(f"- {name}: CORRECTION: [{gender}]")
+            continue
+        gender = _source_relationship_pronoun_gender_for_name(
+            source_text,
+            name,
+        )
         if gender:
             updates.append(f"- {name}: CORRECTION: [{gender}]")
             continue
@@ -2069,7 +2301,7 @@ def _is_disposable_dynamic_party(value: str, alias_map: Dict[str, str]) -> bool:
     key = _plain_key(clean)
     return bool(_is_numbered_generic_role_name(clean) or any(
         marker in key for marker in _INCIDENTAL_CHARACTER_MARKERS
-    ))
+    ) or _is_unstable_identity_alias(clean))
 
 
 _DYNAMIC_RELATION_PATTERN = re.compile(
@@ -2097,6 +2329,8 @@ def _parse_dynamic_relation(
 
     key_left = _plain_key(left)
     key_right = _plain_key(right)
+    if key_left == key_right:
+        return None
     if arrow == "↔" and key_left > key_right:
         key_left, key_right = key_right, key_left
     relation_key = (key_left, arrow, key_right)
@@ -2114,6 +2348,8 @@ def _dynamic_relation_has_disposable_party(
         return False
     left = _canonical_relationship_party(match.group("left"), alias_map)
     right = _canonical_relationship_party(match.group("right"), alias_map)
+    if _plain_key(left) == _plain_key(right):
+        return True
     discarded_aliases = discarded_aliases or set()
     left_aliases = _character_alias_keys(left)
     right_aliases = _character_alias_keys(right)
@@ -3596,9 +3832,11 @@ Identity rules:
 - For non-English source titles or aliases, preserve the exact source surface label under IDENTITY_LINKS when it is source-proven (for example, "- 중령: Eric"). If the English normalized title also appears in the model's character summary, link that title too.
 - Do not add one-scene unnamed soldiers, victims, hallucinations, generic crowds, or incidental job labels unless they recur and their identity/gender is required for translation consistency.
 - Do not add numbered/background casualties or generic staff labels such as "Wounded Soldier 1", "Guard 2", "Doctor", or "Private" unless the person is source-named, recurring, or needed for a durable addressing/relationship choice.
+- Do not add bare romantic or family relationship labels such as "Lover", "Girlfriend", "Ex-girlfriend", "Boyfriend", "Partner", "Spouse", "Wife", or "Husband" as characters or identity links. If the relationship partner is not source-named, record only the relationship, not a fake identity alias.
 - Never output template entries, "None", "[None]", "Unknown", "N/A", or an empty bullet.
 - Record gender only when the source states it or supplies unambiguous grammatical/pronoun evidence. Never guess gender from a name, occupation, rank, appearance, genre convention, or stereotype.
 - Gender-neutral words such as spouse, partner, lover, parent, child, sibling, officer, captain, commander, major, colonel, and lieutenant colonel never prove gender by themselves.
+- A named character having a girlfriend, boyfriend, lover, spouse, or ex-partner does not by itself prove that named character's gender; use pronouns or grammatical evidence such as "him/his" or "her" instead.
 - If a character reincarnates, transforms, disguises themselves, or receives a new body, record the gender of the current named form, not the previous body. Keep the previous identity only as a concise description.
 - Pronoun evidence attached to another character's relationship with a named person is evidence for that named person. For example, "suspicious of her identity" after naming Valentine proves Valentine is Female, not the suspicious officer.
 - If CURRENT GLOBAL LORE has the wrong gender for the current named form and the latest source proves the correction, output that canonical character under NEW_CHARACTERS as "CORRECTION: [Gender, concise role, concise description]". Do not preserve stale gender just because it is already stored.
@@ -3657,9 +3895,11 @@ Identity rules:
 - For non-English source titles or aliases, preserve the exact source surface label under IDENTITY_LINKS when it is source-proven (for example, "- 중령: Eric"). If the English normalized title also appears in the model's character summary, link that title too.
 - Do not add one-scene unnamed soldiers, victims, generic crowds, or incidental roles unless they recur and are necessary for pronoun/address consistency.
 - Do not add numbered/background casualties or generic staff labels such as "Wounded Soldier 1", "Guard 2", "Doctor", or "Private" unless the person is source-named, recurring, or needed for a durable addressing/relationship choice.
+- Do not add bare romantic or family relationship labels such as "Lover", "Girlfriend", "Ex-girlfriend", "Boyfriend", "Partner", "Spouse", "Wife", or "Husband" as characters or identity links. If the relationship partner is not source-named, record only the relationship, not a fake identity alias.
 - Never output template entries, "None", "[None]", "Unknown", "N/A", or an empty bullet.
 - Record gender only when this source text states it or gives unambiguous grammatical/pronoun evidence. Never infer it from names, jobs, ranks, appearance, personality, or genre stereotypes.
 - Gender-neutral words such as spouse, partner, lover, parent, child, sibling, officer, captain, commander, major, colonel, and lieutenant colonel never prove gender by themselves.
+- A named character having a girlfriend, boyfriend, lover, spouse, or ex-partner does not by itself prove that named character's gender; use pronouns or grammatical evidence such as "him/his" or "her" instead.
 - If a character reincarnates, transforms, disguises themselves, or receives a new body, record the gender of the current named form, not the previous body. Keep the previous identity only as a concise description.
 - Pronoun evidence attached to another character's relationship with a named person is evidence for that named person. For example, "suspicious of her identity" after naming Valentine proves Valentine is Female, not the suspicious officer.
 - If CURRENT GLOBAL LORE has the wrong gender for the current named form and this source proves the correction, output that canonical character under NEW_CHARACTERS as "CORRECTION: [Gender, concise role, concise description]". Do not preserve stale gender just because it is already stored.
