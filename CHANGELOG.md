@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.19 - 2026-06-28
+
+### Added
+
+- New configuration setting `BYPASS_CONTEXT_GATING` (default: `True`) to bypass deterministic English pronoun regex checks on source text. This allows the translation pipeline to directly trust LLM-identified character genders, aliases, and corrections, resolving context degradation issues during translation of non-English novels.
+
 ## 1.4.18 - 2026-06-25
 
 ### Fixed

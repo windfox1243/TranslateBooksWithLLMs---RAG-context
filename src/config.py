@@ -124,10 +124,15 @@ _RELOADABLE_ENV_SETTINGS = (
     # Bounded previous-source tail injected only into context-analysis prompts.
     # This lets the analyzer resolve facts that span nearby chunk boundaries.
     ('NOVEL_CONTEXT_SOURCE_MEMORY_CHARS', 'NOVEL_CONTEXT_SOURCE_MEMORY_CHARS', '6000'),
+    # Bypasses the deterministic validation layer to trust LLM context updates directly.
+    ('BYPASS_CONTEXT_GATING', 'BYPASS_CONTEXT_GATING', 'true'),
 )
 
 
-_NOTIFY_BOOL_ATTRS = {'NOTIFY_ON_SUCCESS', 'NOTIFY_ON_FAILURE', 'NOTIFY_ON_INTERRUPTION'}
+_BOOL_ATTRS = {
+    'NOTIFY_ON_SUCCESS', 'NOTIFY_ON_FAILURE', 'NOTIFY_ON_INTERRUPTION',
+    'BYPASS_CONTEXT_GATING'
+}
 _NOTIFY_INT_ATTRS = {'NOTIFY_TIMEOUT_SECONDS'}
 _INT_ATTRS = {
     'PARALLEL_TRANSLATIONS',
@@ -142,7 +147,7 @@ def _apply_reloadable_env_settings():
     g = globals()
     for attr, env_var, default in _RELOADABLE_ENV_SETTINGS:
         raw = os.getenv(env_var, default)
-        if attr in _NOTIFY_BOOL_ATTRS:
+        if attr in _BOOL_ATTRS:
             g[attr] = str(raw).strip().lower() == 'true'
         elif attr in _NOTIFY_INT_ATTRS or attr in _INT_ATTRS:
             try:

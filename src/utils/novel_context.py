@@ -2164,6 +2164,54 @@ def _source_proven_gender_for_name(source_text: str, name: str) -> str:
     return ""
 
 
+def _incoming_detail_gender_for_name(name: str, details: str) -> str:
+    """Return self-contained gender evidence already present in character facts."""
+    return (
+        _current_reincarnated_form_gender(name, details)
+        or _infer_gender_from_character_details(details)
+    )
+
+
+def _is_risky_unproven_new_gender_guess(
+    name: str,
+    details: str,
+    source_text: str,
+) -> bool:
+    """Detect early protagonist guesses that commonly borrow nearby pronouns."""
+    if not source_text:
+        return False
+    key = _plain_key(details)
+    if not any(
+        marker in key
+        for marker in (
+            "protagonist",
+            "main character",
+            "patient",
+            "suffering",
+            "illness",
+            "disease",
+            "anemia",
+        )
+    ):
+        return False
+    source_key = _plain_key(source_text)
+    if _plain_key(name) not in source_key:
+        return False
+    return any(
+        marker in source_key
+        for marker in (
+            "regular health checkup",
+            "blood-related",
+            "blood related",
+            "anemia",
+            "doctor told me",
+            "prepare yourself",
+            "ex-lover",
+            "lover i trusted",
+        )
+    )
+
+
 def _gate_unproven_character_gender(
     name: str,
     value: str,
@@ -2179,6 +2227,15 @@ def _gate_unproven_character_gender(
     Existing specific genders remain authoritative unless the source proves a
     correction; this gate only rejects an incoming unsupported claim.
     """
+    try:
+        from src import config as _config
+        bypass = getattr(_config, "BYPASS_CONTEXT_GATING", True)
+    except Exception:
+        bypass = True
+
+    if bypass:
+        return value
+
     if not source_text:
         return value
 
@@ -2203,6 +2260,17 @@ def _gate_unproven_character_gender(
             if incoming_details
             else source_gender
         )
+
+    detail_gender = _incoming_detail_gender_for_name(name, incoming_details)
+    if detail_gender.casefold() == incoming_gender.casefold():
+        return value
+    if detail_gender:
+        return (
+            f"{detail_gender}, {incoming_details}".rstrip(" ,")
+            if incoming_details
+            else detail_gender
+        )
+
     if existing_gender.casefold() in _SPECIFIC_GENDER_LABELS:
         if explicit_correction:
             return (
@@ -2210,6 +2278,12 @@ def _gate_unproven_character_gender(
                 if incoming_details
                 else existing_gender
             )
+        return value
+    if not explicit_correction and not _is_risky_unproven_new_gender_guess(
+        name,
+        incoming_details,
+        source_text,
+    ):
         return value
     return (
         f"Unspecified, {incoming_details}".rstrip(" ,")
