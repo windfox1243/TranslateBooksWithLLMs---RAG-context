@@ -766,19 +766,13 @@ def _detail_key(value: str) -> str:
     return _plain_key(value).rstrip(" .;,:")
 
 
+_SUFFIX_RE = re.compile(r"^(\w{3,})(?:ing|ed|es|ly|(?<!s)s)$", re.IGNORECASE)
+
+
 def _normalize_token(token: str) -> str:
     token = token.lower()
-    if token.endswith("ing"):
-        return token[:-3]
-    if token.endswith("ed"):
-        return token[:-2]
-    if token.endswith("es"):
-        return token[:-2]
-    if token.endswith("s") and not token.endswith("ss"):
-        return token[:-1]
-    if token.endswith("ly"):
-        return token[:-2]
-    return token
+    match = _SUFFIX_RE.match(token)
+    return match.group(1) if match else token
 
 
 def _detail_tokens(value: str) -> set[str]:

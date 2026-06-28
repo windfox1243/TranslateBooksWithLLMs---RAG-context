@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.20 - 2026-06-28
+
+### Fixed
+
+- Improved character details redundancy check by applying token suffix normalization (stripping common endings like `ing`, `s`, `ed`, `ly`). This resolves issues where grammatical variants of the same description (e.g. `seeks` vs `seeking`) were incorrectly preserved as duplicate semicolon-separated entries.
+
 ## 1.4.19 - 2026-06-28
 
 ### Added
