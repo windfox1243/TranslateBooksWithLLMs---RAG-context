@@ -1745,15 +1745,33 @@ def _deduplicate_character_entries(
             None,
         )
         effective_name = forced_name or raw_name
+        if forced_name:
+            # If the forced name conflicts in gender with raw_value, don't force it
+            conflicts = False
+            for item in normalized:
+                if _character_names_match(item["name"], forced_name) or forced_name.casefold() in item["aliases"]:
+                    g1, _ = _split_gender_and_details(item["value"])
+                    g2, _ = _split_gender_and_details(raw_value)
+                    g1_can = _canonical_gender(g1)
+                    g2_can = _canonical_gender(g2)
+                    if (
+                        g1_can.casefold() in _SPECIFIC_GENDER_LABELS
+                        and g2_can.casefold() in _SPECIFIC_GENDER_LABELS
+                        and g1_can.casefold() != g2_can.casefold()
+                    ):
+                        conflicts = True
+                        break
+            if conflicts:
+                effective_name = raw_name
+                forced_name = None
         descriptive_name = bool(
             _is_descriptive_role_name(raw_name)
             and not forced_name
         )
         aliases = raw_aliases | _character_alias_keys(effective_name)
-        matching_indices = {
-            index
-            for index, item in enumerate(normalized)
-            if (
+        matching_indices = set()
+        for index, item in enumerate(normalized):
+            name_match = (
                 aliases & item["aliases"]
                 or _character_identities_match(
                     item["name"],
@@ -1762,7 +1780,19 @@ def _deduplicate_character_entries(
                     raw_value,
                 )
             )
-        }
+            if name_match:
+                # Check for specific conflicting genders (Male vs Female)
+                g1, _ = _split_gender_and_details(item["value"])
+                g2, _ = _split_gender_and_details(raw_value)
+                g1_can = _canonical_gender(g1)
+                g2_can = _canonical_gender(g2)
+                if (
+                    g1_can.casefold() in _SPECIFIC_GENDER_LABELS
+                    and g2_can.casefold() in _SPECIFIC_GENDER_LABELS
+                    and g1_can.casefold() != g2_can.casefold()
+                ):
+                    continue
+                matching_indices.add(index)
         if matching_indices:
             index = min(matching_indices)
             item = normalized[index]
@@ -4474,7 +4504,7 @@ async def _merge_character_values_llm(
         system_prompt = (
             "You are an AI assistant that merges duplicate or redundant character facts.\n"
             "Combine the two descriptions into a single, concise, unified description.\n"
-            "Remove grammatical duplicates and redundant phrasing.\n"
+            "Remove grammatical duplicates and redundant phrasing, but ALWAYS preserve all distinct titles, ranks, roles, relationships, and historical facts (do not discard older ranks or titles like 'Lieutenant Colonel' even if a newer rank like 'Second Lieutenant' is introduced).\n"
             "Keep the resulting description natural and compact.\n"
             "Output ONLY the final merged string, with no quotes, prefixes, or commentary."
         )
