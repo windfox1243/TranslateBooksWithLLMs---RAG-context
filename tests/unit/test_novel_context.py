@@ -2501,3 +2501,30 @@ async def test_epub_file_checkpoint_does_not_overwrite_chunk_snapshots(tmp_path)
 
     manager.db.save_chunk.assert_not_called()
     manager.db.update_job_progress.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_merge_character_values_llm_semantic():
+    from src.utils.novel_context import _merge_character_values_llm
+    from unittest.mock import AsyncMock
+
+    mock_client = AsyncMock()
+    mock_client.generate.return_value = AsyncMock(
+        content="protagonist of \"Glory of Victory\", a soldier seeking revenge against the Vampire Kingdom, currently a Lieutenant Colonel"
+    )
+
+    first = "Male, protagonist of the game \"Glory of Victory\", a soldier who seeks revenge against the Vampire Kingdom"
+    second = "Male, protagonist of \"Glory of Victory\", a soldier seeking revenge against the Vampire Kingdom, currently a Lieutenant Colonel"
+
+    merged = await _merge_character_values_llm(
+        llm_client=mock_client,
+        model_name="test-model",
+        first=first,
+        second=second,
+    )
+
+    assert merged == "Male, protagonist of \"Glory of Victory\", a soldier seeking revenge against the Vampire Kingdom, currently a Lieutenant Colonel"
+    mock_client.generate.assert_called_once()
+    _, kwargs = mock_client.generate.call_args
+    assert "Description A: protagonist of the game \"Glory of Victory\", a soldier who seeks revenge against the Vampire Kingdom" in kwargs["prompt"]
+    assert "Description B: protagonist of \"Glory of Victory\", a soldier seeking revenge against the Vampire Kingdom, currently a Lieutenant Colonel" in kwargs["prompt"]

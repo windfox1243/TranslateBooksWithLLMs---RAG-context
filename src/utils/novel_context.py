@@ -4199,6 +4199,7 @@ def merge_new_lore(
     new_glossary: str,
     new_aliases: str = "",
     source_text: str = "",
+    pre_merged_chars: Optional[Dict[str, str]] = None,
 ) -> Tuple[str, List[str]]:
     """Merge context updates through canonical character and glossary identities."""
     change_logs: List[str] = []
@@ -4356,11 +4357,15 @@ def merge_new_lore(
             if descriptive_name
             else _preferred_character_name(old_name, canonical_name)
         )
-        merged_value = _merge_character_values(
-            old_value,
-            clean_value,
-            allow_gender_correction=explicit_correction,
-        )
+        match_key = _plain_key(raw_name)
+        if pre_merged_chars and match_key in pre_merged_chars:
+            merged_value = pre_merged_chars[match_key]
+        else:
+            merged_value = _merge_character_values(
+                old_value,
+                clean_value,
+                allow_gender_correction=explicit_correction,
+            )
         if (old_name, old_value) != (merged_name, merged_value):
             record(
                 f"[Novel Context] Corrected/Updated Character '{log_key}': "
@@ -4443,6 +4448,57 @@ def merge_new_lore(
         [f"- {name}: {value}" for name, value in glossary],
     )
     return normalize_global_lore(lore), change_logs
+
+
+async def _merge_character_values_llm(
+    llm_client: Any,
+    model_name: str,
+    first: str,
+    second: str,
+) -> str:
+    """Uses the LLM to merge two character values semantically to resolve duplicates."""
+    first_clean = _normalize_character_value(first)
+    second_clean = _normalize_character_value(second)
+    if not first_clean or not second_clean:
+        return first_clean or second_clean
+
+    first_gender, first_details = _split_gender_and_details(first_clean)
+    second_gender, second_details = _split_gender_and_details(second_clean)
+
+    gender = second_gender or first_gender
+
+    if not first_details or not second_details:
+        details = first_details or second_details
+    else:
+        system_prompt = (
+            "You are an AI assistant that merges duplicate or redundant character facts.\n"
+            "Combine the two descriptions into a single, concise, unified description.\n"
+            "Remove grammatical duplicates and redundant phrasing.\n"
+            "Keep the resulting description natural and compact.\n"
+            "Output ONLY the final merged string, with no quotes, prefixes, or commentary."
+        )
+        prompt = (
+            f"Description A: {first_details}\n"
+            f"Description B: {second_details}\n\n"
+            "Unified Merged Description:"
+        )
+        try:
+            response = await llm_client.generate(
+                prompt=prompt,
+                system_prompt=system_prompt,
+            )
+            if response and response.content:
+                res = response.content.strip().strip('"\'')
+                prefix_pattern = re.compile(r"^(Unified\s+Merged\s+Description|Merged\s+Description|Description|Result)\s*:\s*", re.IGNORECASE)
+                details = prefix_pattern.sub("", res).strip()
+            else:
+                details = _merge_character_details(first_details, second_details)
+        except Exception as e:
+            logger.error(f"Error merging character details with LLM: {e}")
+            details = _merge_character_details(first_details, second_details)
+
+    merged = f"{gender}, {details}" if gender and details else (gender or details)
+    return merged.rstrip(" ;,")
 
 
 async def update_novel_context_chunk(
@@ -4604,12 +4660,40 @@ async def update_novel_context_chunk(
             
             new_dynamic = "\n".join(cleaned_lines).strip()
             
+        # Parse existing characters to match them for LLM pre-merging
+        existing_chars = {}
+        character_bounds = _find_lore_section(current_global_lore, CHARACTERS_SECTION)
+        if character_bounds:
+            _, body_start, body_end = character_bounds
+            for name, value in _parse_bullet_entries(current_global_lore[body_start:body_end]):
+                existing_chars[_plain_key(name)] = (name, value)
+
+        pre_merged_chars = {}
+        if llm_client and new_chars:
+            try:
+                incoming_entries = _parse_bullet_entries(new_chars)
+                for raw_name, raw_value in incoming_entries:
+                    match_key = _plain_key(raw_name)
+                    if match_key in existing_chars:
+                        old_name, old_value = existing_chars[match_key]
+                        merged_val = await _merge_character_values_llm(
+                            llm_client,
+                            model_name,
+                            old_value,
+                            raw_value,
+                        )
+                        if merged_val:
+                            pre_merged_chars[match_key] = merged_val
+            except Exception as e:
+                logger.error(f"Error pre-merging character details via LLM: {e}")
+
         updated_global_lore, change_logs = merge_new_lore(
             current_global_lore,
             new_chars,
             new_glossary,
             new_aliases,
             source_analysis_text,
+            pre_merged_chars=pre_merged_chars,
         )
         new_dynamic = merge_dynamic_state(
             current_dynamic_state,
