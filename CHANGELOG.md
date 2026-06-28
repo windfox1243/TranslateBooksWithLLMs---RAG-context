@@ -1,6 +1,14 @@
 # Changelog
 
+## 1.4.21 - 2026-06-29
+
+### Fixed
+
+- **Concept/Hallucination filtering in Novel Context:** Extended character recognition logic to automatically detect and discard abstract concepts, personifications, hallucinations, metaphors, or inanimate objects (e.g. "Death" as a personified concept) from the character list based on their description.
+- **Spurious delete key handling:** Fixed parsing of `DELETE` bullet points when the LLM outputs command bullet lines out of sequence (e.g., `- DELETE:` or `- DELETE: <name>`), preventing them from being added to the character list as a character named "DELETE".
+
 ## 1.4.20 - 2026-06-28
+
 
 ### Added
 
