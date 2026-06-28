@@ -1565,6 +1565,26 @@ def test_character_details_compact_repeated_subordinate_roles():
     assert normalized.count("subordinate of Valentine") == 1
 
 
+def test_character_details_redundancy_with_suffix_variations():
+    from src.utils.novel_context import merge_new_lore
+
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, protagonist of the game \"Glory of Victory\", a soldier who seeks revenge against the Vampire Kingdom.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    new_characters = (
+        "- Eric: Male, protagonist of \"Glory of Victory\", a soldier seeking revenge against the Vampire Kingdom, currently a Lieutenant Colonel."
+    )
+
+    updated_lore, _ = merge_new_lore(initial_lore, new_characters, "")
+
+    assert "currently a Lieutenant Colonel" in updated_lore
+    assert "seeking revenge against the Vampire Kingdom; protagonist of" not in updated_lore
+
+
 def test_structured_dynamic_state_preserves_addressing_when_only_relationship_changes():
     current = (
         "## CURRENT ADDRESSING FORMS\n"

@@ -766,9 +766,24 @@ def _detail_key(value: str) -> str:
     return _plain_key(value).rstrip(" .;,:")
 
 
+def _normalize_token(token: str) -> str:
+    token = token.lower()
+    if token.endswith("ing"):
+        return token[:-3]
+    if token.endswith("ed"):
+        return token[:-2]
+    if token.endswith("es"):
+        return token[:-2]
+    if token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    if token.endswith("ly"):
+        return token[:-2]
+    return token
+
+
 def _detail_tokens(value: str) -> set[str]:
     return {
-        token
+        _normalize_token(token)
         for token in re.findall(r"\w+", _detail_key(value), flags=re.UNICODE)
         if token not in _DETAIL_STOP_WORDS
     }
