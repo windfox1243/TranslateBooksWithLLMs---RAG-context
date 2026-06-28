@@ -241,6 +241,7 @@ def create_config_blueprint(server_session_id=None):
             "parallel_translations": int(_config.PARALLEL_TRANSLATIONS),
             "max_parallel_translations": int(_config.MAX_PARALLEL_TRANSLATIONS),
             "disable_auto_pause": str(_config.DISABLE_AUTO_PAUSE).strip().lower() == 'true',
+            "bypass_context_gating": bool(_config.BYPASS_CONTEXT_GATING),
             # Webhook notifications — returned as-is for editing. URLs and tokens
             # only ever travel between this server and the same-origin browser
             # session that already controls the .env on disk.
@@ -977,6 +978,7 @@ def create_config_blueprint(server_session_id=None):
             'MAX_TOKENS_PER_CHUNK',
             'PARALLEL_TRANSLATIONS',
             'DISABLE_AUTO_PAUSE',
+            'BYPASS_CONTEXT_GATING',
             'NOTIFY_WEBHOOK_URL',
             'NOTIFY_WEBHOOK_METHOD',
             'NOTIFY_WEBHOOK_HEADERS',

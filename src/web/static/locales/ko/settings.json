@@ -225,5 +225,6 @@
   "cost_format_lt_001": "<$0.01",
   "novel_context_label": "소설 컨텍스트 (성별, 관계 및 용어집)",
   "auto_update_context_label": "각 청크 번역 후 컨텍스트 파일 자동 업데이트",
+  "bypass_context_gating_label": "컨텍스트 검증 우회 (LLM이 식별한 성별 및 수정을 직접 신뢰)",
   "novel_context_help": "캐릭터 성별, 호칭(관계) 및 용어집을 <code>.txt</code> 파일에 유지하여 번역 일관성을 향상시킵니다. 참고: 자동 업데이트 시 순차 번역(워커 1개)이 강제됩니다."
 }

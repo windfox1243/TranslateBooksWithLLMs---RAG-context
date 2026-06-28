@@ -160,6 +160,7 @@ export const SettingsManager = {
             { id: 'poeApiKey', event: 'input' },
             { id: 'nimApiKey', event: 'input' },
             { id: 'disableAutoPause', event: 'change' },
+            { id: 'bypassContextGating', event: 'change' },
             { id: 'parallelWorkers', event: 'input' }
         ];
 
@@ -532,6 +533,10 @@ export const SettingsManager = {
             // Save disable auto-pause flag (runtime behavior default)
             const disableAutoPauseCheckbox = DomHelpers.getElement('disableAutoPause');
             envSettings['DISABLE_AUTO_PAUSE'] = (disableAutoPauseCheckbox && disableAutoPauseCheckbox.checked) ? 'true' : 'false';
+
+            // Save bypass context gating flag (runtime behavior default)
+            const bypassContextGatingCheckbox = DomHelpers.getElement('bypassContextGating');
+            envSettings['BYPASS_CONTEXT_GATING'] = (bypassContextGatingCheckbox && bypassContextGatingCheckbox.checked) ? 'true' : 'false';
 
             // Save parallel-requests default (the per-job request still overrides
             // this; it only seeds the input on next load). Backend clamps it.
