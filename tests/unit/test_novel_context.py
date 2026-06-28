@@ -2528,3 +2528,14 @@ async def test_merge_character_values_llm_semantic():
     _, kwargs = mock_client.generate.call_args
     assert "Description A: protagonist of the game \"Glory of Victory\", a soldier who seeks revenge against the Vampire Kingdom" in kwargs["prompt"]
     assert "Description B: protagonist of \"Glory of Victory\", a soldier seeking revenge against the Vampire Kingdom, currently a Lieutenant Colonel" in kwargs["prompt"]
+
+
+def test_correction_key_is_skipped():
+    from src.utils.novel_context import _is_invalid_context_key, _parse_bullet_entries
+
+    assert _is_invalid_context_key("CORRECTION") is True
+    assert _is_invalid_context_key("correction") is True
+    assert _is_invalid_context_key("Correction") is True
+
+    entries = _parse_bullet_entries("- CORRECTION: Female, protagonist, Kim Ji-an")
+    assert len(entries) == 0
