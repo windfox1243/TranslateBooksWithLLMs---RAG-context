@@ -126,6 +126,10 @@ _RELOADABLE_ENV_SETTINGS = (
     ('NOVEL_CONTEXT_SOURCE_MEMORY_CHARS', 'NOVEL_CONTEXT_SOURCE_MEMORY_CHARS', '6000'),
     # Bypasses the deterministic validation layer to trust LLM context updates directly.
     ('BYPASS_CONTEXT_GATING', 'BYPASS_CONTEXT_GATING', 'true'),
+    # LLM consolidation pass interval: after every Nth context chunk update, an
+    # LLM call rewrites the Characters section to remove duplicate / redundant
+    # descriptions that the deterministic merge layer missed. 0 = disabled.
+    ('NOVEL_CONTEXT_CONSOLIDATION_INTERVAL', 'NOVEL_CONTEXT_CONSOLIDATION_INTERVAL', '5'),
 )
 
 
@@ -140,6 +144,7 @@ _INT_ATTRS = {
     'NOVEL_CONTEXT_PROMPT_MAX_TOKENS',
     'NOVEL_CONTEXT_UPDATE_INTERVAL',
     'NOVEL_CONTEXT_SOURCE_MEMORY_CHARS',
+    'NOVEL_CONTEXT_CONSOLIDATION_INTERVAL',
 }
 
 

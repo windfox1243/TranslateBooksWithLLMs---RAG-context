@@ -41,7 +41,6 @@ _INVALID_CONTEXT_KEYS = {
     "character a",
     "character b",
     "canonical name",
-    "correction",
     "recommended target term",
     "source term",
     "target term",
@@ -767,18 +766,9 @@ def _detail_key(value: str) -> str:
     return _plain_key(value).rstrip(" .;,:")
 
 
-_SUFFIX_RE = re.compile(r"^(\w{3,})(?:ing|ed|es|ly|(?<!s)s)$", re.IGNORECASE)
-
-
-def _normalize_token(token: str) -> str:
-    token = token.lower()
-    match = _SUFFIX_RE.match(token)
-    return match.group(1) if match else token
-
-
 def _detail_tokens(value: str) -> set[str]:
     return {
-        _normalize_token(token)
+        token
         for token in re.findall(r"\w+", _detail_key(value), flags=re.UNICODE)
         if token not in _DETAIL_STOP_WORDS
     }
@@ -1745,33 +1735,15 @@ def _deduplicate_character_entries(
             None,
         )
         effective_name = forced_name or raw_name
-        if forced_name:
-            # If the forced name conflicts in gender with raw_value, don't force it
-            conflicts = False
-            for item in normalized:
-                if _character_names_match(item["name"], forced_name) or forced_name.casefold() in item["aliases"]:
-                    g1, _ = _split_gender_and_details(item["value"])
-                    g2, _ = _split_gender_and_details(raw_value)
-                    g1_can = _canonical_gender(g1)
-                    g2_can = _canonical_gender(g2)
-                    if (
-                        g1_can.casefold() in _SPECIFIC_GENDER_LABELS
-                        and g2_can.casefold() in _SPECIFIC_GENDER_LABELS
-                        and g1_can.casefold() != g2_can.casefold()
-                    ):
-                        conflicts = True
-                        break
-            if conflicts:
-                effective_name = raw_name
-                forced_name = None
         descriptive_name = bool(
             _is_descriptive_role_name(raw_name)
             and not forced_name
         )
         aliases = raw_aliases | _character_alias_keys(effective_name)
-        matching_indices = set()
-        for index, item in enumerate(normalized):
-            name_match = (
+        matching_indices = {
+            index
+            for index, item in enumerate(normalized)
+            if (
                 aliases & item["aliases"]
                 or _character_identities_match(
                     item["name"],
@@ -1780,19 +1752,7 @@ def _deduplicate_character_entries(
                     raw_value,
                 )
             )
-            if name_match:
-                # Check for specific conflicting genders (Male vs Female)
-                g1, _ = _split_gender_and_details(item["value"])
-                g2, _ = _split_gender_and_details(raw_value)
-                g1_can = _canonical_gender(g1)
-                g2_can = _canonical_gender(g2)
-                if (
-                    g1_can.casefold() in _SPECIFIC_GENDER_LABELS
-                    and g2_can.casefold() in _SPECIFIC_GENDER_LABELS
-                    and g1_can.casefold() != g2_can.casefold()
-                ):
-                    continue
-                matching_indices.add(index)
+        }
         if matching_indices:
             index = min(matching_indices)
             item = normalized[index]
@@ -4048,6 +4008,123 @@ def open_novel_context_session(
     return session
 
 
+CONSOLIDATION_SYSTEM_PROMPT = """You are a precise novel context editor.
+Your only job is to clean up a Characters & Genders list by merging duplicate or redundant entries.
+
+Rules:
+- Each canonical character must appear exactly once with one concise, non-repetitive description.
+- Merge all duplicate facts (same idea, different wording) into a single clear phrase.
+- Keep the most informative phrasing; drop redundant restatements.
+- Keep ALL factual information that is not a pure duplicate: gender, rank, role, key relationships, notable traits.
+- Preserve the exact canonical name already shown in the input (do not rename characters).
+- Preserve gender labels exactly (Male / Female / Unspecified).
+- Output ONLY the cleaned bullet list — one line per character in the format:
+  - Canonical Name: Gender, concise description.
+- Do NOT add any heading, explanation, markdown fence, or extra text.
+- Do NOT invent new facts that are not present in the input.
+"""
+
+CONSOLIDATION_USER_PROMPT_TEMPLATE = """Below is the current Characters & Genders list.
+Merge duplicate / redundant descriptions so each character has exactly one concise entry.
+
+{characters_section}
+
+Output the cleaned list now (bullet lines only, no other text):"""
+
+
+async def consolidate_context_lore(
+    llm_client: Any,
+    model_name: str,
+    global_lore: str,
+) -> Tuple[str, List[str]]:
+    """Run an LLM pass that deduplicates/consolidates the Characters section.
+
+    The deterministic merge catches exact or near-exact fact overlap but misses
+    semantically identical descriptions written with different words.  This
+    function asks the LLM to rewrite the Characters section into one clean,
+    non-redundant entry per character.
+
+    Returns:
+        Tuple of (updated_global_lore, change_logs)
+    """
+    change_logs: List[str] = []
+
+    # Extract the existing Characters section
+    char_bounds = _find_lore_section(global_lore, CHARACTERS_SECTION)
+    if not char_bounds:
+        return global_lore, change_logs
+
+    _, body_start, body_end = char_bounds
+    characters_body = global_lore[body_start:body_end].strip()
+    if not characters_body:
+        return global_lore, change_logs
+
+    user_prompt = CONSOLIDATION_USER_PROMPT_TEMPLATE.format(
+        characters_section=characters_body,
+    )
+
+    try:
+        response = await llm_client.generate(
+            prompt=user_prompt,
+            system_prompt=CONSOLIDATION_SYSTEM_PROMPT,
+        )
+        if not response or not response.content:
+            logger.warning(
+                "Empty response from LLM during context consolidation. Skipping."
+            )
+            return global_lore, change_logs
+
+        raw = response.content.strip()
+        # Strip any accidental markdown fences
+        if raw.startswith("```"):
+            lines = raw.splitlines()
+            lines = lines[1:] if lines[0].startswith("```") else lines
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            raw = "\n".join(lines).strip()
+
+        # Validate: must have at least one bullet line
+        consolidated_entries = [
+            line.strip()
+            for line in raw.splitlines()
+            if line.strip().startswith("-")
+        ]
+        if not consolidated_entries:
+            logger.warning(
+                "Consolidation LLM returned no bullet entries. Skipping."
+            )
+            return global_lore, change_logs
+
+        consolidated_body = "\n".join(consolidated_entries)
+        updated_lore = _replace_lore_section(
+            global_lore,
+            CHARACTERS_SECTION,
+            consolidated_entries,
+        )
+        updated_lore = normalize_global_lore(updated_lore)
+
+        if updated_lore != global_lore:
+            msg = "[Novel Context] Consolidation pass: character descriptions deduped/merged."
+            change_logs.append(msg)
+            logger.info(msg)
+            print(msg)
+
+        return updated_lore, change_logs
+
+    except Exception as exc:
+        logger.error(f"Error during context consolidation LLM call: {exc}")
+        return global_lore, change_logs
+
+
+def _consolidation_interval() -> int:
+    """Return the configured consolidation interval (0 = disabled)."""
+    try:
+        from src import config as _config
+        return max(0, int(getattr(_config, "NOVEL_CONTEXT_CONSOLIDATION_INTERVAL", 5)))
+    except Exception:
+        return 5
+
+
 UPDATE_SYSTEM_PROMPT = """You are an expert novel translation context assistant.
 Your task is to analyze the latest source text and its translation, and detect any new characters, glossary terms, or relationship addressing changes.
 
@@ -4230,7 +4307,6 @@ def merge_new_lore(
     new_glossary: str,
     new_aliases: str = "",
     source_text: str = "",
-    pre_merged_chars: Optional[Dict[str, str]] = None,
 ) -> Tuple[str, List[str]]:
     """Merge context updates through canonical character and glossary identities."""
     change_logs: List[str] = []
@@ -4388,15 +4464,11 @@ def merge_new_lore(
             if descriptive_name
             else _preferred_character_name(old_name, canonical_name)
         )
-        match_key = _plain_key(raw_name)
-        if pre_merged_chars and match_key in pre_merged_chars:
-            merged_value = pre_merged_chars[match_key]
-        else:
-            merged_value = _merge_character_values(
-                old_value,
-                clean_value,
-                allow_gender_correction=explicit_correction,
-            )
+        merged_value = _merge_character_values(
+            old_value,
+            clean_value,
+            allow_gender_correction=explicit_correction,
+        )
         if (old_name, old_value) != (merged_name, merged_value):
             record(
                 f"[Novel Context] Corrected/Updated Character '{log_key}': "
@@ -4479,57 +4551,6 @@ def merge_new_lore(
         [f"- {name}: {value}" for name, value in glossary],
     )
     return normalize_global_lore(lore), change_logs
-
-
-async def _merge_character_values_llm(
-    llm_client: Any,
-    model_name: str,
-    first: str,
-    second: str,
-) -> str:
-    """Uses the LLM to merge two character values semantically to resolve duplicates."""
-    first_clean = _normalize_character_value(first)
-    second_clean = _normalize_character_value(second)
-    if not first_clean or not second_clean:
-        return first_clean or second_clean
-
-    first_gender, first_details = _split_gender_and_details(first_clean)
-    second_gender, second_details = _split_gender_and_details(second_clean)
-
-    gender = second_gender or first_gender
-
-    if not first_details or not second_details:
-        details = first_details or second_details
-    else:
-        system_prompt = (
-            "You are an AI assistant that merges duplicate or redundant character facts.\n"
-            "Combine the two descriptions into a single, concise, unified description.\n"
-            "Remove grammatical duplicates and redundant phrasing, but ALWAYS preserve all distinct titles, ranks, roles, relationships, and historical facts (do not discard older ranks or titles like 'Lieutenant Colonel' even if a newer rank like 'Second Lieutenant' is introduced).\n"
-            "Keep the resulting description natural and compact.\n"
-            "Output ONLY the final merged string, with no quotes, prefixes, or commentary."
-        )
-        prompt = (
-            f"Description A: {first_details}\n"
-            f"Description B: {second_details}\n\n"
-            "Unified Merged Description:"
-        )
-        try:
-            response = await llm_client.generate(
-                prompt=prompt,
-                system_prompt=system_prompt,
-            )
-            if response and response.content:
-                res = response.content.strip().strip('"\'')
-                prefix_pattern = re.compile(r"^(Unified\s+Merged\s+Description|Merged\s+Description|Description|Result)\s*:\s*", re.IGNORECASE)
-                details = prefix_pattern.sub("", res).strip()
-            else:
-                details = _merge_character_details(first_details, second_details)
-        except Exception as e:
-            logger.error(f"Error merging character details with LLM: {e}")
-            details = _merge_character_details(first_details, second_details)
-
-    merged = f"{gender}, {details}" if gender and details else (gender or details)
-    return merged.rstrip(" ;,")
 
 
 async def update_novel_context_chunk(
@@ -4691,47 +4712,41 @@ async def update_novel_context_chunk(
             
             new_dynamic = "\n".join(cleaned_lines).strip()
             
-        # Parse existing characters to match them for LLM pre-merging
-        existing_chars = {}
-        character_bounds = _find_lore_section(current_global_lore, CHARACTERS_SECTION)
-        if character_bounds:
-            _, body_start, body_end = character_bounds
-            for name, value in _parse_bullet_entries(current_global_lore[body_start:body_end]):
-                existing_chars[_plain_key(name)] = (name, value)
-
-        pre_merged_chars = {}
-        if llm_client and new_chars:
-            try:
-                incoming_entries = _parse_bullet_entries(new_chars)
-                for raw_name, raw_value in incoming_entries:
-                    match_key = _plain_key(raw_name)
-                    if match_key in existing_chars:
-                        old_name, old_value = existing_chars[match_key]
-                        merged_val = await _merge_character_values_llm(
-                            llm_client,
-                            model_name,
-                            old_value,
-                            raw_value,
-                        )
-                        if merged_val:
-                            pre_merged_chars[match_key] = merged_val
-            except Exception as e:
-                logger.error(f"Error pre-merging character details via LLM: {e}")
-
         updated_global_lore, change_logs = merge_new_lore(
             current_global_lore,
             new_chars,
             new_glossary,
             new_aliases,
             source_analysis_text,
-            pre_merged_chars=pre_merged_chars,
         )
         new_dynamic = merge_dynamic_state(
             current_dynamic_state,
             new_dynamic,
             _character_alias_map(updated_global_lore),
         )
-        
+
+        # LLM consolidation pass: periodically deduplicate character descriptions
+        # that the deterministic merge layer missed (semantically similar rephrasing).
+        consolidation_interval = _consolidation_interval()
+        if (
+            consolidation_interval > 0
+            and chunk_index > 0
+            and chunk_index % consolidation_interval == 0
+        ):
+            logger.info(
+                f"[Novel Context] Running consolidation pass at chunk {chunk_index}."
+            )
+            print(
+                f"[Novel Context] Running consolidation pass at chunk {chunk_index}."
+            )
+            consolidated_lore, consolidation_logs = await consolidate_context_lore(
+                llm_client=llm_client,
+                model_name=model_name,
+                global_lore=updated_global_lore,
+            )
+            updated_global_lore = consolidated_lore
+            change_logs.extend(consolidation_logs)
+
         # Track relationship logs by comparing old and new dynamic state
         # (This is secondary logging for the terminal, just printing line updates)
         if new_dynamic != current_dynamic_state:
@@ -4751,6 +4766,7 @@ async def update_novel_context_chunk(
             )
             
         return updated_global_lore, new_dynamic, change_logs
+
         
     except Exception as e:
         logger.error(f"Error in update_novel_context_chunk: {e}")

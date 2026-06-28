@@ -1565,26 +1565,6 @@ def test_character_details_compact_repeated_subordinate_roles():
     assert normalized.count("subordinate of Valentine") == 1
 
 
-def test_character_details_redundancy_with_suffix_variations():
-    from src.utils.novel_context import merge_new_lore
-
-    initial_lore = (
-        "# GLOBAL LORE\n\n"
-        "## CHARACTERS & GENDERS\n"
-        "- Eric: Male, protagonist of the game \"Glory of Victory\", a soldier who seeks revenge against the Vampire Kingdom.\n\n"
-        "## GLOSSARY & TERMINOLOGY\n"
-    )
-
-    new_characters = (
-        "- Eric: Male, protagonist of \"Glory of Victory\", a soldier seeking revenge against the Vampire Kingdom, currently a Lieutenant Colonel."
-    )
-
-    updated_lore, _ = merge_new_lore(initial_lore, new_characters, "")
-
-    assert "currently a Lieutenant Colonel" in updated_lore
-    assert "seeking revenge against the Vampire Kingdom; protagonist of" not in updated_lore
-
-
 def test_structured_dynamic_state_preserves_addressing_when_only_relationship_changes():
     current = (
         "## CURRENT ADDRESSING FORMS\n"
@@ -2503,58 +2483,93 @@ async def test_epub_file_checkpoint_does_not_overwrite_chunk_snapshots(tmp_path)
     manager.db.update_job_progress.assert_called_once()
 
 
+# ---------------------------------------------------------------------------
+# consolidate_context_lore tests
+# ---------------------------------------------------------------------------
+
+import asyncio
+from src.utils.novel_context import consolidate_context_lore
+
+
 @pytest.mark.asyncio
-async def test_merge_character_values_llm_semantic():
-    from src.utils.novel_context import _merge_character_values_llm
-    from unittest.mock import AsyncMock
-
-    mock_client = AsyncMock()
-    mock_client.generate.return_value = AsyncMock(
-        content="protagonist of \"Glory of Victory\", a soldier seeking revenge against the Vampire Kingdom, currently a Lieutenant Colonel"
+async def test_consolidation_deduplicates_character_descriptions():
+    """consolidate_context_lore should merge duplicate character descriptions."""
+    global_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        '- Eric: Male, protagonist of the game "Glory of Victory", a soldier who seeks revenge'
+        ' against the Vampire Kingdom; protagonist of "Glory of Victory", a soldier seeking'
+        " revenge against the Vampire Kingdom, currently a Lieutenant Colonel.\n"
+        "- Kim Ji-an: Female, former beta tester, reincarnated as a vampire.\n"
     )
+    # LLM returns a clean consolidated list
+    clean_response = (
+        "- Eric: Male, protagonist of Glory of Victory, a soldier seeking revenge against the"
+        " Vampire Kingdom, currently a Lieutenant Colonel.\n"
+        "- Kim Ji-an: Female, former beta tester, reincarnated as a vampire."
+    )
+    mock_response = MagicMock()
+    mock_response.content = clean_response
+    llm_client = MagicMock()
+    llm_client.generate = AsyncMock(return_value=mock_response)
 
-    first = "Male, protagonist of the game \"Glory of Victory\", a soldier who seeks revenge against the Vampire Kingdom"
-    second = "Male, protagonist of \"Glory of Victory\", a soldier seeking revenge against the Vampire Kingdom, currently a Lieutenant Colonel"
-
-    merged = await _merge_character_values_llm(
-        llm_client=mock_client,
+    result_lore, logs = await consolidate_context_lore(
+        llm_client=llm_client,
         model_name="test-model",
-        first=first,
-        second=second,
+        global_lore=global_lore,
     )
 
-    assert merged == "Male, protagonist of \"Glory of Victory\", a soldier seeking revenge against the Vampire Kingdom, currently a Lieutenant Colonel"
-    mock_client.generate.assert_called_once()
-    _, kwargs = mock_client.generate.call_args
-    assert "Description A: protagonist of the game \"Glory of Victory\", a soldier who seeks revenge against the Vampire Kingdom" in kwargs["prompt"]
-    assert "Description B: protagonist of \"Glory of Victory\", a soldier seeking revenge against the Vampire Kingdom, currently a Lieutenant Colonel" in kwargs["prompt"]
+    # Consolidation should have run and returned a change log
+    assert logs, "Expected a change log entry from the consolidation pass"
+    # Duplicate phrase should no longer appear in the result
+    assert result_lore.count("protagonist of") == 1, (
+        "Duplicate 'protagonist of' phrase should be merged to one occurrence"
+    )
+    # Kim Ji-an entry should still be present
+    assert "Kim Ji-an" in result_lore
 
 
-def test_correction_key_is_skipped():
-    from src.utils.novel_context import _is_invalid_context_key, _parse_bullet_entries
+@pytest.mark.asyncio
+async def test_consolidation_skips_on_empty_llm_response():
+    """consolidate_context_lore should return original lore unchanged on empty LLM response."""
+    global_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, protagonist, soldier.\n"
+    )
+    mock_response = MagicMock()
+    mock_response.content = ""
+    llm_client = MagicMock()
+    llm_client.generate = AsyncMock(return_value=mock_response)
 
-    assert _is_invalid_context_key("CORRECTION") is True
-    assert _is_invalid_context_key("correction") is True
-    assert _is_invalid_context_key("Correction") is True
+    result_lore, logs = await consolidate_context_lore(
+        llm_client=llm_client,
+        model_name="test-model",
+        global_lore=global_lore,
+    )
 
-    entries = _parse_bullet_entries("- CORRECTION: Female, protagonist, Kim Ji-an")
-    assert len(entries) == 0
+    assert result_lore == global_lore, "Lore should be unchanged when LLM returns empty"
+    assert logs == [], "No change logs expected on empty response"
 
 
-def test_different_genders_are_not_merged_by_aliases():
-    from src.utils.novel_context import _deduplicate_character_entries
+@pytest.mark.asyncio
+async def test_consolidation_skips_on_no_bullet_entries():
+    """consolidate_context_lore should return original lore unchanged when LLM outputs no bullets."""
+    global_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, protagonist, soldier.\n"
+    )
+    mock_response = MagicMock()
+    mock_response.content = "Here is the cleaned list:"  # no bullet lines
+    llm_client = MagicMock()
+    llm_client.generate = AsyncMock(return_value=mock_response)
 
-    # Valentine (Female) and Kim Ji-an (Male) have intersecting aliases, but different genders
-    entries = [
-        ("Kim Ji-an", "Male, terminally ill beta tester"),
-        ("Valentine", "Female, reincarnated vampire girl"),
-    ]
-    explicit_aliases = {"valentine": "Kim Ji-an"}
+    result_lore, logs = await consolidate_context_lore(
+        llm_client=llm_client,
+        model_name="test-model",
+        global_lore=global_lore,
+    )
 
-    deduped, alias_map = _deduplicate_character_entries(entries, explicit_aliases)
-
-    # They should not be merged!
-    names = [name for name, _ in deduped]
-    assert "Kim Ji-an" in names
-    assert "Valentine" in names
-    assert len(deduped) == 2
+    assert result_lore == global_lore
+    assert logs == []
