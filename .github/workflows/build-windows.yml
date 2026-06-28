@@ -114,7 +114,7 @@ jobs:
         $readme | Out-File -FilePath release\README.txt -Encoding UTF8
 
         # Create zip archive
-        Compress-Archive -Path release\* -DestinationPath TranslateBook-Windows.zip
+        Compress-Archive -Path release\* -DestinationPath TranslateBook-Windows.zip -Force
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
