@@ -41,6 +41,7 @@ _INVALID_CONTEXT_KEYS = {
     "character a",
     "character b",
     "canonical name",
+    "correction",
     "recommended target term",
     "source term",
     "target term",
