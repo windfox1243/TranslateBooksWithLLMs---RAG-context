@@ -5,10 +5,12 @@
 ### Added
 
 - Added semantic LLM-driven character details pre-merging to resolve duplicate description updates (e.g. merging "seeks revenge" and "seeking revenge" cleanly without duplication by asking the LLM to combine them semantically at runtime).
+- Prevented merging characters with conflicting specific genders (Male vs Female) in global deduplication. This ensures that separate entities (like a male human protagonist and their female reincarnated form) retain their respective genders and details without collapsing into a single incorrect entry.
 
 ### Fixed
 
 - Improved character details redundancy check fallback by applying an optimized pre-compiled regex suffix normalizer (stripping common endings like `ing`, `ed`, `es`, `ly`, `s` for words with length > 4 while protecting double-s endings like `class`). This ensures robust local fallback/offline deduplication.
+- Fixed semantic LLM pre-merger prompting instructions to guarantee all distinct titles, ranks, and historical roles (such as keeping both Second Lieutenant and Lieutenant Colonel ranks) are always fully preserved instead of being discarded as outdated or redundant information.
 
 ## 1.4.19 - 2026-06-28
 

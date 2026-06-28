@@ -2539,3 +2539,22 @@ def test_correction_key_is_skipped():
 
     entries = _parse_bullet_entries("- CORRECTION: Female, protagonist, Kim Ji-an")
     assert len(entries) == 0
+
+
+def test_different_genders_are_not_merged_by_aliases():
+    from src.utils.novel_context import _deduplicate_character_entries
+
+    # Valentine (Female) and Kim Ji-an (Male) have intersecting aliases, but different genders
+    entries = [
+        ("Kim Ji-an", "Male, terminally ill beta tester"),
+        ("Valentine", "Female, reincarnated vampire girl"),
+    ]
+    explicit_aliases = {"valentine": "Kim Ji-an"}
+
+    deduped, alias_map = _deduplicate_character_entries(entries, explicit_aliases)
+
+    # They should not be merged!
+    names = [name for name, _ in deduped]
+    assert "Kim Ji-an" in names
+    assert "Valentine" in names
+    assert len(deduped) == 2
