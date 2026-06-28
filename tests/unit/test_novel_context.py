@@ -496,36 +496,43 @@ def test_character_gender_does_not_flip_without_explicit_correction():
 
 def test_source_gate_downgrades_unproven_new_character_gender_guess():
     from src.utils.novel_context import merge_new_lore
+    from src import config
 
-    initial_lore = (
-        "# GLOBAL LORE\n\n"
-        "## CHARACTERS & GENDERS\n\n"
-        "## GLOSSARY & TERMINOLOGY\n"
-    )
-    source = (
-        "During a regular health checkup, the doctor addressed Kim Ji-an. "
-        "The lover I trusted abandoned me. Seeing a sick person hurts her "
-        "heart, she said. She just cheated on me with a healthy guy."
-    )
-    model_guess = (
-        "- Kim Ji-an: Female, protagonist, suffering from various "
-        "blood-related diseases and anemia.\n"
-        "- Ex-lover: Female, former romantic partner who abandoned Kim Ji-an."
-    )
+    original_bypass = getattr(config, 'BYPASS_CONTEXT_GATING', True)
+    config.BYPASS_CONTEXT_GATING = False
 
-    updated_lore, _ = merge_new_lore(
-        initial_lore,
-        model_guess,
-        "",
-        source_text=source,
-    )
+    try:
+        initial_lore = (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        )
+        source = (
+            "During a regular health checkup, the doctor addressed Kim Ji-an. "
+            "The lover I trusted abandoned me. Seeing a sick person hurts her "
+            "heart, she said. She just cheated on me with a healthy guy."
+        )
+        model_guess = (
+            "- Kim Ji-an: Female, protagonist, suffering from various "
+            "blood-related diseases and anemia.\n"
+            "- Ex-lover: Female, former romantic partner who abandoned Kim Ji-an."
+        )
 
-    assert (
-        "- Kim Ji-an: Unspecified, protagonist, suffering from various "
-        "blood-related diseases and anemia."
-    ) in updated_lore
-    assert "- Kim Ji-an: Female" not in updated_lore
-    assert "- Ex-lover: Female," in updated_lore
+        updated_lore, _ = merge_new_lore(
+            initial_lore,
+            model_guess,
+            "",
+            source_text=source,
+        )
+
+        assert (
+            "- Kim Ji-an: Unspecified, protagonist, suffering from various "
+            "blood-related diseases and anemia."
+        ) in updated_lore
+        assert "- Kim Ji-an: Female" not in updated_lore
+        assert "- Ex-lover: Female," in updated_lore
+    finally:
+        config.BYPASS_CONTEXT_GATING = original_bypass
 
 
 def test_source_gate_accepts_source_proven_new_character_gender():
@@ -548,26 +555,140 @@ def test_source_gate_accepts_source_proven_new_character_gender():
     assert "- Kriha: Female, soldier subordinate of Valentine." in updated_lore
 
 
-def test_source_gate_rejects_unproven_explicit_gender_correction():
+def test_source_gate_allows_non_risky_new_character_gender():
     from src.utils.novel_context import merge_new_lore
 
     initial_lore = (
         "# GLOBAL LORE\n\n"
-        "## CHARACTERS & GENDERS\n"
-        "- Alex: Male, veteran investigator.\n\n"
+        "## CHARACTERS & GENDERS\n\n"
         "## GLOSSARY & TERMINOLOGY\n"
     )
-    source = "Alex interviewed the witness before leaving the station."
+    source = "Captain Valentine called Kyle, Jenny, Berman, and Kriha forward."
 
     updated_lore, _ = merge_new_lore(
         initial_lore,
-        "- Alex: CORRECTION: [Female, veteran investigator with a new lead.]",
+        "- Jenny: Female, loyal soldier subordinate of Valentine.",
         "",
         source_text=source,
     )
 
-    assert "- Alex: Male, veteran investigator" in updated_lore
-    assert "- Alex: Female" not in updated_lore
+    assert "- Jenny: Female, loyal soldier subordinate of Valentine." in updated_lore
+
+
+def test_source_gate_accepts_gender_backed_by_incoming_details():
+    from src.utils.novel_context import merge_new_lore
+
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    source = "When I woke up again, I had become a girl with a very small build."
+
+    updated_lore, _ = merge_new_lore(
+        initial_lore,
+        "- Valentine: Female, reincarnated as a small-build Vampire girl.",
+        "",
+        source_text=source,
+    )
+
+    assert "- Valentine: Female, reincarnated as a small-build Vampire girl." in updated_lore
+
+
+def test_source_gate_rejects_unproven_explicit_gender_correction():
+    from src.utils.novel_context import merge_new_lore
+    from src import config
+
+    original_bypass = getattr(config, 'BYPASS_CONTEXT_GATING', True)
+    config.BYPASS_CONTEXT_GATING = False
+
+    try:
+        initial_lore = (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Alex: Male, veteran investigator.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        )
+        source = "Alex interviewed the witness before leaving the station."
+
+        updated_lore, _ = merge_new_lore(
+            initial_lore,
+            "- Alex: CORRECTION: [Female, veteran investigator with a new lead.]",
+            "",
+            source_text=source,
+        )
+
+        assert "- Alex: Male, veteran investigator" in updated_lore
+        assert "- Alex: Female" not in updated_lore
+    finally:
+        config.BYPASS_CONTEXT_GATING = original_bypass
+
+
+def test_bypass_context_gating_trusts_new_gender_guess():
+    from src.utils.novel_context import merge_new_lore
+    from src import config
+
+    original_bypass = getattr(config, 'BYPASS_CONTEXT_GATING', True)
+    config.BYPASS_CONTEXT_GATING = True
+
+    try:
+        initial_lore = (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        )
+        source = (
+            "During a regular health checkup, the doctor addressed Kim Ji-an. "
+            "The lover I trusted abandoned me. Seeing a sick person hurts her "
+            "heart, she said. She just cheated on me with a healthy guy."
+        )
+        model_guess = (
+            "- Kim Ji-an: Female, protagonist, suffering from various "
+            "blood-related diseases and anemia.\n"
+            "- Ex-lover: Female, former romantic partner who abandoned Kim Ji-an."
+        )
+
+        updated_lore, _ = merge_new_lore(
+            initial_lore,
+            model_guess,
+            "",
+            source_text=source,
+        )
+
+        # When bypass is True, we trust the LLM's classification directly instead of gating it
+        assert "- Kim Ji-an: Female, protagonist" in updated_lore
+        assert "- Ex-lover: Female," in updated_lore
+    finally:
+        config.BYPASS_CONTEXT_GATING = original_bypass
+
+
+def test_bypass_context_gating_accepts_correction():
+    from src.utils.novel_context import merge_new_lore
+    from src import config
+
+    original_bypass = getattr(config, 'BYPASS_CONTEXT_GATING', True)
+    config.BYPASS_CONTEXT_GATING = True
+
+    try:
+        initial_lore = (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Alex: Male, veteran investigator.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        )
+        source = "Alex interviewed the witness before leaving the station."
+
+        updated_lore, _ = merge_new_lore(
+            initial_lore,
+            "- Alex: CORRECTION: [Female, veteran investigator with a new lead.]",
+            "",
+            source_text=source,
+        )
+
+        # When bypass is True, corrections are accepted without source text regex checks
+        assert "- Alex: Female, veteran investigator with a new lead." in updated_lore
+    finally:
+        config.BYPASS_CONTEXT_GATING = original_bypass
 
 
 def test_trailing_gender_correction_is_summarized_into_primary_gender():
