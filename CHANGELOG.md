@@ -4,15 +4,11 @@
 
 ### Added
 
-- Added semantic LLM-driven character details pre-merging to resolve duplicate description updates (e.g. merging "seeks revenge" and "seeking revenge" cleanly without duplication by asking the LLM to combine them semantically at runtime).
-- Prevented merging characters with conflicting specific genders (Male vs Female) in global deduplication. This ensures that separate entities (like a male human protagonist and their female reincarnated form) retain their respective genders and details without collapsing into a single incorrect entry.
-
-### Fixed
-
-- Improved character details redundancy check fallback by applying an optimized pre-compiled regex suffix normalizer (stripping common endings like `ing`, `ed`, `es`, `ly`, `s` for words with length > 4 while protecting double-s endings like `class`). This ensures robust local fallback/offline deduplication.
-- Fixed semantic LLM pre-merger prompting instructions to guarantee all distinct titles, ranks, and historical roles (such as keeping both Second Lieutenant and Lieutenant Colonel ranks) are always fully preserved instead of being discarded as outdated or redundant information.
+- **LLM context consolidation pass**: after every N context chunk updates (default: 5, configurable via `NOVEL_CONTEXT_CONSOLIDATION_INTERVAL` in `.env`), an LLM call rewrites the `## CHARACTERS & GENDERS` section to merge duplicate or redundant character descriptions that the deterministic heuristic merge layer misses. This fixes issues such as the same character receiving near-identical descriptions with slightly different wording across chunks (e.g., "protagonist of the game Glory of Victory, a soldier who seeks revenge" appended after an identical entry). Set `NOVEL_CONTEXT_CONSOLIDATION_INTERVAL=0` to disable.
+- Added `BYPASS_CONTEXT_GATING` checkbox to the Web UI Novel Context settings panel. The toggle lets users enable or disable context validation per-job from the UI. The state is persisted to profiles and `.env` via the Settings panel and updates reactively across all 7 supported UI languages.
 
 ## 1.4.19 - 2026-06-28
+
 
 ### Added
 
