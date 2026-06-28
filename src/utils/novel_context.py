@@ -31,6 +31,7 @@ RELATIONSHIP_SECTION = "## RELATIONSHIP EVOLUTION"
 _INVALID_CONTEXT_KEYS = {
     "",
     "-",
+    "delete",
     "n/a",
     "na",
     "name",
@@ -364,12 +365,19 @@ def _is_disposable_unnamed_character(name: str, value: str) -> bool:
 
 
 def _is_non_character_work_entry(name: str, value: str) -> bool:
-    """Reject works/apps that the model put in the character registry."""
+    """Reject works/apps or abstract concepts that the model put in the character registry."""
     del name
     _, details = _split_gender_and_details(_normalize_character_value(value))
     key = _plain_key(details)
     if not key:
         return False
+
+    # Check for abstract concepts, hallucinations, metaphors, or inanimate objects
+    if re.search(
+        r"\b(?:personified\s+(?:concept|manifestation)|abstract\s+concept|hallucination(?:\s+experienced\s+by)?|metaphor(?:ical)?(?:\s+representation)?|inanimate\s+object|not\s+a\s+character)\b",
+        key,
+    ):
+        return True
 
     words = re.findall(r"\w+", key)
     if not words:

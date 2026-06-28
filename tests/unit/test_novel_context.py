@@ -2573,3 +2573,22 @@ async def test_consolidation_skips_on_no_bullet_entries():
 
     assert result_lore == global_lore
     assert logs == []
+
+
+def test_filter_abstract_concepts_and_spurious_delete():
+    from src.utils.novel_context import _is_non_character_work_entry, _parse_bullet_entries
+
+    # Test abstract concepts / hallucinations
+    assert _is_non_character_work_entry("Death", "Unspecified, personified concept or hallucination experienced by Kim Si-hu") is True
+    assert _is_non_character_work_entry("Fear", "Unspecified, abstract concept that governs the character's choices") is True
+    assert _is_non_character_work_entry("Sword", "Unspecified, inanimate object used as a weapon") is True
+    assert _is_non_character_work_entry("Shadow", "Unspecified, metaphorical representation of inner guilt") is True
+
+    # Valid characters should NOT be filtered
+    assert _is_non_character_work_entry("Reaper", "Female, girl in black rags who works for Valentine") is False
+    assert _is_non_character_work_entry("Kim Si-hu", "Male, handsome student") is False
+
+    # Test that DELETE bullet entries are skipped
+    parsed_bullets = _parse_bullet_entries("- DELETE:\n- DELETE: Death\n- Kim Si-hu: Male, student\n- DELETE")
+    assert len(parsed_bullets) == 1
+    assert parsed_bullets[0] == ("Kim Si-hu", "Male, student")
