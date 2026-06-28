@@ -2,9 +2,13 @@
 
 ## 1.4.20 - 2026-06-28
 
+### Added
+
+- Added semantic LLM-driven character details pre-merging to resolve duplicate description updates (e.g. merging "seeks revenge" and "seeking revenge" cleanly without duplication by asking the LLM to combine them semantically at runtime).
+
 ### Fixed
 
-- Improved character details redundancy check by applying token suffix normalization (stripping common endings like `ing`, `s`, `ed`, `ly`). This resolves issues where grammatical variants of the same description (e.g. `seeks` vs `seeking`) were incorrectly preserved as duplicate semicolon-separated entries.
+- Improved character details redundancy check fallback by applying an optimized pre-compiled regex suffix normalizer (stripping common endings like `ing`, `ed`, `es`, `ly`, `s` for words with length > 4 while protecting double-s endings like `class`). This ensures robust local fallback/offline deduplication.
 
 ## 1.4.19 - 2026-06-28
 
