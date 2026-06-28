@@ -492,6 +492,14 @@ export const FormManager = {
                 }
             }
 
+            // Bypass context validation (runtime behavior default)
+            if (typeof config.bypass_context_gating === 'boolean') {
+                const bypassContextGatingCheckbox = DomHelpers.getElement('bypassContextGating');
+                if (bypassContextGatingCheckbox) {
+                    bypassContextGatingCheckbox.checked = config.bypass_context_gating;
+                }
+            }
+
             // Parallel requests default (seeds the input; per-job request overrides it)
             if (config.parallel_translations) {
                 const parallelWorkersInput = DomHelpers.getElement('parallelWorkers');
@@ -860,7 +868,8 @@ export const FormManager = {
                 chapter_mode: DomHelpers.getElement('chapterMode')?.checked || false,
                 custom_instruction_file: DomHelpers.getValue('customInstructionSelect') || '',
                 novel_context_file: DomHelpers.getValue('novelContextSelect') || '',
-                auto_update_context: DomHelpers.getElement('autoUpdateContext')?.checked || false
+                auto_update_context: DomHelpers.getElement('autoUpdateContext')?.checked || false,
+                bypass_context_gating: DomHelpers.getElement('bypassContextGating')?.checked || false
             },
             // Bilingual output (original + translation interleaved)
             bilingual_output: DomHelpers.getElement('bilingualMode')?.checked || false,
@@ -1022,6 +1031,7 @@ window.loadSelectedProfile = async function() {
             bilingualMode: data.bilingual_output,
             textCleanup: data.text_cleanup,
             autoUpdateContext: data.auto_update_context,
+            bypassContextGating: data.bypass_context_gating,
             plainTextMode: data.plain_text_mode,
             chapterMode: data.chapter_mode,
             disableAutoPause: data.auto_pause_on_rate_limit === undefined
@@ -1079,6 +1089,7 @@ window.promptSaveProfile = async function() {
         bilingual_output: formData.bilingual_output,
         text_cleanup: !!formData.prompt_options?.text_cleanup,
         auto_update_context: !!formData.prompt_options?.auto_update_context,
+        bypass_context_gating: !!formData.prompt_options?.bypass_context_gating,
         plain_text_mode: !!formData.prompt_options?.plain_text_mode,
         chapter_mode: !!formData.prompt_options?.chapter_mode,
         auto_pause_on_rate_limit: formData.auto_pause_on_rate_limit,

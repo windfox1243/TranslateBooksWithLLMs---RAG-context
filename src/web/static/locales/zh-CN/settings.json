@@ -225,5 +225,6 @@
   "cost_format_lt_001": "<$0.01",
   "novel_context_label": "小说上下文（性别、人物关系及术语表）",
   "auto_update_context_label": "翻译每个片段后自动更新上下文文件",
+  "bypass_context_gating_label": "绕过上下文验证（直接信任 LLM 识别的性别及修正）",
   "novel_context_help": "将角色性别、称呼方式（人物关系）和术语表保存在 <code>.txt</code> 文件中，以提高翻译的一致性。注意：自动更新会强制进行顺序翻译（单线程）。"
 }

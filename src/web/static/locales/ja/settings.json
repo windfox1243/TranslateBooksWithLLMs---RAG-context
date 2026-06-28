@@ -225,5 +225,6 @@
   "cost_format_lt_001": "<$0.01",
   "novel_context_label": "小説のコンテキスト（性別、関係性、用語集）",
   "auto_update_context_label": "各チャンクの翻訳後にコンテキストファイルを自動更新する",
+  "bypass_context_gating_label": "コンテキスト検証をバイパスする（LLMが識別した性別と修正を直接信頼する）",
   "novel_context_help": "キャラクターの性別、呼称（関係性）、用語集を <code>.txt</code> ファイルに保存し、翻訳の一貫性を向上させます。注意：自動更新を有効にすると、順次翻訳（スレッド数1）が強制されます。"
 }

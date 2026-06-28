@@ -3941,6 +3941,14 @@ def open_novel_context_session(
     log_callback: Optional[Callable] = None,
 ) -> Optional[NovelContextSession]:
     """Load/create context state, restore a snapshot, and inject it into prompts."""
+    # Override global bypass gating variable dynamically based on job parameters
+    if "bypass_context_gating" in prompt_options:
+        try:
+            from src import config as _config
+            _config.BYPASS_CONTEXT_GATING = bool(prompt_options["bypass_context_gating"])
+        except Exception:
+            pass
+
     novel_context_file = prompt_options.get("novel_context_file")
     auto_update_context = bool(prompt_options.get("auto_update_context", False))
 

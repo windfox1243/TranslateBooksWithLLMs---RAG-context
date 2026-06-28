@@ -225,5 +225,6 @@
   "cost_format_lt_001": "<$0.01",
   "novel_context_label": "Contexto de la novela (géneros, relaciones y glosario)",
   "auto_update_context_label": "Actualizar automáticamente el archivo de contexto tras traducir cada fragmento",
+  "bypass_context_gating_label": "Omitir la validación de contexto (confiar directamente en el género y correcciones del LLM)",
   "novel_context_help": "Mantén los géneros de los personajes, formas de tratamiento (relaciones) y glosarios persistentes en un archivo <code>.txt</code> para mejorar la consistencia de la traducción. Nota: La actualización automática fuerza la traducción secuencial (1 hilo)."
 }

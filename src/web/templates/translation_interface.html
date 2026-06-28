@@ -1162,6 +1162,12 @@
                                 Auto-update context file after translating each chunk
                             </label>
                         </div>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                            <input type="checkbox" id="bypassContextGating" style="width: 16px; height: 16px; margin: 0; cursor: pointer;">
+                            <label for="bypassContextGating" data-i18n="settings:bypass_context_gating_label" style="font-size: 0.8125rem; color: var(--text-dark); cursor: pointer; margin-bottom: 0;">
+                                Bypass context validation (directly trust LLM gender & corrections)
+                            </label>
+                        </div>
                         <p data-i18n-html="settings:novel_context_help" style="margin: 5px 0 0 0; font-size: 0.8125rem; color: var(--text-muted-light);">
                             Keep character genders, forms of address (relationships), and glossaries persistent in a <code>.txt</code> file to improve translation consistency. Note: Auto-update forces sequential translation (1 worker).
                         </p>

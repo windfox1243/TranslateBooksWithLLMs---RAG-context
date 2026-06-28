@@ -74,6 +74,7 @@ function getTranslationConfig(file) {
         custom_instruction_file: DomHelpers.getValue('customInstructionSelect') || '',
         novel_context_file: DomHelpers.getValue('novelContextSelect') || '',
         auto_update_context: DomHelpers.getElement('autoUpdateContext')?.checked || false,
+        bypass_context_gating: DomHelpers.getElement('bypassContextGating')?.checked || false,
         input_filename: file.name
     };
 
