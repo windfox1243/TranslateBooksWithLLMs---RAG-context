@@ -226,6 +226,10 @@
   "context_edit_resync_title": "Edit this snapshot and re-sync all subsequent chunks",
   "context_edit_resync_btn": "Edit & Re-sync",
   "context_save_resync_btn": "Save & Re-sync",
+  "context_pause_resync_title": "Pause context re-sync after the current chunk finishes",
+  "context_pause_resync_btn": "Pause Re-sync",
+  "context_resume_resync_title": "Resume context re-sync with the current model settings",
+  "context_resume_resync_btn": "Resume Re-sync",
   "context_global_state": "Global Context",
   "context_edit_global_title": "Edit book-wide characters, genders, glossary, and terminology",
   "context_edit_global_btn": "Edit Global Context",
@@ -252,6 +256,10 @@
   "context_load_error_title": "Error",
   "context_load_error_body": "Failed to load context snapshot: {{error}}",
   "context_resync_started_log": "[System] Context re-sync started from chunk {{chunk}}. This will process in the background.",
+  "context_resync_pause_requested_log": "[System] Context re-sync will pause after the current chunk is saved.",
+  "context_resync_resumed_log": "[System] Context re-sync resumed with the current model settings.",
+  "context_resync_pause_failed": "Failed to pause context re-sync: {{error}}",
+  "context_resync_resume_failed": "Failed to resume context re-sync: {{error}}",
   "context_resync_failed_log": "[Error] Failed to start context resync: {{error}}",
   "context_open_folder_failed": "Failed to open novel contexts folder"
 }

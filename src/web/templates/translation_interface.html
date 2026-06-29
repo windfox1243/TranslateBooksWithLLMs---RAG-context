@@ -599,6 +599,14 @@
                                     <span class="material-symbols-outlined" style="font-size: 1rem;">save</span>
                                     <span data-context-action-label data-i18n="translation:context_save_resync_btn">Save & Re-sync</span>
                                 </button>
+                                <button id="btnPauseResync" class="btn btn-secondary" onclick="pauseContextResync()" style="display: none; padding: 0.25rem 0.75rem; font-size: 0.85rem; align-items: center; gap: 0.25rem;" data-i18n-attr="title:translation:context_pause_resync_title">
+                                    <span class="material-symbols-outlined" style="font-size: 1rem;">pause</span>
+                                    <span data-i18n="translation:context_pause_resync_btn">Pause Re-sync</span>
+                                </button>
+                                <button id="btnResumeResync" class="btn btn-primary" onclick="resumeContextResync()" style="display: none; padding: 0.25rem 0.75rem; font-size: 0.85rem; align-items: center; gap: 0.25rem;" data-i18n-attr="title:translation:context_resume_resync_title">
+                                    <span class="material-symbols-outlined" style="font-size: 1rem;">play_arrow</span>
+                                    <span data-i18n="translation:context_resume_resync_btn">Resume Re-sync</span>
+                                </button>
                                 <select id="contextChunkSelector" class="form-control" style="margin-bottom: 0; padding: 0.25rem 0.5rem; font-size: 0.85rem; height: auto;" onchange="loadContextSnapshot(this.value)">
                                     <option value="latest" data-i18n="translation:context_latest_state">Latest State</option>
                                 </select>

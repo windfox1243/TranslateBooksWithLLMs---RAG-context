@@ -15,6 +15,7 @@ import { FileActions } from '../files/file-actions.js';
 import { ProgressManager, formatElapsedTime, deriveRateContext, buildRecommendationContent } from './progress-manager.js';
 import { renderTranslationTitle, getFileIcon, createGenericEPUBIcon } from './progress-title.js';
 import { LifecycleManager } from '../utils/lifecycle-manager.js';
+import { ApiKeyUtils } from '../utils/api-key-utils.js';
 import { t } from '../i18n/i18n.js';
 
 // Storage configuration with versioning
@@ -425,6 +426,9 @@ export const TranslationTracker = {
             const lastJobId = StateManager.getState('translation.lastJobId');
             if (isResyncStep && data.translation_id === lastJobId && data.log) {
                 MessageLogger.addStepLog(data.log);
+                updateContextResyncControls(
+                    data.log_entry?.data?.resync_state
+                );
             }
             if (data.translation_id) {
                 if (data.status === 'completed' || data.status === 'partial' || data.status === 'error' || data.status === 'interrupted' || data.status === 'rate_limited') {
@@ -453,6 +457,11 @@ export const TranslationTracker = {
                 MessageLogger.addStepLog(formattedLog);
             } else {
                 MessageLogger.addLog(formattedLog);
+            }
+            if (data.log_entry?.data?.ui_step === 'context_resync') {
+                updateContextResyncControls(
+                    data.log_entry?.data?.resync_state
+                );
             }
         }
 
@@ -1414,6 +1423,61 @@ function logContextResyncFailure(errorKey, params = {}) {
     );
 }
 
+function currentTranslationIdForContext() {
+    const currentJob = StateManager.getState('translation.currentJob');
+    if (currentJob && currentJob.translationId) {
+        return currentJob.translationId;
+    }
+    return StateManager.getState('translation.lastJobId');
+}
+
+function updateContextResyncControls(resyncState = null) {
+    const btnPause = document.getElementById('btnPauseResync');
+    const btnResume = document.getElementById('btnResumeResync');
+    if (!btnPause || !btnResume) return;
+
+    const status = resyncState?.status || '';
+    const isRunning = status === 'running' || status === 'pause_requested';
+    const isPaused = status === 'paused';
+
+    btnPause.style.display = isRunning ? 'inline-flex' : 'none';
+    btnPause.disabled = status === 'pause_requested';
+    btnResume.style.display = isPaused ? 'inline-flex' : 'none';
+    btnResume.disabled = false;
+}
+
+function collectContextResyncOverrides() {
+    const provider = DomHelpers.getValue('llmProvider');
+    const model = DomHelpers.getValue('model');
+    const endpoint = provider === 'openai'
+        ? DomHelpers.getValue('openaiEndpoint')
+        : DomHelpers.getValue('apiEndpoint');
+    const overrides = {
+        llm_provider: provider,
+        model,
+        llm_api_endpoint: endpoint
+    };
+    const apiKey = ApiKeyUtils.getValueForProvider(provider);
+    if (apiKey) {
+        overrides.api_key = apiKey;
+    }
+    return overrides;
+}
+
+async function refreshContextResyncStatus() {
+    const translationId = currentTranslationIdForContext();
+    if (!translationId) {
+        updateContextResyncControls(null);
+        return;
+    }
+    try {
+        const result = await ApiClient.getContextResyncStatus(translationId);
+        updateContextResyncControls(result?.resync_state || null);
+    } catch (_e) {
+        updateContextResyncControls(null);
+    }
+}
+
 window.loadContextSnapshot = async function(chunkValue) {
     const btnEdit = document.getElementById('btnEditResync');
     const btnSave = document.getElementById('btnSaveResync');
@@ -1421,6 +1485,7 @@ window.loadContextSnapshot = async function(chunkValue) {
     if (btnEdit) btnEdit.style.display = 'none';
     if (btnSave) btnSave.style.display = 'none';
     if (btnCancel) btnCancel.style.display = 'none';
+    refreshContextResyncStatus();
 
     if (chunkValue === 'latest') {
         setContextEditButtonMode(false);
@@ -1510,6 +1575,53 @@ window.loadContextSnapshot = async function(chunkValue) {
                 params: { error: e.message }
             }
         );
+    }
+};
+
+window.pauseContextResync = async function() {
+    const translationId = currentTranslationIdForContext();
+    if (!translationId) {
+        logContextResyncFailure('translation:context_no_job_body');
+        return;
+    }
+    const btnPause = document.getElementById('btnPauseResync');
+    try {
+        if (btnPause) btnPause.disabled = true;
+        const result = await ApiClient.pauseContextResync(translationId);
+        updateContextResyncControls(result?.resync_state || {
+            status: 'pause_requested'
+        });
+        MessageLogger.addLog(t('translation:context_resync_pause_requested_log'));
+    } catch (e) {
+        logContextResyncFailure('translation:context_resync_pause_failed', {
+            error: e.message
+        });
+        if (btnPause) btnPause.disabled = false;
+    }
+};
+
+window.resumeContextResync = async function() {
+    const translationId = currentTranslationIdForContext();
+    if (!translationId) {
+        logContextResyncFailure('translation:context_no_job_body');
+        return;
+    }
+    const btnResume = document.getElementById('btnResumeResync');
+    try {
+        if (btnResume) btnResume.disabled = true;
+        const result = await ApiClient.resumeContextResync(
+            translationId,
+            collectContextResyncOverrides()
+        );
+        updateContextResyncControls(result?.resync_state || {
+            status: 'running'
+        });
+        MessageLogger.addLog(t('translation:context_resync_resumed_log'));
+    } catch (e) {
+        logContextResyncFailure('translation:context_resync_resume_failed', {
+            error: e.message
+        });
+        if (btnResume) btnResume.disabled = false;
     }
 };
 
@@ -1770,11 +1882,14 @@ window.saveContextResync = async function() {
         const btnSave = document.getElementById('btnSaveResync');
         if (btnSave) btnSave.disabled = true;
         
-        await ApiClient.resyncContextSnapshot(
+        const resyncResult = await ApiClient.resyncContextSnapshot(
             translationId,
             chunkIndex,
             submittedContent
         );
+        updateContextResyncControls(resyncResult?.resync_state || {
+            status: 'running'
+        });
         MessageLogger.addLog(
             isGlobal
                 ? t('translation:context_global_resync_started_log')

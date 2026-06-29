@@ -865,25 +865,54 @@ async def _resync_context_snapshots_async(
     from src.core.llm_client import LLMClient
     from src.config import NOVEL_CONTEXTS_DIR
     from datetime import datetime
+    import copy
+    import time
     from src.utils.unified_logger import get_logger
     from src.api.websocket import emit_update
     
     state_manager = get_state_manager()
     logger = get_logger("context_resync")
     
-    def append_and_emit(msg_str):
+    def _load_resync_state():
+        job = state_manager.checkpoint_manager.get_job(translation_id) or {}
+        if not isinstance(job, dict):
+            job = {}
+        config = copy.deepcopy(job.get('config') or {})
+        state = config.get('_context_resync')
+        return config, dict(state) if isinstance(state, dict) else {}
+
+    def _save_resync_state(updates):
+        config, state = _load_resync_state()
+        state.update(updates)
+        state["updated_at"] = time.time()
+        config['_context_resync'] = state
+        state_manager.checkpoint_manager.update_job_config(
+            translation_id,
+            config,
+        )
+        return state
+
+    def _pause_requested():
+        _, state = _load_resync_state()
+        return bool(state.get("pause_requested"))
+
+    def append_and_emit(msg_str, resync_state=None):
         log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {msg_str}"
         state_manager.append_log(translation_id, log_entry)
         if socketio:
+            data = {
+                "ui_step": "context_resync",
+                "phase": "context",
+            }
+            if resync_state:
+                data["resync_status"] = resync_state.get("status")
+                data["resync_state"] = resync_state
             structured_entry = {
                 "timestamp": datetime.now().isoformat(),
                 "level": "INFO",
                 "type": "general",
                 "message": msg_str,
-                "data": {
-                    "ui_step": "context_resync",
-                    "phase": "context",
-                },
+                "data": data,
             }
             emit_update(
                 socketio,
@@ -905,7 +934,13 @@ async def _resync_context_snapshots_async(
     
     msg = f"Starting background context resync for {translation_id} from chunk {start_chunk_index}"
     logger.info(msg)
-    append_and_emit(f"🔄 {msg}")
+    append_and_emit(
+        f"🔄 {msg}",
+        _save_resync_state({
+            "status": "running",
+            "last_processed_chunk": start_chunk_index,
+        }),
+    )
     
     if was_active:
         msg_pause = "Waiting for active translation to pause before resyncing..."
@@ -962,6 +997,12 @@ async def _resync_context_snapshots_async(
     completed_chunks.sort(key=lambda x: x['chunk_index'])
     
     chunks_to_process = [c for c in completed_chunks if c['chunk_index'] > start_chunk_index]
+    _save_resync_state({
+        "status": "running",
+        "start_chunk_index": start_chunk_index,
+        "last_processed_chunk": start_chunk_index,
+        "total_chunks": len(completed_chunks),
+    })
     
     novel_context_file = config.get('prompt_options', {}).get('novel_context_file')
     path = None
@@ -1021,9 +1062,15 @@ async def _resync_context_snapshots_async(
             except Exception as e:
                 err_msg = f"Failed to update context file '{path.name}': {e}"
                 logger.error(err_msg)
+                _save_resync_state({"status": "failed", "error": err_msg})
                 append_and_emit(f"❌ {err_msg}")
                 return False
-        append_and_emit("✅ Background context resync completed.")
+        completed_state = _save_resync_state({
+            "status": "completed",
+            "pause_requested": False,
+            "last_processed_chunk": start_chunk_index,
+        })
+        append_and_emit("✅ Background context resync completed.", completed_state)
         run_follow_up()
         return True
 
@@ -1074,6 +1121,17 @@ async def _resync_context_snapshots_async(
     for chunk in chunks_to_process:
         idx = chunk['chunk_index']
         source_text = chunk.get('original_text') or ''
+        if _pause_requested():
+            paused_state = _save_resync_state({
+                "status": "paused",
+                "pause_requested": False,
+                "last_processed_chunk": max(start_chunk_index, idx - 1),
+            })
+            append_and_emit(
+                "⏸️ Context resync paused. Resume it after changing model settings.",
+                paused_state,
+            )
+            return False
         
         try:
             msg_resync = f"Resyncing chunk {idx}..."
@@ -1117,6 +1175,17 @@ async def _resync_context_snapshots_async(
                 dialogue_turns=dialogue_turns,
                 current_dialogue_state=current_dialogue_state,
                 dialogue_attribution_sink=dialogue_sink,
+                selective_context_view=(
+                    (config.get('prompt_options') or {}).get(
+                        "novel_context_selective_update",
+                        True,
+                    )
+                ),
+                context_view_max_tokens=(
+                    (config.get('prompt_options') or {}).get(
+                        "novel_context_update_prompt_max_tokens",
+                    )
+                ),
             )
             if source_text.strip():
                 source_memory_chunks.append(source_text)
@@ -1174,6 +1243,10 @@ async def _resync_context_snapshots_async(
                             status=c.get('status') or 'completed'
                         )
                         snapshot_saved = True
+                        _save_resync_state({
+                            "status": "running",
+                            "last_processed_chunk": idx,
+                        })
                         break
                 if not snapshot_saved:
                     append_and_emit(f"❌ Chunk {idx} disappeared during resync.")
@@ -1193,16 +1266,42 @@ async def _resync_context_snapshots_async(
                         logger.error(err_msg)
                         append_and_emit(f"❌ {err_msg}")
                         return False
+                if _pause_requested():
+                    paused_state = _save_resync_state({
+                        "status": "paused",
+                        "pause_requested": False,
+                        "last_processed_chunk": idx,
+                    })
+                    append_and_emit(
+                        "⏸️ Context resync paused. Resume it after changing model settings.",
+                        paused_state,
+                    )
+                    return False
                         
         except Exception as e:
             err_msg = f"Resync failed at chunk {idx}: {e}"
             logger.error(err_msg)
+            _save_resync_state({
+                "status": "failed",
+                "pause_requested": False,
+                "last_processed_chunk": max(start_chunk_index, idx - 1),
+                "error": str(e),
+            })
             append_and_emit(f"❌ {err_msg}")
             return False
             
     msg_end = "Background context resync completed."
     logger.info(msg_end)
-    append_and_emit(f"✅ {msg_end}")
+    completed_state = _save_resync_state({
+        "status": "completed",
+        "pause_requested": False,
+        "last_processed_chunk": (
+            chunks_to_process[-1]['chunk_index']
+            if chunks_to_process
+            else start_chunk_index
+        ),
+    })
+    append_and_emit(f"✅ {msg_end}", completed_state)
     
     if post_resync_callback or auto_resume_callback:
         logger.info("Triggering follow-up callback after resync")

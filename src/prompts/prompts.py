@@ -187,6 +187,7 @@ def _build_novel_context_section(
         novel_context,
         reference_text=reference_text,
         max_tokens=prompt_options.get('novel_context_prompt_max_tokens'),
+        selective=prompt_options.get('novel_context_selective_injection', True),
     )
     if not rendered_context.strip():
         return ""

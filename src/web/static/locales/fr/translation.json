@@ -226,6 +226,10 @@
   "context_edit_resync_title": "Modifier cet instantané et resynchroniser tous les blocs suivants",
   "context_edit_resync_btn": "Modifier & Resynchroniser",
   "context_save_resync_btn": "Enregistrer & Resynchroniser",
+  "context_pause_resync_title": "Suspendre la resynchronisation du contexte après l'enregistrement du segment en cours",
+  "context_pause_resync_btn": "Suspendre la resynchro",
+  "context_resume_resync_title": "Reprendre la resynchronisation du contexte avec les paramètres de modèle actuels",
+  "context_resume_resync_btn": "Reprendre la resynchro",
   "context_global_state": "Contexte global",
   "context_edit_global_title": "Modifier les personnages, genres, glossaire et termes valables pour tout le livre",
   "context_edit_global_btn": "Modifier le contexte global",
@@ -252,6 +256,10 @@
   "context_load_error_title": "Erreur",
   "context_load_error_body": "Échec du chargement de l'instantané de contexte : {{error}}",
   "context_resync_started_log": "[Système] Resynchronisation du contexte lancée depuis le segment {{chunk}}. Le traitement continuera en arrière-plan.",
+  "context_resync_pause_requested_log": "[Système] La resynchronisation du contexte sera suspendue après l'enregistrement du segment en cours.",
+  "context_resync_resumed_log": "[Système] Resynchronisation du contexte reprise avec les paramètres de modèle actuels.",
+  "context_resync_pause_failed": "Échec de la suspension de la resynchronisation du contexte : {{error}}",
+  "context_resync_resume_failed": "Échec de la reprise de la resynchronisation du contexte : {{error}}",
   "context_resync_failed_log": "[Erreur] Échec du lancement de la resynchronisation du contexte : {{error}}",
   "context_open_folder_failed": "Échec de l'ouverture du dossier des contextes de roman"
 }

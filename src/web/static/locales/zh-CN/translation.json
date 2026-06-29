@@ -226,6 +226,10 @@
   "context_edit_resync_title": "编辑此快照并重新同步所有后续分块",
   "context_edit_resync_btn": "编辑并重新同步",
   "context_save_resync_btn": "保存并重新同步",
+  "context_pause_resync_title": "保存当前分块后暂停上下文重新同步",
+  "context_pause_resync_btn": "暂停重新同步",
+  "context_resume_resync_title": "使用当前模型设置继续上下文重新同步",
+  "context_resume_resync_btn": "继续重新同步",
   "context_global_state": "全局上下文",
   "context_edit_global_title": "编辑全书通用的角色、性别、词汇表和术语",
   "context_edit_global_btn": "编辑全局上下文",
@@ -252,6 +256,10 @@
   "context_load_error_title": "错误",
   "context_load_error_body": "加载上下文快照失败：{{error}}",
   "context_resync_started_log": "[系统] 已从分块 {{chunk}} 开始重新同步上下文。此操作将在后台处理。",
+  "context_resync_pause_requested_log": "[系统] 上下文重新同步将在保存当前分块后暂停。",
+  "context_resync_resumed_log": "[系统] 已使用当前模型设置继续上下文重新同步。",
+  "context_resync_pause_failed": "暂停上下文重新同步失败：{{error}}",
+  "context_resync_resume_failed": "继续上下文重新同步失败：{{error}}",
   "context_resync_failed_log": "[错误] 启动上下文重新同步失败：{{error}}",
   "context_open_folder_failed": "打开小说上下文文件夹失败"
 }

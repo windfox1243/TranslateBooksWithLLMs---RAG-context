@@ -226,6 +226,10 @@
   "context_edit_resync_title": "이 스냅샷을 편집하고 모든 후속 청크를 다시 동기화합니다",
   "context_edit_resync_btn": "편집 및 다시 동기화",
   "context_save_resync_btn": "저장 및 다시 동기화",
+  "context_pause_resync_title": "현재 청크가 저장된 후 컨텍스트 다시 동기화를 일시 중지합니다",
+  "context_pause_resync_btn": "다시 동기화 일시 중지",
+  "context_resume_resync_title": "현재 모델 설정으로 컨텍스트 다시 동기화를 재개합니다",
+  "context_resume_resync_btn": "다시 동기화 재개",
   "context_global_state": "전역 컨텍스트",
   "context_edit_global_title": "책 전체의 등장인물, 성별, 용어집 및 용어를 편집합니다",
   "context_edit_global_btn": "전역 컨텍스트 편집",
@@ -252,6 +256,10 @@
   "context_load_error_title": "오류",
   "context_load_error_body": "컨텍스트 스냅샷을 불러오지 못했습니다: {{error}}",
   "context_resync_started_log": "[시스템] 청크 {{chunk}}부터 컨텍스트 다시 동기화를 시작했습니다. 백그라운드에서 처리됩니다.",
+  "context_resync_pause_requested_log": "[시스템] 현재 청크가 저장된 후 컨텍스트 다시 동기화가 일시 중지됩니다.",
+  "context_resync_resumed_log": "[시스템] 현재 모델 설정으로 컨텍스트 다시 동기화를 재개했습니다.",
+  "context_resync_pause_failed": "컨텍스트 다시 동기화를 일시 중지하지 못했습니다: {{error}}",
+  "context_resync_resume_failed": "컨텍스트 다시 동기화를 재개하지 못했습니다: {{error}}",
   "context_resync_failed_log": "[오류] 컨텍스트 다시 동기화를 시작하지 못했습니다: {{error}}",
   "context_open_folder_failed": "소설 컨텍스트 폴더를 열지 못했습니다"
 }

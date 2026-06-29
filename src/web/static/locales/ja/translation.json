@@ -226,6 +226,10 @@
   "context_edit_resync_title": "このスナップショットを編集して、以降のすべてのチャンクを再同期します",
   "context_edit_resync_btn": "編集して再同期",
   "context_save_resync_btn": "保存して再同期",
+  "context_pause_resync_title": "現在のチャンクを保存した後でコンテキスト再同期を一時停止します",
+  "context_pause_resync_btn": "再同期を一時停止",
+  "context_resume_resync_title": "現在のモデル設定でコンテキスト再同期を再開します",
+  "context_resume_resync_btn": "再同期を再開",
   "context_global_state": "グローバルコンテキスト",
   "context_edit_global_title": "本全体の登場人物、性別、用語集、専門用語を編集します",
   "context_edit_global_btn": "グローバルコンテキストを編集",
@@ -252,6 +256,10 @@
   "context_load_error_title": "エラー",
   "context_load_error_body": "コンテキストスナップショットの読み込みに失敗しました: {{error}}",
   "context_resync_started_log": "[システム] チャンク {{chunk}} からコンテキストの再同期を開始しました。バックグラウンドで処理されます。",
+  "context_resync_pause_requested_log": "[システム] 現在のチャンクを保存した後でコンテキスト再同期を一時停止します。",
+  "context_resync_resumed_log": "[システム] 現在のモデル設定でコンテキスト再同期を再開しました。",
+  "context_resync_pause_failed": "コンテキスト再同期の一時停止に失敗しました: {{error}}",
+  "context_resync_resume_failed": "コンテキスト再同期の再開に失敗しました: {{error}}",
   "context_resync_failed_log": "[エラー] コンテキスト再同期の開始に失敗しました: {{error}}",
   "context_open_folder_failed": "小説コンテキストフォルダーを開けませんでした"
 }
