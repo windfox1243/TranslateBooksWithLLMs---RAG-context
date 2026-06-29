@@ -1450,6 +1450,43 @@ def test_generic_rank_entries_remain_distinct_without_source_proven_link():
     assert normalized.count("- Lieutenant Colonel:") == 1
 
 
+def test_explicit_identity_link_allows_physical_unstable_aliases():
+    from src.utils.novel_context import merge_new_lore
+
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, imperial officer.\n"
+        "- boy: Unspecified, mysterious child watch from the shadow.\n"
+        "- child: Unspecified, youth from the slums.\n"
+        "- 소년: Unspecified, boy in Korean.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    updated, _ = merge_new_lore(
+        initial_lore,
+        "",
+        "",
+        "- boy: Eric\n- child: Eric\n- 소년: Eric\n- Protagonist: Eric",
+    )
+
+    assert updated.count("- Eric:") == 1
+    # Physical/non-English aliases should successfully merge
+    assert "- boy: Unspecified" not in updated
+    assert "- boy: Eric" in updated
+    assert "- child: Unspecified" not in updated
+    assert "- child: Eric" in updated
+    assert "- 소년: Unspecified" not in updated
+    assert "- 소년: Eric" in updated
+    assert "mysterious child watch from the shadow" in updated
+    assert "youth from the slums" in updated
+    assert "boy in Korean" in updated
+    
+    # Meta roles (like Protagonist) should still be rejected/ignored
+    assert "- Protagonist:" not in updated
+    assert "- Protagonist: Eric" not in updated
+
+
 def test_save_and_load_preserve_explicit_identity_links(tmp_path):
     from src.utils.novel_context import load_novel_context, save_novel_context
 

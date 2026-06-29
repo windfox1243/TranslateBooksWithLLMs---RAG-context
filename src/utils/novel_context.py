@@ -425,26 +425,48 @@ def _is_descriptive_role_name(name: str) -> bool:
     )
 
 
-def _is_unstable_identity_alias(alias: str) -> bool:
+_UNSTABLE_PHYSICAL_WORDS = {
+    "boy",
+    "girl",
+    "man",
+    "woman",
+    "child",
+    "kid",
+    "baby",
+    "toddler",
+    "youth",
+    "elder",
+    "the boy",
+    "the girl",
+    "the man",
+    "the woman",
+    "the child",
+    "the kid",
+    "the baby",
+    "the youth",
+    "the elder",
+}
+
+
+def _is_unstable_identity_alias(alias: str, allow_physical: bool = False) -> bool:
     """Reject scene-local descriptions that are not stable identity labels."""
     key = _plain_key(alias)
-    unstable = {
-        "boy",
-        "girl",
+    meta_roles = {
         "hero",
         "protagonist",
-        "the boy",
-        "the girl",
         "the hero",
         "the protagonist",
         "the user",
         "user",
     }
-    return (
-        key in unstable
-        or _relation_label_key(alias) in _ROMANTIC_RELATION_LABELS
-        or _is_descriptive_role_name(alias)
-    )
+    if key in meta_roles or _is_descriptive_role_name(alias):
+        return True
+    if _relation_label_key(alias) in _ROMANTIC_RELATION_LABELS:
+        return True
+    if not allow_physical:
+        if key in _UNSTABLE_PHYSICAL_WORDS:
+            return True
+    return False
 
 
 def _narrative_work_keys(name: str, value: str = "") -> set[str]:
@@ -1907,7 +1929,7 @@ def _alias_entries_to_map(
             _is_invalid_context_key(alias)
             or _is_invalid_context_key(target_name)
             or _character_names_match(alias, target_name)
-            or _is_unstable_identity_alias(alias)
+            or _is_unstable_identity_alias(alias, allow_physical=True)
         ):
             continue
         for alias_key in _character_alias_keys(alias):
@@ -4339,7 +4361,10 @@ def merge_new_lore(
     }
 
     for raw_alias, raw_target in _parse_bullet_entries(new_aliases):
-        if _is_invalid_context_key(raw_alias) or _is_unstable_identity_alias(raw_alias):
+        if (
+            _is_invalid_context_key(raw_alias)
+            or _is_unstable_identity_alias(raw_alias, allow_physical=True)
+        ):
             continue
         alias_keys = _character_alias_keys(raw_alias)
         if not alias_keys:
