@@ -226,6 +226,10 @@
   "context_edit_resync_title": "Editar esta instantánea y resincronizar todos los fragmentos posteriores",
   "context_edit_resync_btn": "Editar y resincronizar",
   "context_save_resync_btn": "Guardar y resincronizar",
+  "context_pause_resync_title": "Pausar la resincronización del contexto después de guardar el fragmento actual",
+  "context_pause_resync_btn": "Pausar resincronización",
+  "context_resume_resync_title": "Reanudar la resincronización del contexto con la configuración actual del modelo",
+  "context_resume_resync_btn": "Reanudar resincronización",
   "context_global_state": "Contexto global",
   "context_edit_global_title": "Editar personajes, géneros, glosario y terminología de todo el libro",
   "context_edit_global_btn": "Editar contexto global",
@@ -252,6 +256,10 @@
   "context_load_error_title": "Error",
   "context_load_error_body": "Error al cargar la instantánea de contexto: {{error}}",
   "context_resync_started_log": "[Sistema] Resincronización de contexto iniciada desde el fragmento {{chunk}}. Se procesará en segundo plano.",
+  "context_resync_pause_requested_log": "[Sistema] La resincronización del contexto se pausará después de guardar el fragmento actual.",
+  "context_resync_resumed_log": "[Sistema] Resincronización del contexto reanudada con la configuración actual del modelo.",
+  "context_resync_pause_failed": "No se pudo pausar la resincronización del contexto: {{error}}",
+  "context_resync_resume_failed": "No se pudo reanudar la resincronización del contexto: {{error}}",
   "context_resync_failed_log": "[Error] Error al iniciar la resincronización de contexto: {{error}}",
   "context_open_folder_failed": "Error al abrir la carpeta de contextos de la novela"
 }

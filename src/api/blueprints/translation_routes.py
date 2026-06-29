@@ -71,6 +71,35 @@ def _release_context_resync(translation_id):
         _ACTIVE_CONTEXT_RESYNCS.discard(translation_id)
 
 
+def _is_context_resync_active(translation_id):
+    with _CONTEXT_RESYNC_LOCK:
+        return translation_id in _ACTIVE_CONTEXT_RESYNCS
+
+
+def _context_resync_state_from_config(config):
+    state = (config or {}).get('_context_resync')
+    return dict(state) if isinstance(state, dict) else {}
+
+
+def _update_context_resync_state(
+    checkpoint_manager,
+    translation_id,
+    updates,
+    *,
+    base_config=None,
+):
+    job = checkpoint_manager.get_job(translation_id)
+    if not job:
+        return None
+    config = copy.deepcopy(base_config if base_config is not None else job.get('config') or {})
+    state = _context_resync_state_from_config(config)
+    state.update(updates)
+    config['_context_resync'] = state
+    if not checkpoint_manager.update_job_config(translation_id, config):
+        return None
+    return state
+
+
 def _strip_api_keys(config):
     """Remove every API key from a config dict in place (for API responses).
 
@@ -1028,6 +1057,30 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                     "Context timeline repaired; starting corrective "
                     "refinement..."
                 )
+
+        follow_up_kind = None
+        if post_resync_callback:
+            follow_up_kind = "corrective_refinement"
+        elif auto_resume_callback:
+            follow_up_kind = "auto_resume_translation"
+
+        persisted_state = _update_context_resync_state(
+            state_manager.checkpoint_manager,
+            translation_id,
+            {
+                "status": "running",
+                "pause_requested": False,
+                "start_chunk_index": chunk_index,
+                "last_processed_chunk": chunk_index,
+                "context_revision": context_revision,
+                "follow_up_kind": follow_up_kind,
+                "was_active": was_active,
+                "updated_at": time.time(),
+            },
+        )
+        if persisted_state is None:
+            _release_context_resync(translation_id)
+            return jsonify({"error": "Failed to persist context resync state"}), 500
             
         logger.info(f"Dispatching background context resync thread for translation {translation_id} starting at chunk {chunk_index}")
         
@@ -1063,6 +1116,143 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "translation_id": translation_id,
             "chunk_index": chunk_index,
             "context_revision": context_revision,
+            "resync_state": persisted_state,
+        }), 200
+
+    @bp.route('/api/translation/<translation_id>/context/resync/status', methods=['GET'])
+    def get_context_resync_status(translation_id):
+        checkpoint_data = state_manager.checkpoint_manager.load_checkpoint(translation_id)
+        if not checkpoint_data:
+            return jsonify({"error": "Translation not found"}), 404
+        config = checkpoint_data.get('job', {}).get('config', {}) or {}
+        state = _context_resync_state_from_config(config)
+        if state.get("status") == "running" and not _is_context_resync_active(translation_id):
+            state = _update_context_resync_state(
+                state_manager.checkpoint_manager,
+                translation_id,
+                {
+                    "status": "paused",
+                    "pause_requested": False,
+                    "updated_at": time.time(),
+                },
+                base_config=config,
+            ) or state
+        return jsonify({
+            "translation_id": translation_id,
+            "active": _is_context_resync_active(translation_id),
+            "resync_state": state,
+        }), 200
+
+    @bp.route('/api/translation/<translation_id>/context/resync/pause', methods=['POST'])
+    def pause_context_resync(translation_id):
+        checkpoint_data = state_manager.checkpoint_manager.load_checkpoint(translation_id)
+        if not checkpoint_data:
+            return jsonify({"error": "Translation not found"}), 404
+        config = checkpoint_data.get('job', {}).get('config', {}) or {}
+        state = _context_resync_state_from_config(config)
+        if state.get("status") not in ("running", "pause_requested"):
+            return jsonify({"error": "No running context resync to pause"}), 409
+        updated = _update_context_resync_state(
+            state_manager.checkpoint_manager,
+            translation_id,
+            {
+                "status": "pause_requested",
+                "pause_requested": True,
+                "updated_at": time.time(),
+            },
+            base_config=config,
+        )
+        if updated is None:
+            return jsonify({"error": "Failed to persist context resync pause"}), 500
+        return jsonify({
+            "message": "Context resync pause requested",
+            "translation_id": translation_id,
+            "resync_state": updated,
+        }), 200
+
+    @bp.route('/api/translation/<translation_id>/context/resync/resume', methods=['POST'])
+    def resume_context_resync(translation_id):
+        checkpoint_data = state_manager.checkpoint_manager.load_checkpoint(translation_id)
+        if not checkpoint_data:
+            return jsonify({"error": "Translation not found"}), 404
+        config = copy.deepcopy(checkpoint_data.get('job', {}).get('config', {}) or {})
+        state = _context_resync_state_from_config(config)
+        if state.get("status") not in ("paused", "pause_requested", "running"):
+            return jsonify({"error": "No paused context resync to resume"}), 409
+        if _is_context_resync_active(translation_id):
+            return jsonify({"error": "A context resync is already running for this translation"}), 409
+
+        resume_chunk = state.get("last_processed_chunk", state.get("start_chunk_index"))
+        try:
+            resume_chunk = int(resume_chunk)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Context resync resume point is invalid"}), 409
+
+        source_chunk = next(
+            (
+                chunk for chunk in checkpoint_data.get('chunks', [])
+                if chunk.get('chunk_index') == resume_chunk
+            ),
+            None,
+        )
+        resume_snapshot = (
+            (source_chunk or {}).get('chunk_data') or {}
+        ).get('context_snapshot')
+        if not resume_snapshot:
+            return jsonify({"error": "Context resync resume snapshot is unavailable"}), 409
+
+        overrides = request.get_json(silent=True) or {}
+        override_error = _apply_resume_overrides(config, overrides)
+        if override_error is not None:
+            return override_error
+
+        config['_context_resync'] = {
+            **state,
+            "status": "running",
+            "pause_requested": False,
+            "last_processed_chunk": resume_chunk,
+            "updated_at": time.time(),
+        }
+        if not state_manager.checkpoint_manager.update_job_config(translation_id, config):
+            return jsonify({"error": "Failed to persist context resync resume"}), 500
+        if not _claim_context_resync(translation_id):
+            return jsonify({"error": "A context resync is already running for this translation"}), 409
+
+        from src.core.adapters.generic_translator import resync_context_snapshots_background
+
+        def run_resync():
+            try:
+                resync_context_snapshots_background(
+                    translation_id,
+                    resume_chunk,
+                    resume_snapshot,
+                    socketio,
+                    False,
+                    None,
+                    None,
+                    None,
+                )
+            finally:
+                _release_context_resync(translation_id)
+
+        thread = threading.Thread(
+            target=run_resync,
+            name=f"context-resync-{translation_id}",
+        )
+        thread.daemon = True
+        try:
+            thread.start()
+        except Exception:
+            _release_context_resync(translation_id)
+            raise
+
+        return jsonify({
+            "message": "Context resync resumed successfully",
+            "translation_id": translation_id,
+            "resume_from_chunk": resume_chunk,
+            "model": config.get('model'),
+            "llm_provider": config.get('llm_provider'),
+            "resync_state": config['_context_resync'],
         }), 200
 
     return bp

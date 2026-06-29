@@ -14,6 +14,7 @@ from src.utils.novel_context import (
     make_novel_context_filename,
     merge_dynamic_state,
     normalize_novel_context_content,
+    render_novel_context_update_view,
     render_novel_context_for_prompt,
     normalize_novel_context_filename,
     save_novel_context,
@@ -188,6 +189,204 @@ def test_prompt_context_selector_prefers_relevant_dormant_relationships():
     assert "Irrelevant 39" not in selected
 
 
+def test_prompt_context_selector_filters_small_unrelated_context_by_default():
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Alice: Female, mage from a distant kingdom.\n"
+            "- Bob: Male, knight guarding the capital.\n\n"
+            "## CHARACTER ALIASES\n"
+            "- Captain: Bob\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+            "- mana: magical energy"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            "- Alice → Mentor: formal address.\n\n"
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Alice ↔ Mentor: student and teacher."
+        ),
+    )
+
+    selected = render_novel_context_for_prompt(
+        context,
+        reference_text="Bob lifted his sword at the city gate.",
+    )
+
+    assert "Bob: Male" in selected
+    assert "Captain: Bob" in selected
+    assert "Alice: Female" not in selected
+    assert "Alice → Mentor" not in selected
+    assert "Alice ↔ Mentor" not in selected
+    assert "mana: magical energy" not in selected
+
+
+def test_prompt_context_selector_skips_context_when_no_entry_matches():
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Alice: Female, mage from a distant kingdom.\n"
+            "- Bob: Male, knight guarding the capital."
+        ),
+        "",
+    )
+
+    selected = render_novel_context_for_prompt(
+        context,
+        reference_text="A nameless guard closed the door.",
+    )
+
+    assert selected == ""
+
+
+def test_prompt_context_selector_can_use_legacy_full_injection():
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Alice: Female, mage from a distant kingdom.\n"
+            "- Bob: Male, knight guarding the capital."
+        ),
+        "",
+    )
+
+    selected = render_novel_context_for_prompt(
+        context,
+        reference_text="A nameless guard closed the door.",
+        selective=False,
+    )
+
+    assert "Alice: Female" in selected
+    assert "Bob: Male" in selected
+
+
+def test_translation_prompt_uses_selective_context_injection_by_default():
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Alice: Female, mage from a distant kingdom.\n"
+            "- Bob: Male, knight guarding the capital."
+        ),
+        "",
+    )
+
+    prompt_pair = generate_translation_prompt(
+        main_content="Bob watched the gate.",
+        context_before="",
+        context_after="",
+        previous_translation_context="",
+        source_language="English",
+        target_language="Vietnamese",
+        prompt_options={"novel_context": context},
+    )
+
+    assert "Bob: Male" in prompt_pair.user
+    assert "Alice: Female" not in prompt_pair.user
+
+
+def test_translation_prompt_can_disable_selective_context_injection():
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Alice: Female, mage from a distant kingdom.\n"
+            "- Bob: Male, knight guarding the capital."
+        ),
+        "",
+    )
+
+    prompt_pair = generate_translation_prompt(
+        main_content="Bob watched the gate.",
+        context_before="",
+        context_after="",
+        previous_translation_context="",
+        source_language="English",
+        target_language="Vietnamese",
+        prompt_options={
+            "novel_context": context,
+            "novel_context_selective_injection": False,
+        },
+    )
+
+    assert "Bob: Male" in prompt_pair.user
+    assert "Alice: Female" in prompt_pair.user
+
+
+def test_context_update_view_uses_selective_lore_without_mutating_source():
+    global_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Alice: Female, mage from a distant kingdom.\n"
+        "- Bob: Male, knight guarding the capital.\n\n"
+        "## CHARACTER ALIASES\n"
+        "- Captain: Bob"
+    )
+    dynamic_state = (
+        "## CURRENT ADDRESSING FORMS\n"
+        "- Alice → Mentor: formal address.\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Alice ↔ Mentor: student and teacher."
+    )
+
+    prompt_lore, prompt_dynamic = render_novel_context_update_view(
+        global_lore,
+        dynamic_state,
+        reference_text="Bob lifted his sword at the city gate.",
+    )
+
+    assert "Bob: Male" in prompt_lore
+    assert "Captain: Bob" in prompt_lore
+    assert "Alice: Female" not in prompt_lore
+    assert "Alice → Mentor" not in prompt_dynamic
+    assert "Alice: Female" in global_lore
+
+
+@pytest.mark.asyncio
+async def test_update_novel_context_chunk_sends_selective_lore_prompt():
+    from src.utils.novel_context import update_novel_context_chunk
+
+    response = MagicMock()
+    response.content = json.dumps(
+        {
+            "new_characters": [],
+            "identity_links": [],
+            "new_glossary": [],
+            "dynamic_state": {
+                "current_addressing_forms": [],
+                "relationship_evolution": [],
+            },
+            "dialogue_attribution": {"turns": [], "state_after": {}},
+        }
+    )
+    client = MagicMock()
+    client.generate = AsyncMock(return_value=response)
+    global_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Alice: Female, mage from a distant kingdom.\n"
+        "- Bob: Male, knight guarding the capital."
+    )
+
+    updated_lore, _dynamic, _logs = await update_novel_context_chunk(
+        llm_client=client,
+        model_name="test-model",
+        current_global_lore=global_lore,
+        current_dynamic_state="",
+        source_chunk="Bob lifted his sword at the city gate.",
+        translated_chunk=None,
+        source_language="English",
+        target_language="Vietnamese",
+    )
+
+    sent_prompt = client.generate.call_args.kwargs["prompt"]
+    assert "Bob: Male" in sent_prompt
+    assert "Alice: Female" not in sent_prompt
+    assert "Alice: Female" in updated_lore
+
+
 def test_prompt_injection_refinement():
     novel_context = "Li Fan is Male."
     prompt_pair = generate_refinement_prompt(
@@ -281,7 +480,7 @@ async def test_resync_context_snapshots_logic():
     # We mock LLM client and update_novel_context_chunk
     mock_global_lore = "Global Lore"
     mock_dynamic_state = "Dynamic state updated"
-    mock_change_logs = ["[Novel Context] Dynamic relationship state / addressing forms updated."]
+    mock_change_logs = ["[Novel Context] Dynamic state updated."]
 
     with patch('src.api.translation_state.get_state_manager', return_value=mock_state_mgr), \
          patch('src.core.llm_client.LLMClient') as mock_llm_class, \
@@ -410,7 +609,7 @@ async def test_resync_context_snapshots_resets_dialogue_state_on_scene_key_fallb
         llm_client, model_name, current_global_lore, current_dynamic_state,
         source_chunk, translated_chunk, source_language, target_language,
         chunk_index, total_chunks, source_context, dialogue_turns,
-        current_dialogue_state, dialogue_attribution_sink
+        current_dialogue_state, dialogue_attribution_sink, **_kwargs
     ):
         if chunk_index == 2:  # idx is 1, so idx + 1 = 2
             dialogue_attribution_sink['state_after'] = {'speaker': 'C', 'addressee': 'D'}
@@ -596,10 +795,10 @@ def test_merge_new_lore_updates_and_corrections():
     assert "Wang Lin: Female, student." in updated_lore  # Untouched
 
     # Check logs
-    assert any("Corrected/Updated Character 'li fan'" in log for log in logs)
-    assert any("Added Character" in log and "Sect Master" in log for log in logs)
-    assert any("Corrected/Updated Glossary Entry 'apple'" in log for log in logs)
-    assert any("Added Glossary Entry" in log and "Orange" in log for log in logs)
+    assert any("Updated character 'li fan'" in log for log in logs)
+    assert any("Added character 'sect master'" in log for log in logs)
+    assert any("Updated glossary term 'apple'" in log for log in logs)
+    assert any("Added glossary term 'orange'" in log for log in logs)
 
 
 def test_character_gender_does_not_flip_without_explicit_correction():
@@ -2058,7 +2257,237 @@ async def test_update_novel_context_chunk_parsing():
     assert "## CURRENT ADDRESSING FORMS" in updated_dynamic
     assert "## RELATIONSHIP EVOLUTION" in updated_dynamic
     assert "- Li Fan → Sect Master: Respectful" in updated_dynamic
-    assert any("Corrected/Updated Character 'li fan'" in log for log in logs)
+    assert any("Updated character 'li fan'" in log for log in logs)
+
+
+@pytest.mark.asyncio
+async def test_update_novel_context_chunk_parses_structured_json_response():
+    from src.utils.dialogue_attribution import detect_dialogue_turns
+    from src.utils.novel_context import update_novel_context_chunk
+
+    source_text = "Sect Master Chen raised his hand. “Stand down,” Li Fan said."
+    candidates = detect_dialogue_turns(source_text)
+    response = MagicMock()
+    response.content = (
+        "```json\n"
+        + json.dumps(
+            {
+                "new_characters": [
+                    {
+                        "name": "Li Fan",
+                        "gender": "Male",
+                        "description": "possessed cultivator",
+                    }
+                ],
+                "identity_links": [
+                    {
+                        "alias": "Sect Master",
+                        "canonical": "Master Chen",
+                    }
+                ],
+                "new_glossary": [
+                    {
+                        "source": "Apple",
+                        "target": "Trái Táo",
+                    }
+                ],
+                "dynamic_state": {
+                    "current_addressing_forms": [
+                        {
+                            "speaker": "Li Fan",
+                            "addressee": "Sect Master",
+                            "source_form": "Sect Master",
+                            "target_form": "Sư phụ",
+                            "register": "formal respect",
+                        }
+                    ],
+                    "relationship_evolution": [
+                        {
+                            "character_a": "Li Fan",
+                            "character_b": "Sect Master",
+                            "relationship": "student showing formal respect",
+                        }
+                    ],
+                },
+                "dialogue_attribution": {
+                    "turns": [
+                        {
+                            "id": candidates[0]["id"],
+                            "speaker": "Li Fan",
+                            "addressee": "Sect Master",
+                            "confidence": 0.92,
+                        }
+                    ],
+                    "state_after": {
+                        "speaker": "Li Fan",
+                        "addressee": "Sect Master",
+                    },
+                },
+            },
+            ensure_ascii=False,
+        )
+        + "\n```"
+    )
+    client = MagicMock()
+    client.generate = AsyncMock(return_value=response)
+    sink = {}
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Li Fan: Male.\n"
+        "- Master Chen: Male, sect leader.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- Apple: Táo\n"
+    )
+
+    updated_lore, updated_dynamic, logs = await update_novel_context_chunk(
+        llm_client=client,
+        model_name="test-model",
+        current_global_lore=initial_lore,
+        current_dynamic_state="",
+        source_chunk=source_text,
+        translated_chunk="Dừng lại.",
+        source_language="English",
+        target_language="Vietnamese",
+        dialogue_turns=candidates,
+        dialogue_attribution_sink=sink,
+    )
+
+    assert "Li Fan: Male, possessed cultivator." in updated_lore
+    assert "- Sect Master: Master Chen" in updated_lore
+    assert "Apple: Trái Táo" in updated_lore
+    assert "- Li Fan → Master Chen:" in updated_dynamic
+    assert "- Li Fan ↔ Master Chen: student showing formal respect" in updated_dynamic
+    assert sink["turns"][0]["speaker"] == "Li Fan"
+    assert sink["turns"][0]["addressee"] == "Master Chen"
+    assert sink["state_after"]["speaker"] == "Li Fan"
+    assert any("Updated character 'li fan'" in log for log in logs)
+
+
+@pytest.mark.asyncio
+async def test_structured_json_parser_accepts_camel_case_and_map_objects():
+    from src.utils.novel_context import update_novel_context_chunk
+
+    response = MagicMock()
+    response.content = json.dumps(
+        {
+            "newCharacters": {
+                "Li Fan": {
+                    "gender": "Male",
+                    "description": "possessed cultivator",
+                }
+            },
+            "identityLinks": {
+                "Sect Master": "Master Chen",
+            },
+            "newGlossary": {
+                "Apple": {
+                    "targetTerm": "Trái Táo",
+                }
+            },
+            "dynamicState": {
+                "currentAddressingForms": [
+                    {
+                        "speaker": "Li Fan",
+                        "addressee": "Sect Master",
+                        "sourceForm": "Sect Master",
+                        "targetForm": "Sư phụ",
+                        "register": "formal respect",
+                    }
+                ],
+                "relationshipEvolution": [
+                    {
+                        "characterA": "Li Fan",
+                        "characterB": "Sect Master",
+                        "relationship": "student showing formal respect",
+                    }
+                ],
+            },
+        },
+        ensure_ascii=False,
+    )
+    client = MagicMock()
+    client.generate = AsyncMock(return_value=response)
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Li Fan: Male.\n"
+        "- Master Chen: Male, sect leader.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- Apple: Táo\n"
+    )
+
+    updated_lore, updated_dynamic, _ = await update_novel_context_chunk(
+        llm_client=client,
+        model_name="test-model",
+        current_global_lore=initial_lore,
+        current_dynamic_state="",
+        source_chunk="Li Fan greeted Sect Master Chen.",
+        translated_chunk=None,
+        source_language="English",
+        target_language="Vietnamese",
+    )
+
+    assert "Li Fan: Male, possessed cultivator." in updated_lore
+    assert "{'gender'" not in updated_lore
+    assert "- Sect Master: Master Chen" in updated_lore
+    assert "Apple: Trái Táo" in updated_lore
+    assert "- Li Fan → Master Chen:" in updated_dynamic
+    assert "- Li Fan ↔ Master Chen: student showing formal respect" in updated_dynamic
+
+
+@pytest.mark.asyncio
+async def test_unproven_model_identity_link_does_not_merge_named_characters():
+    from src.utils.novel_context import update_novel_context_chunk
+
+    response = MagicMock()
+    response.content = json.dumps(
+        {
+            "identity_links": [
+                {
+                    "alias": "Alice",
+                    "canonical": "Bob",
+                }
+            ],
+            "dynamic_state": {
+                "relationship_evolution": [
+                    {
+                        "character_a": "Alice",
+                        "character_b": "Clara",
+                        "relationship": "Alice protects Clara",
+                    }
+                ],
+            },
+        }
+    )
+    client = MagicMock()
+    client.generate = AsyncMock(return_value=response)
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Alice: Female, healer from the east.\n"
+        "- Bob: Male, blacksmith from the west.\n"
+        "- Clara: Female, Alice's apprentice.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    updated_lore, updated_dynamic, _ = await update_novel_context_chunk(
+        llm_client=client,
+        model_name="test-model",
+        current_global_lore=initial_lore,
+        current_dynamic_state="",
+        source_chunk="Alice protects Clara while Bob repairs a sword.",
+        translated_chunk=None,
+        source_language="English",
+        target_language="Vietnamese",
+    )
+
+    assert "- Alice: Female, healer from the east." in updated_lore
+    assert "- Bob: Male, blacksmith from the west." in updated_lore
+    assert "- Alice: Bob" not in updated_lore
+    assert "healer from the east; blacksmith from the west" not in updated_lore
+    assert "- Alice ↔ Clara: Alice protects Clara" in updated_dynamic
+    assert "- Bob ↔ Clara" not in updated_dynamic
 
 
 @pytest.mark.asyncio
@@ -2066,7 +2495,11 @@ async def test_update_chunk_identity_link_canonicalizes_every_context_layer():
     from src.utils.dialogue_attribution import detect_dialogue_turns
     from src.utils.novel_context import update_novel_context_chunk
 
-    candidates = detect_dialogue_turns("“Stand down,” the Lieutenant Colonel said.")
+    source_text = (
+        "The Lieutenant Colonel's office was silent. Eric was watching "
+        "Valentine closely. “Stand down,” he said."
+    )
+    candidates = detect_dialogue_turns(source_text)
     response = MagicMock()
     response.content = (
         "[NEW_CHARACTERS]\n"
@@ -2110,7 +2543,7 @@ async def test_update_chunk_identity_link_canonicalizes_every_context_layer():
         model_name="model",
         current_global_lore=initial_lore,
         current_dynamic_state="",
-        source_chunk="“Stand down,” the Lieutenant Colonel said.",
+        source_chunk=source_text,
         translated_chunk=None,
         source_language="English",
         target_language="Vietnamese",
@@ -2227,6 +2660,9 @@ def test_context_prompts_define_durable_dynamic_state_deltas():
     )
 
     for prompt in (SOURCE_ANALYSIS_SYSTEM_PROMPT, UPDATE_SYSTEM_PROMPT):
+        assert "Your output must be one JSON object" in prompt
+        assert '"new_characters"' in prompt
+        assert '"dynamic_state"' in prompt
         assert "Omitted entries remain stored indefinitely." in prompt
         assert "Addressee: DELETE" in prompt
         assert "Character A ↔ Character B: DELETE" in prompt

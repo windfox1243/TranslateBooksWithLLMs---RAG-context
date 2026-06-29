@@ -226,6 +226,10 @@
   "context_edit_resync_title": "Diesen Snapshot bearbeiten und alle nachfolgenden Chunks neu synchronisieren",
   "context_edit_resync_btn": "Bearbeiten & Neu synchronisieren",
   "context_save_resync_btn": "Speichern & Neu synchronisieren",
+  "context_pause_resync_title": "Kontext-Neusynchronisierung nach dem Speichern des aktuellen Chunks pausieren",
+  "context_pause_resync_btn": "Neusynchronisierung pausieren",
+  "context_resume_resync_title": "Kontext-Neusynchronisierung mit den aktuellen Modelleinstellungen fortsetzen",
+  "context_resume_resync_btn": "Neusynchronisierung fortsetzen",
   "context_global_state": "Globaler Kontext",
   "context_edit_global_title": "Buchweite Figuren, Geschlechter, Glossar und Terminologie bearbeiten",
   "context_edit_global_btn": "Globalen Kontext bearbeiten",
@@ -252,6 +256,10 @@
   "context_load_error_title": "Fehler",
   "context_load_error_body": "Kontext-Snapshot konnte nicht geladen werden: {{error}}",
   "context_resync_started_log": "[System] Kontext-Neusynchronisierung ab Chunk {{chunk}} gestartet. Dies wird im Hintergrund verarbeitet.",
+  "context_resync_pause_requested_log": "[System] Die Kontext-Neusynchronisierung wird nach dem Speichern des aktuellen Chunks pausiert.",
+  "context_resync_resumed_log": "[System] Kontext-Neusynchronisierung mit den aktuellen Modelleinstellungen fortgesetzt.",
+  "context_resync_pause_failed": "Kontext-Neusynchronisierung konnte nicht pausiert werden: {{error}}",
+  "context_resync_resume_failed": "Kontext-Neusynchronisierung konnte nicht fortgesetzt werden: {{error}}",
   "context_resync_failed_log": "[Fehler] Kontext-Neusynchronisierung konnte nicht gestartet werden: {{error}}",
   "context_open_folder_failed": "Roman-Kontextordner konnte nicht geöffnet werden"
 }

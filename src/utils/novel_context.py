@@ -6,6 +6,7 @@ and key glossary terms across translation segments, ensuring consistency.
 """
 from __future__ import annotations
 
+import json
 import re
 import os
 import logging
@@ -2047,6 +2048,86 @@ def infer_source_identity_links(
     return "\n".join(f"- {alias}: {target}" for alias, target in links)
 
 
+def _source_proves_identity_link(
+    source_text: str,
+    current_global_lore: str,
+    new_characters: str,
+    alias: str,
+    target: str,
+) -> bool:
+    """Return whether raw source text directly proves an alias mapping.
+
+    A model-proposed identity link can merge two durable character entries, so
+    source-analysis updates require direct evidence. Existing/manual context
+    edits still enter through paths without source text and remain accepted.
+    """
+    text = _clean_inline_text(source_text)
+    alias = _strip_balanced_brackets(alias)
+    target = _canonical_display_name(target)
+    if not text or _is_invalid_context_key(alias) or _is_invalid_context_key(target):
+        return False
+
+    candidates = _candidate_named_characters(current_global_lore, new_characters)
+    candidate_keys = {_plain_key(name): name for name in candidates}
+    target_key = _plain_key(target)
+    if target_key not in candidate_keys:
+        return False
+
+    inferred = {
+        _plain_key(inferred_alias): _plain_key(inferred_target)
+        for inferred_alias, inferred_target in _parse_bullet_entries(
+            infer_source_identity_links(
+                text,
+                current_global_lore,
+                new_characters,
+            )
+        )
+    }
+    if inferred.get(_plain_key(alias)) == target_key:
+        return True
+
+    alias_pattern = re.escape(alias).replace(r"\ ", r"\s+")
+    target_pattern = _name_reference_pattern(candidate_keys[target_key])
+    alias_is_named_character = _plain_key(alias) in candidate_keys
+    strong_patterns = (
+        rf"\b(?:the\s+)?{alias_pattern}\b[\s\S]{{0,80}}"
+        rf"\b(?:is|was|becomes|became|named|called|known\s+as|"
+        rf"identified\s+as|revealed\s+as|real\s+name\s+is|"
+        rf"true\s+name\s+is)\s+{target_pattern}",
+        rf"{target_pattern}[\s\S]{{0,80}}\b(?:is|was|serves\s+as|"
+        rf"becomes|became|known\s+as|identified\s+as|revealed\s+as)\s+"
+        rf"(?:the\s+)?{alias_pattern}\b",
+        rf"{target_pattern}\s*,\s*(?:the\s+)?{alias_pattern}\b",
+        rf"\b(?:the\s+)?{alias_pattern}\s*,\s*{target_pattern}",
+    )
+    if any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in strong_patterns):
+        return True
+
+    if alias_is_named_character:
+        return False
+
+    if re.search(
+        rf"\b(?:the\s+)?{alias_pattern}'s\s+"
+        r"(?:office|room|quarters|tent|desk|door|voice|expression|"
+        r"face|hand|gaze|order)\b[\s\S]{0,220}"
+        rf"{target_pattern}",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return True
+
+    target_words = candidate_keys[target_key].split()
+    surname = target_words[-1] if target_words else ""
+    if surname and re.search(
+        rf"\b(?:the\s+)?{alias_pattern}\s+{re.escape(surname)}\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return True
+
+    return False
+
+
 def _source_reincarnation_gender_for_name(source_text: str, name: str) -> str:
     text = _clean_inline_text(source_text)
     if not text or _is_invalid_context_key(name):
@@ -3230,21 +3311,25 @@ def render_novel_context_for_prompt(
     context_content: str,
     reference_text: str = "",
     max_tokens: Optional[int] = None,
+    selective: bool = True,
 ) -> str:
     """Render a prompt-sized view of a durable novel context document.
 
     The context file remains the complete source of truth. This function only
-    selects the text injected into the user prompt. Small contexts pass through
-    unchanged; oversized contexts prefer entries mentioned by the current chunk
-    or draft, and fall back to the beginning of the context when no entry
-    matches.
+    selects the text injected into the user prompt. By default, it injects only
+    entries mentioned by the current chunk or draft. Callers may set
+    ``selective=False`` to preserve the legacy budget-only behavior.
     """
     normalized = normalize_novel_context_content(context_content)
     if not normalized:
         return ""
 
     max_chars = _context_prompt_budget_chars(max_tokens)
-    if not max_chars or len(normalized) <= max_chars:
+    if not selective:
+        if not max_chars or len(normalized) <= max_chars:
+            return normalized
+        return normalized[:max_chars].rstrip()
+    if not max_chars:
         return normalized
 
     global_lore = extract_global_lore(normalized)
@@ -3265,7 +3350,7 @@ def render_novel_context_for_prompt(
         glossary_entries,
         dynamic_state.strip(),
     )):
-        return normalized[:max_chars].rstrip()
+        return normalized if len(normalized) <= max_chars else normalized[:max_chars].rstrip()
 
     selected_character_keys: set[str] = set()
     for name, value in character_entries:
@@ -3354,11 +3439,7 @@ def render_novel_context_for_prompt(
         selected_relationships,
     ))
     if not has_selection:
-        selected_character_lines = remaining_character_lines
-        selected_alias_lines = remaining_alias_lines
-        selected_glossary_lines = remaining_glossary_lines
-        selected_addressing = remaining_addressing
-        selected_relationships = remaining_relationships
+        return ""
 
     reserved = len(
         f"\n\n{DYNAMIC_STATE_START}\n# DYNAMIC RELATIONSHIP STATE\n"
@@ -3404,6 +3485,33 @@ def render_novel_context_for_prompt(
     )
     rendered_lines.append(DYNAMIC_STATE_END)
     return "\n".join(rendered_lines).strip()
+
+
+def render_novel_context_update_view(
+    current_global_lore: str,
+    current_dynamic_state: str,
+    reference_text: str = "",
+    max_tokens: Optional[int] = None,
+    selective: bool = True,
+) -> Tuple[str, str]:
+    """Return the lore/dynamic view sent to the context-update LLM.
+
+    The deterministic merge layer still receives the complete stored lore after
+    the LLM returns. This view only reduces prompt tokens and unrelated context.
+    """
+    full_context = build_novel_context(current_global_lore, current_dynamic_state)
+    rendered = render_novel_context_for_prompt(
+        full_context,
+        reference_text=reference_text,
+        max_tokens=max_tokens,
+        selective=selective,
+    )
+    if not rendered:
+        return "", ""
+    return (
+        extract_global_lore(rendered),
+        extract_dynamic_state_from_text(rendered) or "",
+    )
 
 
 def resolve_novel_context_update_interval(
@@ -3768,6 +3876,13 @@ class RefinementContextTracker:
                 dialogue_turns=dialogue_turns,
                 current_dialogue_state=self.dialogue_state,
                 dialogue_attribution_sink=dialogue_sink,
+                selective_context_view=self.prompt_options.get(
+                    "novel_context_selective_update",
+                    True,
+                ),
+                context_view_max_tokens=self.prompt_options.get(
+                    "novel_context_update_prompt_max_tokens",
+                ),
             )
             self.current_dialogue_attribution = (
                 dialogue_sink
@@ -3906,6 +4021,13 @@ class NovelContextSession:
             dialogue_turns=dialogue_turns,
             current_dialogue_state=self.dialogue_state,
             dialogue_attribution_sink=dialogue_sink,
+            selective_context_view=self.prompt_options.get(
+                "novel_context_selective_update",
+                True,
+            ),
+            context_view_max_tokens=self.prompt_options.get(
+                "novel_context_update_prompt_max_tokens",
+            ),
         )
         clean_source = _clean_source_memory_chunk(source_chunk)
         if clean_source:
@@ -4189,33 +4311,32 @@ Input provided:
 4. LATEST SOURCE TEXT
 5. LATEST TRANSLATION
 
-Your output must follow this strict format:
+Your output must be one JSON object and nothing else. Use this schema:
+{
+  "new_characters": [
+    {"name": "Canonical Name", "gender": "Male|Female|Non-binary|Unspecified", "description": "role and concise cumulative description", "action": "upsert|correction|delete"}
+  ],
+  "identity_links": [
+    {"alias": "Source title, rank, nickname, or alias", "canonical": "Canonical Name", "action": "upsert|delete"}
+  ],
+  "new_glossary": [
+    {"source": "Source Term", "target": "Target Term", "action": "upsert|delete"}
+  ],
+  "dynamic_state": {
+    "current_addressing_forms": [
+      {"speaker": "Speaker", "addressee": "Addressee", "source_form": "...", "target_form": "...", "register": "register and reason", "action": "upsert|delete"}
+    ],
+    "relationship_evolution": [
+      {"character_a": "Character A", "character_b": "Character B", "relationship": "concise current relationship", "action": "upsert|delete"}
+    ]
+  },
+  "dialogue_attribution": {
+    "turns": [{"id": "exact candidate id", "speaker": "canonical character name or Unknown", "addressee": "canonical character name or Unknown", "confidence": 0.0}],
+    "state_after": {"speaker": "canonical character name or Unknown", "addressee": "canonical character name or Unknown"}
+  }
+}
 
-[NEW_CHARACTERS]
-- Canonical Name: [Gender, role, and concise description]
-(Use "Unspecified" rather than guessing when a recurring character must be tracked before gender is explicit. Use "CORRECTION: [Gender, role, description]" only for a source-proven correction. Use "- Canonical Name: DELETE" to delete an obsolete entry. If there are no changes, output no bullet under this header.)
-
-[IDENTITY_LINKS]
-- Source title, rank, nickname, or alias: Canonical Name
-(Only include identity links directly established by the latest source. The right side must be one exact canonical character name from CURRENT GLOBAL LORE or NEW_CHARACTERS. Use "- Alias: DELETE" to remove a wrong link. If there are no changes, output no bullet under this header.)
-
-[NEW_GLOSSARY]
-- Source Term: [Target Term]
-(Only include actual additions or corrections. Use "- Source Term: DELETE" to delete an obsolete entry. If there are no changes, output no bullet under this header.)
-
-[DYNAMIC_STATE]
-# DYNAMIC RELATIONSHIP STATE
-## CURRENT ADDRESSING FORMS
-- Speaker → Addressee: source form "..." | target-language form "..." | register and reason
-## RELATIONSHIP EVOLUTION
-- Character A ↔ Character B: concise current relationship
-(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Do not duplicate these headings.)
-
-[DIALOGUE_ATTRIBUTION]
-{"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
-(Classify only the supplied dialogue candidates. Infer from narration, turn-taking, current scene state, voice, and addressing forms. Resolve titles and aliases through CURRENT GLOBAL LORE and IDENTITY_LINKS, but output only canonical character names already present in CURRENT GLOBAL LORE or NEW_CHARACTERS. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates.)
-
-Do not include any other explanations, markdown fences, or extra text outside these blocks.
+Use empty arrays when there are no changes. For character corrections, set action to "correction". For deletions, set action to "delete". Omitted entries remain stored indefinitely. Remove an obsolete dynamic entry only with action "delete" (legacy equivalent: "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE"). Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. Use plain Unicode arrows only if you provide preformatted strings. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Classify only the supplied dialogue candidates. Never invent a speaker. Return {"turns":[],"state_after":{}} when there are no dialogue candidates.
 """
 
 SOURCE_ANALYSIS_SYSTEM_PROMPT = """You are an expert novel translation context assistant.
@@ -4251,33 +4372,34 @@ Input provided:
 3. RECENT SOURCE MEMORY (bounded previous chunks)
 4. LATEST SOURCE TEXT
 
-Your output must follow this strict format:
+Your output must be one JSON object and nothing else. Use this schema:
+{
+  "new_characters": [
+    {"name": "Canonical Name", "gender": "Male|Female|Non-binary|Unspecified", "description": "role and concise cumulative description", "action": "upsert|correction|delete"}
+  ],
+  "identity_links": [
+    {"alias": "Source title, rank, nickname, or alias", "canonical": "Canonical Name", "action": "upsert|delete"}
+  ],
+  "new_glossary": [
+    {"source": "Source Term", "target": "Recommended Target Term", "action": "upsert|delete"}
+  ],
+  "dynamic_state": {
+    "current_addressing_forms": [
+      {"speaker": "Speaker", "addressee": "Addressee", "source_form": "...", "target_form": "...", "register": "register and reason", "action": "upsert|delete"}
+    ],
+    "relationship_evolution": [
+      {"character_a": "Character A", "character_b": "Character B", "relationship": "concise current relationship", "action": "upsert|delete"}
+    ]
+  },
+  "dialogue_attribution": {
+    "turns": [{"id": "exact candidate id", "speaker": "canonical character name or Unknown", "addressee": "canonical character name or Unknown", "confidence": 0.0}],
+    "state_after": {"speaker": "canonical character name or Unknown", "addressee": "canonical character name or Unknown"}
+  }
+}
 
-[NEW_CHARACTERS]
-- Canonical Name: [Gender, role, and concise description]
-(Use "Unspecified" rather than guessing when a recurring character must be tracked before gender is explicit. Use "CORRECTION: [Gender, role, description]" only for a source-proven correction. Use "- Canonical Name: DELETE" to delete an obsolete entry. If there are no changes, output no bullet under this header.)
+Use empty arrays when there are no changes. For character corrections, set action to "correction". For deletions, set action to "delete". Omitted entries remain stored indefinitely. Remove an obsolete dynamic entry only with action "delete" (legacy equivalent: "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE"). Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. Use plain Unicode arrows only if you provide preformatted strings. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Classify only the supplied dialogue candidates. Never invent a speaker. Return {"turns":[],"state_after":{}} when there are no dialogue candidates.
 
-[IDENTITY_LINKS]
-- Source title, rank, nickname, or alias: Canonical Name
-(Only include identity links directly established by this source. The right side must be one exact canonical character name from CURRENT GLOBAL LORE or NEW_CHARACTERS. Use "- Alias: DELETE" to remove a wrong link. If there are no changes, output no bullet under this header.)
-
-[NEW_GLOSSARY]
-- Source Term: [Recommended Target Term]
-(Only include important recurring terms. Use "- Source Term: DELETE" to delete an obsolete entry. If there are no changes, output no bullet under this header.)
-
-[DYNAMIC_STATE]
-# DYNAMIC RELATIONSHIP STATE
-## CURRENT ADDRESSING FORMS
-- Speaker → Addressee: source form "..." | recommended target-language form "..." | register and reason
-## RELATIONSHIP EVOLUTION
-- Character A ↔ Character B: concise current relationship
-(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Keep it concise and do not duplicate headings.)
-
-[DIALOGUE_ATTRIBUTION]
-{"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
-(Classify only the supplied dialogue candidates. Infer from narration, turn-taking, current scene state, voice, and addressing forms. Resolve titles and aliases through CURRENT GLOBAL LORE and IDENTITY_LINKS, but output only canonical character names already present in CURRENT GLOBAL LORE or NEW_CHARACTERS. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates.)
-
-Do not translate the whole passage. Do not include explanations, markdown fences, or text outside these blocks.
+Do not translate the whole passage. Do not include explanations, markdown fences, or text outside the JSON object.
 """
 
 UPDATE_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
@@ -4303,7 +4425,7 @@ UPDATE_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
 ### DIALOGUE CANDIDATES:
 {dialogue_candidates}
 
-Output the updates now. Output ONLY the strictly formatted blocks."""
+Output the updates now. Output ONLY the JSON object."""
 
 SOURCE_ANALYSIS_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
 {current_global_lore}
@@ -4328,7 +4450,7 @@ SOURCE_ANALYSIS_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
 ### DIALOGUE CANDIDATES:
 {dialogue_candidates}
 
-Analyze the source for context needed by its translation. Output ONLY the strictly formatted blocks."""
+Analyze the source for context needed by its translation. Output ONLY the JSON object."""
 
 
 def merge_new_lore(
@@ -4379,8 +4501,8 @@ def merge_new_lore(
                     removed = True
             if removed:
                 record(
-                    "[Novel Context] Deleted obsolete identity link "
-                    f"'{_plain_key(raw_alias)}'"
+                    "[Novel Context] Deleted identity link "
+                    f"'{_plain_key(raw_alias)}'."
                 )
             continue
 
@@ -4389,6 +4511,27 @@ def merge_new_lore(
             _is_invalid_context_key(target)
             or _character_names_match(raw_alias, target)
         ):
+            continue
+        already_linked = any(
+            explicit_aliases.get(alias_key) == target
+            for alias_key in alias_keys
+        )
+        if (
+            source_text
+            and not already_linked
+            and not _source_proves_identity_link(
+                source_text,
+                lore,
+                new_characters,
+                raw_alias,
+                target,
+            )
+        ):
+            logger.warning(
+                "[Novel Context] Skipped unsafe identity link '%s' -> '%s'.",
+                _plain_key(raw_alias),
+                target,
+            )
             continue
         changed = any(
             explicit_aliases.get(alias_key) != target
@@ -4399,8 +4542,8 @@ def merge_new_lore(
             alias_displays[alias_key] = _strip_balanced_brackets(raw_alias)
         if changed:
             record(
-                "[Novel Context] Linked identity alias "
-                f"'{_plain_key(raw_alias)}' -> '{target}'"
+                "[Novel Context] Linked identity "
+                f"'{_plain_key(raw_alias)}' -> '{target}'."
             )
 
     character_bounds = _find_lore_section(lore, CHARACTERS_SECTION)
@@ -4464,7 +4607,7 @@ def merge_new_lore(
         if is_delete:
             if match_index is not None:
                 characters.pop(match_index)
-                record(f"[Novel Context] Deleted obsolete Character '{log_key}'")
+                record(f"[Novel Context] Deleted character '{log_key}'.")
             continue
 
         canonical_name = _canonical_display_name(effective_name)
@@ -4484,8 +4627,7 @@ def merge_new_lore(
                 continue
             characters.append((canonical_name, clean_value))
             record(
-                f"[Novel Context] Added Character: "
-                f"{_format_character_line(canonical_name, clean_value)}"
+                f"[Novel Context] Added character '{_plain_key(canonical_name)}'."
             )
             continue
 
@@ -4504,9 +4646,7 @@ def merge_new_lore(
         )
         if (old_name, old_value) != (merged_name, merged_value):
             record(
-                f"[Novel Context] Corrected/Updated Character '{log_key}': "
-                f"{_format_character_line(old_name, old_value)} -> "
-                f"{_format_character_line(merged_name, merged_value)}"
+                f"[Novel Context] Updated character '{log_key}'."
             )
         characters[match_index] = (merged_name, merged_value)
 
@@ -4556,7 +4696,7 @@ def merge_new_lore(
                     _plain_key(name): index
                     for index, (name, _) in enumerate(glossary)
                 }
-                record(f"[Novel Context] Deleted obsolete Glossary Entry '{key}'")
+                record(f"[Novel Context] Deleted glossary term '{key}'.")
             continue
 
         clean_name = _strip_balanced_brackets(raw_name)
@@ -4566,16 +4706,14 @@ def merge_new_lore(
             old_name, old_value = glossary[index]
             if (old_name, old_value) != (clean_name, clean_value):
                 record(
-                    f"[Novel Context] Corrected/Updated Glossary Entry '{key}': "
-                    f"- {old_name}: {old_value} -> - {clean_name}: {clean_value}"
+                    f"[Novel Context] Updated glossary term '{key}'."
                 )
             glossary[index] = (clean_name, clean_value)
         else:
             glossary_index[key] = len(glossary)
             glossary.append((clean_name, clean_value))
             record(
-                f"[Novel Context] Added Glossary Entry: "
-                f"- {clean_name}: {clean_value}"
+                f"[Novel Context] Added glossary term '{key}'."
             )
 
     lore = _replace_lore_section(
@@ -4584,6 +4722,429 @@ def merge_new_lore(
         [f"- {name}: {value}" for name, value in glossary],
     )
     return normalize_global_lore(lore), change_logs
+
+
+_CONTEXT_UPDATE_JSON_KEYS = {
+    "characters",
+    "new_characters",
+    "identity_links",
+    "aliases",
+    "new_glossary",
+    "glossary",
+    "dynamic_state",
+    "dialogue_attribution",
+}
+
+
+def _json_key_id(key: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(key or "").casefold())
+
+
+_CONTEXT_UPDATE_JSON_KEY_IDS = {
+    _json_key_id(key)
+    for key in _CONTEXT_UPDATE_JSON_KEYS
+}
+
+
+def _json_get(mapping: Any, *keys: str) -> Any:
+    if not isinstance(mapping, dict):
+        return None
+    wanted = {_json_key_id(key) for key in keys}
+    for key, value in mapping.items():
+        if _json_key_id(key) in wanted:
+            return value
+    return None
+
+
+def _strip_markdown_fence(text: str) -> str:
+    text = str(text or "").strip()
+    if not text.startswith("```"):
+        return text
+    lines = text.splitlines()
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].startswith("```"):
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _find_balanced_container(
+    text: str,
+    start: int,
+    opener: str = "{",
+    closer: str = "}",
+) -> Optional[str]:
+    depth = 0
+    in_string = False
+    escape = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if escape:
+            escape = False
+            continue
+        if char == "\\":
+            escape = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == opener:
+            depth += 1
+        elif char == closer:
+            depth -= 1
+            if depth == 0:
+                return text[start:index + 1]
+    return None
+
+
+def _parse_context_update_json(raw: str) -> Optional[Dict[str, Any]]:
+    """Extract a structured context update from a model response.
+
+    Providers vary in how strictly they honor JSON-only instructions, so this
+    accepts bare JSON, fenced JSON, or a balanced JSON object embedded in text.
+    The object must contain at least one recognized context-update key to avoid
+    confusing legacy dialogue-only JSON blocks with a full update.
+    """
+    text = re.sub(
+        r"<think>.*?</think>",
+        "",
+        str(raw or ""),
+        flags=re.DOTALL | re.IGNORECASE,
+    ).strip()
+    if not text:
+        return None
+
+    candidates = [_strip_markdown_fence(text)]
+    fence_match = re.search(
+        r"```(?:json)?\s*(.*?)```",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if fence_match:
+        candidates.append(fence_match.group(1).strip())
+
+    for match in re.finditer(r"{", text):
+        balanced = _find_balanced_container(text, match.start())
+        if balanced:
+            candidates.append(balanced)
+
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            repaired = re.sub(r",\s*([}\]])", r"\1", str(candidate))
+            if repaired == candidate:
+                continue
+            try:
+                payload = json.loads(repaired)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+        if not isinstance(payload, dict):
+            continue
+        normalized_keys = {_json_key_id(key) for key in payload}
+        if normalized_keys & _CONTEXT_UPDATE_JSON_KEY_IDS:
+            return payload
+    return None
+
+
+def _coerce_json_items(value: Any, item_keys: set) -> List[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        lowered = {str(key).casefold() for key in value}
+        if lowered & item_keys:
+            return [value]
+        items: List[Any] = []
+        for key, nested_value in value.items():
+            if isinstance(nested_value, dict):
+                merged = dict(nested_value)
+                merged.setdefault("name", key)
+                items.append(merged)
+            else:
+                items.append({"name": key, "value": nested_value})
+        return items
+    if isinstance(value, str):
+        return [value]
+    return []
+
+
+def _json_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def _json_action(value: Dict[str, Any]) -> str:
+    action = _json_text(_json_get(value, "action")).casefold()
+    if action:
+        return action
+    if _json_get(value, "delete") is True:
+        return "delete"
+    return ""
+
+
+def _is_json_delete(value: Dict[str, Any]) -> bool:
+    action = _json_action(value)
+    if action in {"delete", "remove", "deleted"}:
+        return True
+    raw_value = _json_text(_json_get(value, "value", "target"))
+    return raw_value.casefold() == "delete"
+
+
+def _is_json_correction(value: Dict[str, Any]) -> bool:
+    return _json_action(value) in {"correction", "correct", "corrected"}
+
+
+def _preformatted_update_line(value: str) -> str:
+    line = value.strip()
+    if not line:
+        return ""
+    return line if line.startswith("-") else f"- {line}"
+
+
+def _json_character_lines(value: Any) -> str:
+    item_keys = {
+        "name",
+        "canonical_name",
+        "character",
+        "gender",
+        "role",
+        "description",
+        "details",
+        "summary",
+        "value",
+        "action",
+    }
+    lines: List[str] = []
+    for item in _coerce_json_items(value, item_keys):
+        if isinstance(item, str):
+            line = _preformatted_update_line(item)
+            if line:
+                lines.append(line)
+            continue
+        if not isinstance(item, dict):
+            continue
+        name = _json_text(
+            _json_get(item, "name", "canonical_name", "canonical", "character")
+        )
+        if not name:
+            continue
+        if _is_json_delete(item):
+            lines.append(f"- {name}: DELETE")
+            continue
+        value_text = _json_text(
+            _json_get(item, "value", "description", "details", "summary")
+        )
+        role = _json_text(_json_get(item, "role"))
+        if role and value_text and role.casefold() not in value_text.casefold():
+            value_text = f"{role}, {value_text}"
+        elif role and not value_text:
+            value_text = role
+        gender = _json_text(_json_get(item, "gender"))
+        if gender and value_text:
+            value_text = f"{gender}, {value_text}"
+        elif gender and not value_text:
+            value_text = gender
+        if not value_text:
+            continue
+        if _is_json_correction(item) and not value_text.casefold().startswith(
+            "correction:"
+        ):
+            value_text = f"CORRECTION: [{value_text.strip('[]')}]"
+        lines.append(f"- {name}: {value_text}")
+    return "\n".join(lines)
+
+
+def _json_alias_lines(value: Any) -> str:
+    item_keys = {
+        "alias",
+        "source",
+        "label",
+        "title",
+        "canonical",
+        "canonical_name",
+        "target",
+        "action",
+    }
+    lines: List[str] = []
+    for item in _coerce_json_items(value, item_keys):
+        if isinstance(item, str):
+            line = _preformatted_update_line(item)
+            if line:
+                lines.append(line)
+            continue
+        if not isinstance(item, dict):
+            continue
+        alias = _json_text(
+            _json_get(item, "alias", "source", "label", "title", "name")
+        )
+        canonical = _json_text(
+            _json_get(item, "canonical", "canonical_name", "target", "value")
+        )
+        if not alias:
+            continue
+        lines.append(f"- {alias}: {'DELETE' if _is_json_delete(item) else canonical}")
+    return "\n".join(line for line in lines if not line.endswith(": "))
+
+
+def _json_glossary_lines(value: Any) -> str:
+    item_keys = {
+        "source",
+        "source_term",
+        "term",
+        "target",
+        "target_term",
+        "translation",
+        "recommended_target_term",
+        "action",
+    }
+    lines: List[str] = []
+    for item in _coerce_json_items(value, item_keys):
+        if isinstance(item, str):
+            line = _preformatted_update_line(item)
+            if line:
+                lines.append(line)
+            continue
+        if not isinstance(item, dict):
+            continue
+        source = _json_text(
+            _json_get(item, "source", "source_term", "term", "name")
+        )
+        target = _json_text(
+            _json_get(
+                item,
+                "target",
+                "target_term",
+                "recommended_target_term",
+                "translation",
+                "value",
+            )
+        )
+        if not source:
+            continue
+        lines.append(f"- {source}: {'DELETE' if _is_json_delete(item) else target}")
+    return "\n".join(line for line in lines if not line.endswith(": "))
+
+
+def _json_dynamic_line(item: Any, relationship: bool = False) -> str:
+    if isinstance(item, str):
+        return _preformatted_update_line(item)
+    if not isinstance(item, dict):
+        return ""
+    line = _json_text(_json_get(item, "line", "text"))
+    if line:
+        return _preformatted_update_line(line)
+
+    if relationship:
+        left = _json_text(
+            _json_get(item, "character_a", "left", "speaker", "source")
+        )
+        right = _json_text(
+            _json_get(item, "character_b", "right", "addressee", "target")
+        )
+        details = _json_text(
+            _json_get(item, "relationship", "details", "description", "value")
+        )
+        arrow = _json_text(_json_get(item, "arrow")) or "↔"
+    else:
+        left = _json_text(_json_get(item, "speaker", "character_a"))
+        right = _json_text(_json_get(item, "addressee", "character_b"))
+        parts = []
+        source_form = _json_text(_json_get(item, "source_form"))
+        target_form = _json_text(
+            _json_get(item, "target_form", "recommended_target_form")
+        )
+        register = _json_text(_json_get(item, "register", "reason"))
+        details = _json_text(_json_get(item, "details", "value"))
+        if source_form:
+            parts.append(f'source form "{source_form}"')
+        if target_form:
+            parts.append(f'target-language form "{target_form}"')
+        if register:
+            parts.append(register)
+        if details:
+            parts.append(details)
+        details = " | ".join(parts)
+        arrow = "→"
+
+    if not left or not right:
+        return ""
+    if _is_json_delete(item):
+        details = "DELETE"
+    if not details:
+        return ""
+    return f"- {left} {arrow} {right}: {details}"
+
+
+def _json_dynamic_state(value: Any) -> str:
+    if isinstance(value, str):
+        return _strip_markdown_fence(value)
+    if isinstance(value, list):
+        relationship_lines = [
+            _json_dynamic_line(item, relationship=True)
+            for item in value
+        ]
+        relationship_lines = [line for line in relationship_lines if line]
+        return _format_dynamic_sections("", "\n".join(relationship_lines))
+    if not isinstance(value, dict):
+        return ""
+
+    addressing_items = _json_get(
+        value,
+        "current_addressing_forms",
+        "addressing_forms",
+        "addressing",
+    ) or []
+    relationship_items = _json_get(
+        value,
+        "relationship_evolution",
+        "relationships",
+        "relationship_changes",
+    ) or []
+    addressing_lines = [
+        _json_dynamic_line(item, relationship=False)
+        for item in _coerce_json_items(addressing_items, {"speaker", "addressee"})
+    ]
+    relationship_lines = [
+        _json_dynamic_line(item, relationship=True)
+        for item in _coerce_json_items(
+            relationship_items,
+            {"character_a", "character_b", "relationship"},
+        )
+    ]
+    addressing = "\n".join(line for line in addressing_lines if line)
+    relationships = "\n".join(line for line in relationship_lines if line)
+    if not addressing and not relationships:
+        return ""
+    return _format_dynamic_sections(addressing, relationships)
+
+
+def _context_update_sections_from_json(
+    payload: Dict[str, Any],
+) -> Tuple[str, str, str, str, str]:
+    characters = _json_character_lines(
+        _json_get(payload, "new_characters", "characters")
+    )
+    aliases = _json_alias_lines(
+        _json_get(payload, "identity_links", "aliases")
+    )
+    glossary = _json_glossary_lines(
+        _json_get(payload, "new_glossary", "glossary")
+    )
+    dynamic = _json_dynamic_state(_json_get(payload, "dynamic_state"))
+    dialogue = _json_get(payload, "dialogue_attribution")
+    dialogue_raw = (
+        json.dumps(dialogue, ensure_ascii=False)
+        if dialogue is not None
+        else ""
+    )
+    return characters, aliases, glossary, dynamic, dialogue_raw
 
 
 async def update_novel_context_chunk(
@@ -4601,6 +5162,8 @@ async def update_novel_context_chunk(
     dialogue_turns: Optional[List[Dict[str, str]]] = None,
     current_dialogue_state: Optional[Dict[str, str]] = None,
     dialogue_attribution_sink: Optional[Dict[str, Any]] = None,
+    selective_context_view: bool = True,
+    context_view_max_tokens: Optional[int] = None,
 ) -> Tuple[str, str, List[str]]:
     """Calls the LLM to update global lore and dynamic state incrementally.
     
@@ -4615,9 +5178,28 @@ async def update_novel_context_chunk(
 
     dialogue_turns = list(dialogue_turns or [])
     current_dialogue_state = dict(current_dialogue_state or {})
+    source_analysis_text = _compose_source_analysis_text(
+        source_context,
+        source_chunk,
+    )
+    prompt_reference_text = "\n\n".join(
+        part
+        for part in (
+            source_analysis_text,
+            translated_chunk or "",
+        )
+        if part
+    )
+    prompt_global_lore, prompt_dynamic_state = render_novel_context_update_view(
+        current_global_lore,
+        current_dynamic_state,
+        reference_text=prompt_reference_text,
+        max_tokens=context_view_max_tokens,
+        selective=selective_context_view,
+    )
     prompt_values = {
-        "current_global_lore": current_global_lore,
-        "current_dynamic_state": current_dynamic_state,
+        "current_global_lore": prompt_global_lore,
+        "current_dynamic_state": prompt_dynamic_state,
         "source_language": source_language,
         "target_language": target_language,
         "source_context": source_context or "(none)",
@@ -4659,43 +5241,59 @@ async def update_novel_context_chunk(
         new_aliases = ""
         new_glossary = ""
         new_dynamic = current_dynamic_state
+        dialogue_raw = ""
         
         import re
-        chars_match = re.search(
-            r'\[NEW_CHARACTERS\]\s*(.*?)\s*'
-            r'(?=\[IDENTITY_LINKS\]|\[NEW_GLOSSARY\]|\[DYNAMIC_STATE\]|$)',
-            content,
-            re.DOTALL,
-        )
-        aliases_match = re.search(
-            r'\[IDENTITY_LINKS\]\s*(.*?)\s*'
-            r'(?=\[NEW_GLOSSARY\]|\[DYNAMIC_STATE\]|\[NEW_CHARACTERS\]|$)',
-            content,
-            re.DOTALL,
-        )
-        glossary_match = re.search(
-            r'\[NEW_GLOSSARY\]\s*(.*?)\s*'
-            r'(?=\[DYNAMIC_STATE\]|\[IDENTITY_LINKS\]|\[NEW_CHARACTERS\]|$)',
-            content,
-            re.DOTALL,
-        )
-        dynamic_match = re.search(
-            r'\[DYNAMIC_STATE\]\s*(.*?)\s*(?=\[DIALOGUE_ATTRIBUTION\]|$)',
-            content,
-            re.DOTALL,
-        )
-        dialogue_match = re.search(
-            r'\[DIALOGUE_ATTRIBUTION\]\s*(.*?)\s*$',
-            content,
-            re.DOTALL,
-        )
-        
-        if chars_match:
-            new_chars = chars_match.group(1).strip()
-        source_analysis_text = _compose_source_analysis_text(
-            source_context,
-            source_chunk,
-        )
+        parsed_json = _parse_context_update_json(content)
+        if parsed_json is not None:
+            (
+                new_chars,
+                new_aliases,
+                new_glossary,
+                new_dynamic,
+                dialogue_raw,
+            ) = _context_update_sections_from_json(parsed_json)
+        else:
+            chars_match = re.search(
+                r'\[NEW_CHARACTERS\]\s*(.*?)\s*'
+                r'(?=\[IDENTITY_LINKS\]|\[NEW_GLOSSARY\]|\[DYNAMIC_STATE\]|$)',
+                content,
+                re.DOTALL,
+            )
+            aliases_match = re.search(
+                r'\[IDENTITY_LINKS\]\s*(.*?)\s*'
+                r'(?=\[NEW_GLOSSARY\]|\[DYNAMIC_STATE\]|\[NEW_CHARACTERS\]|$)',
+                content,
+                re.DOTALL,
+            )
+            glossary_match = re.search(
+                r'\[NEW_GLOSSARY\]\s*(.*?)\s*'
+                r'(?=\[DYNAMIC_STATE\]|\[IDENTITY_LINKS\]|\[NEW_CHARACTERS\]|$)',
+                content,
+                re.DOTALL,
+            )
+            dynamic_match = re.search(
+                r'\[DYNAMIC_STATE\]\s*(.*?)\s*(?=\[DIALOGUE_ATTRIBUTION\]|$)',
+                content,
+                re.DOTALL,
+            )
+            dialogue_match = re.search(
+                r'\[DIALOGUE_ATTRIBUTION\]\s*(.*?)\s*$',
+                content,
+                re.DOTALL,
+            )
+
+            if chars_match:
+                new_chars = chars_match.group(1).strip()
+            if aliases_match:
+                new_aliases = aliases_match.group(1).strip()
+            if glossary_match:
+                new_glossary = glossary_match.group(1).strip()
+            if dynamic_match:
+                new_dynamic = dynamic_match.group(1).strip()
+            if dialogue_match:
+                dialogue_raw = dialogue_match.group(1).strip()
+
         source_backstop_gender_updates = infer_source_gender_updates(
             source_analysis_text,
             current_global_lore,
@@ -4707,8 +5305,6 @@ async def update_novel_context_chunk(
                 for part in (new_chars, source_backstop_gender_updates)
                 if part.strip()
             )
-        if aliases_match:
-            new_aliases = aliases_match.group(1).strip()
         source_backstop_aliases = infer_source_identity_links(
             source_analysis_text,
             current_global_lore,
@@ -4720,10 +5316,7 @@ async def update_novel_context_chunk(
                 for part in (new_aliases, source_backstop_aliases)
                 if part.strip()
             )
-        if glossary_match:
-            new_glossary = glossary_match.group(1).strip()
-        if dynamic_match:
-            new_dynamic = dynamic_match.group(1).strip()
+        if new_dynamic.strip():
             if new_dynamic.startswith("```"):
                 lines = new_dynamic.splitlines()
                 if lines[0].startswith("```"):
@@ -4744,6 +5337,8 @@ async def update_novel_context_chunk(
                 cleaned_lines.append(line)
             
             new_dynamic = "\n".join(cleaned_lines).strip()
+        else:
+            new_dynamic = current_dynamic_state
             
         updated_global_lore, change_logs = merge_new_lore(
             current_global_lore,
@@ -4784,14 +5379,14 @@ async def update_novel_context_chunk(
         # (This is secondary logging for the terminal, just printing line updates)
         if new_dynamic != current_dynamic_state:
             # We can log that relationship state changed
-            change_logs.append("[Novel Context] Dynamic relationship state / addressing forms updated.")
-            print("[Novel Context] Dynamic relationship state / addressing forms updated.")
+            change_logs.append("[Novel Context] Dynamic state updated.")
+            print("[Novel Context] Dynamic state updated.")
 
         if dialogue_attribution_sink is not None:
             dialogue_attribution_sink.clear()
             dialogue_attribution_sink.update(
                 parse_dialogue_attribution(
-                    dialogue_match.group(1).strip() if dialogue_match else "",
+                    dialogue_raw,
                     dialogue_turns,
                     _character_alias_map(updated_global_lore),
                     current_dialogue_state,

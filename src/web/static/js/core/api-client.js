@@ -410,6 +410,25 @@ export const ApiClient = {
         });
     },
 
+    async getContextResyncStatus(translationId) {
+        return await apiRequest(`/api/translation/${translationId}/context/resync/status`, {
+            method: 'GET'
+        });
+    },
+
+    async pauseContextResync(translationId) {
+        return await apiRequest(`/api/translation/${translationId}/context/resync/pause`, {
+            method: 'POST'
+        });
+    },
+
+    async resumeContextResync(translationId, overrides = null) {
+        return await apiRequest(`/api/translation/${translationId}/context/resync/resume`, {
+            method: 'POST',
+            body: JSON.stringify(overrides || {})
+        });
+    },
+
 
     // ========================================
     // Settings Management
