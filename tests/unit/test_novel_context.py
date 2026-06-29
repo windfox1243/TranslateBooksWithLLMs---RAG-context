@@ -315,6 +315,140 @@ async def test_resync_context_snapshots_logic():
 
 
 @pytest.mark.asyncio
+async def test_resync_context_snapshots_resets_dialogue_state_on_scene_key_fallback():
+    from unittest.mock import MagicMock, AsyncMock, patch
+    from src.core.adapters.generic_translator import _resync_context_snapshots_async
+    from src.utils.novel_context import compress_dynamic_state
+
+    translation_id = "test_resync_scene_reset"
+    initial_snapshot = compress_dynamic_state("Dynamic state initial")
+
+    mock_state_mgr = MagicMock()
+    mock_checkpoint_mgr = MagicMock()
+    mock_db = MagicMock()
+    mock_checkpoint_mgr.db = mock_db
+    mock_state_mgr.checkpoint_manager = mock_checkpoint_mgr
+
+    # We mock dialogue state to verify reset logic
+    # Chunk 0 has dialogue attribution with scene_key="1" and state_after = {"speaker": "A", "addressee": "B"}
+    # Chunk 1 has no chapter_index at root of chunk_data, but has dialogue_attribution with scene_key="2" (transition!)
+    # Chunk 2 has no chapter_index at root, but has dialogue_attribution with scene_key="2" (no transition!)
+    mock_checkpoint_data = {
+        'job': {
+            'config': {
+                'llm_provider': 'ollama',
+                'model': 'test-model',
+                'prompt_options': {
+                    'novel_context_file': 'resync_novel.txt'
+                },
+                'source_language': 'English',
+                'target_language': 'Vietnamese'
+            }
+        },
+        'chunks': [
+            {
+                'chunk_index': 0,
+                'status': 'completed',
+                'original_text': 'Source 1',
+                'translated_text': 'Translation 1',
+                'chunk_data': {
+                    'context_snapshot': initial_snapshot,
+                    'dialogue_attribution': {
+                        'scene_key': '1',
+                        'state_after': {'speaker': 'A', 'addressee': 'B'}
+                    }
+                }
+            },
+            {
+                'chunk_index': 1,
+                'status': 'completed',
+                'original_text': 'Source 2',
+                'translated_text': 'Translation 2',
+                'chunk_data': {
+                    'dialogue_attribution': {
+                        'scene_key': '2',
+                        'state_after': {'speaker': 'C', 'addressee': 'D'}
+                    }
+                }
+            },
+            {
+                'chunk_index': 2,
+                'status': 'completed',
+                'original_text': 'Source 3',
+                'translated_text': 'Translation 3',
+                'chunk_data': {
+                    'dialogue_attribution': {
+                        'scene_key': '2',
+                        'state_after': {'speaker': 'E', 'addressee': 'F'}
+                    }
+                }
+            }
+        ]
+    }
+    mock_checkpoint_mgr.load_checkpoint.return_value = mock_checkpoint_data
+
+    mock_global_lore = (
+        "## CHARACTERS & GENDERS\n"
+        "- A (Unknown): A\n"
+        "- B (Unknown): B\n"
+        "- C (Unknown): C\n"
+        "- D (Unknown): D\n"
+        "- E (Unknown): E\n"
+        "- F (Unknown): F\n\n"
+        "## CHARACTER ALIASES\n"
+        "- A -> A\n"
+        "- B -> B\n"
+        "- C -> C\n"
+        "- D -> D\n"
+        "- E -> E\n"
+        "- F -> F"
+    )
+    mock_dynamic_state = "Dynamic state updated"
+    mock_change_logs = []
+
+    async def update_side_effect(
+        llm_client, model_name, current_global_lore, current_dynamic_state,
+        source_chunk, translated_chunk, source_language, target_language,
+        chunk_index, total_chunks, source_context, dialogue_turns,
+        current_dialogue_state, dialogue_attribution_sink
+    ):
+        if chunk_index == 2:  # idx is 1, so idx + 1 = 2
+            dialogue_attribution_sink['state_after'] = {'speaker': 'C', 'addressee': 'D'}
+        elif chunk_index == 3:  # idx is 2, so idx + 1 = 3
+            dialogue_attribution_sink['state_after'] = {'speaker': 'E', 'addressee': 'F'}
+        return mock_global_lore, mock_dynamic_state, mock_change_logs
+
+    with patch('src.api.translation_state.get_state_manager', return_value=mock_state_mgr), \
+         patch('src.core.llm_client.LLMClient'), \
+         patch('src.utils.novel_context.update_novel_context_chunk', new_callable=AsyncMock) as mock_update:
+        
+        mock_update.side_effect = update_side_effect
+        
+        # Run resync starting from chunk 0. This will process chunk 1 and chunk 2.
+        await _resync_context_snapshots_async(
+            translation_id=translation_id,
+            start_chunk_index=0,
+            initial_compressed_snapshot=initial_snapshot,
+            socketio=None
+        )
+        
+        # Since we processed chunk 1 (scene_key='2') and chunk 2 (scene_key='2'):
+        # For chunk 1: the initial state of chunk 0 (scene_key='1') was reset because scene_key transitioned ('1' != '2').
+        # So current_dialogue_state passed to update_novel_context_chunk for chunk 1 must be {} (empty).
+        # For chunk 2: scene_key didn't transition ('2' == '2'), so current_dialogue_state is carried from chunk 1's state_after, i.e. {'speaker': 'C', 'addressee': 'D'}.
+        
+        assert mock_update.call_count == 2
+        
+        # Check call arguments for chunk 1 (first call)
+        first_call_kwargs = mock_update.call_args_list[0][1]
+        assert first_call_kwargs['current_dialogue_state'] == {}
+        
+        # Check call arguments for chunk 2 (second call)
+        second_call_kwargs = mock_update.call_args_list[1][1]
+        assert second_call_kwargs['current_dialogue_state'] == {'speaker': 'C', 'addressee': 'D'}
+
+
+@pytest.mark.asyncio
 async def test_resync_last_chunk_writes_edited_full_snapshot_without_nesting(
     monkeypatch,
     tmp_path,

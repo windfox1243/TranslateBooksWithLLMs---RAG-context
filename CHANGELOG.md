@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.24 - 2026-06-29
+
+### Fixed
+
+- **Context resync scene key reset:** Fixed a bug during context resync where chapter boundaries were not detected due to missing `chapter_index` in EPUB database checkpoints. We added a fallback check for `scene_key` inside the `dialogue_attribution` dictionary to correctly reset dialogue speaker tracking at chapter transitions across all formats.
+- **EPUB chapter index persistence:** Updated the EPUB translation pipeline to write `chapter_index` to the root of `chunk_data` in the SQLite checkpoint database, aligning it with other formats.
+
 ## 1.4.23 - 2026-06-29
 
 ### Added

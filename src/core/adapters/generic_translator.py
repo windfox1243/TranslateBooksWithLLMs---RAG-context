@@ -1087,7 +1087,10 @@ async def _resync_context_snapshots_async(
 
             dialogue_sink = {}
             dialogue_turns = detect_dialogue_turns(source_text)
-            scene_key = (chunk.get('chunk_data') or {}).get('chapter_index')
+            chunk_data = chunk.get('chunk_data') or {}
+            scene_key = chunk_data.get('chapter_index')
+            if scene_key is None:
+                scene_key = (chunk_data.get('dialogue_attribution') or {}).get('scene_key')
             normalized_scene_key = (
                 str(scene_key) if scene_key is not None else None
             )
