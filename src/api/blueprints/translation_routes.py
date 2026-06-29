@@ -526,6 +526,10 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         if override_error is not None:
             return override_error
 
+        # Update both the in-memory state and the durable checkpoint database
+        state_manager.checkpoint_manager.update_job_config(translation_id, config)
+        state_manager.set_translation_field(translation_id, 'config', config)
+
         # Mark as running in database
         state_manager.checkpoint_manager.mark_running(translation_id)
 

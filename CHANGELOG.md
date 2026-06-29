@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.22 - 2026-06-29
+
+### Fixed
+
+- **Model/Provider override on resume:** Fixed a bug where switching models or providers when resuming a paused translation did not persist to the checkpoint database and in-memory translation status. This caused the UI to show the original model and reverted the job back to the original model if paused/resumed again.
+
 ## 1.4.21 - 2026-06-29
 
 ### Fixed
