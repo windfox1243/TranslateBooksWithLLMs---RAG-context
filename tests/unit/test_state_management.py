@@ -566,6 +566,32 @@ class TestStateManagerCheckpointIntegration:
 
             checkpoint_mgr.close()
 
+    def test_update_job_config_updates_persistence(self):
+        """Updating job configuration should persist in database."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "test.db")
+            checkpoint_mgr = CheckpointManager(db_path=db_path, server_session_id="session_1")
+
+            config = {"model": "model-A", "llm_provider": "provider-A"}
+            checkpoint_mgr.start_job("trans_001", "txt", config)
+
+            # Check original config in DB
+            job = checkpoint_mgr.get_job("trans_001")
+            assert job['config']['model'] == "model-A"
+
+            # Update configuration
+            new_config = {"model": "model-B", "llm_provider": "provider-B"}
+            success = checkpoint_mgr.update_job_config("trans_001", new_config)
+            assert success is True
+
+            # Verify updated config in DB
+            updated_job = checkpoint_mgr.get_job("trans_001")
+            assert updated_job['config']['model'] == "model-B"
+            assert updated_job['config']['llm_provider'] == "provider-B"
+
+            checkpoint_mgr.close()
+
+
 
 class TestHealthEndpointSessionId:
     """Tests for health endpoint returning session ID."""
