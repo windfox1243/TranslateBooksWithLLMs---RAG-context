@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.25 - 2026-06-29
+
+### Added
+
+- **Durable context resync controls:** Added background API routes and UI buttons to manually trigger and inspect progress of context resynchronization across translation checkpoints.
+- **Structured JSON-based context updates:** Replaced plaintext key-value prompts with structured JSON instructions for `new_characters`, `identity_links`, `new_glossary`, and `dynamic_state`, supporting both camelCase/snake_case and map/list output formats from the LLM.
+- **Safeguard for unproven character merges:** Added checks to reject identity links attempting to merge distinct named characters (e.g., merging Alice and Bob) if both already exist with detailed lore descriptions, protecting against hallucinated aliases.
+- **Durable dynamic state deltas:** Enabled partial update support for relationships and addressing forms, where omitted fields remain stored indefinitely, and explicit `DELETE` operations can prune stale entries.
+
 ## 1.4.24 - 2026-06-29
 
 ### Fixed
