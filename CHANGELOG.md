@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.23 - 2026-06-29
+
+### Added
+
+- **Multi-language explicit identity links:** Explicit `[IDENTITY_LINKS]` and `[CHARACTER ALIASES]` now accept physical aliases like "boy", "girl", "child", "man", "woman" and their equivalents in any language (e.g. "소년", "garçon", "cậu bé"). When a link is explicitly established, it bypasses the unstable-alias safeguard to merge the character cards. The background safeguard still protects against automatic/incidental mapping of these words.
+
 ## 1.4.22 - 2026-06-29
 
 ### Fixed
