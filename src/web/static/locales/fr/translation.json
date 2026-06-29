@@ -261,5 +261,11 @@
   "context_resync_pause_failed": "Échec de la suspension de la resynchronisation du contexte : {{error}}",
   "context_resync_resume_failed": "Échec de la reprise de la resynchronisation du contexte : {{error}}",
   "context_resync_failed_log": "[Erreur] Échec du lancement de la resynchronisation du contexte : {{error}}",
+  "context_resync_status_idle": "Resynchro : inactive",
+  "context_resync_status_running": "Resynchro : en cours",
+  "context_resync_status_pause_requested": "Resynchro : pause demandée",
+  "context_resync_status_paused": "Resynchro : suspendue",
+  "context_resync_status_completed": "Resynchro : terminée",
+  "context_resync_status_failed": "Resynchro : échouée",
   "context_open_folder_failed": "Échec de l'ouverture du dossier des contextes de roman"
 }

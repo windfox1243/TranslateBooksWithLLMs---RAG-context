@@ -261,5 +261,11 @@
   "context_resync_pause_failed": "Kontext-Neusynchronisierung konnte nicht pausiert werden: {{error}}",
   "context_resync_resume_failed": "Kontext-Neusynchronisierung konnte nicht fortgesetzt werden: {{error}}",
   "context_resync_failed_log": "[Fehler] Kontext-Neusynchronisierung konnte nicht gestartet werden: {{error}}",
+  "context_resync_status_idle": "Neusync: inaktiv",
+  "context_resync_status_running": "Neusync: läuft",
+  "context_resync_status_pause_requested": "Neusync: pausiert gleich",
+  "context_resync_status_paused": "Neusync: pausiert",
+  "context_resync_status_completed": "Neusync: abgeschlossen",
+  "context_resync_status_failed": "Neusync: fehlgeschlagen",
   "context_open_folder_failed": "Roman-Kontextordner konnte nicht geöffnet werden"
 }

@@ -261,5 +261,11 @@
   "context_resync_pause_failed": "コンテキスト再同期の一時停止に失敗しました: {{error}}",
   "context_resync_resume_failed": "コンテキスト再同期の再開に失敗しました: {{error}}",
   "context_resync_failed_log": "[エラー] コンテキスト再同期の開始に失敗しました: {{error}}",
+  "context_resync_status_idle": "再同期: 待機中",
+  "context_resync_status_running": "再同期: 実行中",
+  "context_resync_status_pause_requested": "再同期: 一時停止中",
+  "context_resync_status_paused": "再同期: 一時停止済み",
+  "context_resync_status_completed": "再同期: 完了",
+  "context_resync_status_failed": "再同期: 失敗",
   "context_open_folder_failed": "小説コンテキストフォルダーを開けませんでした"
 }

@@ -261,5 +261,11 @@
   "context_resync_pause_failed": "No se pudo pausar la resincronización del contexto: {{error}}",
   "context_resync_resume_failed": "No se pudo reanudar la resincronización del contexto: {{error}}",
   "context_resync_failed_log": "[Error] Error al iniciar la resincronización de contexto: {{error}}",
+  "context_resync_status_idle": "Resinc.: inactiva",
+  "context_resync_status_running": "Resinc.: en curso",
+  "context_resync_status_pause_requested": "Resinc.: pausando",
+  "context_resync_status_paused": "Resinc.: pausada",
+  "context_resync_status_completed": "Resinc.: completada",
+  "context_resync_status_failed": "Resinc.: fallida",
   "context_open_folder_failed": "Error al abrir la carpeta de contextos de la novela"
 }
