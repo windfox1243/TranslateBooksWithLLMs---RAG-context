@@ -1014,6 +1014,10 @@ async def _translate_all_chunks_with_checkpoint(
             chunk_data['context_snapshot'] = ctx_snapshot
         if dialogue_attribution:
             chunk_data['dialogue_attribution'] = dialogue_attribution
+        if local_index < len(chunks):
+            local_chunk = chunks[local_index]
+            if local_chunk and 'chapter_index' in local_chunk:
+                chunk_data['chapter_index'] = local_chunk['chapter_index']
         return ctx_snapshot, dialogue_attribution, chunk_data
 
     async def _translate_one(i, analyze_context=True):
