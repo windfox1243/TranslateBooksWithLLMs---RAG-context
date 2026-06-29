@@ -59,6 +59,34 @@ _BARE_NARRATIVE_ROLE_NAMES = {
     "the player character",
     "the protagonist",
 }
+_TRANSFERABLE_ROLE_ONLY_NAMES = {
+    "administrator",
+    "game administrator",
+    "gacha manager",
+    "gacha room manager",
+    "gacha room npc",
+    "main player",
+    "non player character",
+    "non-player character",
+    "npc",
+    "player",
+    "summon",
+    "summoned character",
+    "summoner",
+    "summoner nim",
+    "the summoner",
+    "user",
+}
+_ADDRESS_TERM_SUFFIXES = {
+    "nim",
+    "sama",
+    "san",
+    "kun",
+    "chan",
+    "sensei",
+    "senpai",
+    "sunbae",
+}
 _GENDER_LABELS = {
     "male",
     "female",
@@ -423,6 +451,29 @@ def _is_descriptive_role_name(name: str) -> bool:
     key = _plain_key(name)
     return key in _BARE_NARRATIVE_ROLE_NAMES or bool(
         _NARRATIVE_ROLE_NAME_PATTERN.match(key)
+    )
+
+
+def _is_transferable_role_only_name(name: str) -> bool:
+    """Detect role/address labels that should not become durable characters."""
+    key = _plain_key(name)
+    if not key:
+        return False
+    if key in _TRANSFERABLE_ROLE_ONLY_NAMES:
+        return True
+    words = key.split()
+    if len(words) >= 2 and words[-1] in _ADDRESS_TERM_SUFFIXES:
+        return True
+    return False
+
+
+def _is_quarantined_character_entry(name: str, value: str = "") -> bool:
+    """Return whether an entry is usable as terminology, not a character."""
+    del value
+    return (
+        _is_descriptive_role_name(name)
+        or _role_title_key_from_name(name) != ""
+        or _is_transferable_role_only_name(name)
     )
 
 
@@ -2538,7 +2589,12 @@ def character_alias_map(global_lore: str) -> Dict[str, str]:
         _parse_bullet_entries(global_lore[body_start:body_end]),
         explicit_aliases,
     )
-    return aliases
+    retained = {}
+    for alias, target in aliases.items():
+        if _is_quarantined_character_entry(target):
+            continue
+        retained[alias] = target
+    return retained
 
 
 _character_alias_map = character_alias_map
@@ -2593,7 +2649,9 @@ def _is_disposable_dynamic_party(value: str, alias_map: Dict[str, str]) -> bool:
     key = _plain_key(clean)
     return bool(_is_numbered_generic_role_name(clean) or any(
         marker in key for marker in _INCIDENTAL_CHARACTER_MARKERS
-    ) or _is_unstable_identity_alias(clean))
+    ) or _is_unstable_identity_alias(clean)
+        or _is_transferable_role_only_name(clean)
+        or _is_descriptive_role_name(clean))
 
 
 _DYNAMIC_RELATION_PATTERN = re.compile(
@@ -2925,6 +2983,8 @@ def _apply_dynamic_reincarnation_gender_links(
     updated = list(characters)
     changed = False
     for source_name, source_value in characters:
+        if _is_quarantined_character_entry(source_name, source_value):
+            continue
         _, source_details = _split_gender_and_details(
             _normalize_character_value_for_name(source_name, source_value)
         )
@@ -2937,6 +2997,8 @@ def _apply_dynamic_reincarnation_gender_links(
 
         for target_index, (target_name, target_value) in enumerate(updated):
             if _character_names_match(source_name, target_name):
+                continue
+            if _is_quarantined_character_entry(target_name, target_value):
                 continue
             if not _dynamic_links_reincarnated_form(
                 dynamic_state,
@@ -3338,9 +3400,19 @@ def render_novel_context_for_prompt(
     character_entries = _parse_bullet_entries(
         _section_body(global_lore, CHARACTERS_SECTION)
     )
+    character_entries = [
+        (name, value)
+        for name, value in character_entries
+        if not _is_quarantined_character_entry(name, value)
+    ]
     alias_entries = _parse_alias_entries(
         _section_body(global_lore, ALIASES_SECTION)
     )
+    alias_entries = [
+        (alias, target)
+        for alias, target in alias_entries
+        if not _is_quarantined_character_entry(target)
+    ]
     glossary_entries = _parse_bullet_entries(
         _section_body(global_lore, GLOSSARY_SECTION)
     )
@@ -4311,32 +4383,33 @@ Input provided:
 4. LATEST SOURCE TEXT
 5. LATEST TRANSLATION
 
-Your output must be one JSON object and nothing else. Use this schema:
-{
-  "new_characters": [
-    {"name": "Canonical Name", "gender": "Male|Female|Non-binary|Unspecified", "description": "role and concise cumulative description", "action": "upsert|correction|delete"}
-  ],
-  "identity_links": [
-    {"alias": "Source title, rank, nickname, or alias", "canonical": "Canonical Name", "action": "upsert|delete"}
-  ],
-  "new_glossary": [
-    {"source": "Source Term", "target": "Target Term", "action": "upsert|delete"}
-  ],
-  "dynamic_state": {
-    "current_addressing_forms": [
-      {"speaker": "Speaker", "addressee": "Addressee", "source_form": "...", "target_form": "...", "register": "register and reason", "action": "upsert|delete"}
-    ],
-    "relationship_evolution": [
-      {"character_a": "Character A", "character_b": "Character B", "relationship": "concise current relationship", "action": "upsert|delete"}
-    ]
-  },
-  "dialogue_attribution": {
-    "turns": [{"id": "exact candidate id", "speaker": "canonical character name or Unknown", "addressee": "canonical character name or Unknown", "confidence": 0.0}],
-    "state_after": {"speaker": "canonical character name or Unknown", "addressee": "canonical character name or Unknown"}
-  }
-}
+Your output must follow this strict format:
 
-Use empty arrays when there are no changes. For character corrections, set action to "correction". For deletions, set action to "delete". Omitted entries remain stored indefinitely. Remove an obsolete dynamic entry only with action "delete" (legacy equivalent: "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE"). Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. Use plain Unicode arrows only if you provide preformatted strings. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Classify only the supplied dialogue candidates. Never invent a speaker. Return {"turns":[],"state_after":{}} when there are no dialogue candidates.
+[NEW_CHARACTERS]
+- Canonical Name: [Gender, role, and concise description]
+(Use "Unspecified" rather than guessing when a recurring character must be tracked before gender is explicit. Use "CORRECTION: [Gender, role, description]" only for a source-proven correction. Use "- Canonical Name: DELETE" to delete an obsolete entry. If there are no changes, output no bullet under this header.)
+
+[IDENTITY_LINKS]
+- Source title, rank, nickname, or alias: Canonical Name
+(Only include identity links directly established by the latest source. The right side must be one exact canonical character name from CURRENT GLOBAL LORE or NEW_CHARACTERS. Use "- Alias: DELETE" to remove a wrong link. If there are no changes, output no bullet under this header.)
+
+[NEW_GLOSSARY]
+- Source Term: [Target Term]
+(Only include actual additions or corrections. Use "- Source Term: DELETE" to delete an obsolete entry. If there are no changes, output no bullet under this header.)
+
+[DYNAMIC_STATE]
+# DYNAMIC RELATIONSHIP STATE
+## CURRENT ADDRESSING FORMS
+- Speaker → Addressee: source form "..." | target-language form "..." | register and reason
+## RELATIONSHIP EVOLUTION
+- Character A ↔ Character B: concise current relationship
+(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Do not duplicate these headings.)
+
+[DIALOGUE_ATTRIBUTION]
+{"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
+(Classify only the supplied dialogue candidates. Infer from narration, turn-taking, current scene state, voice, and addressing forms. Resolve titles and aliases through CURRENT GLOBAL LORE and IDENTITY_LINKS, but output only canonical character names already present in CURRENT GLOBAL LORE or NEW_CHARACTERS. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates.)
+
+Do not include any other explanations, markdown fences, or extra text outside these blocks.
 """
 
 SOURCE_ANALYSIS_SYSTEM_PROMPT = """You are an expert novel translation context assistant.
@@ -4372,34 +4445,33 @@ Input provided:
 3. RECENT SOURCE MEMORY (bounded previous chunks)
 4. LATEST SOURCE TEXT
 
-Your output must be one JSON object and nothing else. Use this schema:
-{
-  "new_characters": [
-    {"name": "Canonical Name", "gender": "Male|Female|Non-binary|Unspecified", "description": "role and concise cumulative description", "action": "upsert|correction|delete"}
-  ],
-  "identity_links": [
-    {"alias": "Source title, rank, nickname, or alias", "canonical": "Canonical Name", "action": "upsert|delete"}
-  ],
-  "new_glossary": [
-    {"source": "Source Term", "target": "Recommended Target Term", "action": "upsert|delete"}
-  ],
-  "dynamic_state": {
-    "current_addressing_forms": [
-      {"speaker": "Speaker", "addressee": "Addressee", "source_form": "...", "target_form": "...", "register": "register and reason", "action": "upsert|delete"}
-    ],
-    "relationship_evolution": [
-      {"character_a": "Character A", "character_b": "Character B", "relationship": "concise current relationship", "action": "upsert|delete"}
-    ]
-  },
-  "dialogue_attribution": {
-    "turns": [{"id": "exact candidate id", "speaker": "canonical character name or Unknown", "addressee": "canonical character name or Unknown", "confidence": 0.0}],
-    "state_after": {"speaker": "canonical character name or Unknown", "addressee": "canonical character name or Unknown"}
-  }
-}
+Your output must follow this strict format:
 
-Use empty arrays when there are no changes. For character corrections, set action to "correction". For deletions, set action to "delete". Omitted entries remain stored indefinitely. Remove an obsolete dynamic entry only with action "delete" (legacy equivalent: "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE"). Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. Use plain Unicode arrows only if you provide preformatted strings. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Classify only the supplied dialogue candidates. Never invent a speaker. Return {"turns":[],"state_after":{}} when there are no dialogue candidates.
+[NEW_CHARACTERS]
+- Canonical Name: [Gender, role, and concise description]
+(Use "Unspecified" rather than guessing when a recurring character must be tracked before gender is explicit. Use "CORRECTION: [Gender, role, description]" only for a source-proven correction. Use "- Canonical Name: DELETE" to delete an obsolete entry. If there are no changes, output no bullet under this header.)
 
-Do not translate the whole passage. Do not include explanations, markdown fences, or text outside the JSON object.
+[IDENTITY_LINKS]
+- Source title, rank, nickname, or alias: Canonical Name
+(Only include identity links directly established by this source. The right side must be one exact canonical character name from CURRENT GLOBAL LORE or NEW_CHARACTERS. Use "- Alias: DELETE" to remove a wrong link. If there are no changes, output no bullet under this header.)
+
+[NEW_GLOSSARY]
+- Source Term: [Recommended Target Term]
+(Only include important recurring terms. Use "- Source Term: DELETE" to delete an obsolete entry. If there are no changes, output no bullet under this header.)
+
+[DYNAMIC_STATE]
+# DYNAMIC RELATIONSHIP STATE
+## CURRENT ADDRESSING FORMS
+- Speaker → Addressee: source form "..." | recommended target-language form "..." | register and reason
+## RELATIONSHIP EVOLUTION
+- Character A ↔ Character B: concise current relationship
+(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Keep it concise and do not duplicate headings.)
+
+[DIALOGUE_ATTRIBUTION]
+{"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
+(Classify only the supplied dialogue candidates. Infer from narration, turn-taking, current scene state, voice, and addressing forms. Resolve titles and aliases through CURRENT GLOBAL LORE and IDENTITY_LINKS, but output only canonical character names already present in CURRENT GLOBAL LORE or NEW_CHARACTERS. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates.)
+
+Do not translate the whole passage. Do not include explanations, markdown fences, or text outside these blocks.
 """
 
 UPDATE_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
@@ -4425,7 +4497,7 @@ UPDATE_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
 ### DIALOGUE CANDIDATES:
 {dialogue_candidates}
 
-Output the updates now. Output ONLY the JSON object."""
+Output the updates now. Output ONLY the strictly formatted blocks."""
 
 SOURCE_ANALYSIS_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
 {current_global_lore}
@@ -4450,7 +4522,7 @@ SOURCE_ANALYSIS_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
 ### DIALOGUE CANDIDATES:
 {dialogue_candidates}
 
-Analyze the source for context needed by its translation. Output ONLY the JSON object."""
+Analyze the source for context needed by its translation. Output ONLY the strictly formatted blocks."""
 
 
 def merge_new_lore(
@@ -4587,6 +4659,15 @@ def merge_new_lore(
             _is_descriptive_role_name(raw_name)
             and not forced_name
         )
+        if (
+            not forced_name
+            and _is_quarantined_character_entry(raw_name, raw_value)
+        ):
+            record(
+                "[Novel Context] Quarantined role-like character "
+                f"'{_plain_key(raw_name)}'."
+            )
+            continue
         incoming_aliases |= _character_alias_keys(effective_name)
         match_index = None
         for index, (existing_name, existing_value) in enumerate(characters):
@@ -5244,55 +5325,45 @@ async def update_novel_context_chunk(
         dialogue_raw = ""
         
         import re
-        parsed_json = _parse_context_update_json(content)
-        if parsed_json is not None:
-            (
-                new_chars,
-                new_aliases,
-                new_glossary,
-                new_dynamic,
-                dialogue_raw,
-            ) = _context_update_sections_from_json(parsed_json)
-        else:
-            chars_match = re.search(
-                r'\[NEW_CHARACTERS\]\s*(.*?)\s*'
-                r'(?=\[IDENTITY_LINKS\]|\[NEW_GLOSSARY\]|\[DYNAMIC_STATE\]|$)',
-                content,
-                re.DOTALL,
-            )
-            aliases_match = re.search(
-                r'\[IDENTITY_LINKS\]\s*(.*?)\s*'
-                r'(?=\[NEW_GLOSSARY\]|\[DYNAMIC_STATE\]|\[NEW_CHARACTERS\]|$)',
-                content,
-                re.DOTALL,
-            )
-            glossary_match = re.search(
-                r'\[NEW_GLOSSARY\]\s*(.*?)\s*'
-                r'(?=\[DYNAMIC_STATE\]|\[IDENTITY_LINKS\]|\[NEW_CHARACTERS\]|$)',
-                content,
-                re.DOTALL,
-            )
-            dynamic_match = re.search(
-                r'\[DYNAMIC_STATE\]\s*(.*?)\s*(?=\[DIALOGUE_ATTRIBUTION\]|$)',
-                content,
-                re.DOTALL,
-            )
-            dialogue_match = re.search(
-                r'\[DIALOGUE_ATTRIBUTION\]\s*(.*?)\s*$',
-                content,
-                re.DOTALL,
-            )
+        chars_match = re.search(
+            r'\[NEW_CHARACTERS\]\s*(.*?)\s*'
+            r'(?=\[IDENTITY_LINKS\]|\[NEW_GLOSSARY\]|\[DYNAMIC_STATE\]|$)',
+            content,
+            re.DOTALL,
+        )
+        aliases_match = re.search(
+            r'\[IDENTITY_LINKS\]\s*(.*?)\s*'
+            r'(?=\[NEW_GLOSSARY\]|\[DYNAMIC_STATE\]|\[NEW_CHARACTERS\]|$)',
+            content,
+            re.DOTALL,
+        )
+        glossary_match = re.search(
+            r'\[NEW_GLOSSARY\]\s*(.*?)\s*'
+            r'(?=\[DYNAMIC_STATE\]|\[IDENTITY_LINKS\]|\[NEW_CHARACTERS\]|$)',
+            content,
+            re.DOTALL,
+        )
+        dynamic_match = re.search(
+            r'\[DYNAMIC_STATE\]\s*(.*?)\s*(?=\[DIALOGUE_ATTRIBUTION\]|$)',
+            content,
+            re.DOTALL,
+        )
+        dialogue_match = re.search(
+            r'\[DIALOGUE_ATTRIBUTION\]\s*(.*?)\s*$',
+            content,
+            re.DOTALL,
+        )
 
-            if chars_match:
-                new_chars = chars_match.group(1).strip()
-            if aliases_match:
-                new_aliases = aliases_match.group(1).strip()
-            if glossary_match:
-                new_glossary = glossary_match.group(1).strip()
-            if dynamic_match:
-                new_dynamic = dynamic_match.group(1).strip()
-            if dialogue_match:
-                dialogue_raw = dialogue_match.group(1).strip()
+        if chars_match:
+            new_chars = chars_match.group(1).strip()
+        if aliases_match:
+            new_aliases = aliases_match.group(1).strip()
+        if glossary_match:
+            new_glossary = glossary_match.group(1).strip()
+        if dynamic_match:
+            new_dynamic = dynamic_match.group(1).strip()
+        if dialogue_match:
+            dialogue_raw = dialogue_match.group(1).strip()
 
         source_backstop_gender_updates = infer_source_gender_updates(
             source_analysis_text,

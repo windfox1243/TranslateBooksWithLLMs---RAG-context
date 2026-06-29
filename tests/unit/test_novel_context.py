@@ -12,6 +12,7 @@ from src.utils.novel_context import (
     list_novel_contexts,
     load_novel_context,
     make_novel_context_filename,
+    merge_new_lore,
     merge_dynamic_state,
     normalize_novel_context_content,
     render_novel_context_update_view,
@@ -2261,7 +2262,7 @@ async def test_update_novel_context_chunk_parsing():
 
 
 @pytest.mark.asyncio
-async def test_update_novel_context_chunk_parses_structured_json_response():
+async def test_update_novel_context_chunk_parses_legacy_blocks_with_dialogue_json():
     from src.utils.dialogue_attribution import detect_dialogue_turns
     from src.utils.novel_context import update_novel_context_chunk
 
@@ -2269,64 +2270,36 @@ async def test_update_novel_context_chunk_parses_structured_json_response():
     candidates = detect_dialogue_turns(source_text)
     response = MagicMock()
     response.content = (
-        "```json\n"
+        "[NEW_CHARACTERS]\n"
+        "- Li Fan: Male, possessed cultivator.\n\n"
+        "[IDENTITY_LINKS]\n"
+        "- Sect Master: Master Chen\n\n"
+        "[NEW_GLOSSARY]\n"
+        "- Apple: Trái Táo\n\n"
+        "[DYNAMIC_STATE]\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        "- Li Fan → Sect Master: source form \"Sect Master\" | "
+        "target-language form \"Sư phụ\" | formal respect\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Li Fan ↔ Sect Master: student showing formal respect\n\n"
+        "[DIALOGUE_ATTRIBUTION]\n"
         + json.dumps(
             {
-                "new_characters": [
+                "turns": [
                     {
-                        "name": "Li Fan",
-                        "gender": "Male",
-                        "description": "possessed cultivator",
-                    }
-                ],
-                "identity_links": [
-                    {
-                        "alias": "Sect Master",
-                        "canonical": "Master Chen",
-                    }
-                ],
-                "new_glossary": [
-                    {
-                        "source": "Apple",
-                        "target": "Trái Táo",
-                    }
-                ],
-                "dynamic_state": {
-                    "current_addressing_forms": [
-                        {
-                            "speaker": "Li Fan",
-                            "addressee": "Sect Master",
-                            "source_form": "Sect Master",
-                            "target_form": "Sư phụ",
-                            "register": "formal respect",
-                        }
-                    ],
-                    "relationship_evolution": [
-                        {
-                            "character_a": "Li Fan",
-                            "character_b": "Sect Master",
-                            "relationship": "student showing formal respect",
-                        }
-                    ],
-                },
-                "dialogue_attribution": {
-                    "turns": [
-                        {
-                            "id": candidates[0]["id"],
-                            "speaker": "Li Fan",
-                            "addressee": "Sect Master",
-                            "confidence": 0.92,
-                        }
-                    ],
-                    "state_after": {
+                        "id": candidates[0]["id"],
                         "speaker": "Li Fan",
                         "addressee": "Sect Master",
-                    },
+                        "confidence": 0.92,
+                    }
+                ],
+                "state_after": {
+                    "speaker": "Li Fan",
+                    "addressee": "Sect Master",
                 },
             },
             ensure_ascii=False,
         )
-        + "\n```"
     )
     client = MagicMock()
     client.generate = AsyncMock(return_value=response)
@@ -2365,7 +2338,7 @@ async def test_update_novel_context_chunk_parses_structured_json_response():
 
 
 @pytest.mark.asyncio
-async def test_structured_json_parser_accepts_camel_case_and_map_objects():
+async def test_json_only_context_update_does_not_modify_lore():
     from src.utils.novel_context import update_novel_context_chunk
 
     response = MagicMock()
@@ -2428,12 +2401,12 @@ async def test_structured_json_parser_accepts_camel_case_and_map_objects():
         target_language="Vietnamese",
     )
 
-    assert "Li Fan: Male, possessed cultivator." in updated_lore
+    assert "Li Fan: Male, possessed cultivator." not in updated_lore
+    assert "- Sect Master: Master Chen" not in updated_lore
+    assert "Apple: Trái Táo" not in updated_lore
+    assert "Li Fan → Master Chen" not in updated_dynamic
+    assert "Li Fan ↔ Master Chen" not in updated_dynamic
     assert "{'gender'" not in updated_lore
-    assert "- Sect Master: Master Chen" in updated_lore
-    assert "Apple: Trái Táo" in updated_lore
-    assert "- Li Fan → Master Chen:" in updated_dynamic
-    assert "- Li Fan ↔ Master Chen: student showing formal respect" in updated_dynamic
 
 
 @pytest.mark.asyncio
@@ -2441,24 +2414,15 @@ async def test_unproven_model_identity_link_does_not_merge_named_characters():
     from src.utils.novel_context import update_novel_context_chunk
 
     response = MagicMock()
-    response.content = json.dumps(
-        {
-            "identity_links": [
-                {
-                    "alias": "Alice",
-                    "canonical": "Bob",
-                }
-            ],
-            "dynamic_state": {
-                "relationship_evolution": [
-                    {
-                        "character_a": "Alice",
-                        "character_b": "Clara",
-                        "relationship": "Alice protects Clara",
-                    }
-                ],
-            },
-        }
+    response.content = (
+        "[NEW_CHARACTERS]\n\n"
+        "[IDENTITY_LINKS]\n"
+        "- Alice: Bob\n\n"
+        "[NEW_GLOSSARY]\n\n"
+        "[DYNAMIC_STATE]\n"
+        "## CURRENT ADDRESSING FORMS\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Alice ↔ Clara: Alice protects Clara\n"
     )
     client = MagicMock()
     client.generate = AsyncMock(return_value=response)
@@ -2488,6 +2452,75 @@ async def test_unproven_model_identity_link_does_not_merge_named_characters():
     assert "healer from the east; blacksmith from the west" not in updated_lore
     assert "- Alice ↔ Clara: Alice protects Clara" in updated_dynamic
     assert "- Bob ↔ Clara" not in updated_dynamic
+
+
+def test_role_only_summoner_update_is_quarantined_not_character():
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kim Hyun-woo: Male, 24-year-old player of Summoner Fantasism.\n"
+        "- Seria Bladi Demonkill: Female, S-rank vampire summon.\n"
+        "- Valentine: Female, gacha-room NPC.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- Summoner Fantasism: Summoner Fantasism\n"
+    )
+    new_characters = (
+        "- Summoner: Female, 24-year-old unemployed high school graduate "
+        "who transmigrated into Seria Bladi Demonkill.\n"
+        "- Kim Hyun-woo: Male, soul placed into Seria Bladi Demonkill's body."
+    )
+    new_glossary = "- Summoner: Triệu hồi sư"
+
+    updated, logs = merge_new_lore(
+        initial_lore,
+        new_characters,
+        new_glossary,
+        source_text=(
+            "Kim Hyun-woo was placed into Seria Bladi Demonkill's body. "
+            "The Summoner is the protagonist of the original game."
+        ),
+    )
+
+    assert "- Summoner: Female" not in updated
+    assert "who transmigrated into Seria Bladi Demonkill" not in updated
+    assert "- Kim Hyun-woo: Male," in updated
+    assert "soul placed into Seria Bladi Demonkill's body" in updated
+    assert "- Seria Bladi Demonkill: Female" in updated
+    assert "- Valentine: Female" in updated
+    assert "- Summoner: Triệu hồi sư" in updated
+    assert any("Quarantined role-like character 'summoner'" in log for log in logs)
+
+
+def test_role_only_existing_character_is_excluded_from_prompt_and_dynamic():
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Summoner: Female, wrongly stored transmigrated protagonist.\n"
+            "- Kim Hyun-woo: Male, soul placed into Seria's body.\n"
+            "- Seria Bladi Demonkill: Female, S-rank vampire summon.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+            "- Summoner: Triệu hồi sư\n"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            "- Seria Bladi Demonkill → Summoner: source form \"Summoner-nim\" "
+            "| target-language form \"Triệu hồi sư-nim\" | formal\n\n"
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Seria Bladi Demonkill ↔ Summoner: Summon and Summoner"
+        ),
+    )
+
+    selected = render_novel_context_for_prompt(
+        context,
+        reference_text="The Summoner opened the gacha room.",
+    )
+
+    assert "wrongly stored transmigrated protagonist" not in selected
+    assert "- Summoner: Triệu hồi sư" in selected
+    assert "Seria Bladi Demonkill → Summoner" not in selected
+    assert "Seria Bladi Demonkill ↔ Summoner" not in selected
 
 
 @pytest.mark.asyncio
@@ -2660,9 +2693,9 @@ def test_context_prompts_define_durable_dynamic_state_deltas():
     )
 
     for prompt in (SOURCE_ANALYSIS_SYSTEM_PROMPT, UPDATE_SYSTEM_PROMPT):
-        assert "Your output must be one JSON object" in prompt
-        assert '"new_characters"' in prompt
-        assert '"dynamic_state"' in prompt
+        assert "Your output must follow this strict format" in prompt
+        assert "[NEW_CHARACTERS]" in prompt
+        assert "[DIALOGUE_ATTRIBUTION]" in prompt
         assert "Omitted entries remain stored indefinitely." in prompt
         assert "Addressee: DELETE" in prompt
         assert "Character A ↔ Character B: DELETE" in prompt
