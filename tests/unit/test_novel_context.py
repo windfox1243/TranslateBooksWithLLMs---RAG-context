@@ -2492,6 +2492,95 @@ def test_role_only_summoner_update_is_quarantined_not_character():
     assert any("Quarantined role-like character 'summoner'" in log for log in logs)
 
 
+def test_unique_short_name_full_name_entries_merge_with_durable_alias():
+    from src.utils.novel_context import character_alias_map, normalize_global_lore
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Vera: Female, summon, sly knight in gray armor who holds a grudge "
+        "against Seria Bladi Demon Kill.\n"
+        "- Vera Rasvin: Female, knight, former commander of the Holy Knights "
+        "who is currently hostile toward the protagonist.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(lore)
+
+    assert "- Vera: Female" not in normalized
+    assert normalized.count("- Vera Rasvin:") == 1
+    assert "sly knight in gray armor" in normalized
+    assert "former commander of the Holy Knights" in normalized
+    assert "- Vera: Vera Rasvin" in normalized
+    assert character_alias_map(normalized)["vera"] == "Vera Rasvin"
+
+
+def test_unique_short_name_full_name_merge_rejects_ambiguous_family_name():
+    from src.utils.novel_context import normalize_global_lore
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kim: Male, academy student and summoner.\n"
+        "- Kim Si-hu: Male, academy student and protagonist.\n"
+        "- Kim Hyun-woo: Male, player and narrator.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(lore)
+
+    assert "- Kim: Male, academy student and summoner." in normalized
+    assert "- Kim Si-hu: Male, academy student and protagonist." in normalized
+    assert "- Kim Hyun-woo: Male, player and narrator." in normalized
+    assert "- Kim: Kim Si-hu" not in normalized
+    assert "- Kim: Kim Hyun-woo" not in normalized
+
+
+def test_short_name_full_name_merge_requires_shared_identity_evidence():
+    from src.utils.novel_context import normalize_global_lore
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Alice: Female, apothecary traveling through the capital.\n"
+        "- Alice Hart: Female, swordswoman guarding the northern gate.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(lore)
+
+    assert "- Alice: Female, apothecary traveling through the capital." in normalized
+    assert "- Alice Hart: Female, swordswoman guarding the northern gate." in normalized
+    assert "- Alice: Alice Hart" not in normalized
+
+
+def test_incoming_full_name_merges_existing_short_name_and_persists_alias():
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Vera: Female, summon, sly knight in gray armor who holds a grudge "
+        "against Seria Bladi Demon Kill.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    new_characters = (
+        "- Vera Rasvin: Female, knight, former commander of the Holy Knights "
+        "who is currently hostile toward the protagonist."
+    )
+
+    updated, logs = merge_new_lore(initial_lore, new_characters, "")
+
+    assert "- Vera: Female" not in updated
+    assert updated.count("- Vera Rasvin:") == 1
+    assert "- Vera: Vera Rasvin" in updated
+    assert "sly knight in gray armor" in updated
+    assert "former commander of the Holy Knights" in updated
+    assert any("Linked identity 'Vera' -> 'Vera Rasvin'" in log for log in logs)
+
+
 def test_role_only_existing_character_is_excluded_from_prompt_and_dynamic():
     context = build_novel_context(
         (
