@@ -1167,6 +1167,7 @@ window.NovelContextUI = {
     globalAnchorFullContent: '',
     activeTabIndex: 0,
     localizedView: null,
+    lastResyncState: null,
     _localeListenerBound: false,
 
     initializeLocaleListener: function() {
@@ -1180,6 +1181,7 @@ window.NovelContextUI = {
             if (this.localizedView && !this.isEditing) {
                 this._renderLocalizedView();
             }
+            updateContextResyncControls(this.lastResyncState);
         });
     },
 
@@ -1434,6 +1436,10 @@ function currentTranslationIdForContext() {
 function updateContextResyncControls(resyncState = null) {
     const btnPause = document.getElementById('btnPauseResync');
     const btnResume = document.getElementById('btnResumeResync');
+    const badge = document.getElementById('contextResyncStatusBadge');
+    if (window.NovelContextUI) {
+        window.NovelContextUI.lastResyncState = resyncState;
+    }
     if (!btnPause || !btnResume) return;
 
     const status = resyncState?.status || '';
@@ -1444,6 +1450,34 @@ function updateContextResyncControls(resyncState = null) {
     btnPause.disabled = status === 'pause_requested';
     btnResume.style.display = isPaused ? 'inline-flex' : 'none';
     btnResume.disabled = false;
+
+    if (badge) {
+        const statusKey = {
+            running: 'translation:context_resync_status_running',
+            pause_requested: 'translation:context_resync_status_pause_requested',
+            paused: 'translation:context_resync_status_paused',
+            completed: 'translation:context_resync_status_completed',
+            failed: 'translation:context_resync_status_failed'
+        }[status] || 'translation:context_resync_status_idle';
+        badge.setAttribute('data-i18n', statusKey);
+        badge.textContent = t(statusKey);
+        badge.style.display = 'inline-flex';
+        badge.style.alignItems = 'center';
+        badge.style.background = isRunning
+            ? 'rgba(59, 130, 246, 0.12)'
+            : isPaused
+                ? 'rgba(245, 158, 11, 0.12)'
+                : status === 'failed'
+                    ? 'rgba(239, 68, 68, 0.12)'
+                    : 'var(--bg-light)';
+        badge.style.color = isRunning
+            ? '#1d4ed8'
+            : isPaused
+                ? '#92400e'
+                : status === 'failed'
+                    ? '#b91c1c'
+                    : 'var(--text-muted-light)';
+    }
 }
 
 function collectContextResyncOverrides() {

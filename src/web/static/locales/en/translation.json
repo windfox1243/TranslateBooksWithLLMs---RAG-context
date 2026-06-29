@@ -261,5 +261,11 @@
   "context_resync_pause_failed": "Failed to pause context re-sync: {{error}}",
   "context_resync_resume_failed": "Failed to resume context re-sync: {{error}}",
   "context_resync_failed_log": "[Error] Failed to start context resync: {{error}}",
+  "context_resync_status_idle": "Re-sync: idle",
+  "context_resync_status_running": "Re-sync: running",
+  "context_resync_status_pause_requested": "Re-sync: pausing",
+  "context_resync_status_paused": "Re-sync: paused",
+  "context_resync_status_completed": "Re-sync: completed",
+  "context_resync_status_failed": "Re-sync: failed",
   "context_open_folder_failed": "Failed to open novel contexts folder"
 }

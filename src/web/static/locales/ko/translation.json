@@ -261,5 +261,11 @@
   "context_resync_pause_failed": "컨텍스트 다시 동기화를 일시 중지하지 못했습니다: {{error}}",
   "context_resync_resume_failed": "컨텍스트 다시 동기화를 재개하지 못했습니다: {{error}}",
   "context_resync_failed_log": "[오류] 컨텍스트 다시 동기화를 시작하지 못했습니다: {{error}}",
+  "context_resync_status_idle": "재동기화: 대기",
+  "context_resync_status_running": "재동기화: 실행 중",
+  "context_resync_status_pause_requested": "재동기화: 일시정지 중",
+  "context_resync_status_paused": "재동기화: 일시정지됨",
+  "context_resync_status_completed": "재동기화: 완료",
+  "context_resync_status_failed": "재동기화: 실패",
   "context_open_folder_failed": "소설 컨텍스트 폴더를 열지 못했습니다"
 }

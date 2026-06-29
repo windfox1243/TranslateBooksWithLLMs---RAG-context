@@ -261,5 +261,11 @@
   "context_resync_pause_failed": "暂停上下文重新同步失败：{{error}}",
   "context_resync_resume_failed": "继续上下文重新同步失败：{{error}}",
   "context_resync_failed_log": "[错误] 启动上下文重新同步失败：{{error}}",
+  "context_resync_status_idle": "重同步：空闲",
+  "context_resync_status_running": "重同步：运行中",
+  "context_resync_status_pause_requested": "重同步：正在暂停",
+  "context_resync_status_paused": "重同步：已暂停",
+  "context_resync_status_completed": "重同步：已完成",
+  "context_resync_status_failed": "重同步：失败",
   "context_open_folder_failed": "打开小说上下文文件夹失败"
 }
