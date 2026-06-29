@@ -163,6 +163,47 @@ _GENERIC_ROLE_WORDS = {
     "soldiers",
     "victim",
 }
+_AMBIGUOUS_SHORT_NAME_KEYS = {
+    "baek",
+    "choi",
+    "dokgo",
+    "han",
+    "jang",
+    "jeong",
+    "jung",
+    "kang",
+    "kim",
+    "kurosaki",
+    "lee",
+    "lim",
+    "namgoong",
+    "park",
+    "seo",
+    "shin",
+    "yoon",
+}
+_SHORT_NAME_EVIDENCE_STOPWORDS = {
+    "about",
+    "against",
+    "along",
+    "another",
+    "around",
+    "character",
+    "current",
+    "currently",
+    "figure",
+    "former",
+    "hostile",
+    "other",
+    "person",
+    "protagonist",
+    "student",
+    "teacher",
+    "toward",
+    "towards",
+    "whose",
+    "with",
+}
 _INCIDENTAL_CHARACTER_MARKERS = {
     "abdominal wound",
     "advertisement",
@@ -728,6 +769,110 @@ def _character_identities_match(
         shared_roles
         and (_is_role_only_name(first_name) or _is_role_only_name(second_name))
     )
+
+
+def _short_name_alias_key(name: str) -> str:
+    """Return a safe single-token name that may alias a longer full name."""
+    key = _plain_key(_canonical_display_name(name))
+    words = key.split()
+    if (
+        len(words) != 1
+        or len(key) < 3
+        or key in _AMBIGUOUS_SHORT_NAME_KEYS
+        or key in _GENERIC_ROLE_WORDS
+        or key in _ROLE_ONLY_TITLES
+        or _is_quarantined_character_entry(key)
+        or _is_unstable_identity_alias(key, allow_physical=True)
+    ):
+        return ""
+    return key
+
+
+def _full_name_contains_short_alias(full_name: str, short_key: str) -> bool:
+    parts = _plain_key(_canonical_display_name(full_name)).split()
+    return bool(short_key and len(parts) >= 2 and short_key in parts)
+
+
+def _short_name_evidence_terms(value: str) -> set[str]:
+    _, details = _split_gender_and_details(_normalize_character_value(value))
+    terms: set[str] = set()
+    for raw_token in re.findall(r"[a-z][a-z'-]{3,}", _plain_key(details)):
+        evidence_term = raw_token.strip("'-")
+        if (
+            len(evidence_term) < 5
+            or evidence_term in _SHORT_NAME_EVIDENCE_STOPWORDS
+        ):
+            continue
+        if evidence_term.endswith("s") and len(evidence_term) > 5:
+            evidence_term = evidence_term[:-1]
+        if evidence_term and evidence_term not in _SHORT_NAME_EVIDENCE_STOPWORDS:
+            terms.add(evidence_term)
+    return terms
+
+
+def _short_full_name_alias_supported(
+    short_value: str,
+    full_value: str,
+) -> bool:
+    short_gender, _ = _split_gender_and_details(
+        _normalize_character_value(short_value)
+    )
+    full_gender, _ = _split_gender_and_details(
+        _normalize_character_value(full_value)
+    )
+    if (
+        short_gender.casefold() in _SPECIFIC_GENDER_LABELS
+        and full_gender.casefold() in _SPECIFIC_GENDER_LABELS
+        and short_gender.casefold() != full_gender.casefold()
+    ):
+        return False
+    return bool(
+        _short_name_evidence_terms(short_value)
+        & _short_name_evidence_terms(full_value)
+    )
+
+
+def _infer_unique_short_name_alias_entries(
+    entries: List[Tuple[str, str]],
+    explicit_aliases: Optional[Dict[str, str]] = None,
+) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Infer safe first-name aliases when a unique full-name entry proves it."""
+    explicit_aliases = explicit_aliases or {}
+    candidates: List[Tuple[str, str, str]] = []
+    for raw_name, raw_value in entries:
+        name = _canonical_display_name(raw_name)
+        if (
+            _is_invalid_context_key(name)
+            or _is_non_character_work_entry(name, raw_value)
+            or _is_non_character_group_entry(name, raw_value)
+            or _is_disposable_unnamed_character(name, raw_value)
+            or _is_quarantined_character_entry(name, raw_value)
+        ):
+            continue
+        candidates.append((name, raw_value, raw_name))
+
+    inferred: Dict[str, str] = {}
+    displays: Dict[str, str] = {}
+    for short_name, short_value, raw_short_name in candidates:
+        short_key = _short_name_alias_key(short_name)
+        if not short_key or short_key in explicit_aliases:
+            continue
+        full_matches = [
+            (full_name, full_value)
+            for full_name, full_value, _ in candidates
+            if (
+                _plain_key(full_name) != short_key
+                and _full_name_contains_short_alias(full_name, short_key)
+            )
+        ]
+        if len(full_matches) != 1:
+            continue
+        full_name, full_value = full_matches[0]
+        if not _short_full_name_alias_supported(short_value, full_value):
+            continue
+        inferred[short_key] = _canonical_display_name(full_name)
+        displays[short_key] = _canonical_display_name(raw_short_name)
+    return inferred, displays
 
 
 def _name_specificity(name: str) -> Tuple[int, int, int]:
@@ -2535,8 +2680,17 @@ def normalize_global_lore(global_lore: str) -> str:
     characters: List[Tuple[str, str]] = []
     if character_bounds:
         _, body_start, body_end = character_bounds
+        raw_character_entries = _parse_bullet_entries(lore[body_start:body_end])
+        inferred_aliases, inferred_displays = _infer_unique_short_name_alias_entries(
+            raw_character_entries,
+            explicit_aliases,
+        )
+        for alias_key, target in inferred_aliases.items():
+            explicit_aliases.setdefault(alias_key, target)
+        for alias_key, display in inferred_displays.items():
+            alias_displays.setdefault(alias_key, display)
         characters, _ = _deduplicate_character_entries(
-            _parse_bullet_entries(lore[body_start:body_end]),
+            raw_character_entries,
             explicit_aliases,
         )
         lore = _replace_lore_section(
@@ -4629,6 +4783,29 @@ def merge_new_lore(
         characters = []
 
     incoming_character_entries = _parse_bullet_entries(new_characters)
+    inferred_aliases, inferred_displays = _infer_unique_short_name_alias_entries(
+        characters + incoming_character_entries,
+        explicit_aliases,
+    )
+    if inferred_aliases:
+        changed_aliases = []
+        for alias_key, target in inferred_aliases.items():
+            if explicit_aliases.get(alias_key) == target:
+                continue
+            explicit_aliases[alias_key] = target
+            if alias_key in inferred_displays:
+                alias_displays[alias_key] = inferred_displays[alias_key]
+            changed_aliases.append((alias_key, target))
+        if changed_aliases:
+            characters, _ = _deduplicate_character_entries(
+                characters,
+                explicit_aliases,
+            )
+            for alias_key, target in changed_aliases:
+                record(
+                    "[Novel Context] Linked identity "
+                    f"'{alias_displays.get(alias_key, alias_key)}' -> '{target}'."
+                )
     regular_incoming = [
         entry for entry in incoming_character_entries
         if not _is_descriptive_role_name(entry[0])
