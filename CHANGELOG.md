@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.14.25 - 2026-06-29
+
+### Fixed
+
+- **Restored legacy novel-context update prompts:** Reverted lore updates from full JSON objects back to the stricter legacy `[NEW_CHARACTERS]`, `[IDENTITY_LINKS]`, `[NEW_GLOSSARY]`, and `[DYNAMIC_STATE]` blocks because JSON-shaped character objects made bad semantic facts easier to merge.
+- **Role-only character quarantine:** Prevented transferable roles and address terms such as `Summoner`, `Summoner-nim`, `NPC`, and `Player Character` from being admitted or updated as durable characters unless a source-proven identity link maps them to a canonical person.
+- **Safer prompt and dynamic context views:** Existing role-like character pollution is no longer injected into selective context prompts or used as a dynamic-state relationship party, without silently deleting user context files.
+- **Preserved durable resync controls:** Kept the v1.4.25 pause/resume/status UI and checkpoint persistence for context resync.
+
 ## 1.4.25 - 2026-06-29
 
 ### Added
