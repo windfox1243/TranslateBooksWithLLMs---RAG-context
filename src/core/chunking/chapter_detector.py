@@ -52,15 +52,23 @@ _KOREAN_CHAPTER_RE = re.compile(
     r"서장|서막|종장|최종장|프롤로그|에필로그)"
     r"(?:\s*[:：.\-–—]?\s*.*)?$"
 )
-_GENERIC_NUMBER = r"(?:\d+|[ivxlcdm]+|[一二三四五六七八九十百千万零〇两兩]+)"
+_GENERIC_DIGIT_NUMBER = r"(?:\d+|[一二三四五六七八九十百千万零〇两兩]+)"
+_GENERIC_ROMAN_NUMBER = r"(?:[ivxlcdm]+)"
 _GENERIC_LABEL_NUMBER_RE = re.compile(
     rf"^(?P<label>[^\W\d_][^\d:：.\-–—]{{1,40}}?)\s+"
-    rf"(?P<number>{_GENERIC_NUMBER})"
-    rf"(?:\s*(?:[:：.\-–—]\s*|\s+).*)?$",
+    rf"(?P<number>{_GENERIC_DIGIT_NUMBER})"
+    rf"(?:\s*[:：.\-–—]\s*\S.*)?$",
+    re.IGNORECASE,
+)
+_GENERIC_LABEL_ROMAN_RE = re.compile(
+    rf"^(?P<label>[^\W\d_][^\d:：.\-–—]{{1,40}}?)\s+"
+    rf"(?P<number>{_GENERIC_ROMAN_NUMBER})"
+    rf"(?:\s*[:：.\-–—]\s*\S.*)?$",
     re.IGNORECASE,
 )
 _GENERIC_NUMBER_TITLE_RE = re.compile(
-    rf"^(?P<number>{_GENERIC_NUMBER})\s*[.、:：\-–—]\s*.+$",
+    rf"^(?P<number>{_GENERIC_DIGIT_NUMBER}|{_GENERIC_ROMAN_NUMBER})"
+    rf"\s*[.、:：\-–—]\s*[^\s.。…!?！？,，;；:：\-–—].+$",
     re.IGNORECASE,
 )
 
@@ -115,7 +123,10 @@ def _generic_heading_family(text: str) -> Optional[str]:
     if not cleaned or "\n" in (text or "") or len(cleaned) > 120:
         return None
 
-    label_match = _GENERIC_LABEL_NUMBER_RE.fullmatch(cleaned)
+    label_match = (
+        _GENERIC_LABEL_NUMBER_RE.fullmatch(cleaned)
+        or _GENERIC_LABEL_ROMAN_RE.fullmatch(cleaned)
+    )
     if label_match:
         label = " ".join(label_match.group("label").casefold().split())
         if 1 <= len(label.split()) <= 4:
