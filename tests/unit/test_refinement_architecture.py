@@ -879,8 +879,22 @@ def test_web_jobs_use_and_clamp_live_chunk_budget(monkeypatch):
     from src.api.blueprints.translation_routes import _clamp_chunk_tokens
 
     monkeypatch.setattr(config, "MAX_TOKENS_PER_CHUNK", 137)
+    monkeypatch.setattr(config, "reload_config", lambda: None)
 
     assert _clamp_chunk_tokens(None) == 137
     assert _clamp_chunk_tokens(20) == 50
     assert _clamp_chunk_tokens(2000) == 2000
     assert _clamp_chunk_tokens(5000) == 5000
+
+
+def test_web_jobs_reload_chunk_budget_when_ui_omits_value(monkeypatch):
+    import src.config as config
+    from src.api.blueprints.translation_routes import _clamp_chunk_tokens
+
+    def reload_config():
+        config.MAX_TOKENS_PER_CHUNK = 5000
+
+    monkeypatch.setattr(config, "MAX_TOKENS_PER_CHUNK", 450)
+    monkeypatch.setattr(config, "reload_config", reload_config)
+
+    assert _clamp_chunk_tokens(None) == 5000

@@ -689,7 +689,10 @@ def _create_chunks(
     chunks = chunker.chunk_html_with_placeholders(text, tag_map)
 
     if log_callback:
-        log_callback("chunks_created", f"Created {len(chunks)} chunks")
+        log_callback(
+            "chunks_created",
+            f"Created {len(chunks)} chunks with {max_tokens} source tokens per chunk",
+        )
         if chapter_mode:
             chapter_count = len({
                 chunk.get("chapter_index", 0) for chunk in chunks
