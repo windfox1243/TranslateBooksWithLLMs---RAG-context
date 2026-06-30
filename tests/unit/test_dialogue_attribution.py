@@ -103,12 +103,54 @@ def test_attribution_rejects_unknown_characters_and_low_confidence_guesses():
     assert parsed["turns"][0]["speaker"] == "Valentine"
     assert parsed["turns"][0]["addressee"] == "Unknown"
     assert parsed["state_after"]["speaker"] == "Valentine"
-    assert parsed["state_after"]["addressee"] == "Valentine"
+    assert "addressee" not in parsed["state_after"]
     assert dialogue_attribution_stats(parsed) == {
         "identified": 2,
         "assigned": 1,
         "uncertain": 1,
     }
+
+
+def test_dialogue_attribution_does_not_persist_previous_uncertain_state():
+    candidates = detect_dialogue_turns("“Stay.”")
+    raw = json.dumps(
+        {
+            "turns": [
+                {
+                    "id": candidates[0]["id"],
+                    "speaker": "Unknown",
+                    "addressee": "Unknown",
+                    "confidence": 0.1,
+                }
+            ],
+            "state_after": {
+                "speaker": "Valentine",
+                "addressee": "Eric",
+            },
+        }
+    )
+
+    parsed = parse_dialogue_attribution(
+        raw,
+        candidates,
+        {"valentine": "Valentine", "eric": "Eric"},
+        previous_state={"speaker": "Valentine", "addressee": "Eric"},
+    )
+
+    assert parsed["state_after"] == {}
+
+
+def test_dialogue_attribution_empty_response_clears_previous_state():
+    candidates = detect_dialogue_turns("“Stay.”")
+
+    parsed = parse_dialogue_attribution(
+        "",
+        candidates,
+        {"valentine": "Valentine"},
+        previous_state={"speaker": "Valentine"},
+    )
+
+    assert parsed["state_after"] == {}
 
 
 def test_dialogue_attribution_resolves_explicit_title_alias_to_canonical_name():

@@ -230,10 +230,7 @@ def canonicalize_dialogue_attribution(
     result: Dict[str, Any] = {
         "version": source.get("version", 1),
         "turns": [],
-        "state_after": canonicalize_dialogue_state(
-            source.get("state_after"),
-            character_aliases,
-        ),
+        "state_after": {},
     }
     for raw_turn in source.get("turns") or []:
         if not isinstance(raw_turn, dict):
@@ -249,6 +246,7 @@ def canonicalize_dialogue_attribution(
         )
         turn["confidence"] = _confidence(raw_turn.get("confidence"))
         result["turns"].append(turn)
+    result["state_after"] = _state_after_from_confident_turns(result["turns"])
     if source.get("scene_key") is not None:
         result["scene_key"] = source.get("scene_key")
     return result
@@ -264,6 +262,26 @@ def _confidence(value: Any) -> float:
     return max(0.0, min(numeric, 1.0))
 
 
+def _state_after_from_confident_turns(
+    turns: Iterable[Dict[str, Any]],
+) -> Dict[str, str]:
+    """Persist only source-current, high-confidence dialogue state."""
+    state: Dict[str, str] = {}
+    for turn in turns:
+        speaker = str(turn.get("speaker") or "")
+        addressee = str(turn.get("addressee") or "")
+        if (
+            speaker.casefold() in _UNKNOWN_VALUES
+            or speaker == "Unknown"
+            or _confidence(turn.get("confidence")) < MIN_SPEAKER_CONFIDENCE
+        ):
+            continue
+        state = {"speaker": speaker}
+        if addressee.casefold() not in _UNKNOWN_VALUES and addressee != "Unknown":
+            state["addressee"] = addressee
+    return state
+
+
 def parse_dialogue_attribution(
     raw_block: str,
     candidates: List[Dict[str, str]],
@@ -271,6 +289,7 @@ def parse_dialogue_attribution(
     previous_state: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """Validate model attribution against candidate IDs and canonical lore."""
+    del previous_state
     candidate_by_id = {
         str(candidate.get("id")): candidate
         for candidate in candidates
@@ -279,10 +298,7 @@ def parse_dialogue_attribution(
     result: Dict[str, Any] = {
         "version": 1,
         "turns": [],
-        "state_after": canonicalize_dialogue_state(
-            previous_state,
-            character_aliases,
-        ),
+        "state_after": {},
     }
     if not raw_block.strip() or not candidate_by_id:
         return result
@@ -332,31 +348,7 @@ def parse_dialogue_attribution(
             }
         )
 
-    state = payload.get("state_after")
-    if isinstance(state, dict):
-        speaker = _canonical_character(state.get("speaker"), character_aliases)
-        addressee = _canonical_character(
-            state.get("addressee"),
-            character_aliases,
-        )
-        if speaker != "Unknown":
-            result["state_after"]["speaker"] = speaker
-        if addressee != "Unknown":
-            result["state_after"]["addressee"] = addressee
-
-    confident_turns = [
-        turn
-        for turn in result["turns"]
-        if (
-            turn["speaker"] != "Unknown"
-            and turn["confidence"] >= MIN_SPEAKER_CONFIDENCE
-        )
-    ]
-    if confident_turns:
-        latest = confident_turns[-1]
-        result["state_after"]["speaker"] = latest["speaker"]
-        if latest["addressee"] != "Unknown":
-            result["state_after"]["addressee"] = latest["addressee"]
+    result["state_after"] = _state_after_from_confident_turns(result["turns"])
     return result
 
 
