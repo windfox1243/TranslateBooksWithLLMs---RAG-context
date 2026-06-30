@@ -1208,8 +1208,7 @@ async def _resync_context_snapshots_async(
                 )
             current_dialogue_state = dict(
                 canonicalize_dialogue_state(
-                    dialogue_sink.get('state_after')
-                    or current_dialogue_state,
+                    dialogue_sink.get('state_after') or {},
                     character_alias_map(global_lore),
                 )
             )

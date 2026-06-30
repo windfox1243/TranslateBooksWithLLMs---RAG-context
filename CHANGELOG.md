@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.14.26 - 2026-06-30
+
+### Fixed
+
+- **Deduplicated context logs:** Removed duplicate context-change emissions caused by the core context logger/print path and the UI progress callback both reporting the same event.
+- **Safer dialogue carry-over:** Dialogue speaker state now persists only from current high-confidence dialogue turns. Empty, malformed, or uncertain dialogue attribution clears the carried state instead of silently reusing a previous chunk's speaker.
+- **Weaker dialogue continuity prompt:** Context-update prompts now treat previous scene speaker state as a weak hint only, requiring local source evidence before assigning a speaker.
+
 ## 1.14.25 - 2026-06-29
 
 ### Fixed

@@ -4088,12 +4088,11 @@ class RefinementContextTracker:
                 current_aliases,
             )
             if historical_dialogue
-            else empty_dialogue_attribution(self.dialogue_state)
+            else empty_dialogue_attribution()
         )
         if historical_dialogue:
             self.dialogue_state = dict(
-                self.current_dialogue_attribution.get("state_after")
-                or self.dialogue_state
+                self.current_dialogue_attribution.get("state_after") or {}
             )
 
         if historical:
@@ -4110,8 +4109,7 @@ class RefinementContextTracker:
                 )
             )
             self.dialogue_state = dict(
-                self.current_dialogue_attribution.get("state_after")
-                or self.dialogue_state
+                self.current_dialogue_attribution.get("state_after") or {}
             )
             historical_dynamic = (
                 extract_dynamic_state_from_text(historical_context) or ""
@@ -4162,11 +4160,10 @@ class RefinementContextTracker:
             )
             self.current_dialogue_attribution = (
                 dialogue_sink
-                or empty_dialogue_attribution(self.dialogue_state)
+                or empty_dialogue_attribution()
             )
             self.dialogue_state = dict(
-                self.current_dialogue_attribution.get("state_after")
-                or self.dialogue_state
+                self.current_dialogue_attribution.get("state_after") or {}
             )
             full_context = build_novel_context(
                 self.global_lore,
@@ -4319,10 +4316,10 @@ class NovelContextSession:
             )
         self.dialogue_attribution = (
             dialogue_sink
-            or empty_dialogue_attribution(self.dialogue_state)
+            or empty_dialogue_attribution()
         )
         self.dialogue_state = dict(
-            self.dialogue_attribution.get("state_after") or self.dialogue_state
+            self.dialogue_attribution.get("state_after") or {}
         )
         if normalized_scene_key is not None:
             self.dialogue_attribution["scene_key"] = normalized_scene_key
@@ -4606,7 +4603,7 @@ Your output must follow this strict format:
 
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
-(Classify only the supplied dialogue candidates. Infer from narration, turn-taking, current scene state, voice, and addressing forms. Resolve titles and aliases through CURRENT GLOBAL LORE and IDENTITY_LINKS, but output only canonical character names already present in CURRENT GLOBAL LORE or NEW_CHARACTERS. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates.)
+(Classify only the supplied dialogue candidates. Infer from narration, direct dialogue tags, turn-taking, voice, and addressing forms in the latest source. CURRENT SCENE SPEAKER STATE is a weak continuity hint only; never use it as sole proof, and return Unknown when local evidence is unclear. Resolve titles and aliases through CURRENT GLOBAL LORE and IDENTITY_LINKS, but output only canonical character names already present in CURRENT GLOBAL LORE or NEW_CHARACTERS. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates or no current high-confidence speaker.)
 
 Do not include any other explanations, markdown fences, or extra text outside these blocks.
 """
@@ -4668,7 +4665,7 @@ Your output must follow this strict format:
 
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
-(Classify only the supplied dialogue candidates. Infer from narration, turn-taking, current scene state, voice, and addressing forms. Resolve titles and aliases through CURRENT GLOBAL LORE and IDENTITY_LINKS, but output only canonical character names already present in CURRENT GLOBAL LORE or NEW_CHARACTERS. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates.)
+(Classify only the supplied dialogue candidates. Infer from narration, direct dialogue tags, turn-taking, voice, and addressing forms in the latest source. CURRENT SCENE SPEAKER STATE is a weak continuity hint only; never use it as sole proof, and return Unknown when local evidence is unclear. Resolve titles and aliases through CURRENT GLOBAL LORE and IDENTITY_LINKS, but output only canonical character names already present in CURRENT GLOBAL LORE or NEW_CHARACTERS. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates or no current high-confidence speaker.)
 
 Do not translate the whole passage. Do not include explanations, markdown fences, or text outside these blocks.
 """
@@ -5531,7 +5528,7 @@ async def update_novel_context_chunk(
             if dialogue_attribution_sink is not None:
                 dialogue_attribution_sink.clear()
                 dialogue_attribution_sink.update(
-                    empty_dialogue_attribution(current_dialogue_state)
+                    empty_dialogue_attribution()
                 )
             return current_global_lore, current_dynamic_state, []
             
@@ -5688,6 +5685,6 @@ async def update_novel_context_chunk(
         if dialogue_attribution_sink is not None:
             dialogue_attribution_sink.clear()
             dialogue_attribution_sink.update(
-                empty_dialogue_attribution(current_dialogue_state)
+                empty_dialogue_attribution()
             )
         return current_global_lore, current_dynamic_state, []
