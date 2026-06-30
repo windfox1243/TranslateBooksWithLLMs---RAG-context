@@ -4189,7 +4189,6 @@ class RefinementContextTracker:
                         f"{stats['assigned']} assigned, "
                         f"{stats['uncertain']} uncertain."
                     )
-                    logger.info(message)
                     self.log_callback(
                         "dialogue_attribution",
                         message,
@@ -4339,7 +4338,6 @@ class NovelContextSession:
                 f"{stats['assigned']} assigned, "
                 f"{stats['uncertain']} uncertain."
             )
-            logger.info(message)
             self.log_callback(
                 "dialogue_attribution",
                 message,
@@ -4353,7 +4351,6 @@ class NovelContextSession:
                 f"{stats['uncertain']} uncertain."
             )
             logger.info(message)
-            print(message)
         self.save()
         return change_logs
 
@@ -4534,8 +4531,6 @@ async def consolidate_context_lore(
         if updated_lore != global_lore:
             msg = "[Novel Context] Consolidation pass: character descriptions deduped/merged."
             change_logs.append(msg)
-            logger.info(msg)
-            print(msg)
 
         return updated_lore, change_logs
 
@@ -4742,8 +4737,6 @@ def merge_new_lore(
 
     def record(message: str) -> None:
         change_logs.append(message)
-        logger.info(message)
-        print(message)
 
     alias_bounds = _find_lore_section(lore, ALIASES_SECTION)
     alias_entries = (
@@ -5662,9 +5655,6 @@ async def update_novel_context_chunk(
             logger.info(
                 f"[Novel Context] Running consolidation pass at chunk {chunk_index}."
             )
-            print(
-                f"[Novel Context] Running consolidation pass at chunk {chunk_index}."
-            )
             consolidated_lore, consolidation_logs = await consolidate_context_lore(
                 llm_client=llm_client,
                 model_name=model_name,
@@ -5678,7 +5668,6 @@ async def update_novel_context_chunk(
         if new_dynamic != current_dynamic_state:
             # We can log that relationship state changed
             change_logs.append("[Novel Context] Dynamic state updated.")
-            print("[Novel Context] Dynamic state updated.")
 
         if dialogue_attribution_sink is not None:
             dialogue_attribution_sink.clear()

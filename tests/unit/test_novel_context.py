@@ -808,6 +808,28 @@ def test_merge_new_lore_updates_and_corrections():
     assert any("Added glossary term 'orange'" in log for log in logs)
 
 
+def test_merge_new_lore_returns_logs_without_printing(capsys):
+    from src.utils.novel_context import merge_new_lore
+
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Alice: Female, mage.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    _, logs = merge_new_lore(
+        initial_lore,
+        "- Bob: Male, knight.\n",
+        "",
+    )
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    assert any("Added character 'bob'" in log for log in logs)
+
+
 def test_character_gender_does_not_flip_without_explicit_correction():
     from src.utils.novel_context import merge_new_lore
 
