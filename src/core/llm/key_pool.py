@@ -7,15 +7,15 @@ selected on the next request — failover happens without sleeping when possible
 
 Compatibility:
     - A pool with a single key behaves identically to today's single-key string.
-    - All mutating operations are async-safe via asyncio.Lock so the same pool
-      can be shared across coroutines (forward compatibility with parallel
-      dispatch).
+    - Mutating operations share a lock across provider instances with the same
+      provider/key set, so cooldowns survive provider re-creation.
 """
 
-import asyncio
+import hashlib
+import threading
 import time
-from dataclasses import dataclass
-from typing import Iterable, List, Optional, Union
+from dataclasses import dataclass, field
+from typing import Dict, Iterable, List, Tuple, Union
 
 
 @dataclass
@@ -27,6 +27,26 @@ class _KeyState:
     the current moment.
     """
     throttled_until: float = 0.0
+
+
+@dataclass
+class _SharedPoolState:
+    """Mutable state shared by provider instances with the same key set."""
+
+    states: Dict[str, _KeyState]
+    cursor: int = 0
+    lock: threading.RLock = field(default_factory=threading.RLock)
+
+
+_SHARED_STATES: Dict[Tuple[str, str], _SharedPoolState] = {}
+
+
+def _shared_state_key(provider_name: str, keys: List[str]) -> Tuple[str, str]:
+    digest = hashlib.sha256()
+    for key in keys:
+        digest.update(hashlib.sha256(key.encode("utf-8")).digest())
+        digest.update(b"\0")
+    return provider_name, digest.hexdigest()
 
 
 class KeyPool:
@@ -85,10 +105,30 @@ class KeyPool:
             )
 
         self._keys: List[str] = cleaned
-        self._states: dict = {k: _KeyState() for k in cleaned}
-        self._cursor: int = 0
-        self._lock = asyncio.Lock()
+        self._shared_key = _shared_state_key(provider_name, cleaned)
+        shared = _SHARED_STATES.get(self._shared_key)
+        if shared is None:
+            shared = _SharedPoolState({k: _KeyState() for k in cleaned})
+            _SHARED_STATES[self._shared_key] = shared
+        else:
+            shared.states = {
+                key: shared.states.get(key, _KeyState())
+                for key in cleaned
+            }
+            if cleaned:
+                shared.cursor %= len(cleaned)
+        self._shared = shared
         self._provider_name = provider_name
+
+    @classmethod
+    def clear_shared_state(cls) -> None:
+        """Clear process-local shared cooldowns.
+
+        This is intended for tests and administrative resets. Production code
+        normally keeps the registry so new provider instances do not retry a
+        key that a previous instance just saw rate-limited.
+        """
+        _SHARED_STATES.clear()
 
     @property
     def size(self) -> int:
@@ -104,7 +144,14 @@ class KeyPool:
         Cheap, sync. Used by code paths outside translation (e.g. listing
         available models, context detection) that just need *a* valid key.
         """
-        return self._keys[self._cursor % len(self._keys)]
+        now = time.monotonic()
+        n = len(self._keys)
+        for offset in range(n):
+            idx = (self._shared.cursor + offset) % n
+            key = self._keys[idx]
+            if self._shared.states[key].throttled_until <= now:
+                return key
+        return min(self._keys, key=lambda k: self._shared.states[k].throttled_until)
 
     def index_of(self, key: str) -> int:
         """1-based index of `key` for human-readable logging. 0 if unknown."""
@@ -122,17 +169,17 @@ class KeyPool:
 
         Always returns a key; never blocks.
         """
-        async with self._lock:
+        with self._shared.lock:
             now = time.monotonic()
             n = len(self._keys)
             for offset in range(n):
-                idx = (self._cursor + offset) % n
+                idx = (self._shared.cursor + offset) % n
                 key = self._keys[idx]
-                if self._states[key].throttled_until <= now:
-                    self._cursor = (idx + 1) % n
+                if self._shared.states[key].throttled_until <= now:
+                    self._shared.cursor = (idx + 1) % n
                     return key
             # All throttled — return the one that recovers soonest.
-            return min(self._keys, key=lambda k: self._states[k].throttled_until)
+            return min(self._keys, key=lambda k: self._shared.states[k].throttled_until)
 
     async def mark_throttled(self, key: str, until_monotonic: float) -> None:
         """Mark `key` as throttled until `until_monotonic` (`time.monotonic()`).
@@ -140,26 +187,26 @@ class KeyPool:
         No-op if `key` is not in the pool. We take the max of existing and new
         expiry so a longer existing throttle isn't shortened by a fresh 429.
         """
-        async with self._lock:
-            state = self._states.get(key)
+        with self._shared.lock:
+            state = self._shared.states.get(key)
             if state is not None:
                 state.throttled_until = max(state.throttled_until, until_monotonic)
 
     async def has_available(self) -> bool:
         """True if at least one key is currently non-throttled."""
-        async with self._lock:
+        with self._shared.lock:
             now = time.monotonic()
-            return any(s.throttled_until <= now for s in self._states.values())
+            return any(s.throttled_until <= now for s in self._shared.states.values())
 
     async def time_until_next_available(self) -> float:
         """Seconds until the earliest key becomes available.
 
         Returns 0.0 if any key is currently available.
         """
-        async with self._lock:
+        with self._shared.lock:
             now = time.monotonic()
             soonest = min(
-                (s.throttled_until for s in self._states.values()),
+                (s.throttled_until for s in self._shared.states.values()),
                 default=now,
             )
             return max(0.0, soonest - now)

@@ -23,6 +23,13 @@ from src.core.llm.rate_limit_handler import (
 )
 
 
+@pytest.fixture(autouse=True)
+def clear_key_pool_shared_state():
+    KeyPool.clear_shared_state()
+    yield
+    KeyPool.clear_shared_state()
+
+
 # ---------------------------------------------------------------------------
 # KeyPool
 # ---------------------------------------------------------------------------
@@ -87,6 +94,34 @@ class TestKeyPool:
         await pool.mark_throttled("a", time.monotonic() + 30)
         remaining = await pool.time_until_next_available()
         assert 28 <= remaining <= 31
+
+    @pytest.mark.asyncio
+    async def test_throttle_state_is_shared_across_provider_instances(self):
+        first = KeyPool(["k1", "k2", "k3"], provider_name="gemini")
+        await first.mark_throttled("k1", time.monotonic() + 60)
+
+        second = KeyPool(["k1", "k2", "k3"], provider_name="gemini")
+
+        assert second.peek() == "k2"
+        assert await second.acquire() == "k2"
+
+    @pytest.mark.asyncio
+    async def test_cursor_is_shared_across_provider_instances(self):
+        first = KeyPool(["k1", "k2", "k3"], provider_name="gemini")
+        assert await first.acquire() == "k1"
+
+        second = KeyPool(["k1", "k2", "k3"], provider_name="gemini")
+
+        assert await second.acquire() == "k2"
+
+    @pytest.mark.asyncio
+    async def test_shared_state_is_scoped_by_provider(self):
+        first = KeyPool(["k1", "k2"], provider_name="gemini")
+        await first.mark_throttled("k1", time.monotonic() + 60)
+
+        other_provider = KeyPool(["k1", "k2"], provider_name="openrouter")
+
+        assert other_provider.peek() == "k1"
 
 
 # ---------------------------------------------------------------------------
