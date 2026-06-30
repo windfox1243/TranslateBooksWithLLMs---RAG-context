@@ -86,6 +86,7 @@ def test_prompt_injection_translation():
     assert novel_context not in prompt_pair.system
     assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair.user
     assert novel_context in prompt_pair.user
+    assert "Treat stated character genders as binding continuity facts" in prompt_pair.user
 
 
 def test_novel_context_keeps_system_prompt_cacheable():
@@ -217,13 +218,14 @@ def test_prompt_context_selector_filters_small_unrelated_context_by_default():
 
     assert "Bob: Male" in selected
     assert "Captain: Bob" in selected
-    assert "Alice: Female" not in selected
+    assert "Alice: Female" in selected
+    assert "Alice: Female, mage from a distant kingdom" not in selected
     assert "Alice → Mentor" not in selected
     assert "Alice ↔ Mentor" not in selected
     assert "mana: magical energy" not in selected
 
 
-def test_prompt_context_selector_skips_context_when_no_entry_matches():
+def test_prompt_context_selector_keeps_compact_gender_roster_without_matches():
     context = build_novel_context(
         (
             "# GLOBAL LORE\n\n"
@@ -239,7 +241,10 @@ def test_prompt_context_selector_skips_context_when_no_entry_matches():
         reference_text="A nameless guard closed the door.",
     )
 
-    assert selected == ""
+    assert "Alice: Female" in selected
+    assert "Bob: Male" in selected
+    assert "mage from a distant kingdom" not in selected
+    assert "knight guarding the capital" not in selected
 
 
 def test_prompt_context_selector_can_use_legacy_full_injection():
@@ -285,7 +290,8 @@ def test_translation_prompt_uses_selective_context_injection_by_default():
     )
 
     assert "Bob: Male" in prompt_pair.user
-    assert "Alice: Female" not in prompt_pair.user
+    assert "Alice: Female" in prompt_pair.user
+    assert "Alice: Female, mage from a distant kingdom" not in prompt_pair.user
 
 
 def test_translation_prompt_can_disable_selective_context_injection():

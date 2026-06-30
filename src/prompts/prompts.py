@@ -196,6 +196,9 @@ def _build_novel_context_section(
 
 Use this context for narrative consistency: character identity, proven gender,
 aliases, relationships, addressing, and discovered terminology hints.
+Treat stated character genders as binding continuity facts. Do not reinterpret
+or change a character's gender from a title, role, old body, disguise,
+relationship label, or model prior.
 If this context conflicts with `# GLOSSARY - REQUIRED TRANSLATIONS`, the
 required glossary wins."""
     if refinement:

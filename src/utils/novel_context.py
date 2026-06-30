@@ -3549,11 +3549,20 @@ def _append_section_with_budget(
         _append_line_with_budget(lines, entry, max_chars, reserved_chars)
 
 
+def _compact_character_gender_line(name: str, value: str) -> str:
+    gender, _ = _split_gender_and_details(value)
+    gender = _canonical_gender(gender)
+    if gender.casefold() not in _SPECIFIC_GENDER_LABELS:
+        return ""
+    return _format_character_line(name, gender)
+
+
 def render_novel_context_for_prompt(
     context_content: str,
     reference_text: str = "",
     max_tokens: Optional[int] = None,
     selective: bool = True,
+    include_gender_roster: bool = True,
 ) -> str:
     """Render a prompt-sized view of a durable novel context document.
 
@@ -3662,6 +3671,19 @@ def render_novel_context_for_prompt(
         _format_character_line(name, value)
         for name, value in selected_characters
     ]
+    selected_character_keys = {
+        _plain_key(name)
+        for name, _ in selected_characters
+    }
+    pinned_gender_lines: List[str] = []
+    if include_gender_roster:
+        pinned_gender_lines = [
+            line
+            for name, value in character_entries
+            if _plain_key(name) not in selected_character_keys
+            for line in [_compact_character_gender_line(name, value)]
+            if line
+        ]
     remaining_character_lines = [
         _format_character_line(name, value)
         for name, value in remaining_characters
@@ -3685,6 +3707,7 @@ def render_novel_context_for_prompt(
 
     has_selection = any((
         selected_character_lines,
+        pinned_gender_lines,
         selected_alias_lines,
         selected_glossary_lines,
         selected_addressing,
@@ -3701,7 +3724,7 @@ def render_novel_context_for_prompt(
     _append_section_with_budget(
         rendered_lines,
         CHARACTERS_SECTION,
-        selected_character_lines,
+        selected_character_lines + pinned_gender_lines,
         max_chars,
         reserved,
     )
@@ -3757,6 +3780,7 @@ def render_novel_context_update_view(
         reference_text=reference_text,
         max_tokens=max_tokens,
         selective=selective,
+        include_gender_roster=False,
     )
     if not rendered:
         return "", ""
