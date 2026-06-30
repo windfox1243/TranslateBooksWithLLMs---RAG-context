@@ -980,7 +980,7 @@ def _infer_gender_from_character_details(details: str) -> str:
     )
     male_patterns = (
         r"^(?:an?\s+)?(?:young\s+|old\s+)?(?:male|man|boy)\b",
-        r"(?:^|[;,]\s*)an?\s+(?:[\w'-]+\s+){0,5}(?:man|boy)\b",
+        r"(?:^|[;,]\s*)(?:(?:an?|the)\s+)?(?:[\w'-]+\s+){0,5}(?:man|boy)\b",
         r"\b(?:described|identified|revealed|introduced|referred\s+to)\s+as\s+"
         r"(?:an?\s+)?(?:[\w'-]+\s+){0,5}(?:man|boy)\b",
         r"(?:^|[.;,]\s*)he\b",
@@ -989,7 +989,7 @@ def _infer_gender_from_character_details(details: str) -> str:
     )
     female_patterns = (
         r"^(?:an?\s+)?(?:young\s+|old\s+)?(?:female|woman|girl)\b",
-        r"(?:^|[;,]\s*)an?\s+(?:[\w'-]+\s+){0,5}(?:woman|girl)\b",
+        r"(?:^|[;,]\s*)(?:(?:an?|the)\s+)?(?:[\w'-]+\s+){0,5}(?:woman|girl)\b",
         r"\b(?:described|identified|revealed|introduced|referred\s+to)\s+as\s+"
         r"(?:an?\s+)?(?:[\w'-]+\s+){0,5}(?:woman|girl)\b",
         r"(?:^|[.;,]\s*)she\b",

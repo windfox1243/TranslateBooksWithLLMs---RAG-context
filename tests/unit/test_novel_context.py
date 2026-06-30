@@ -1115,6 +1115,24 @@ def test_direct_gendered_noun_in_description_promotes_unspecified_gender():
     assert "Unspecified" not in normalized
 
 
+def test_articleless_gendered_noun_in_description_promotes_unspecified_gender():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Tuhee: Unspecified, leader of the special forces/summoner group, "
+        "white-haired woman.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- Tuhee: Female," in normalized
+    assert "white-haired woman" in normalized
+    assert "Unspecified" not in normalized
+
+
 def test_embedded_gender_fragments_collapse_to_one_canonical_gender():
     from src.utils.novel_context import normalize_global_lore
 
