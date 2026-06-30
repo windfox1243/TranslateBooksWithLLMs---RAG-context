@@ -407,6 +407,36 @@ def test_prompt_injection_refinement():
     assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair.user
     assert novel_context in prompt_pair.user
 
+
+def test_vietnamese_prompts_guard_first_person_pronoun_consistency():
+    translation_prompt = generate_translation_prompt(
+        main_content="Because it had been so long.",
+        context_before="",
+        context_after="",
+        previous_translation_context=(
+            "Bởi vì đã lâu lắm rồi, tôi mới lại cảm nhận được tình cảm."
+        ),
+        source_language="English",
+        target_language="Vietnamese",
+        has_placeholders=False,
+    )
+    refinement_prompt = generate_refinement_prompt(
+        draft_translation=(
+            "Bởi vì đã lâu lắm rồi, mình mới lại cảm nhận được tình cảm."
+        ),
+        previous_refined_context=(
+            "Bởi vì đã lâu lắm rồi, tôi mới lại cảm nhận được tình cảm."
+        ),
+        target_language="Vietnamese",
+        has_placeholders=False,
+    )
+
+    for prompt in (translation_prompt, refinement_prompt):
+        assert "VIETNAMESE STYLE GUARDRAILS" in prompt.system
+        assert '"tôi"' in prompt.system
+        assert '"mình"' in prompt.system
+
+
 def test_prompt_injection_subtitles():
     novel_context = "Address: Anh / Em."
     subtitles = [(0, "Hello"), (1, "Yes")]
@@ -2625,6 +2655,40 @@ def test_singular_plural_entity_entries_do_not_merge_on_weak_overlap():
     assert "- Palace Guard: Male, named royal guard who escorts Valentine." in normalized
     assert "- Palace Guards: Unspecified, multiple background guards stationed around the palace gate." in normalized
     assert "- Palace Guards: Palace Guard" not in normalized
+
+
+def test_dynamic_state_canonicalizes_compact_and_typo_name_variants():
+    from src.utils.novel_context import character_alias_map
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Seria Bladi Demon Kill: Female, S-class vampire summon.\n"
+        "- Kim Si-hu: Male, Summoner Academy student.\n"
+        "- Vera Rasvin: Female, Holy Knight.\n\n"
+        "## CHARACTER ALIASES\n"
+        "- Seria Blady Demonkill: Seria Bladi Demon Kill\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    dynamic = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Kim Si-hu → Seria Bladi Demonkill: "Seria" | "Seria" | trust\n'
+        '- Seria Blady Demonkill → Vera Rasvin: "Vera" | "Vera" | hostile\n\n'
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Seria Bladi Demonkill ↔ Seria Bladi Demon Kill: duplicate self row\n"
+        "- Yohan → Kim Si-hu & Seria Bladi Demonkill: group targeting\n"
+        "- Seria Blady Demonkill ↔ Vera Rasvin: hostile rivals\n"
+    )
+
+    updated = merge_dynamic_state("", dynamic, character_alias_map(lore))
+
+    assert '- Kim Si-hu → Seria Bladi Demon Kill: "Seria"' in updated
+    assert '- Seria Bladi Demon Kill → Vera Rasvin: "Vera"' in updated
+    assert "- Yohan → Kim Si-hu & Seria Bladi Demon Kill: group targeting" in updated
+    assert "- Seria Bladi Demon Kill ↔ Vera Rasvin: hostile rivals" in updated
+    assert "duplicate self row" not in updated
+    assert "Seria Bladi Demonkill →" not in updated
+    assert "Seria Blady Demonkill →" not in updated
 
 
 def test_short_name_full_name_merge_requires_shared_identity_evidence():
