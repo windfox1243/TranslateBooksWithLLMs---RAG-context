@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.30 - 2026-06-30
+
+### Fixed
+
+- **Chapter-aware chunking false positives:** Generic chapter detection no longer treats English prose such as `That's why I...`, `But I...`, `If I...`, `I...`, or `It's been 1 year.` as repeated generic chapter headings. This prevents chapter-aware mode from splitting normal prose into many tiny translation units.
+- **Shared file-type coverage:** The fix applies through the shared chapter detector used by TXT, EPUB Plain Text Mode, and DOCX Plain Text Mode, while preserving known multilingual headings and safe generic numbered headings.
+
 ## 1.14.29 - 2026-06-30
 
 ### Fixed

@@ -38,6 +38,30 @@ def test_repeated_unknown_language_label_is_detected_conservatively():
     assert [(item.start, item.end) for item in ranges] == [(0, 2), (2, 4)]
 
 
+def test_repeated_unknown_language_label_with_title_needs_heading_separator():
+    paragraphs = [
+        "Bölüm 1: First chapter",
+        "First chapter body.",
+        "Bölüm 2: Second chapter",
+        "Second chapter body.",
+    ]
+    ranges = find_chapter_ranges(paragraphs)
+
+    assert [(item.start, item.end) for item in ranges] == [(0, 2), (2, 4)]
+
+
+def test_repeated_unknown_language_roman_label_requires_heading_punctuation():
+    paragraphs = [
+        "Bölüm I: The beginning",
+        "First chapter body.",
+        "Bölüm II: The sequel",
+        "Second chapter body.",
+    ]
+    ranges = find_chapter_ranges(paragraphs)
+
+    assert [(item.start, item.end) for item in ranges] == [(0, 2), (2, 4)]
+
+
 def test_single_generic_numbered_line_does_not_create_a_boundary():
     paragraphs = [
         "A normal opening paragraph.",
@@ -47,6 +71,107 @@ def test_single_generic_numbered_line_does_not_create_a_boundary():
     ranges = find_chapter_ranges(paragraphs)
 
     assert [(item.start, item.end) for item in ranges] == [(0, 3)]
+
+
+def test_repeated_english_prose_with_i_is_not_a_roman_heading():
+    paragraphs = [
+        "Episode 1: Opening",
+        "That's why I gritted my teeth.",
+        "Normal story text.",
+        "But I can endure it.",
+        "If I don't give up someday, a path will open up.",
+        "That's why I smiled too, but...",
+        "More normal story text.",
+    ]
+    ranges = find_chapter_ranges(paragraphs)
+
+    assert [(item.start, item.end) for item in ranges] == [(0, 7)]
+
+
+def test_repeated_prose_numbers_are_not_generic_headings():
+    paragraphs = [
+        "Episode 1: Opening",
+        "If I.",
+        "If I.",
+        "If I....",
+        "I...",
+        "I.....",
+        "It's been 1 year.",
+        "It's been 10 years.",
+        "It's been 100 years.",
+        "More normal story text.",
+    ]
+    ranges = find_chapter_ranges(paragraphs)
+
+    assert [(item.start, item.end) for item in ranges] == [(0, 10)]
+
+
+def test_repeated_numbered_titles_still_work():
+    paragraphs = [
+        "1. First chapter",
+        "First chapter body.",
+        "2. Second chapter",
+        "Second chapter body.",
+    ]
+    ranges = find_chapter_ranges(paragraphs)
+
+    assert [(item.start, item.end) for item in ranges] == [(0, 2), (2, 4)]
+
+
+def test_plain_segments_do_not_split_on_repeated_roman_pronoun_prose():
+    paragraphs = [
+        "Episode 1: Opening",
+        "That's why I gritted my teeth.",
+        "Normal story text.",
+        "But I can endure it.",
+        "If I don't give up someday, a path will open up.",
+        "That's why I smiled too, but...",
+        "More normal story text.",
+    ]
+    segments = build_plain_segments(
+        paragraphs,
+        max_tokens_per_chunk=1000,
+        chapter_mode=True,
+    )
+
+    assert len(segments) == 1
+
+
+def test_txt_chapter_mode_splits_oversized_chapter_within_same_chapter():
+    body = "\n\n".join(
+        f"Paragraph {i} has enough ordinary story text to force token chunking inside one chapter."
+        for i in range(1, 16)
+    )
+    chunks = split_text_into_chunks(
+        f"Chapter 1\n\n{body}",
+        max_tokens_per_chunk=45,
+        chapter_mode=True,
+    )
+
+    assert len(chunks) > 1
+    assert {chunk["chapter_index"] for chunk in chunks} == {0}
+    assert {chunk["chapter_title"] for chunk in chunks} == {"Chapter 1"}
+    assert [chunk["chunk_in_chapter"] for chunk in chunks] == list(range(len(chunks)))
+    assert all(chunk["chunks_in_chapter"] == len(chunks) for chunk in chunks)
+
+
+def test_plain_segments_split_oversized_structural_chapter_without_fake_ranges():
+    paragraphs = ["Episode 1: Opening"] + [
+        f"Paragraph {i} has enough ordinary story text to force token chunking inside one structural chapter."
+        for i in range(1, 16)
+    ]
+    kinds = ["h1"] + ["p"] * 15
+    segments = build_plain_segments(
+        paragraphs,
+        max_tokens_per_chunk=45,
+        paragraph_kinds=kinds,
+        chapter_mode=True,
+    )
+
+    assert len(segments) > 1
+    assert {segment["chapter_index"] for segment in segments} == {0}
+    assert {segment["chapter_title"] for segment in segments} == {"Episode 1: Opening"}
+    assert all(not segment["partial"] for segment in segments)
 
 
 def test_txt_chapter_mode_never_leaks_neighbor_context():
