@@ -932,7 +932,11 @@ async def _resync_context_snapshots_async(
         append_and_emit(f"▶️ {message}")
         callback()
     
-    msg = f"Starting background context resync for {translation_id} from chunk {start_chunk_index}"
+    msg = (
+        f"Starting context resync for {translation_id} from saved snapshot "
+        f"at chunk {start_chunk_index + 1}; later chunks will be replayed "
+        "from that context."
+    )
     logger.info(msg)
     append_and_emit(
         f"🔄 {msg}",
@@ -1003,6 +1007,13 @@ async def _resync_context_snapshots_async(
         "last_processed_chunk": start_chunk_index,
         "total_chunks": len(completed_chunks),
     })
+    if chunks_to_process:
+        append_and_emit(
+            "Using the selected context snapshot as the base; replaying "
+            f"{len(chunks_to_process)} later chunk(s), "
+            f"{chunks_to_process[0]['chunk_index'] + 1}-"
+            f"{chunks_to_process[-1]['chunk_index'] + 1}."
+        )
     
     novel_context_file = config.get('prompt_options', {}).get('novel_context_file')
     path = None
@@ -1134,7 +1145,7 @@ async def _resync_context_snapshots_async(
             return False
         
         try:
-            msg_resync = f"Resyncing chunk {idx}..."
+            msg_resync = f"Resyncing chunk {idx + 1} from the saved context timeline..."
             logger.info(msg_resync)
             append_and_emit(f"🔄 {msg_resync}")
             from src.utils.dialogue_attribution import (

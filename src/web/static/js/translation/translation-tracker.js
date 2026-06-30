@@ -1433,6 +1433,21 @@ function currentTranslationIdForContext() {
     return StateManager.getState('translation.lastJobId');
 }
 
+let contextResyncStatusPollTimer = null;
+
+function updateContextResyncPolling(status) {
+    const shouldPoll = ['running', 'pause_requested', 'paused'].includes(status);
+    if (shouldPoll && !contextResyncStatusPollTimer) {
+        contextResyncStatusPollTimer = window.setInterval(
+            refreshContextResyncStatus,
+            3000
+        );
+    } else if (!shouldPoll && contextResyncStatusPollTimer) {
+        window.clearInterval(contextResyncStatusPollTimer);
+        contextResyncStatusPollTimer = null;
+    }
+}
+
 function updateContextResyncControls(resyncState = null) {
     const btnPause = document.getElementById('btnPauseResync');
     const btnResume = document.getElementById('btnResumeResync');
@@ -1440,11 +1455,22 @@ function updateContextResyncControls(resyncState = null) {
     if (window.NovelContextUI) {
         window.NovelContextUI.lastResyncState = resyncState;
     }
-    if (!btnPause || !btnResume) return;
 
     const status = resyncState?.status || '';
     const isRunning = status === 'running' || status === 'pause_requested';
     const isPaused = status === 'paused';
+    const hasResyncState = Boolean(status);
+
+    updateContextResyncPolling(status);
+
+    if (hasResyncState) {
+        const contextSection = document.getElementById('novelContextPreviewSection');
+        if (contextSection) {
+            contextSection.style.display = 'block';
+        }
+    }
+
+    if (!btnPause || !btnResume) return;
 
     btnPause.style.display = isRunning ? 'inline-flex' : 'none';
     btnPause.disabled = status === 'pause_requested';
@@ -1461,7 +1487,7 @@ function updateContextResyncControls(resyncState = null) {
         }[status] || 'translation:context_resync_status_idle';
         badge.setAttribute('data-i18n', statusKey);
         badge.textContent = t(statusKey);
-        badge.style.display = 'inline-flex';
+        badge.style.display = hasResyncState ? 'inline-flex' : 'none';
         badge.style.alignItems = 'center';
         badge.style.background = isRunning
             ? 'rgba(59, 130, 246, 0.12)'
