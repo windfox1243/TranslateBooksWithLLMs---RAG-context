@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.27 - 2026-06-30
+
+### Fixed
+
+- **Singular/plural character alias merge:** Near-identical singular/plural entity names such as `Death God` and `Death Gods` now merge only when their descriptions substantially overlap, and the plural form is persisted as an alias.
+- **Plural group safety:** Weakly related plural groups remain separate, preventing broad plural normalization from merging background groups into named individuals.
+
 ## 1.14.26 - 2026-06-30
 
 ### Fixed

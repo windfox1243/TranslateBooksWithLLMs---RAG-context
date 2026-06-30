@@ -751,6 +751,71 @@ def _character_names_match(first: str, second: str) -> bool:
     )
 
 
+def _singularize_simple_english_token(token: str) -> str:
+    """Return a conservative singular form for English metadata comparisons."""
+    token = token.casefold()
+    if len(token) <= 3 or token.endswith("ss"):
+        return token
+    if token.endswith("ies") and len(token) > 4:
+        return f"{token[:-3]}y"
+    if token.endswith("es") and re.search(r"(?:ches|shes|xes|zes|ses)$", token):
+        return token[:-2]
+    if token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def _simple_singular_name_key(name: str) -> str:
+    words = _plain_key(_canonical_display_name(name)).split()
+    if len(words) < 2:
+        return ""
+    words[-1] = _singularize_simple_english_token(words[-1])
+    return " ".join(words)
+
+
+def _simple_plural_name_keys_match(first: str, second: str) -> bool:
+    first_key = _plain_key(_canonical_display_name(first))
+    second_key = _plain_key(_canonical_display_name(second))
+    if not first_key or not second_key or first_key == second_key:
+        return False
+    return (
+        _simple_singular_name_key(first)
+        and _simple_singular_name_key(first) == _simple_singular_name_key(second)
+    )
+
+
+def _singularized_detail_tokens(value: str) -> set[str]:
+    return {
+        _singularize_simple_english_token(token)
+        for token in _detail_tokens(value)
+    }
+
+
+def _character_details_substantially_overlap(
+    first_value: str,
+    second_value: str,
+) -> bool:
+    first_gender, first_details = _split_gender_and_details(
+        _normalize_character_value(first_value)
+    )
+    second_gender, second_details = _split_gender_and_details(
+        _normalize_character_value(second_value)
+    )
+    if (
+        first_gender.casefold() in _SPECIFIC_GENDER_LABELS
+        and second_gender.casefold() in _SPECIFIC_GENDER_LABELS
+        and first_gender.casefold() != second_gender.casefold()
+    ):
+        return False
+    first_tokens = _singularized_detail_tokens(first_details)
+    second_tokens = _singularized_detail_tokens(second_details)
+    if not first_tokens or not second_tokens:
+        return False
+    shared = first_tokens & second_tokens
+    overlap = len(shared) / min(len(first_tokens), len(second_tokens))
+    return len(shared) >= 4 and overlap >= 0.70
+
+
 def _character_unique_roles(name: str, value: str = "") -> set[str]:
     """Extract identity-bearing unique titles from a name or its own description."""
     roles = set()
@@ -777,6 +842,11 @@ def _character_identities_match(
 ) -> bool:
     """Match deterministic aliases, including a unique title revealed in lore."""
     if _character_names_match(first_name, second_name):
+        return True
+    if _simple_plural_name_keys_match(
+        first_name,
+        second_name,
+    ) and _character_details_substantially_overlap(first_value, second_value):
         return True
     first_descriptive = _is_descriptive_role_name(first_name)
     second_descriptive = _is_descriptive_role_name(second_name)
@@ -898,6 +968,49 @@ def _infer_unique_short_name_alias_entries(
             continue
         inferred[short_key] = _canonical_display_name(full_name)
         displays[short_key] = _canonical_display_name(raw_short_name)
+    return inferred, displays
+
+
+def _infer_singular_plural_alias_entries(
+    entries: List[Tuple[str, str]],
+    explicit_aliases: Optional[Dict[str, str]] = None,
+) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Infer aliases for near-identical singular/plural entity names."""
+    explicit_aliases = explicit_aliases or {}
+    candidates: List[Tuple[str, str, str]] = []
+    for raw_name, raw_value in entries:
+        name = _canonical_display_name(raw_name)
+        if (
+            _is_invalid_context_key(name)
+            or _is_non_character_work_entry(name, raw_value)
+            or _is_non_character_group_entry(name, raw_value)
+            or _is_disposable_unnamed_character(name, raw_value)
+            or _is_quarantined_character_entry(name, raw_value)
+        ):
+            continue
+        candidates.append((name, raw_value, raw_name))
+
+    inferred: Dict[str, str] = {}
+    displays: Dict[str, str] = {}
+    for index, (left_name, left_value, left_raw) in enumerate(candidates):
+        for right_name, right_value, right_raw in candidates[index + 1:]:
+            if not (
+                _simple_plural_name_keys_match(left_name, right_name)
+                and _character_details_substantially_overlap(
+                    left_value,
+                    right_value,
+                )
+            ):
+                continue
+            target = _preferred_character_name(left_name, right_name)
+            target_key = _plain_key(target)
+            alias = right_raw if _plain_key(left_name) == target_key else left_raw
+            for alias_key in _character_alias_keys(alias):
+                if alias_key in explicit_aliases:
+                    continue
+                inferred[alias_key] = _canonical_display_name(target)
+                displays[alias_key] = _canonical_display_name(alias)
+
     return inferred, displays
 
 
@@ -2711,9 +2824,17 @@ def normalize_global_lore(global_lore: str) -> str:
             raw_character_entries,
             explicit_aliases,
         )
+        plural_aliases, plural_displays = _infer_singular_plural_alias_entries(
+            raw_character_entries,
+            explicit_aliases,
+        )
         for alias_key, target in inferred_aliases.items():
             explicit_aliases.setdefault(alias_key, target)
         for alias_key, display in inferred_displays.items():
+            alias_displays.setdefault(alias_key, display)
+        for alias_key, target in plural_aliases.items():
+            explicit_aliases.setdefault(alias_key, target)
+        for alias_key, display in plural_displays.items():
             alias_displays.setdefault(alias_key, display)
         characters, _ = _deduplicate_character_entries(
             raw_character_entries,

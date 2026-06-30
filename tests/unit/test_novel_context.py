@@ -2584,6 +2584,49 @@ def test_unique_short_name_full_name_merge_rejects_ambiguous_family_name():
     assert "- Kim: Kim Hyun-woo" not in normalized
 
 
+def test_singular_plural_entity_entries_merge_when_descriptions_overlap():
+    from src.utils.novel_context import normalize_global_lore
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Death God: Unspecified, entity, a creature possessing Kim Si-hu's "
+        "body and controlling his actions.\n"
+        "- Death Gods: Unspecified, multiple entities, creatures possessing "
+        "Kim Si-hu's body and controlling his actions, appearing as a flock "
+        "of crows.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(lore)
+
+    assert normalized.count("- Death God:") == 1
+    assert "- Death Gods: Unspecified" not in normalized
+    assert "flock of crows" in normalized
+    assert "- Death Gods: Death God" in normalized
+
+
+def test_singular_plural_entity_entries_do_not_merge_on_weak_overlap():
+    from src.utils.novel_context import normalize_global_lore
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Palace Guard: Male, named royal guard who escorts Valentine.\n"
+        "- Palace Guards: Unspecified, multiple background guards stationed "
+        "around the palace gate.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(lore)
+
+    assert "- Palace Guard: Male, named royal guard who escorts Valentine." in normalized
+    assert "- Palace Guards: Unspecified, multiple background guards stationed around the palace gate." in normalized
+    assert "- Palace Guards: Palace Guard" not in normalized
+
+
 def test_short_name_full_name_merge_requires_shared_identity_evidence():
     from src.utils.novel_context import normalize_global_lore
 
