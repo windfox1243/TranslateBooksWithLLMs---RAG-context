@@ -3305,17 +3305,46 @@ async def test_consolidation_skips_on_no_bullet_entries():
 
 
 def test_filter_abstract_concepts_and_spurious_delete():
-    from src.utils.novel_context import _is_non_character_work_entry, _parse_bullet_entries
+    from src.utils.novel_context import (
+        _is_disposable_unnamed_character,
+        _is_non_character_work_entry,
+        _parse_bullet_entries,
+        normalize_global_lore,
+    )
 
     # Test abstract concepts / hallucinations
     assert _is_non_character_work_entry("Death", "Unspecified, personified concept or hallucination experienced by Kim Si-hu") is True
     assert _is_non_character_work_entry("Fear", "Unspecified, abstract concept that governs the character's choices") is True
     assert _is_non_character_work_entry("Sword", "Unspecified, inanimate object used as a weapon") is True
     assert _is_non_character_work_entry("Shadow", "Unspecified, metaphorical representation of inner guilt") is True
+    assert _is_non_character_work_entry("Distress Level", "Unspecified, psychological metric of Kim Si-hu that must be managed to prevent his death") is True
+    assert _is_non_character_work_entry("Affection Level", "Unspecified, metric representing Kim Si-hu's favorability toward his summon") is True
+    assert _is_non_character_work_entry("Evaluation center", "Unspecified, facility within the Academy used to verify summoner abilities") is True
+    assert _is_non_character_work_entry("Granzel", "Unspecified, character mentioned in episode title") is True
+    assert _is_disposable_unnamed_character("Knight", "Unspecified, knight accompanying Lenya Robert, currently observing the interaction") is True
+    assert _is_disposable_unnamed_character("Battle referee", "Unspecified, staff overseeing the match between Kim Si-hu and Lenya Robert") is True
 
     # Valid characters should NOT be filtered
     assert _is_non_character_work_entry("Reaper", "Female, girl in black rags who works for Valentine") is False
     assert _is_non_character_work_entry("Kim Si-hu", "Male, handsome student") is False
+    assert _is_disposable_unnamed_character("Butler", "Male, elderly servant working for the Robert family mansion") is False
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Distress Level: Unspecified, psychological metric of Kim Si-hu that must be managed to prevent his death.\n"
+        "- Evaluation center: Unspecified, facility within the Academy used to verify summoner abilities.\n"
+        "- Knight: Unspecified, knight accompanying Lenya Robert, currently observing the interaction.\n"
+        "- Kim Si-hu: Male, 17-year-old Summoner Academy student.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- Distress Level: Mức độ căng thẳng\n"
+    )
+    normalized = normalize_global_lore(lore)
+    assert "- Distress Level: Unspecified" not in normalized
+    assert "- Evaluation center: Unspecified" not in normalized
+    assert "- Knight: Unspecified" not in normalized
+    assert "- Kim Si-hu: Male" in normalized
+    assert "- Distress Level: Mức độ căng thẳng" in normalized
 
     # Test that DELETE bullet entries are skipped
     parsed_bullets = _parse_bullet_entries("- DELETE:\n- DELETE: Death\n- Kim Si-hu: Male, student\n- DELETE")
