@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.29 - 2026-06-30
+
+### Fixed
+
+- **Live chunk-budget refresh:** New web translation jobs now reload `.env` before resolving `MAX_TOKENS_PER_CHUNK` when the UI does not send an explicit per-job value, preventing stale server defaults from silently controlling chunk size.
+- **Chunk-budget observability:** EPUB HTML and plain-text translation logs now include the source-token budget used when creating translation units, making unexpected chunk counts easier to diagnose immediately.
+
 ## 1.14.28 - 2026-06-30
 
 ### Fixed

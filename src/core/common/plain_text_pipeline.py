@@ -268,7 +268,14 @@ async def translate_paragraphs_plain(
         log_callback(
             "chapter_mode_ready",
             f"Chapter-aware mode prepared {chapter_count} chapter(s) as "
-            f"{len(segments)} translation unit(s).",
+            f"{len(segments)} translation unit(s) with "
+            f"{max_tokens_per_chunk} source tokens per unit.",
+        )
+    elif log_callback:
+        log_callback(
+            "plain_text_chunks_created",
+            f"Plain Text Mode created {len(segments)} translation unit(s) "
+            f"with {max_tokens_per_chunk} source tokens per unit.",
         )
 
     # Chunk dicts mirror split_text_into_chunks() output; context comes from

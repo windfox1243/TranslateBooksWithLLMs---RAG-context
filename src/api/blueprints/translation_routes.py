@@ -38,6 +38,8 @@ def _clamp_parallel_workers(value):
 
 def _clamp_chunk_tokens(value):
     """Resolve the per-job token budget from request or live .env config."""
+    if value in (None, ""):
+        _config.reload_config()
     try:
         resolved = int(value or _config.MAX_TOKENS_PER_CHUNK)
     except (TypeError, ValueError):
