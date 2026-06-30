@@ -154,10 +154,12 @@ _GENERIC_ROLE_WORDS = {
     "corporal",
     "doctor",
     "guard",
+    "knight",
     "manager",
     "medic",
     "officer",
     "private",
+    "referee",
     "sergeant",
     "soldier",
     "soldiers",
@@ -221,8 +223,10 @@ _INCIDENTAL_CHARACTER_MARKERS = {
     "medical professional",
     "missing leg",
     "new recruit",
+    "observing",
     "one scene",
     "one-scene",
+    "overseeing",
     "physician",
     "screaming in pain",
     "searching for",
@@ -436,7 +440,7 @@ def _is_disposable_unnamed_character(name: str, value: str) -> bool:
 
 def _is_non_character_work_entry(name: str, value: str) -> bool:
     """Reject works/apps or abstract concepts that the model put in the character registry."""
-    del name
+    name_key = _plain_key(name)
     _, details = _split_gender_and_details(_normalize_character_value(value))
     key = _plain_key(details)
     if not key:
@@ -447,6 +451,28 @@ def _is_non_character_work_entry(name: str, value: str) -> bool:
         r"\b(?:personified\s+(?:concept|manifestation)|abstract\s+concept|hallucination(?:\s+experienced\s+by)?|metaphor(?:ical)?(?:\s+representation)?|inanimate\s+object|not\s+a\s+character)\b",
         key,
     ):
+        return True
+    if re.search(
+        r"\b(?:level|score|stat|stats|status|points?|grade|metric|"
+        r"meter|gauge|window)\b",
+        name_key,
+    ) and re.search(
+        r"\b(?:metric|score|stat|status|level|points?|representing|"
+        r"measures?|tracks?|managed|favorability|growth)\b",
+        key,
+    ):
+        return True
+    if re.search(
+        r"\b(?:center|centre|facility|building|hall|arena|room|office|"
+        r"academy|school|association|kingdom|state|world|dimension)\b",
+        name_key,
+    ) and re.search(
+        r"\b(?:facility|location|place|building|room|within|where|used\s+to|"
+        r"used\s+for|located)\b",
+        key,
+    ):
+        return True
+    if re.search(r"\bmentioned\s+in\s+(?:an?\s+)?(?:episode|chapter)\s+title\b", key):
         return True
 
     words = re.findall(r"\w+", key)
