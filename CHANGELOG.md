@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.14.28 - 2026-06-30
+
+### Fixed
+
+- **Seria name variant canonicalization:** Relationship and addressing context now resolves compact spacing variants such as `Seria Bladi Demonkill` and one-edit typo variants such as `Seria Blady Demonkill` to `Seria Bladi Demon Kill` when the match is unique.
+- **Composite relationship party normalization:** Dynamic context now canonicalizes character names inside composite parties such as `Kim Si-hu & Seria Bladi Demonkill`.
+- **Vietnamese first-person consistency:** Translation and refinement prompts now include Vietnamese style guardrails that prefer consistent serious-literary `tôi` narration over accidental switches to casual `mình`.
+
 ## 1.14.27 - 2026-06-30
 
 ### Fixed

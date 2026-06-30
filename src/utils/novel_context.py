@@ -647,6 +647,12 @@ def _normalize_relative_name_key(name: str) -> str:
     return " ".join(words)
 
 
+def _compact_name_key(name: str) -> str:
+    key = _plain_key(_canonical_display_name(name))
+    compact = re.sub(r"[^0-9a-z]+", "", key)
+    return compact if len(compact) >= 12 else ""
+
+
 def _canonical_display_name(name: str) -> str:
     name = _strip_balanced_brackets(name)
     name = _strip_trailing_qualifier(name)
@@ -667,6 +673,7 @@ def _character_alias_keys(name: str) -> set[str]:
         _plain_key(no_article),
         _plain_key(no_title),
         _normalize_relative_name_key(no_title),
+        _compact_name_key(no_title),
     }
     return {alias for alias in aliases if alias and not _is_invalid_context_key(alias)}
 
@@ -2929,11 +2936,68 @@ def _normalize_relationship_notation(text: str) -> str:
     return result
 
 
+def _within_one_edit(first: str, second: str) -> bool:
+    if first == second:
+        return True
+    if abs(len(first) - len(second)) > 1:
+        return False
+    if len(first) == len(second):
+        return sum(left != right for left, right in zip(first, second)) == 1
+    if len(first) > len(second):
+        first, second = second, first
+    index_first = 0
+    index_second = 0
+    edits = 0
+    while index_first < len(first) and index_second < len(second):
+        if first[index_first] == second[index_second]:
+            index_first += 1
+            index_second += 1
+            continue
+        edits += 1
+        if edits > 1:
+            return False
+        index_second += 1
+    return True
+
+
+def _fuzzy_canonical_relationship_party(
+    value: str,
+    alias_map: Dict[str, str],
+) -> str:
+    compact = _compact_name_key(value)
+    if not compact:
+        return ""
+    matches = {
+        target
+        for alias, target in alias_map.items()
+        if (
+            " " not in alias
+            and len(alias) >= 12
+            and _within_one_edit(compact, alias)
+        )
+    }
+    return next(iter(matches)) if len(matches) == 1 else ""
+
+
 def _canonical_relationship_party(value: str, alias_map: Dict[str, str]) -> str:
     clean = _strip_balanced_brackets(value).strip()
+    if re.search(r"\s&\s", clean):
+        parts = re.split(r"\s*&\s*", clean)
+        canonical_parts = [
+            _canonical_relationship_party(part, alias_map)
+            for part in parts
+        ]
+        if any(
+            _plain_key(part) != _plain_key(canonical)
+            for part, canonical in zip(parts, canonical_parts)
+        ):
+            return " & ".join(canonical_parts)
     for alias in _character_alias_keys(clean):
         if alias in alias_map:
             return alias_map[alias]
+    fuzzy = _fuzzy_canonical_relationship_party(clean, alias_map)
+    if fuzzy:
+        return fuzzy
     return clean
 
 

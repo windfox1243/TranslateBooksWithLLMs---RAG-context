@@ -139,6 +139,20 @@ def _build_optional_prompt_sections(prompt_options: dict) -> str:
     return '\n\n'.join(sections)
 
 
+def _build_target_language_style_section(target_language: str) -> str:
+    """Return target-language-specific style guardrails."""
+    target = (target_language or "").strip().casefold()
+    if target not in {"vietnamese", "tiếng việt", "tieng viet", "vi"}:
+        return ""
+    return """
+# VIETNAMESE STYLE GUARDRAILS
+
+- Maintain consistent Vietnamese pronouns and register across adjacent paragraphs.
+- For serious literary first-person narration, prefer "tôi" unless the source or established character voice clearly requires an intimate/casual "mình".
+- Do not switch the same narrator from "tôi" to "mình" within the same scene or reflective passage unless the relationship/register intentionally changes.
+- Preserve established addressing forms from the glossary, dialogue context, and previous paragraph."""
+
+
 def _build_dialogue_attribution_section(prompt_options: dict) -> str:
     """Build hidden scene-local speaker metadata for the current unit."""
     if not prompt_options:
@@ -297,6 +311,9 @@ def generate_translation_prompt(
 
     # Build optional prompt sections based on prompt_options
     optional_sections = _build_optional_prompt_sections(prompt_options)
+    target_language_style_section = _build_target_language_style_section(
+        target_language
+    )
 
     # Build custom instructions section
     custom_instructions_section = ""
@@ -336,6 +353,7 @@ If unsure between literal and natural phrasing: **choose natural**.
 - Keep the exact text layout, spacing, line breaks, and indentation
 - **WRITE YOUR TRANSLATION IN {target_language.upper()} - THIS IS MANDATORY**
 {optional_sections}
+{target_language_style_section}
 {placeholder_section}
 
 # FINAL REMINDER: YOUR OUTPUT LANGUAGE
@@ -544,6 +562,9 @@ def generate_refinement_prompt(
 
     # Build optional prompt sections
     optional_sections = _build_optional_prompt_sections(prompt_options)
+    target_language_style_section = _build_target_language_style_section(
+        target_language
+    )
 
     # Add additional instructions section if provided
     additional_instructions_section = ""
@@ -592,6 +613,7 @@ Your job is to REWRITE it with perfect literary {target_language} style.
 - Character names and proper nouns
 - Technical terms (if any)
 {optional_sections}
+{target_language_style_section}
 {placeholder_section}
 {additional_instructions_section}
 
