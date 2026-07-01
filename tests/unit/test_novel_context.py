@@ -3322,7 +3322,7 @@ def test_novel_context_filename_sanitization_preserves_unicode():
     assert make_novel_context_filename("Vampire.epub") == "Vampire_context.txt"
     assert (
         make_novel_context_filename("Vampire-1.2_3!@#$.epub")
-        == "Vampire-1.2_3____context.txt"
+        == "Vampire-1.2_3_____context.txt"
     )
     assert make_novel_context_filename("!!!.epub") == "____context.txt"
     assert make_novel_context_filename("") == "translation_context.txt"
