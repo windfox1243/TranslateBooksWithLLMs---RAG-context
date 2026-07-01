@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.32 - 2026-07-01
+
+### Fixed
+
+- **Refinement phase start freeze:** Refinement no longer streams the full novel context payload to the browser when loading global lore for phase 2, preventing large context files from freezing the UI/socket before the first refinement request.
+- **EPUB refinement progress:** EPUB refine-after now emits progress per refinement chunk instead of only after each XHTML file, preventing phase 2 from looking frozen during slow or multi-chunk files.
+
 ## 1.14.31 - 2026-06-30
 
 ### Fixed
@@ -7,7 +14,6 @@
 - **Global context edit cost:** Saving changes from the Global context tab now propagates the edited global lore through saved snapshots without replaying every later chunk through the LLM, as long as the dynamic state was unchanged.
 - **Timeline safety:** Dynamic-state edits still use the existing forward LLM replay, and global-only propagation falls back to LLM replay when a later chunk has no saved dynamic snapshot to preserve.
 - **Pause/resume consistency:** Context resync checkpoints now remember whether the run is global-lore propagation or timeline replay, so paused jobs resume with the same behavior.
-- **EPUB refinement progress:** EPUB refine-after now emits progress per refinement chunk instead of only after each XHTML file, preventing phase 2 from looking frozen during slow or multi-chunk files.
 
 ## 1.14.30 - 2026-06-30
 

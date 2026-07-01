@@ -932,6 +932,26 @@ def test_context_resync_save_does_not_replace_latest_with_historical_snapshot():
     assert "scope: isGlobal ? 'global_lore' : 'snapshot'" in save_block
 
 
+def test_refinement_context_state_omits_large_ui_payloads():
+    project_root = Path(__file__).resolve().parents[2]
+    refine_file = (
+        project_root / "src" / "core" / "adapters" / "refine_file.py"
+    ).read_text(encoding="utf-8")
+    tracker = (
+        project_root / "src" / "web" / "static" / "js"
+        / "translation" / "translation-tracker.js"
+    ).read_text(encoding="utf-8")
+
+    assert '"content_omitted": True' in refine_file
+    assert '"content_size": len(prompt_options' in refine_file
+    context_state_block = tracker.split(
+        "data.log_entry.type === 'novel_context_state'",
+        1,
+    )[1]
+    assert "typeof data.log_entry.data.content === 'string'" in context_state_block
+    assert "if (hasContextContent)" in context_state_block
+
+
 def test_running_refinement_can_be_restored_after_browser_refresh():
     project_root = Path(__file__).resolve().parents[2]
     routes = (

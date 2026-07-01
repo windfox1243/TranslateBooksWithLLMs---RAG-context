@@ -74,9 +74,11 @@ async def refine_file(
             if log_callback:
                 log_callback("novel_context_state", "Context loaded for refinement (global lore; historical state resolved per unit)", {
                     "type": "novel_context_state", 
-                    "content": prompt_options['novel_context'],
+                    "content_omitted": True,
+                    "content_size": len(prompt_options['novel_context']),
                     "filename": novel_context_path.name,
                     "phase": "refinement",
+                    "ephemeral": True,
                 })
         except Exception as e:
             if log_callback:
