@@ -33,6 +33,7 @@ DYNAMIC_STATE_END = "---DYNAMIC_STATE_END---"
 
 CHARACTERS_SECTION = "## CHARACTERS & GENDERS"
 ALIASES_SECTION = "## CHARACTER ALIASES"
+NAME_MAP_SECTION = "## NAME TRANSLATION MAP"
 GLOSSARY_SECTION = "## GLOSSARY & TERMINOLOGY"
 ADDRESSING_SECTION = "## CURRENT ADDRESSING FORMS"
 RELATIONSHIP_SECTION = "## RELATIONSHIP EVOLUTION"
@@ -174,6 +175,28 @@ _GENERIC_ROLE_WORDS = {
     "soldiers",
     "victim",
 }
+_CJK_GENERIC_ROLE_NAMES = {
+    "同学",
+    "学生",
+    "男同学",
+    "女同学",
+    "男学生",
+    "女学生",
+    "男生",
+    "女生",
+    "老师",
+    "教师",
+    "路人",
+    "行人",
+}
+_CJK_NON_NAME_ADDRESS_LABELS = {
+    "会长",
+    "前辈",
+    "后辈",
+    "美少女",
+    "学生会长",
+}
+_UNSET_NAME_TRANSLATION = "(not set)"
 _AMBIGUOUS_SHORT_NAME_KEYS = {
     "baek",
     "choi",
@@ -476,6 +499,11 @@ def _generic_role_base_key(name: str) -> str:
     return words[-1] if words and words[-1] in _GENERIC_ROLE_WORDS else ""
 
 
+def _is_cjk_generic_role_only_name(name: str) -> bool:
+    compact = re.sub(r"\s+", "", _strip_balanced_brackets(name))
+    return compact in _CJK_GENERIC_ROLE_NAMES
+
+
 def _is_numbered_generic_role_name(name: str) -> bool:
     key = _plain_key(name)
     return bool(
@@ -488,6 +516,8 @@ def _is_disposable_unnamed_character(name: str, value: str) -> bool:
     """Reject explicit one-off unnamed roles that cannot anchor consistency."""
     if _has_recurring_character_marker(name, value):
         return False
+    if _is_cjk_generic_role_only_name(name):
+        return True
     description = _plain_key(value)
     role_key = _generic_role_base_key(name)
     if not role_key:
@@ -2249,15 +2279,24 @@ def _replace_lore_section(lore: str, section_name: str, lines: List[str]) -> str
     replacement = section_name + (f"\n{body}" if body else "")
     bounds = _find_lore_section(lore, section_name)
     if bounds is None:
-        if section_name in {CHARACTERS_SECTION, ALIASES_SECTION}:
-            next_section = (
-                _find_lore_section(lore, ALIASES_SECTION)
-                if section_name == CHARACTERS_SECTION
-                else None
-            )
-            next_section = next_section or _find_lore_section(
-                lore,
-                GLOSSARY_SECTION,
+        if section_name in {
+            CHARACTERS_SECTION,
+            ALIASES_SECTION,
+            NAME_MAP_SECTION,
+        }:
+            following_sections = {
+                CHARACTERS_SECTION: (ALIASES_SECTION, NAME_MAP_SECTION, GLOSSARY_SECTION),
+                ALIASES_SECTION: (NAME_MAP_SECTION, GLOSSARY_SECTION),
+                NAME_MAP_SECTION: (GLOSSARY_SECTION,),
+            }[section_name]
+            next_section = next(
+                (
+                    found
+                    for candidate in following_sections
+                    for found in [_find_lore_section(lore, candidate)]
+                    if found
+                ),
+                None,
             )
             if next_section:
                 next_start = next_section[0]
@@ -3091,6 +3130,122 @@ def _normalize_glossary_entries(entries: List[Tuple[str, str]]) -> List[Tuple[st
     return list(ordered.values())
 
 
+def _has_cjk_or_hangul_name_script(value: str) -> bool:
+    compact = re.sub(r"\s+", "", _strip_balanced_brackets(value))
+    return bool(
+        re.search(r"[\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7a3]", compact)
+    )
+
+
+def _is_source_name_label(value: str) -> bool:
+    compact = re.sub(r"\s+", "", _strip_balanced_brackets(value))
+    if not compact or not _has_cjk_or_hangul_name_script(compact):
+        return False
+    if _is_cjk_generic_role_only_name(compact) or compact in _CJK_NON_NAME_ADDRESS_LABELS:
+        return False
+    return True
+
+
+def _is_likely_translated_name(value: str) -> bool:
+    clean = _strip_balanced_brackets(value)
+    if _is_invalid_context_key(clean) or _has_cjk_or_hangul_name_script(clean):
+        return False
+    if not re.search(r"[A-Za-z]", clean):
+        return False
+    words = re.findall(r"[A-Za-z][A-Za-z'’-]*", clean)
+    if not words:
+        return False
+    lowercase_words = {
+        "a",
+        "an",
+        "and",
+        "as",
+        "for",
+        "from",
+        "in",
+        "of",
+        "or",
+        "the",
+        "to",
+        "with",
+    }
+    return any(
+        word[:1].isupper()
+        or "-" in word
+        or word.casefold() not in lowercase_words and len(words) <= 3
+        for word in words
+    )
+
+
+def _build_name_translation_map_lines(
+    characters: List[Tuple[str, str]],
+    aliases: List[Tuple[str, str]],
+    glossary: List[Tuple[str, str]],
+) -> List[str]:
+    """Render an audit-only source-name-to-translation table."""
+    character_keys = {
+        alias_key
+        for name, _ in characters
+        for alias_key in _character_alias_keys(name)
+    }
+    alias_target_by_key = {
+        alias_key: target
+        for alias, target in aliases
+        for alias_key in _character_alias_keys(alias)
+    }
+    known_name_keys = set(character_keys) | set(alias_target_by_key)
+
+    glossary_by_key = {
+        alias_key: value
+        for source, value in glossary
+        if _is_likely_translated_name(value)
+        for alias_key in _character_alias_keys(source)
+    }
+
+    ordered: Dict[str, Tuple[str, str]] = {}
+
+    def add(
+        source: str,
+        fallback_target: str = "",
+        *,
+        allow_unset: bool = False,
+    ) -> None:
+        if not _is_source_name_label(source):
+            return
+        source_keys = _character_alias_keys(source)
+        if not source_keys:
+            return
+        target = next(
+            (glossary_by_key[key] for key in source_keys if key in glossary_by_key),
+            fallback_target,
+        )
+        if not _is_likely_translated_name(target):
+            if not allow_unset:
+                return
+            target = _UNSET_NAME_TRANSLATION
+        if target == _UNSET_NAME_TRANSLATION and not allow_unset:
+            return
+        key = _plain_key(source)
+        ordered[key] = (_strip_balanced_brackets(source), _strip_balanced_brackets(target))
+
+    for source, _ in characters:
+        source_keys = _character_alias_keys(source)
+        if source_keys & known_name_keys:
+            add(
+                source,
+                alias_target_by_key.get(next(iter(source_keys), ""), ""),
+                allow_unset=True,
+            )
+    for source, target in aliases:
+        add(source, target, allow_unset=not _is_likely_translated_name(target))
+    for source, target in glossary:
+        source_keys = _character_alias_keys(source)
+        if source_keys & known_name_keys:
+            add(source, target)
+
+    return [f"- {source}: {target}" for source, target in ordered.values()]
+
+
 def _character_alias_keys_from_lore(global_lore: str) -> set[str]:
     bounds = _find_lore_section(global_lore, CHARACTERS_SECTION)
     if not bounds:
@@ -3205,8 +3360,11 @@ def normalize_global_lore(global_lore: str) -> str:
             ALIASES_SECTION,
             [f"- {alias}: {target}" for alias, target in aliases],
         )
+    else:
+        aliases = []
 
     glossary_bounds = _find_lore_section(lore, GLOSSARY_SECTION)
+    glossary: List[Tuple[str, str]] = []
     if glossary_bounds:
         _, body_start, body_end = glossary_bounds
         glossary = _normalize_glossary_entries(
@@ -3216,6 +3374,12 @@ def normalize_global_lore(global_lore: str) -> str:
             lore,
             GLOSSARY_SECTION,
             [f"- {name}: {value}" for name, value in glossary],
+        )
+    if characters or aliases or glossary or _find_lore_section(lore, NAME_MAP_SECTION):
+        lore = _replace_lore_section(
+            lore,
+            NAME_MAP_SECTION,
+            _build_name_translation_map_lines(characters, aliases, glossary),
         )
     return lore.strip()
 
@@ -3879,6 +4043,7 @@ def load_novel_context(filename: str, novel_contexts_dir: Path) -> str:
                 "(Characters, genders, and terminology; canonical names only.)\n\n"
                 f"{CHARACTERS_SECTION}\n\n"
                 f"{ALIASES_SECTION}\n\n"
+                f"{NAME_MAP_SECTION}\n\n"
                 f"{GLOSSARY_SECTION}"
             ),
             (
@@ -5181,6 +5346,7 @@ Identity rules:
 - If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
 - For non-English source titles or aliases, preserve the exact source surface label under IDENTITY_LINKS when it is source-proven (for example, "- 중령: Eric"). If the English normalized title also appears in the model's character summary, link that title too.
 - For Chinese/Japanese/Korean source names, do not invent new romanized character names such as pinyin, romaji, or revised romanization variants. Reuse an existing canonical romanized name; otherwise record the exact source surface name under NEW_CHARACTERS and put romanization recommendations only under NEW_GLOSSARY.
+- When adding or correcting a Chinese/Japanese/Korean source-script character name, also add a NEW_GLOSSARY entry that maps the exact source name to the recommended target-language name rendering. If a short source name or honorific address form is durable, add that exact source form too with the appropriate short or honorific target rendering.
 - Do not add one-scene unnamed soldiers, victims, hallucinations, generic crowds, or incidental job labels unless they recur and their identity/gender is required for translation consistency.
 - Do not add numbered/background casualties or generic staff labels such as "Wounded Soldier 1", "Guard 2", "Doctor", or "Private" unless the person is source-named, recurring, or needed for a durable addressing/relationship choice.
 - Do not add bare romantic or family relationship labels such as "Lover", "Girlfriend", "Ex-girlfriend", "Boyfriend", "Partner", "Spouse", "Wife", or "Husband" as characters or identity links. If the relationship partner is not source-named, record only the relationship, not a fake identity alias.
@@ -5245,6 +5411,7 @@ Identity rules:
 - If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
 - For non-English source titles or aliases, preserve the exact source surface label under IDENTITY_LINKS when it is source-proven (for example, "- 중령: Eric"). If the English normalized title also appears in the model's character summary, link that title too.
 - For Chinese/Japanese/Korean source names, do not invent new romanized character names such as pinyin, romaji, or revised romanization variants. Reuse an existing canonical romanized name; otherwise record the exact source surface name under NEW_CHARACTERS and put romanization recommendations only under NEW_GLOSSARY.
+- When adding or correcting a Chinese/Japanese/Korean source-script character name, also add a NEW_GLOSSARY entry that maps the exact source name to the recommended target-language name rendering. If a short source name or honorific address form is durable, add that exact source form too with the appropriate short or honorific target rendering.
 - Do not add one-scene unnamed soldiers, victims, generic crowds, or incidental roles unless they recur and are necessary for pronoun/address consistency.
 - Do not add numbered/background casualties or generic staff labels such as "Wounded Soldier 1", "Guard 2", "Doctor", or "Private" unless the person is source-named, recurring, or needed for a durable addressing/relationship choice.
 - Do not add bare romantic or family relationship labels such as "Lover", "Girlfriend", "Ex-girlfriend", "Boyfriend", "Partner", "Spouse", "Wife", or "Husband" as characters or identity links. If the relationship partner is not source-named, record only the relationship, not a fake identity alias.

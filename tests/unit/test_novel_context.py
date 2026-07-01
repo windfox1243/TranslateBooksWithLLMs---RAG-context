@@ -2948,6 +2948,83 @@ def test_trusted_dynamic_alias_bypasses_source_proof_gate():
     assert "childhood friend of Toda Hitona" in updated
 
 
+def test_name_translation_map_renders_auditable_source_name_mappings():
+    context = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Houya Takuhei: Male, student.\n"
+        "- Shirasagi Akane: Female, main heroine.\n\n"
+        "## CHARACTER ALIASES\n"
+        "- 凤夜拓平: Houya Takuhei\n"
+        "- 拓平: Houya Takuhei\n"
+        "- 白鹭茜: Shirasagi Akane\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- 凤夜拓平: Houya Takuhei\n"
+        "- 拓平: Takuhei\n"
+        "- 白鹭茜: Shirasagi Akane\n"
+        "- gal女主: nữ chính game gal\n"
+    )
+
+    normalized = normalize_novel_context_content(context)
+
+    assert "## NAME TRANSLATION MAP" in normalized
+    assert "- 凤夜拓平: Houya Takuhei" in normalized
+    assert "- 拓平: Takuhei" in normalized
+    assert "- 白鹭茜: Shirasagi Akane" in normalized
+    name_map = normalized.split("## NAME TRANSLATION MAP", 1)[1].split(
+        "## GLOSSARY & TERMINOLOGY",
+        1,
+    )[0]
+    assert "gal女主" not in name_map
+
+
+def test_source_character_glossary_mapping_appears_in_name_translation_map():
+    context = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- 户田瞳奈: Female, protagonist.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- 户田瞳奈: Toda Hitona\n"
+        "- 运动文胸: Sports bra\n"
+    )
+
+    normalized = normalize_novel_context_content(context)
+    name_map = normalized.split("## NAME TRANSLATION MAP", 1)[1].split(
+        "## GLOSSARY & TERMINOLOGY",
+        1,
+    )[0]
+
+    assert "- 户田瞳奈: Toda Hitona" in name_map
+    assert "运动文胸" not in name_map
+
+
+def test_name_translation_map_marks_unmapped_source_names_without_generic_roles():
+    context = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- 户田瞳奈: Female, protagonist.\n"
+        "- 男同学: Male, incidental character who overhears a monologue.\n"
+        "- 菜单栏小姐: Unspecified, system entity.\n\n"
+        "## CHARACTER ALIASES\n"
+        "- 瞳奈: 户田瞳奈\n"
+        "- 美少女: 户田瞳奈\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_novel_context_content(context)
+    name_map = normalized.split("## NAME TRANSLATION MAP", 1)[1].split(
+        "## GLOSSARY & TERMINOLOGY",
+        1,
+    )[0]
+
+    assert "- 户田瞳奈: (not set)" in name_map
+    assert "- 瞳奈: (not set)" in name_map
+    assert "- 菜单栏小姐: (not set)" in name_map
+    assert "男同学" not in normalized
+    assert "美少女" not in name_map
+
+
 def test_unique_short_name_full_name_entries_merge_with_durable_alias():
     from src.utils.novel_context import character_alias_map, normalize_global_lore
 
