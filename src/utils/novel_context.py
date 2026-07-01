@@ -223,7 +223,9 @@ _INCIDENTAL_CHARACTER_MARKERS = {
     "medical professional",
     "missing leg",
     "new recruit",
+    "npc entity",
     "observing",
+    "oversees",
     "one scene",
     "one-scene",
     "overseeing",
@@ -235,6 +237,33 @@ _INCIDENTAL_CHARACTER_MARKERS = {
     "unnamed",
     "wounded",
 }
+_PHYSICAL_DESCRIPTOR_ANCHORS = {
+    "armor",
+    "armour",
+    "badge",
+    "black coat",
+    "cloak",
+    "coat",
+    "dress",
+    "eyepatch",
+    "glasses",
+    "hat",
+    "hood",
+    "jacket",
+    "mask",
+    "robe",
+    "scar",
+    "sword",
+    "uniform",
+    "weapon",
+}
+_PHYSICAL_DESCRIPTOR_RELATIONS = (
+    "carrying",
+    "holding",
+    "in",
+    "wearing",
+    "with",
+)
 _GROUP_ENTITY_WORDS = {
     "army",
     "battalion",
@@ -269,6 +298,27 @@ _RECURRING_CHARACTER_MARKERS = {
     "returns later",
     "source-named",
 }
+_NON_CHARACTER_METADATA_NAMES = {
+    "author",
+    "fan art",
+    "hiatus",
+    "notice",
+    "serialization",
+    "serialization time",
+}
+_NON_CHARACTER_METADATA_DETAIL_PATTERNS = (
+    r"\b(?:author|writer|translator|illustrator)\s+of\s+(?:the\s+)?"
+    r"(?:current\s+)?(?:work|novel|story|book|series)\b",
+    r"\b(?:author|writer)\s*,\s*(?:writer\s+)?of\s+(?:the\s+)?"
+    r"(?:current\s+)?(?:work|novel|story|book|series)\b",
+    r"\b(?:posted|uploaded|published|serialized)\s+(?:chapter|episode|"
+    r"notice|fan\s+art)\b",
+)
+_NON_CHARACTER_ITEM_DETAIL_PATTERNS = (
+    r"\b(?:active|awakening|combat|passive|status|system)\s+skill\b",
+    r"\bskill\s+that\b",
+    r"\b(?:ability|buff|debuff|quest|stat|title)\s+that\b",
+)
 _ROMANTIC_RELATION_LABELS = {
     "beloved",
     "boyfriend",
@@ -438,6 +488,59 @@ def _is_disposable_unnamed_character(name: str, value: str) -> bool:
     return any(marker in description for marker in _INCIDENTAL_CHARACTER_MARKERS)
 
 
+def _is_distinctive_physical_descriptor(name: str, value: str = "") -> bool:
+    """Allow stable unnamed descriptors such as "boy in the black coat"."""
+    key = _plain_key(name)
+    text = _plain_key(f"{name} {value}")
+    if _has_recurring_character_marker(name, value):
+        return True
+    if not any(word in key.split() for word in _UNSTABLE_PHYSICAL_WORDS):
+        return False
+    if not any(
+        re.search(rf"\b{re.escape(relation)}\b", key)
+        for relation in _PHYSICAL_DESCRIPTOR_RELATIONS
+    ):
+        return False
+    return any(anchor in text for anchor in _PHYSICAL_DESCRIPTOR_ANCHORS)
+
+
+def _is_unstable_physical_character_entry(name: str, value: str = "") -> bool:
+    """Reject bare physical placeholders while preserving distinctive labels."""
+    key = _plain_key(name)
+    if not key:
+        return False
+    words = key.split()
+    physical_words = {
+        item for item in _UNSTABLE_PHYSICAL_WORDS
+        if len(item.split()) == 1
+    }
+    if key in _UNSTABLE_PHYSICAL_WORDS:
+        return not _is_distinctive_physical_descriptor(name, value)
+    if not any(word in physical_words for word in words):
+        return False
+    if _is_distinctive_physical_descriptor(name, value):
+        return False
+    stripped_words = [
+        word for word in words
+        if word not in {
+            "a",
+            "an",
+            "the",
+            "young",
+            "old",
+            "older",
+            "younger",
+            "injured",
+            "wounded",
+            "dying",
+            "screaming",
+            "unnamed",
+            "unknown",
+        }
+    ]
+    return len(stripped_words) <= 1
+
+
 def _is_non_character_work_entry(name: str, value: str) -> bool:
     """Reject works/apps or abstract concepts that the model put in the character registry."""
     name_key = _plain_key(name)
@@ -511,6 +614,26 @@ def _is_non_character_group_entry(name: str, value: str) -> bool:
             details_key,
         )
     )
+
+
+def _is_non_character_metadata_or_item_entry(name: str, value: str) -> bool:
+    """Reject author notes, publication metadata, skills, and system items."""
+    name_key = _plain_key(name)
+    _, details = _split_gender_and_details(_normalize_character_value(value))
+    details_key = _plain_key(details)
+    if name_key in _NON_CHARACTER_METADATA_NAMES:
+        return True
+    if details_key and any(
+        re.search(pattern, details_key, flags=re.IGNORECASE)
+        for pattern in _NON_CHARACTER_METADATA_DETAIL_PATTERNS
+    ):
+        return True
+    if details_key and any(
+        re.search(pattern, details_key, flags=re.IGNORECASE)
+        for pattern in _NON_CHARACTER_ITEM_DETAIL_PATTERNS
+    ):
+        return True
+    return False
 
 
 def _is_descriptive_role_name(name: str) -> bool:
@@ -758,6 +881,47 @@ def _character_names_match(first: str, second: str) -> bool:
     )
 
 
+def _small_typo_distance(first: str, second: str) -> bool:
+    if first == second:
+        return True
+    if abs(len(first) - len(second)) > 1:
+        return False
+    previous = list(range(len(second) + 1))
+    for i, left_char in enumerate(first, 1):
+        current = [i]
+        for j, right_char in enumerate(second, 1):
+            substitution = previous[j - 1] + (left_char != right_char)
+            insertion = current[j - 1] + 1
+            deletion = previous[j] + 1
+            current.append(min(substitution, insertion, deletion))
+        previous = current
+    return previous[-1] <= 1
+
+
+def _loose_romanized_token_match(first: str, second: str) -> bool:
+    """Match tiny romanization/OCR variants such as Blady/Bladi or Vladi/Bladi."""
+    if _small_typo_distance(first, second):
+        return True
+    first_folded = first.replace("v", "b").replace("y", "i")
+    second_folded = second.replace("v", "b").replace("y", "i")
+    return _small_typo_distance(first_folded, second_folded)
+
+
+def _similar_full_names_match(first: str, second: str) -> bool:
+    first_parts = _plain_key(_canonical_display_name(first)).split()
+    second_parts = _plain_key(_canonical_display_name(second)).split()
+    if len(first_parts) < 2 or len(first_parts) != len(second_parts):
+        return False
+    if first_parts[0] != second_parts[0] or first_parts[-1] != second_parts[-1]:
+        return False
+    if first_parts == second_parts:
+        return False
+    return all(
+        _loose_romanized_token_match(left, right)
+        for left, right in zip(first_parts[1:-1], second_parts[1:-1])
+    )
+
+
 def _singularize_simple_english_token(token: str) -> str:
     """Return a conservative singular form for English metadata comparisons."""
     token = token.casefold()
@@ -855,6 +1019,11 @@ def _character_identities_match(
         second_name,
     ) and _character_details_substantially_overlap(first_value, second_value):
         return True
+    if _similar_full_names_match(
+        first_name,
+        second_name,
+    ) and _character_details_substantially_overlap(first_value, second_value):
+        return True
     first_descriptive = _is_descriptive_role_name(first_name)
     second_descriptive = _is_descriptive_role_name(second_name)
     if first_descriptive != second_descriptive:
@@ -948,7 +1117,9 @@ def _infer_unique_short_name_alias_entries(
             _is_invalid_context_key(name)
             or _is_non_character_work_entry(name, raw_value)
             or _is_non_character_group_entry(name, raw_value)
+            or _is_non_character_metadata_or_item_entry(name, raw_value)
             or _is_disposable_unnamed_character(name, raw_value)
+            or _is_unstable_physical_character_entry(name, raw_value)
             or _is_quarantined_character_entry(name, raw_value)
         ):
             continue
@@ -991,7 +1162,9 @@ def _infer_singular_plural_alias_entries(
             _is_invalid_context_key(name)
             or _is_non_character_work_entry(name, raw_value)
             or _is_non_character_group_entry(name, raw_value)
+            or _is_non_character_metadata_or_item_entry(name, raw_value)
             or _is_disposable_unnamed_character(name, raw_value)
+            or _is_unstable_physical_character_entry(name, raw_value)
             or _is_quarantined_character_entry(name, raw_value)
         ):
             continue
@@ -2095,6 +2268,7 @@ def _deduplicate_character_entries(
             _is_invalid_context_key(raw_name)
             or _is_non_character_work_entry(raw_name, raw_value)
             or _is_non_character_group_entry(raw_name, raw_value)
+            or _is_non_character_metadata_or_item_entry(raw_name, raw_value)
             or _is_disposable_unnamed_character(raw_name, raw_value)
         ):
             continue
@@ -2112,6 +2286,11 @@ def _deduplicate_character_entries(
             _is_descriptive_role_name(raw_name)
             and not forced_name
         )
+        if (
+            not forced_name
+            and _is_unstable_physical_character_entry(raw_name, raw_value)
+        ):
+            continue
         aliases = raw_aliases | _character_alias_keys(effective_name)
         matching_indices = {
             index
@@ -2321,6 +2500,51 @@ def _canonical_alias_entries(
     return list(output.values())
 
 
+def _retain_renderable_aliases(
+    aliases: Dict[str, str],
+    display_aliases: Dict[str, str],
+    deduced_aliases: Dict[str, str],
+    source_entries: List[Tuple[str, str]],
+) -> None:
+    def title_stripped_alias(alias_key: str, target: str) -> bool:
+        target_keys = _character_alias_keys(target)
+        parts = alias_key.split()
+        return bool(
+            len(parts) >= 2
+            and parts[0] in _NAME_TITLES
+            and " ".join(parts[1:]) in target_keys
+        )
+
+    for raw_name, _ in source_entries:
+        display = _canonical_display_name(raw_name)
+        if (
+            _is_invalid_context_key(display)
+            or _is_descriptive_role_name(display)
+            or _role_title_key_from_name(display)
+            or _is_quarantined_character_entry(display)
+        ):
+            continue
+        for alias_key in _character_alias_keys(raw_name):
+            target = deduced_aliases.get(alias_key)
+            if (
+                not target
+                or alias_key in _character_alias_keys(target)
+                or title_stripped_alias(alias_key, target)
+            ):
+                continue
+            display_aliases.setdefault(alias_key, display)
+    for alias_key, target in deduced_aliases.items():
+        if (
+            alias_key in _character_alias_keys(target)
+            or title_stripped_alias(alias_key, target)
+            or _is_descriptive_role_name(alias_key)
+            or _role_title_key_from_name(alias_key)
+            or _is_quarantined_character_entry(alias_key)
+        ):
+            continue
+        aliases.setdefault(alias_key, target)
+
+
 def _display_role_title(role_key: str) -> str:
     return " ".join(part.capitalize() for part in role_key.split())
 
@@ -2342,9 +2566,11 @@ def _candidate_named_characters(
             _is_invalid_context_key(name)
             or _is_non_character_work_entry(name, raw_value)
             or _is_non_character_group_entry(name, raw_value)
+            or _is_non_character_metadata_or_item_entry(name, raw_value)
             or _is_descriptive_role_name(name)
             or _role_title_key_from_name(name)
             or _is_disposable_unnamed_character(name, raw_value)
+            or _is_unstable_physical_character_entry(name, raw_value)
         ):
             continue
         names[_plain_key(name)] = name
@@ -2797,7 +3023,9 @@ def _discarded_incidental_character_aliases(
         if (
             _is_non_character_work_entry(raw_name, raw_value)
             or _is_non_character_group_entry(raw_name, raw_value)
+            or _is_non_character_metadata_or_item_entry(raw_name, raw_value)
             or _is_disposable_unnamed_character(raw_name, raw_value)
+            or _is_unstable_physical_character_entry(raw_name, raw_value)
         ):
             discarded.update(aliases)
     return discarded
@@ -2843,9 +3071,15 @@ def normalize_global_lore(global_lore: str) -> str:
             explicit_aliases.setdefault(alias_key, target)
         for alias_key, display in plural_displays.items():
             alias_displays.setdefault(alias_key, display)
-        characters, _ = _deduplicate_character_entries(
+        characters, deduced_aliases = _deduplicate_character_entries(
             raw_character_entries,
             explicit_aliases,
+        )
+        _retain_renderable_aliases(
+            explicit_aliases,
+            alias_displays,
+            deduced_aliases,
+            raw_character_entries,
         )
         lore = _replace_lore_section(
             lore,
@@ -4682,23 +4916,40 @@ async def consolidate_context_lore(
             return global_lore, change_logs
 
         raw = response.content.strip()
-        # Strip any accidental markdown fences
-        if raw.startswith("```"):
-            lines = raw.splitlines()
-            lines = lines[1:] if lines[0].startswith("```") else lines
-            if lines and lines[-1].startswith("```"):
-                lines = lines[:-1]
-            raw = "\n".join(lines).strip()
+        # Clean any markdown code blocks
+        if "```" in raw:
+            # Try to extract content inside the first code block
+            block_match = re.search(r'```(?:[a-zA-Z-]*)\n(.*?)```', raw, re.DOTALL)
+            if block_match:
+                raw = block_match.group(1).strip()
+            else:
+                # Fallback: just strip the fence lines
+                raw = "\n".join(line for line in raw.splitlines() if not line.strip().startswith("```")).strip()
 
-        # Validate: must have at least one bullet line
-        consolidated_entries = [
-            line.strip()
-            for line in raw.splitlines()
-            if line.strip().startswith("-")
-        ]
+        # Validate: must have at least one character line (with - or * or number or no prefix but contains ':')
+        consolidated_entries = []
+        for line in raw.splitlines():
+            line_str = line.strip()
+            if not line_str:
+                continue
+            
+            # Try to match a bullet/list marker: '-', '*', '1.', '2.', etc.
+            match = re.match(r'^(?:[-*]|\d+\.)\s*(.*)$', line_str)
+            if match:
+                content = match.group(1).strip()
+            else:
+                content = line_str
+                
+            if ":" in content and not content.startswith("#"):
+                parts = content.split(":", 1)
+                val = parts[1].strip()
+                val_first_word = re.split(r'[\s,.]', val)[0].casefold()
+                if val_first_word in _GENDER_LABELS:
+                    consolidated_entries.append(f"- {content}")
+
         if not consolidated_entries:
             logger.warning(
-                "Consolidation LLM returned no bullet entries. Skipping."
+                "Consolidation LLM returned no valid character entries. Skipping."
             )
             return global_lore, change_logs
 
@@ -4915,6 +5166,7 @@ def merge_new_lore(
 ) -> Tuple[str, List[str]]:
     """Merge context updates through canonical character and glossary identities."""
     change_logs: List[str] = []
+    raw_global_lore = str(global_lore or "")
     lore = normalize_global_lore(global_lore)
 
     def record(message: str) -> None:
@@ -4998,16 +5250,46 @@ def merge_new_lore(
             )
 
     character_bounds = _find_lore_section(lore, CHARACTERS_SECTION)
+    current_character_entries: List[Tuple[str, str]] = []
     if character_bounds:
         _, body_start, body_end = character_bounds
-        characters, _ = _deduplicate_character_entries(
-            _parse_bullet_entries(lore[body_start:body_end]),
+        current_character_entries = _parse_bullet_entries(
+            lore[body_start:body_end]
+        )
+        characters, current_deduced_aliases = _deduplicate_character_entries(
+            current_character_entries,
             explicit_aliases,
+        )
+        _retain_renderable_aliases(
+            explicit_aliases,
+            alias_displays,
+            current_deduced_aliases,
+            current_character_entries,
         )
     else:
         characters = []
 
     incoming_character_entries = _parse_bullet_entries(new_characters)
+    raw_character_bounds = _find_lore_section(
+        raw_global_lore,
+        CHARACTERS_SECTION,
+    )
+    if raw_character_bounds and explicit_aliases:
+        _, raw_body_start, raw_body_end = raw_character_bounds
+        retained_alias_keys = {
+            alias
+            for name, _ in characters
+            for alias in _character_alias_keys(name)
+        }
+        for raw_name, raw_value in _parse_bullet_entries(
+            raw_global_lore[raw_body_start:raw_body_end]
+        ):
+            raw_aliases = _character_alias_keys(raw_name)
+            if not raw_aliases or not (raw_aliases & set(explicit_aliases)):
+                continue
+            if raw_aliases & retained_alias_keys:
+                continue
+            incoming_character_entries.append((raw_name, raw_value))
     inferred_aliases, inferred_displays = _infer_unique_short_name_alias_entries(
         characters + incoming_character_entries,
         explicit_aliases,
@@ -5022,9 +5304,15 @@ def merge_new_lore(
                 alias_displays[alias_key] = inferred_displays[alias_key]
             changed_aliases.append((alias_key, target))
         if changed_aliases:
-            characters, _ = _deduplicate_character_entries(
+            characters, changed_deduced_aliases = _deduplicate_character_entries(
                 characters,
                 explicit_aliases,
+            )
+            _retain_renderable_aliases(
+                explicit_aliases,
+                alias_displays,
+                changed_deduced_aliases,
+                characters,
             )
             for alias_key, target in changed_aliases:
                 record(
@@ -5044,6 +5332,7 @@ def merge_new_lore(
         if (
             _is_non_character_work_entry(raw_name, raw_value)
             or _is_non_character_group_entry(raw_name, raw_value)
+            or _is_non_character_metadata_or_item_entry(raw_name, raw_value)
             or _is_disposable_unnamed_character(raw_name, raw_value)
         ):
             continue
@@ -5067,6 +5356,15 @@ def merge_new_lore(
         ):
             record(
                 "[Novel Context] Quarantined role-like character "
+                f"'{_plain_key(raw_name)}'."
+            )
+            continue
+        if (
+            not forced_name
+            and _is_unstable_physical_character_entry(raw_name, raw_value)
+        ):
+            record(
+                "[Novel Context] Quarantined physical placeholder "
                 f"'{_plain_key(raw_name)}'."
             )
             continue
@@ -5133,9 +5431,16 @@ def merge_new_lore(
             )
         characters[match_index] = (merged_name, merged_value)
 
-    characters, _ = _deduplicate_character_entries(
+    final_character_entries = list(characters)
+    characters, final_deduced_aliases = _deduplicate_character_entries(
         characters,
         explicit_aliases,
+    )
+    _retain_renderable_aliases(
+        explicit_aliases,
+        alias_displays,
+        final_deduced_aliases,
+        final_character_entries + incoming_character_entries,
     )
     lore = _replace_lore_section(
         lore,
@@ -5829,13 +6134,14 @@ async def update_novel_context_chunk(
         # LLM consolidation pass: periodically deduplicate character descriptions
         # that the deterministic merge layer missed (semantically similar rephrasing).
         consolidation_interval = _consolidation_interval()
+        is_last_chunk = (total_chunks > 0 and chunk_index == total_chunks)
         if (
             consolidation_interval > 0
             and chunk_index > 0
-            and chunk_index % consolidation_interval == 0
+            and (chunk_index % consolidation_interval == 0 or is_last_chunk)
         ):
             logger.info(
-                f"[Novel Context] Running consolidation pass at chunk {chunk_index}."
+                f"[Novel Context] Running consolidation pass at chunk {chunk_index}/{total_chunks}."
             )
             consolidated_lore, consolidation_logs = await consolidate_context_lore(
                 llm_client=llm_client,
