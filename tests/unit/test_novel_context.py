@@ -685,6 +685,126 @@ async def test_resync_context_snapshots_resets_dialogue_state_on_scene_key_fallb
 
 
 @pytest.mark.asyncio
+async def test_global_only_resync_propagates_lore_without_llm(monkeypatch, tmp_path):
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from src.core.adapters.generic_translator import _resync_context_snapshots_async
+    import src.config
+
+    old_global = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Seria: Male, divine woman.\n"
+    )
+    edited_global = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Seria: Female, divine woman.\n"
+    )
+    initial = build_novel_context(edited_global, "DYN0")
+    chunk_one = build_novel_context(old_global, "DYN1")
+    chunk_two = build_novel_context(old_global, "DYN2")
+    save_novel_context("resync.txt", tmp_path, build_novel_context(old_global, "DYN2"))
+
+    checkpoint_data = {
+        "job": {
+            "config": {
+                "llm_provider": "ollama",
+                "model": "test-model",
+                "prompt_options": {"novel_context_file": "resync.txt"},
+                "source_language": "English",
+                "target_language": "Vietnamese",
+            }
+        },
+        "chunks": [
+            {
+                "chunk_index": 0,
+                "status": "completed",
+                "original_text": "Source 1",
+                "translated_text": "Translation 1",
+                "chunk_data": {
+                    "context_snapshot": compress_dynamic_state(initial),
+                },
+            },
+            {
+                "chunk_index": 1,
+                "status": "completed",
+                "original_text": "Source 2",
+                "translated_text": "Translation 2",
+                "chunk_data": {
+                    "context_snapshot": compress_dynamic_state(chunk_one),
+                    "dialogue_attribution": {"state_after": {"speaker": "Seria"}},
+                },
+            },
+            {
+                "chunk_index": 2,
+                "status": "completed",
+                "original_text": "Source 3",
+                "translated_text": "Translation 3",
+                "chunk_data": {
+                    "context_snapshot": compress_dynamic_state(chunk_two),
+                },
+            },
+        ],
+    }
+
+    state_manager = MagicMock()
+    checkpoint_manager = MagicMock()
+    checkpoint_manager.load_checkpoint.return_value = checkpoint_data
+    checkpoint_manager.get_job.return_value = checkpoint_data["job"]
+    checkpoint_manager.update_job_config.return_value = True
+    checkpoint_manager.db = MagicMock()
+    state_manager.checkpoint_manager = checkpoint_manager
+
+    monkeypatch.setattr(src.config, "NOVEL_CONTEXTS_DIR", tmp_path)
+    monkeypatch.setattr(
+        "src.api.translation_state.get_state_manager",
+        lambda: state_manager,
+    )
+
+    with patch("src.core.llm_client.LLMClient") as llm_client, patch(
+        "src.utils.novel_context.update_novel_context_chunk",
+        new_callable=AsyncMock,
+    ) as update_context:
+        result = await _resync_context_snapshots_async(
+            translation_id="job",
+            start_chunk_index=0,
+            initial_compressed_snapshot=compress_dynamic_state(initial),
+            global_only_resync=True,
+        )
+
+    assert result is True
+    llm_client.assert_not_called()
+    update_context.assert_not_called()
+    assert checkpoint_manager.db.save_chunk.call_count == 2
+
+    saved_snapshots = {
+        call.kwargs["chunk_index"]: call.kwargs["chunk_data"]["context_snapshot"]
+        for call in checkpoint_manager.db.save_chunk.call_args_list
+    }
+    _, chunk_one_global, chunk_one_dynamic = decode_context_snapshot(
+        saved_snapshots[1],
+        "",
+    )
+    _, chunk_two_global, chunk_two_dynamic = decode_context_snapshot(
+        saved_snapshots[2],
+        "",
+    )
+
+    assert "Seria: Female" in chunk_one_global
+    assert "Seria: Female" in chunk_two_global
+    assert chunk_one_dynamic == decode_context_snapshot(
+        compress_dynamic_state(chunk_one),
+        "",
+    )[2]
+    assert chunk_two_dynamic == decode_context_snapshot(
+        compress_dynamic_state(chunk_two),
+        "",
+    )[2]
+    assert "Seria: Female" in load_novel_context("resync.txt", tmp_path)
+    assert "DYN2" in load_novel_context("resync.txt", tmp_path)
+
+
+@pytest.mark.asyncio
 async def test_resync_last_chunk_writes_edited_full_snapshot_without_nesting(
     monkeypatch,
     tmp_path,

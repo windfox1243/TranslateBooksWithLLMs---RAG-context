@@ -1945,7 +1945,10 @@ window.saveContextResync = async function() {
         const resyncResult = await ApiClient.resyncContextSnapshot(
             translationId,
             chunkIndex,
-            submittedContent
+            submittedContent,
+            {
+                scope: isGlobal ? 'global_lore' : 'snapshot'
+            }
         );
         updateContextResyncControls(resyncResult?.resync_state || {
             status: 'running'

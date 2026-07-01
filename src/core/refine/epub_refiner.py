@@ -65,6 +65,7 @@ async def _refine_one_xhtml(
     check_interruption_callback: Optional[Callable],
     container: Optional[TranslationContainer] = None,
     context_tracker: Optional[Any] = None,
+    stats_callback: Optional[Callable] = None,
 ) -> bool:
     """Refine a single parsed XHTML document in place."""
     body_html, body_element, tag_preserver = _setup_translation(
@@ -104,6 +105,7 @@ async def _refine_one_xhtml(
         prompt_options=prompt_options,
         context_tracker=context_tracker,
         check_interruption_callback=check_interruption_callback,
+        stats_callback=stats_callback,
     )
 
     if check_interruption_callback and check_interruption_callback():
@@ -181,9 +183,6 @@ async def refine_epub_file(
                 log_callback("epub_refine_start",
                              f"✨ Starting EPUB refine pass over {total_files} content files...")
 
-            if stats_callback:
-                stats_callback({'total_chunks': total_files, 'completed_chunks': 0, 'failed_chunks': 0})
-
             db_chunks = []
             if checkpoint_manager and translation_id:
                 db_chunks = checkpoint_manager.db.get_chunks(translation_id) or []
@@ -192,6 +191,7 @@ async def refine_epub_file(
             # map consistently across all XHTML files.
             total_refine_chunks = 0
             refinement_units: List[str] = []
+            refine_chunk_counts: Dict[str, int] = {}
             pre_container = TranslationContainer()
             for href in content_files:
                 file_path = os.path.join(opf_dir, href)
@@ -220,12 +220,21 @@ async def refine_epub_file(
                             ),
                         )
                         total_refine_chunks += len(chunks)
+                        refine_chunk_counts[href] = len(chunks)
                         refinement_units.extend(
                             _globalize_chunk_text(chunk, placeholder_format)
                             for chunk in chunks
                         )
                 except Exception:
                     pass
+
+            progress_total = total_refine_chunks or total_files
+            if stats_callback:
+                stats_callback({
+                    'total_chunks': progress_total,
+                    'completed_chunks': 0,
+                    'failed_chunks': 0,
+                })
 
             from src.utils.novel_context import (
                 RefinementContextTracker,
@@ -254,6 +263,7 @@ async def refine_epub_file(
             )
 
             completed, failed, interrupted = 0, 0, False
+            completed_refine_chunks = 0
             for idx, href in enumerate(content_files):
                 if check_interruption_callback and check_interruption_callback():
                     if log_callback:
@@ -273,6 +283,24 @@ async def refine_epub_file(
                 if log_callback:
                     log_callback("epub_refine_file",
                                  f"📄 Refining file {idx + 1}/{total_files}: {href}")
+
+                def _file_stats_callback(local_stats, *, base=completed_refine_chunks):
+                    if not stats_callback or not total_refine_chunks:
+                        return
+                    try:
+                        local_completed = int(
+                            (local_stats or {}).get('completed_chunks', 0)
+                        )
+                    except (TypeError, ValueError):
+                        local_completed = 0
+                    stats_callback({
+                        'total_chunks': total_refine_chunks,
+                        'completed_chunks': min(
+                            total_refine_chunks,
+                            base + max(0, local_completed),
+                        ),
+                        'failed_chunks': failed,
+                    })
 
                 try:
                     parser = etree.XMLParser(recover=True, remove_blank_text=False)
@@ -296,9 +324,11 @@ async def refine_epub_file(
                     prompt_options=prompt_options,
                     check_interruption_callback=check_interruption_callback,
                     context_tracker=context_tracker,
+                    stats_callback=_file_stats_callback,
                 )
 
                 if ok:
+                    completed_refine_chunks += refine_chunk_counts.get(href, 0)
                     try:
                         tree.write(file_path, xml_declaration=True,
                                    encoding='utf-8', method='xml')
@@ -311,13 +341,24 @@ async def refine_epub_file(
                     completed += 1
                 else:
                     failed += 1
+                    completed_refine_chunks += refine_chunk_counts.get(href, 0)
 
                 if stats_callback:
-                    stats_callback({
-                        'total_chunks': total_files,
-                        'completed_chunks': completed + failed,
-                        'failed_chunks': failed,
-                    })
+                    if total_refine_chunks:
+                        stats_callback({
+                            'total_chunks': total_refine_chunks,
+                            'completed_chunks': min(
+                                total_refine_chunks,
+                                completed_refine_chunks,
+                            ),
+                            'failed_chunks': failed,
+                        })
+                    else:
+                        stats_callback({
+                            'total_chunks': total_files,
+                            'completed_chunks': completed + failed,
+                            'failed_chunks': failed,
+                        })
 
             from src.utils.file_utils import get_partial_output_path
             final_output = (

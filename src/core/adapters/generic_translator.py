@@ -800,6 +800,7 @@ def resync_context_snapshots_background(
     auto_resume_callback=None,
     post_resync_callback=None,
     post_resync_message=None,
+    global_only_resync=False,
 ):
     """Entry point for the background thread."""
     import asyncio
@@ -818,6 +819,7 @@ def resync_context_snapshots_background(
                     auto_resume_callback,
                     post_resync_callback,
                     post_resync_message,
+                    global_only_resync,
                 ),
                 loop,
             )
@@ -835,6 +837,7 @@ def resync_context_snapshots_background(
             auto_resume_callback,
             post_resync_callback,
             post_resync_message,
+            global_only_resync,
         )
     )
 
@@ -847,6 +850,7 @@ async def _resync_context_snapshots_async(
     auto_resume_callback=None,
     post_resync_callback=None,
     post_resync_message=None,
+    global_only_resync=False,
 ):
     """Forward-pass through chunks to re-evaluate the context using the LLM."""
     from src.api.translation_state import get_state_manager
@@ -932,11 +936,18 @@ async def _resync_context_snapshots_async(
         append_and_emit(f"▶️ {message}")
         callback()
     
-    msg = (
-        f"Starting context resync for {translation_id} from saved snapshot "
-        f"at chunk {start_chunk_index + 1}; later chunks will be replayed "
-        "from that context."
-    )
+    if global_only_resync:
+        msg = (
+            f"Starting global context propagation for {translation_id} from "
+            f"saved snapshot at chunk {start_chunk_index + 1}; later chunks "
+            "will keep their saved dynamic state."
+        )
+    else:
+        msg = (
+            f"Starting context resync for {translation_id} from saved snapshot "
+            f"at chunk {start_chunk_index + 1}; later chunks will be replayed "
+            "from that context."
+        )
     logger.info(msg)
     append_and_emit(
         f"🔄 {msg}",
@@ -1008,12 +1019,20 @@ async def _resync_context_snapshots_async(
         "total_chunks": len(completed_chunks),
     })
     if chunks_to_process:
-        append_and_emit(
-            "Using the selected context snapshot as the base; replaying "
-            f"{len(chunks_to_process)} later chunk(s), "
-            f"{chunks_to_process[0]['chunk_index'] + 1}-"
-            f"{chunks_to_process[-1]['chunk_index'] + 1}."
-        )
+        if global_only_resync:
+            append_and_emit(
+                "Using the edited global lore as the base; propagating it to "
+                f"{len(chunks_to_process)} later saved snapshot(s), "
+                f"{chunks_to_process[0]['chunk_index'] + 1}-"
+                f"{chunks_to_process[-1]['chunk_index'] + 1}."
+            )
+        else:
+            append_and_emit(
+                "Using the selected context snapshot as the base; replaying "
+                f"{len(chunks_to_process)} later chunk(s), "
+                f"{chunks_to_process[0]['chunk_index'] + 1}-"
+                f"{chunks_to_process[-1]['chunk_index'] + 1}."
+            )
     
     novel_context_file = config.get('prompt_options', {}).get('novel_context_file')
     path = None
@@ -1060,6 +1079,130 @@ async def _resync_context_snapshots_async(
             ) or {}
         ).get('scene_key')
     )
+
+    if global_only_resync and chunks_to_process:
+        missing_snapshot = next(
+            (
+                c for c in chunks_to_process
+                if not ((c.get('chunk_data') or {}).get('context_snapshot'))
+            ),
+            None,
+        )
+        if missing_snapshot:
+            append_and_emit(
+                "Saved dynamic state is missing for a later chunk; falling "
+                "back to LLM replay for timeline safety."
+            )
+        else:
+            latest_full_context = current_full_context
+            for chunk in chunks_to_process:
+                idx = chunk['chunk_index']
+                if _pause_requested():
+                    paused_state = _save_resync_state({
+                        "status": "paused",
+                        "pause_requested": False,
+                        "last_processed_chunk": max(start_chunk_index, idx - 1),
+                    })
+                    append_and_emit(
+                        "⏸️ Context resync paused. Resume it after changing model settings.",
+                        paused_state,
+                    )
+                    return False
+
+                try:
+                    latest_cp = state_manager.checkpoint_manager.load_checkpoint(
+                        translation_id
+                    )
+                    if not latest_cp:
+                        append_and_emit(
+                            "❌ Translation checkpoint disappeared during resync."
+                        )
+                        return False
+
+                    snapshot_saved = False
+                    for c in latest_cp['chunks']:
+                        if c.get('chunk_index') != idx:
+                            continue
+                        if c.get('chunk_data') is None:
+                            c['chunk_data'] = {}
+                        existing_snapshot = c['chunk_data'].get(
+                            'context_snapshot'
+                        )
+                        _, _, existing_dynamic_text = decode_context_snapshot(
+                            existing_snapshot,
+                            fallback_context,
+                        )
+                        latest_full_context = build_novel_context(
+                            global_lore,
+                            existing_dynamic_text,
+                        )
+                        c['chunk_data']['context_snapshot'] = (
+                            compress_dynamic_state(latest_full_context)
+                        )
+                        state_manager.checkpoint_manager.db.save_chunk(
+                            translation_id=translation_id,
+                            chunk_index=idx,
+                            original_text=c.get('original_text'),
+                            translated_text=c.get('translated_text'),
+                            chunk_data=c.get('chunk_data'),
+                            status=c.get('status') or 'completed',
+                        )
+                        snapshot_saved = True
+                        _save_resync_state({
+                            "status": "running",
+                            "last_processed_chunk": idx,
+                        })
+                        break
+                    if not snapshot_saved:
+                        append_and_emit(f"❌ Chunk {idx} disappeared during resync.")
+                        return False
+                except Exception as e:
+                    err_msg = f"Global context propagation failed at chunk {idx}: {e}"
+                    logger.error(err_msg)
+                    _save_resync_state({
+                        "status": "failed",
+                        "pause_requested": False,
+                        "last_processed_chunk": max(start_chunk_index, idx - 1),
+                        "error": str(e),
+                    })
+                    append_and_emit(f"❌ {err_msg}")
+                    return False
+
+                if _pause_requested():
+                    paused_state = _save_resync_state({
+                        "status": "paused",
+                        "pause_requested": False,
+                        "last_processed_chunk": idx,
+                    })
+                    append_and_emit(
+                        "⏸️ Context resync paused. Resume it after changing model settings.",
+                        paused_state,
+                    )
+                    return False
+
+            if path:
+                try:
+                    save_novel_context(path.name, path.parent, latest_full_context)
+                    append_and_emit(
+                        f"✅ Context file '{path.name}' updated successfully."
+                    )
+                except Exception as e:
+                    err_msg = f"Failed to update context file: {e}"
+                    logger.error(err_msg)
+                    _save_resync_state({"status": "failed", "error": err_msg})
+                    append_and_emit(f"❌ {err_msg}")
+                    return False
+
+            msg_end = "Global context propagation completed."
+            logger.info(msg_end)
+            completed_state = _save_resync_state({
+                "status": "completed",
+                "pause_requested": False,
+                "last_processed_chunk": chunks_to_process[-1]['chunk_index'],
+            })
+            append_and_emit(f"✅ {msg_end}", completed_state)
+            run_follow_up()
+            return True
 
     if not chunks_to_process:
         latest_completed = [c['chunk_index'] for c in completed_chunks]

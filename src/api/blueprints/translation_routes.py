@@ -705,6 +705,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         from src.utils.novel_context import (
             build_novel_context,
             compress_dynamic_state,
+            decode_context_snapshot,
             extract_dynamic_state_from_text,
             extract_global_lore,
         )
@@ -747,6 +748,19 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             return jsonify({"error": "Chunk has no context snapshot to resync"}), 409
         if not _claim_context_resync(translation_id):
             return jsonify({"error": "A context resync is already running for this translation"}), 409
+
+        requested_scope = data.get("scope")
+        previous_snapshot = (target_chunk.get('chunk_data') or {}).get(
+            'context_snapshot'
+        )
+        _, _, previous_dynamic_state = decode_context_snapshot(
+            previous_snapshot,
+            "",
+        )
+        global_only_resync = (
+            requested_scope == "global_lore"
+            and previous_dynamic_state.strip() == dynamic_state.strip()
+        )
 
         if target_chunk.get('chunk_data') is None:
             target_chunk['chunk_data'] = {}
@@ -1076,6 +1090,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                 "last_processed_chunk": chunk_index,
                 "context_revision": context_revision,
                 "follow_up_kind": follow_up_kind,
+                "mode": "global_lore" if global_only_resync else "timeline_replay",
                 "was_active": was_active,
                 "updated_at": time.time(),
             },
@@ -1098,6 +1113,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                     auto_resume_callback,
                     post_resync_callback,
                     post_resync_message,
+                    global_only_resync,
                 )
             finally:
                 _release_context_resync(translation_id)
@@ -1233,6 +1249,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                     None,
                     None,
                     None,
+                    state.get("mode") == "global_lore",
                 )
             finally:
                 _release_context_resync(translation_id)
