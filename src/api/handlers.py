@@ -488,6 +488,11 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             is_context_resync_refinement = bool(
                 config.get('_context_resync_refinement')
             )
+            refinement_prompt_options = copy.deepcopy(
+                config.get('prompt_options', {})
+            )
+            if is_context_resync_refinement:
+                refinement_prompt_options['_refine_after'] = True
             if is_context_resync_refinement:
                 _log_message_callback(
                     "refinement_replay_start",
@@ -539,7 +544,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 context_window=config.get('context_window', 2048),
                 auto_adjust_context=config.get('auto_adjust_context', True),
                 max_tokens_per_chunk=config.get('max_tokens_per_chunk'),
-                prompt_options=config.get('prompt_options', {}),
+                prompt_options=refinement_prompt_options,
                 soft_limit_ratio=config.get('soft_limit_ratio'),
             )
             refinement_failed_chunks = (
@@ -701,6 +706,10 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                     "refine_after_start",
                     "✨ Translation done — running refinement pass on the output."
                 )
+                refinement_prompt_options = copy.deepcopy(
+                    translation_prompt_options
+                )
+                refinement_prompt_options['_refine_after'] = True
                 refine_success = await refine_file(
                     input_filepath=output_filepath_on_server,
                     output_filepath=output_filepath_on_server,
@@ -724,7 +733,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                     context_window=config.get('context_window', 2048),
                     auto_adjust_context=config.get('auto_adjust_context', True),
                     max_tokens_per_chunk=config.get('max_tokens_per_chunk'),
-                    prompt_options=translation_prompt_options,
+                    prompt_options=refinement_prompt_options,
                     soft_limit_ratio=config.get('soft_limit_ratio'),
                 )
                 refinement_failed_chunks = (

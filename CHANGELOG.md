@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.33 - 2026-07-01
+
+### Fixed
+
+- **EPUB refine-after topology:** Chapter-aware EPUB refine-after now uses EPUB spine/content files as refinement units, preserving the stable chapter/file topology instead of re-chunking the translated EPUB into a different number of refinement requests.
+- **Legacy checkpoint compatibility:** This avoids trusting old over-split EPUB checkpoint rows for refinement call count, so projects completed before the chapter-splitting fix do not inherit the old `1020`-chunk topology during refinement.
+
 ## 1.14.32 - 2026-07-01
 
 ### Fixed

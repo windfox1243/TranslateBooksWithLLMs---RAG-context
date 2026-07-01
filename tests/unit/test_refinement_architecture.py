@@ -885,6 +885,18 @@ async def test_epub_refine_emits_global_chunk_progress(monkeypatch, tmp_path):
     assert completed[-1] == 4
 
 
+def test_epub_refine_after_chapter_mode_uses_spine_units():
+    from src.core.refine import epub_refiner
+
+    budget, chapter_mode = epub_refiner._refine_chunking_options(
+        {"_refine_after": True, "chapter_mode": True},
+        5000,
+    )
+
+    assert budget >= 10_000_000
+    assert chapter_mode is False
+
+
 def test_web_refine_after_uses_one_backend_refinement_phase():
     project_root = Path(__file__).resolve().parents[2]
     batch_controller = (
@@ -898,6 +910,7 @@ def test_web_refine_after_uses_one_backend_refinement_phase():
     assert "refine: false" in batch_controller
     assert "translation_prompt_options['refine'] = False" in handlers
     assert "refine_success = await refine_file(" in handlers
+    assert "refinement_prompt_options['_refine_after'] = True" in handlers
 
 
 def test_workflow_steps_and_resync_logs_use_the_canonical_ui_channel():
