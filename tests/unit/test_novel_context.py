@@ -2226,6 +2226,47 @@ def test_character_name_alone_never_promotes_unspecified_gender():
     assert "- Sasha: Unspecified" in normalized
 
 
+def test_character_name_alone_promotes_direct_gender_and_kinship_words():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Female Officer: Unspecified, recurring officer in the front row.\n"
+        "- Male Guard: Unspecified, recurring guard in the front row.\n"
+        "- Shigure Father: Unspecified, father of Shigure Aya.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- Female Officer: Female, recurring officer in the front row." in normalized
+    assert "- Male Guard: Male, recurring guard in the front row." in normalized
+    assert "- Shigure Father: Male, father of Shigure Aya." in normalized
+
+
+def test_disposable_generic_roles_filtering_logic():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Female Student: Unspecified, recurring student acting like a programmed machine.\n"
+        "- Teacher: Unspecified, recurring teacher at the school.\n"
+        "- Bystander: Unspecified, one-off bystander standing nearby.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    # Female Student should be discarded because "programmed machine" is in incidental markers
+    assert "Female Student" not in normalized
+    # Bystander should be discarded because it is a generic role and not marked as recurring
+    assert "Bystander" not in normalized
+    # Teacher should be kept because it has no incidental markers and is marked as recurring
+    assert "- Teacher: Unspecified, recurring teacher at the school." in normalized
+
+
 def test_character_details_compact_repeated_subordinate_roles():
     from src.utils.novel_context import normalize_global_lore
 

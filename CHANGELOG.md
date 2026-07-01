@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.36 - 2026-07-01
+
+### Fixed
+
+- **Kinship-based gender inference:** Added automatic gender inference from kinship nouns (e.g. "father of Shigure Aya" -> Male; "mother of Toda Hitona" -> Female) in character details and names during context normalization.
+- **Kinship-based consolidation merging:** Generic kinship role characters (like "Shigure Father") are now correctly merged into matching proper-named characters (like "Shigure Soichiro") during the consolidation pass, preferring proper names as the canonical keys.
+
 ## 1.14.35 - 2026-07-01
 
 ### Fixed

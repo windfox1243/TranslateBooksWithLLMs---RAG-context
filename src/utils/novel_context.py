@@ -174,6 +174,20 @@ _GENERIC_ROLE_WORDS = {
     "soldier",
     "soldiers",
     "victim",
+    "student",
+    "students",
+    "classmate",
+    "classmates",
+    "teacher",
+    "teachers",
+    "bystander",
+    "bystanders",
+    "passerby",
+    "passersby",
+    "pedestrian",
+    "pedestrians",
+    "crowd",
+    "people",
 }
 _CJK_GENERIC_ROLE_NAMES = {
     "同学",
@@ -188,6 +202,22 @@ _CJK_GENERIC_ROLE_NAMES = {
     "教师",
     "路人",
     "行人",
+}
+_ENGLISH_GENERIC_ROLE_NAMES = {
+    "student",
+    "students",
+    "classmate",
+    "classmates",
+    "teacher",
+    "teachers",
+    "bystander",
+    "bystanders",
+    "passerby",
+    "passersby",
+    "pedestrian",
+    "pedestrians",
+    "crowd",
+    "people",
 }
 _CJK_NON_NAME_ADDRESS_LABELS = {
     "会长",
@@ -268,6 +298,26 @@ _INCIDENTAL_CHARACTER_MARKERS = {
     "soldier",
     "unnamed",
     "wounded",
+    "programmed machine",
+    "automated enforcement",
+    "background npc",
+    "minor npc",
+    "unnamed npc",
+    "throwaway",
+    "one-off",
+    "incidental npc",
+    "minor role",
+}
+_EXPLICIT_NPC_MARKERS = {
+    "programmed machine",
+    "automated enforcement",
+    "npc entity",
+    "background npc",
+    "minor npc",
+    "unnamed npc",
+    "throwaway",
+    "one-off",
+    "incidental npc",
 }
 _PHYSICAL_DESCRIPTOR_ANCHORS = {
     "armor",
@@ -406,6 +456,17 @@ _KINSHIP_GENDERS = {
     "niece": "Female",
 }
 _KINSHIP_WORDS = set(_KINSHIP_GENDERS.keys())
+_DIRECT_GENDER_WORDS = {
+    "male": "Male",
+    "female": "Female",
+    "boy": "Male",
+    "girl": "Female",
+    "man": "Male",
+    "woman": "Female",
+    "gentleman": "Male",
+    "lady": "Female",
+    "guy": "Male",
+}
 _ROMANTIC_RELATION_PATTERN = (
     r"(?:(?:ex|former)[-\s]+)?(?:girlfriend|boyfriend|lover|partner|"
     r"spouse|wife|husband|romantic\s+partner|significant\s+other|"
@@ -529,19 +590,52 @@ def _is_numbered_generic_role_name(name: str) -> bool:
     )
 
 
+def _is_english_generic_role_only_name(name: str) -> bool:
+    key = _plain_key(name).replace("'s", "")
+    key = re.sub(
+        r"\b(?:allied|background|dead|dying|enemy|fallen|female|generic|"
+        r"imperial|injured|male|republic|screaming|unnamed|vampire|"
+        r"wounded|young|old)\b",
+        " ",
+        key,
+    )
+    words = [word for word in key.split() if word]
+    if not words:
+        return False
+    return words[-1] in _ENGLISH_GENERIC_ROLE_NAMES
+
+
 def _is_disposable_unnamed_character(name: str, value: str) -> bool:
     """Reject explicit one-off unnamed roles that cannot anchor consistency."""
-    if _has_recurring_character_marker(name, value):
-        return False
     if _is_cjk_generic_role_only_name(name):
         return True
-    description = _plain_key(value)
+        
+    # Proper named characters (e.g. Jenny, Kriha) must NEVER be discarded as unnamed roles
     role_key = _generic_role_base_key(name)
     if not role_key:
         return False
+        
+    description = _plain_key(value)
+    
+    # 1. If it has explicit NPC/machine markers, it's disposable (even if recurring is present)
+    if any(marker in description for marker in _EXPLICIT_NPC_MARKERS):
+        return True
+        
+    # 2. If it is marked as recurring, it is NOT disposable (saves e.g. crucial recurring teacher)
+    if _has_recurring_character_marker(name, value):
+        return False
+        
+    # 3. If it has generic incidental markers, it is disposable
+    if any(marker in description for marker in _INCIDENTAL_CHARACTER_MARKERS):
+        return True
+        
+    # 4. Check generic English roles (discard if not recurring)
+    if _is_english_generic_role_only_name(name):
+        return True
+        
     if _is_numbered_generic_role_name(name):
         return True
-    return any(marker in description for marker in _INCIDENTAL_CHARACTER_MARKERS)
+    return False
 
 
 def _is_distinctive_physical_descriptor(name: str, value: str = "") -> bool:
@@ -1949,6 +2043,13 @@ def _is_character_meta_fact(fact: str, name: str) -> bool:
 def _infer_gender_from_kinship(name: str, details: str) -> str:
     # 1. Check name words
     name_words = {w.casefold() for w in re.findall(r"\w+", name)}
+    
+    # Check direct gender words (e.g. "Female Student", "Shy Boy")
+    for word, gender in _DIRECT_GENDER_WORDS.items():
+        if word in name_words:
+            return gender
+            
+    # Check kinship words (e.g. "Shigure Father")
     for word, gender in _KINSHIP_GENDERS.items():
         if word in name_words:
             return gender
@@ -5331,6 +5432,7 @@ Rules:
 - Keep ALL factual information that is not a pure duplicate: gender, rank, role, key relationships, notable traits.
 - Preserve the exact canonical name already shown in the input (do not rename characters).
 - Preserve gender labels exactly (Male / Female / Unspecified).
+- Identify and remove generic background NPCs (e.g., unnamed students, teachers, guards, bystanders) that do not have named proper counterparts or significant recurring, plot-driving descriptions.
 - Output ONLY the cleaned bullet list — one line per character in the format:
   - Canonical Name: Gender, concise description.
 - Do NOT add any heading, explanation, markdown fence, or extra text.
