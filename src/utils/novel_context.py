@@ -3526,6 +3526,60 @@ def _merge_dynamic_entries(
     return "\n".join(compacted).strip()
 
 
+def _source_address_label_from_details(details: str) -> str:
+    clean = _clean_inline_text(details)
+    if not clean:
+        return ""
+    match = re.match(r"^[\"'“”‘’](?P<label>[^\"'“”‘’]{1,16})[\"'“”‘’]", clean)
+    if match:
+        return _strip_balanced_brackets(match.group("label")).strip()
+    first_part = clean.split("|", 1)[0].strip()
+    first_part = re.sub(r"\s*\([^)]*\)\s*$", "", first_part).strip()
+    return _strip_balanced_brackets(first_part).strip("\"'“”‘’ ")
+
+
+def _is_source_address_identity_label(label: str) -> bool:
+    compact = re.sub(r"\s+", "", _strip_balanced_brackets(label))
+    return bool(
+        re.fullmatch(r"[\u3400-\u9fff\uf900-\ufaff]{1,8}", compact)
+        or re.fullmatch(r"[\uac00-\ud7a3]{1,6}", compact)
+    )
+
+
+def infer_dynamic_address_identity_links(
+    dynamic_state: str,
+    global_lore: str,
+) -> str:
+    """Promote stable source-side addressing labels to identity links."""
+    if not dynamic_state or not global_lore:
+        return ""
+    alias_map = character_alias_map(global_lore)
+    candidates = {
+        _plain_key(name): name
+        for name in _candidate_named_characters(global_lore, "")
+    }
+    addressing, _, _ = _split_dynamic_sections(dynamic_state)
+    links: Dict[str, str] = {}
+    for line in addressing.splitlines():
+        parsed = _parse_dynamic_relation(line, alias_map)
+        if not parsed:
+            continue
+        (_, arrow, target_key), _, details = parsed
+        if arrow != "→" or target_key not in candidates:
+            continue
+        label = _source_address_label_from_details(details)
+        if not _is_source_address_identity_label(label):
+            continue
+        target = candidates[target_key]
+        if any(
+            alias_key in _character_alias_keys(target)
+            for alias_key in _character_alias_keys(label)
+        ):
+            continue
+        links[label] = target
+    return "\n".join(f"- {alias}: {target}" for alias, target in links.items())
+
+
 def _split_dynamic_sections(dynamic_state: str) -> Tuple[str, str, bool]:
     addressing_lines: List[str] = []
     relationship_lines: List[str] = []
@@ -5126,6 +5180,7 @@ Identity rules:
 - When the latest source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
 - If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
 - For non-English source titles or aliases, preserve the exact source surface label under IDENTITY_LINKS when it is source-proven (for example, "- 중령: Eric"). If the English normalized title also appears in the model's character summary, link that title too.
+- For Chinese/Japanese/Korean source names, do not invent new romanized character names such as pinyin, romaji, or revised romanization variants. Reuse an existing canonical romanized name; otherwise record the exact source surface name under NEW_CHARACTERS and put romanization recommendations only under NEW_GLOSSARY.
 - Do not add one-scene unnamed soldiers, victims, hallucinations, generic crowds, or incidental job labels unless they recur and their identity/gender is required for translation consistency.
 - Do not add numbered/background casualties or generic staff labels such as "Wounded Soldier 1", "Guard 2", "Doctor", or "Private" unless the person is source-named, recurring, or needed for a durable addressing/relationship choice.
 - Do not add bare romantic or family relationship labels such as "Lover", "Girlfriend", "Ex-girlfriend", "Boyfriend", "Partner", "Spouse", "Wife", or "Husband" as characters or identity links. If the relationship partner is not source-named, record only the relationship, not a fake identity alias.
@@ -5189,6 +5244,7 @@ Identity rules:
 - When this source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
 - If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
 - For non-English source titles or aliases, preserve the exact source surface label under IDENTITY_LINKS when it is source-proven (for example, "- 중령: Eric"). If the English normalized title also appears in the model's character summary, link that title too.
+- For Chinese/Japanese/Korean source names, do not invent new romanized character names such as pinyin, romaji, or revised romanization variants. Reuse an existing canonical romanized name; otherwise record the exact source surface name under NEW_CHARACTERS and put romanization recommendations only under NEW_GLOSSARY.
 - Do not add one-scene unnamed soldiers, victims, generic crowds, or incidental roles unless they recur and are necessary for pronoun/address consistency.
 - Do not add numbered/background casualties or generic staff labels such as "Wounded Soldier 1", "Guard 2", "Doctor", or "Private" unless the person is source-named, recurring, or needed for a durable addressing/relationship choice.
 - Do not add bare romantic or family relationship labels such as "Lover", "Girlfriend", "Ex-girlfriend", "Boyfriend", "Partner", "Spouse", "Wife", or "Husband" as characters or identity links. If the relationship partner is not source-named, record only the relationship, not a fake identity alias.
@@ -5297,6 +5353,7 @@ def merge_new_lore(
     new_glossary: str,
     new_aliases: str = "",
     source_text: str = "",
+    trusted_aliases: str = "",
 ) -> Tuple[str, List[str]]:
     """Merge context updates through canonical character and glossary identities."""
     change_logs: List[str] = []
@@ -5319,7 +5376,15 @@ def merge_new_lore(
         for alias_key in _character_alias_keys(alias)
     }
 
-    for raw_alias, raw_target in _parse_bullet_entries(new_aliases):
+    alias_updates = [
+        (raw_alias, raw_target, True)
+        for raw_alias, raw_target in _parse_bullet_entries(trusted_aliases)
+    ] + [
+        (raw_alias, raw_target, False)
+        for raw_alias, raw_target in _parse_bullet_entries(new_aliases)
+    ]
+
+    for raw_alias, raw_target, is_trusted_alias in alias_updates:
         if (
             _is_invalid_context_key(raw_alias)
             or _is_unstable_identity_alias(raw_alias, allow_physical=True)
@@ -5355,6 +5420,7 @@ def merge_new_lore(
         )
         if (
             source_text
+            and not is_trusted_alias
             and not already_linked
             and not _source_proves_identity_link(
                 source_text,
@@ -6243,6 +6309,10 @@ async def update_novel_context_chunk(
                 for part in (new_aliases, source_backstop_aliases)
                 if part.strip()
             )
+        trusted_dynamic_aliases = infer_dynamic_address_identity_links(
+            current_dynamic_state,
+            current_global_lore,
+        )
         if new_dynamic.strip():
             if new_dynamic.startswith("```"):
                 lines = new_dynamic.splitlines()
@@ -6273,6 +6343,7 @@ async def update_novel_context_chunk(
             new_glossary,
             new_aliases,
             source_analysis_text,
+            trusted_dynamic_aliases,
         )
         new_dynamic = merge_dynamic_state(
             current_dynamic_state,

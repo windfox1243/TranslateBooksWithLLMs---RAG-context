@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.35 - 2026-07-01
+
+### Fixed
+
+- **Source-name identity memory:** Stable Chinese, Japanese, and Korean source addressing forms already present in dynamic context now become trusted character aliases during context merging, preventing later chunks from reintroducing pinyin, romaji, or revised-romanization duplicate characters such as `Tuo Ping`.
+- **CJK/Korean romanization guardrails:** Context-update prompts now explicitly reuse existing canonical romanized character names instead of inventing new romanized variants, while keeping romanization suggestions in glossary entries.
+
 ## 1.14.34 - 2026-07-01
 
 ### Fixed
