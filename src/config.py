@@ -567,6 +567,12 @@ Alignment method to use:
 - 'advanced': Future - could add ML-based alignment
 """
 
+STRUCTURED_REFINEMENT_HIDE_PLACEHOLDERS = os.getenv(
+    'STRUCTURED_REFINEMENT_HIDE_PLACEHOLDERS',
+    os.getenv('EPUB_REFINEMENT_HIDE_PLACEHOLDERS', 'true'),
+).lower() == 'true'
+"""Hide structured-document placeholders during refinement and reinsert them deterministically."""
+
 
 def detect_placeholder_mode(text: str) -> tuple:
     """

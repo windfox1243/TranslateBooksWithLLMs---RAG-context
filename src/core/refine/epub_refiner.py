@@ -47,6 +47,12 @@ def _refine_chunking_options(
     return max_tokens_per_chunk, bool((prompt_options or {}).get("chapter_mode"))
 
 
+def _refine_chunking_note(prompt_options: Optional[Dict]) -> Optional[str]:
+    if _refine_after_uses_spine_units(prompt_options):
+        return "EPUB spine-file refinement unit(s)"
+    return None
+
+
 def _globalize_chunk_text(
     chunk: Dict,
     placeholder_format: Tuple[str, str],
@@ -108,6 +114,7 @@ async def _refine_one_xhtml(
         text_with_placeholders, global_tag_map, chunk_budget,
         log_callback, container,
         chapter_mode=chunk_chapter_mode,
+        chunking_note=_refine_chunking_note(prompt_options),
     )
 
     if not chunks:
