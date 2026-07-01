@@ -19,7 +19,15 @@ from typing import Optional, List, Dict, Any, Tuple, Callable
 
 logger = logging.getLogger("novel_context")
 
-SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9_\-\.]+\.txt$")
+WINDOWS_RESERVED_FILENAMES = {
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    *(f"com{index}" for index in range(1, 10)),
+    *(f"lpt{index}" for index in range(1, 10)),
+}
+SAFE_FILENAME_PUNCTUATION = {"_", "-", "."}
 DYNAMIC_STATE_START = "---DYNAMIC_STATE_START---"
 DYNAMIC_STATE_END = "---DYNAMIC_STATE_END---"
 
@@ -83,6 +91,7 @@ _ADDRESS_TERM_SUFFIXES = {
     "san",
     "kun",
     "chan",
+    "ssi",
     "sensei",
     "senpai",
     "sunbae",
@@ -770,6 +779,19 @@ def _normalize_relative_name_key(name: str) -> str:
     return " ".join(words)
 
 
+def _strip_address_suffix_key(name: str) -> str:
+    """Collapse romanized address forms such as Akane-san to Akane."""
+    suffix_pattern = "|".join(re.escape(suffix) for suffix in _ADDRESS_TERM_SUFFIXES)
+    match = re.match(
+        rf"^(?P<base>.+?)(?:[-\s]+)(?:{suffix_pattern})$",
+        _strip_balanced_brackets(name).strip(),
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return _plain_key(match.group("base"))
+    return ""
+
+
 def _compact_name_key(name: str) -> str:
     key = _plain_key(_canonical_display_name(name))
     compact = re.sub(r"[^0-9a-z]+", "", key)
@@ -796,6 +818,7 @@ def _character_alias_keys(name: str) -> set[str]:
         _plain_key(no_article),
         _plain_key(no_title),
         _normalize_relative_name_key(no_title),
+        _strip_address_suffix_key(no_title),
         _compact_name_key(no_title),
     }
     return {alias for alias in aliases if alias and not _is_invalid_context_key(alias)}
@@ -2545,6 +2568,90 @@ def _retain_renderable_aliases(
         aliases.setdefault(alias_key, target)
 
 
+def _source_alias_displays_from_glossary(source: str) -> List[str]:
+    clean = _strip_balanced_brackets(source)
+    compact = re.sub(r"\s+", "", clean)
+    if not re.fullmatch(r"[\u3400-\u9fff\uf900-\ufaff]{3,8}", compact):
+        if re.fullmatch(r"[\uac00-\ud7a3]{3}", compact):
+            return [compact, compact[-2:]]
+        return [clean]
+    displays = [compact]
+    short = compact[-2:]
+    if short != compact:
+        displays.append(short)
+    return displays
+
+
+def _character_target_from_glossary_value(
+    target: str,
+    characters: List[Tuple[str, str]],
+) -> str:
+    target_name = _canonical_display_name(target)
+    if _is_invalid_context_key(target_name):
+        return ""
+    target_keys = _character_alias_keys(target_name)
+    matches = [
+        name
+        for name, _ in characters
+        if (
+            _character_names_match(name, target_name)
+            or bool(target_keys & _character_alias_keys(name))
+        )
+    ]
+    if len(matches) == 1:
+        return matches[0]
+
+    short_key = _short_name_alias_key(target_name)
+    if short_key:
+        short_matches = [
+            name
+            for name, _ in characters
+            if _full_name_contains_short_alias(name, short_key)
+        ]
+        if len(short_matches) == 1:
+            return short_matches[0]
+    return ""
+
+
+def _add_glossary_character_aliases(
+    explicit_aliases: Dict[str, str],
+    alias_displays: Dict[str, str],
+    glossary_entries: List[Tuple[str, str]],
+    characters: List[Tuple[str, str]],
+) -> None:
+    proposed: Dict[str, Tuple[str, str]] = {}
+    ambiguous: set[str] = set()
+    for raw_source, raw_target in glossary_entries:
+        if _strip_balanced_brackets(raw_target).casefold() == "delete":
+            continue
+        target = _character_target_from_glossary_value(raw_target, characters)
+        if not target:
+            continue
+        for display in _source_alias_displays_from_glossary(raw_source):
+            if (
+                _is_invalid_context_key(display)
+                or _is_unstable_identity_alias(display, allow_physical=True)
+            ):
+                continue
+            for alias_key in _character_alias_keys(display):
+                if alias_key in _character_alias_keys(target):
+                    continue
+                existing = proposed.get(alias_key)
+                if existing and existing[1] != target:
+                    ambiguous.add(alias_key)
+                    continue
+                proposed[alias_key] = (display, target)
+
+    for alias_key, (display, target) in proposed.items():
+        if alias_key in ambiguous:
+            continue
+        existing_target = explicit_aliases.get(alias_key)
+        if existing_target and existing_target != target:
+            continue
+        explicit_aliases[alias_key] = target
+        alias_displays.setdefault(alias_key, display)
+
+
 def _display_role_title(role_key: str) -> str:
     return " ".join(part.capitalize() for part in role_key.split())
 
@@ -3625,8 +3732,33 @@ def _apply_dynamic_reincarnation_gender_links(
 
 
 def is_safe_filename(filename: str) -> bool:
-    """Whitelist filenames to alphanumerics + `_-.` with .txt extension."""
-    return bool(SAFE_FILENAME_RE.match(filename or ""))
+    """Return whether a context filename is safe while preserving Unicode names."""
+    if not filename or filename != filename.strip():
+        return False
+    if not filename.lower().endswith(".txt"):
+        return False
+    if any(
+        ord(char) < 32 or not (char.isalnum() or char in SAFE_FILENAME_PUNCTUATION)
+        for char in filename
+    ):
+        return False
+    if filename in {".", ".."}:
+        return False
+    stem = filename[:-4].rstrip(". ")
+    if not stem or stem in {".", ".."}:
+        return False
+    if stem.split(".", 1)[0].lower() in WINDOWS_RESERVED_FILENAMES:
+        return False
+    return True
+
+
+def _safe_context_filename_stem(value: str) -> str:
+    normalized = unicodedata.normalize("NFC", value or "")
+    safe_chars = [
+        char if char.isalnum() or char in SAFE_FILENAME_PUNCTUATION else "_"
+        for char in normalized
+    ]
+    return "".join(safe_chars).strip(".")
 
 
 def _resolve_inside(directory: Path, filename: str) -> Optional[Path]:
@@ -3675,7 +3807,7 @@ def load_novel_context(filename: str, novel_contexts_dir: Path) -> str:
     """Load context content from a safe filename. Creates empty template if missing."""
     if not is_safe_filename(filename):
         raise ValueError(
-            f"Invalid filename '{filename}'. Allowed: alphanumerics, `_`, `-`, `.`; extension must be .txt."
+            f"Invalid filename '{filename}'. Allowed: Unicode letters/numbers, `_`, `-`, `.`; extension must be .txt."
         )
 
     file_path = _resolve_inside(novel_contexts_dir, filename)
@@ -3713,7 +3845,7 @@ def save_novel_context(filename: str, novel_contexts_dir: Path, content: str) ->
     """Atomically save context content to a safe filename."""
     if not is_safe_filename(filename):
         raise ValueError(
-            f"Invalid filename '{filename}'. Allowed: alphanumerics, `_`, `-`, `.`; extension must be .txt."
+            f"Invalid filename '{filename}'. Allowed: Unicode letters/numbers, `_`, `-`, `.`; extension must be .txt."
         )
 
     file_path = _resolve_inside(novel_contexts_dir, filename)
@@ -4245,10 +4377,12 @@ def should_update_novel_context_for_index(
 
 def make_novel_context_filename(input_filename: str, fallback: str = "translation") -> str:
     """Create a safe, deterministic context filename from an input filename."""
-    stem = Path(input_filename or "").stem
-    safe_stem = re.sub(r"[^A-Za-z0-9_.-]", "_", stem).strip(".")
+    basename = str(input_filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    stem = Path(basename).stem
+    safe_stem = _safe_context_filename_stem(stem)
     if not safe_stem:
-        safe_stem = re.sub(r"[^A-Za-z0-9_.-]", "_", fallback).strip(".") or "translation"
+        fallback_basename = str(fallback or "").replace("\\", "/").rsplit("/", 1)[-1]
+        safe_stem = _safe_context_filename_stem(Path(fallback_basename).stem) or "translation"
     return f"{safe_stem}_context.txt"
 
 
@@ -5268,6 +5402,21 @@ def merge_new_lore(
         )
     else:
         characters = []
+
+    glossary_alias_entries: List[Tuple[str, str]] = []
+    glossary_alias_bounds = _find_lore_section(lore, GLOSSARY_SECTION)
+    if glossary_alias_bounds:
+        _, body_start, body_end = glossary_alias_bounds
+        glossary_alias_entries.extend(
+            _parse_bullet_entries(lore[body_start:body_end])
+        )
+    glossary_alias_entries.extend(_parse_bullet_entries(new_glossary))
+    _add_glossary_character_aliases(
+        explicit_aliases,
+        alias_displays,
+        glossary_alias_entries,
+        characters,
+    )
 
     incoming_character_entries = _parse_bullet_entries(new_characters)
     raw_character_bounds = _find_lore_section(

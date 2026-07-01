@@ -31,8 +31,14 @@ from src.prompts.prompts import (
 def test_is_safe_filename():
     assert is_safe_filename("novel.txt") is True
     assert is_safe_filename("novel-name_1.txt") is True
+    assert is_safe_filename(
+        "\u6211\u600e\u4e48\u53ef\u80fd\u4f1a\u53d8\u6210gal"
+        "\u5973\u4e3b\u554a_context.txt"
+    ) is True
     assert is_safe_filename("novel/name.txt") is False
     assert is_safe_filename("../novel.txt") is False
+    assert is_safe_filename("novel:name.txt") is False
+    assert is_safe_filename("con.txt") is False
     assert is_safe_filename("novel.json") is False
     assert is_safe_filename("") is False
 
@@ -2792,6 +2798,112 @@ def test_role_only_summoner_update_is_quarantined_not_character():
     assert any("Quarantined role-like character 'summoner'" in log for log in logs)
 
 
+def test_context_glossary_character_alias_merges_incoming_alias():
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, lieutenant colonel.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- El Lobo: Eric\n"
+    )
+
+    updated, _ = merge_new_lore(
+        initial_lore,
+        "- El Lobo: Male, masked codename used by the rebels.",
+        "",
+    )
+
+    assert updated.count("- Eric:") == 1
+    assert "- El Lobo: Male" not in updated
+    assert "- El Lobo: Eric" in updated
+    assert "masked codename used by the rebels" in updated
+
+
+def test_context_glossary_cjk_full_name_adds_short_source_alias():
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Houjou Takuhei: Male, galgame male lead.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- \u51e4\u591c\u62d3\u5e73: Houjou Takuhei\n"
+    )
+
+    updated, _ = merge_new_lore(
+        initial_lore,
+        "- \u62d3\u5e73: Male, student and childhood friend of Toda Hitona.",
+        "",
+    )
+
+    assert updated.count("- Houjou Takuhei:") == 1
+    assert "- \u62d3\u5e73: Male" not in updated
+    assert "- \u62d3\u5e73: Houjou Takuhei" in updated
+    assert "childhood friend of Toda Hitona" in updated
+
+
+def test_context_glossary_korean_full_name_adds_given_name_alias():
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kim Min-su: Male, student.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- \uae40\ubbfc\uc218: Kim Min-su\n"
+    )
+
+    updated, _ = merge_new_lore(
+        initial_lore,
+        "- \ubbfc\uc218: Male, classmate who helps the protagonist.",
+        "",
+    )
+
+    assert updated.count("- Kim Min-su:") == 1
+    assert "- \ubbfc\uc218: Male" not in updated
+    assert "- \ubbfc\uc218: Kim Min-su" in updated
+    assert "classmate who helps the protagonist" in updated
+
+
+def test_address_suffix_alias_merges_into_base_character():
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Akane: Female, shy student.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    updated, _ = merge_new_lore(
+        initial_lore,
+        "- Akane-san: Female, addressed politely by classmates.",
+        "",
+    )
+
+    assert updated.count("- Akane:") == 1
+    assert "- Akane-san: Female" not in updated
+    assert "addressed politely by classmates" in updated
+
+
+def test_korean_romanized_ssi_suffix_merges_into_base_character():
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Kim Min-su: Male, student.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    updated, _ = merge_new_lore(
+        initial_lore,
+        "- Kim Min-su-ssi: Male, addressed politely by classmates.",
+        "",
+    )
+
+    assert updated.count("- Kim Min-su:") == 1
+    assert "- Kim Min-su-ssi: Male" not in updated
+    assert "addressed politely by classmates" in updated
+
+
 def test_unique_short_name_full_name_entries_merge_with_durable_alias():
     from src.utils.novel_context import character_alias_map, normalize_global_lore
 
@@ -3206,20 +3318,22 @@ async def test_update_novel_context_chunk_deduplicates_headers():
 
 
 
-def test_novel_context_filename_regex_substitution():
-    import re
-    from pathlib import Path
-
-    # Mimic the regex pattern and logic in translation_routes.py
-    def clean_stem(filename):
-        stem = Path(filename).stem
-        cleaned = re.sub(r'[^a-zA-Z0-9_\-.]', '_', stem)
-        return cleaned or 'translation'
-
-    assert clean_stem("Vampire.epub") == "Vampire"
-    assert clean_stem("Vampire-1.2_3!@#$.epub") == "Vampire-1.2_3____"
-    assert clean_stem("!!!.epub") == "___"
-    assert clean_stem("") == "translation"
+def test_novel_context_filename_sanitization_preserves_unicode():
+    assert make_novel_context_filename("Vampire.epub") == "Vampire_context.txt"
+    assert (
+        make_novel_context_filename("Vampire-1.2_3!@#$.epub")
+        == "Vampire-1.2_3____context.txt"
+    )
+    assert make_novel_context_filename("!!!.epub") == "____context.txt"
+    assert make_novel_context_filename("") == "translation_context.txt"
+    assert (
+        make_novel_context_filename(
+            "\u6211\u600e\u4e48\u53ef\u80fd\u4f1a\u53d8\u6210gal"
+            "\u5973\u4e3b\u554a.epub"
+        )
+        == "\u6211\u600e\u4e48\u53ef\u80fd\u4f1a\u53d8\u6210gal"
+        "\u5973\u4e3b\u554a_context.txt"
+    )
 
 
 def test_canonical_snapshot_decodes_full_and_legacy_formats():
@@ -3267,9 +3381,16 @@ def test_snapshot_decode_returns_canonical_lore_for_resume():
 
 def test_make_novel_context_filename_is_safe_for_every_input_name():
     assert make_novel_context_filename("Book Name.epub") == "Book_Name_context.txt"
-    assert make_novel_context_filename("日本語.docx") == "____context.txt"
+    assert (
+        make_novel_context_filename("\u65e5\u672c\u8a9e.docx")
+        == "\u65e5\u672c\u8a9e_context.txt"
+    )
     assert make_novel_context_filename("", "epub") == "epub_context.txt"
-    assert is_safe_filename(make_novel_context_filename("日本語.docx"))
+    assert is_safe_filename(make_novel_context_filename("\u65e5\u672c\u8a9e.docx"))
+    assert (
+        normalize_novel_context_filename("\u65e5\u672c\u8a9e_context.txt")
+        == "\u65e5\u672c\u8a9e_context.txt"
+    )
     assert normalize_novel_context_filename(
         r"C:\old\Novel_Contexts\novel_context.txt"
     ) == "novel_context.txt"
