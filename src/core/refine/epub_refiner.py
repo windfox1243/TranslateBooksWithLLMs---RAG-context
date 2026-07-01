@@ -26,6 +26,26 @@ from src.core.epub.container import TranslationContainer
 from src.core.context_optimizer import INITIAL_CONTEXT_SIZE
 from .client_setup import build_refine_client
 
+_REFINE_AFTER_SPINE_UNIT_TOKEN_BUDGET = 10_000_000
+
+
+def _refine_after_uses_spine_units(prompt_options: Optional[Dict]) -> bool:
+    """Keep EPUB refine-after aligned to spine/content-file boundaries."""
+    options = prompt_options or {}
+    return bool(options.get("_refine_after") and options.get("chapter_mode"))
+
+
+def _refine_chunking_options(
+    prompt_options: Optional[Dict],
+    max_tokens_per_chunk: int,
+) -> Tuple[int, bool]:
+    if _refine_after_uses_spine_units(prompt_options):
+        return (
+            max(max_tokens_per_chunk, _REFINE_AFTER_SPINE_UNIT_TOKEN_BUDGET),
+            False,
+        )
+    return max_tokens_per_chunk, bool((prompt_options or {}).get("chapter_mode"))
+
 
 def _globalize_chunk_text(
     chunk: Dict,
@@ -79,11 +99,15 @@ async def _refine_one_xhtml(
     text_with_placeholders, global_tag_map, placeholder_format = _preserve_tags(
         body_html, tag_preserver, log_callback, protect_technical=True
     )
+    chunk_budget, chunk_chapter_mode = _refine_chunking_options(
+        prompt_options,
+        max_tokens_per_chunk,
+    )
 
     chunks = _create_chunks(
-        text_with_placeholders, global_tag_map, max_tokens_per_chunk,
+        text_with_placeholders, global_tag_map, chunk_budget,
         log_callback, container,
-        chapter_mode=bool((prompt_options or {}).get("chapter_mode")),
+        chapter_mode=chunk_chapter_mode,
     )
 
     if not chunks:
@@ -182,6 +206,12 @@ async def refine_epub_file(
             if log_callback:
                 log_callback("epub_refine_start",
                              f"✨ Starting EPUB refine pass over {total_files} content files...")
+                if _refine_after_uses_spine_units(prompt_options):
+                    log_callback(
+                        "epub_refine_spine_units",
+                        "Chapter-aware refine-after: using EPUB spine files "
+                        "as refinement units to preserve translation alignment.",
+                    )
 
             db_chunks = []
             if checkpoint_manager and translation_id:
@@ -212,12 +242,14 @@ async def refine_epub_file(
                         ) = _preserve_tags(
                             body_html, tag_preserver, None, protect_technical=True
                         )
+                        chunk_budget, chunk_chapter_mode = _refine_chunking_options(
+                            prompt_options,
+                            max_tokens_per_chunk,
+                        )
                         chunks = _create_chunks(
-                            text_with_placeholders, global_tag_map, max_tokens_per_chunk,
+                            text_with_placeholders, global_tag_map, chunk_budget,
                             None, pre_container,
-                            chapter_mode=bool(
-                                (prompt_options or {}).get("chapter_mode")
-                            ),
+                            chapter_mode=chunk_chapter_mode,
                         )
                         total_refine_chunks += len(chunks)
                         refine_chunk_counts[href] = len(chunks)
