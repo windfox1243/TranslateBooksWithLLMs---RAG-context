@@ -1596,6 +1596,110 @@ def test_recurring_or_named_generic_roles_are_preserved():
     assert "- Soldier 76: Male, source-named callsign" in normalized
 
 
+def test_bare_physical_labels_are_not_durable_characters():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- boy: Male, character, the protagonist and summoner of the game.\n"
+        "- young woman: Female, unnamed person seen in one scene.\n"
+        "- Kim Si-hu: Male, academy student and summoner.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- boy:" not in normalized
+    assert "- young woman:" not in normalized
+    assert "- Kim Si-hu: Male" in normalized
+
+
+def test_distinctive_physical_descriptors_can_be_tracked_until_named():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- boy in the black coat: Male, recurring observer wearing a black coat.\n"
+        "- woman with the scar: Female, recurring swordswoman with a facial scar.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- boy in the black coat: Male" in normalized
+    assert "recurring observer wearing a black coat" in normalized
+    assert "- woman with the scar: Female" in normalized
+
+
+def test_metadata_skills_and_incidental_referees_are_not_characters():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- FIVEONE: Unspecified, author, writer of the current work.\n"
+        "- Bloodstained Swordswoman A: Unspecified, skill, a combat skill "
+        "that upgrades sword-related aptitudes to A.\n"
+        "- Duel Referee: Unspecified, character, an NPC entity that oversees "
+        "duels.\n"
+        "- Seria Bladi Demonkill: Female, S-rank vampire summon.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- FIVEONE:" not in normalized
+    assert "- Bloodstained Swordswoman A:" not in normalized
+    assert "- Duel Referee:" not in normalized
+    assert "- Seria Bladi Demonkill: Female" in normalized
+
+
+def test_similar_full_name_typos_merge_when_descriptions_overlap():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Seria Bladi Demonkill: Female, S-rank vampire summon with blonde "
+        "hair, red eyes, and arrogant chuunibyou behavior.\n"
+        "- Seria Blady Demonkill: Female, S-rank vampire summon with blonde "
+        "hair, red eyes, and arrogant chuunibyou behavior during battle.\n"
+        "- Seria Vladi Demonkill: Female, S-rank vampire summon with blonde "
+        "hair, red eyes, and arrogant chuunibyou behavior after injury.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert normalized.count("Demonkill: Female") == 1
+    assert "- Seria Blady Demonkill: Seria Bladi Demonkill" in normalized
+    assert "- Seria Vladi Demonkill: Seria Bladi Demonkill" in normalized
+    assert "during battle" in normalized
+    assert "after injury" in normalized
+
+
+def test_similar_full_name_typos_do_not_merge_without_overlap():
+    from src.utils.novel_context import normalize_global_lore
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Mira Bladi Cross: Female, herbalist traveling through the capital.\n"
+        "- Mira Blady Cross: Female, knight guarding the northern fortress.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    normalized = normalize_global_lore(raw_lore)
+
+    assert "- Mira Bladi Cross: Female, herbalist" in normalized
+    assert "- Mira Blady Cross: Female, knight" in normalized
+    assert "- Mira Blady Cross: Mira Bladi Cross" not in normalized
+
+
 def test_real_vampire_source_backstops_repair_current_form_gender_and_title_alias():
     from src.utils.novel_context import (
         infer_source_gender_updates,
@@ -3575,6 +3679,76 @@ async def test_consolidation_skips_on_no_bullet_entries():
 
     assert result_lore == global_lore
     assert logs == []
+
+
+@pytest.mark.asyncio
+async def test_consolidation_with_asterisks_and_numbered_lists():
+    """consolidate_context_lore should support other list markers like asterisks or numbers."""
+    global_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, protagonist of the game Glory of Victory.\n"
+    )
+    asterisk_response = (
+        "* Eric: Male, protagonist of Glory of Victory, currently a Lieutenant Colonel.\n"
+        "1. Kim Ji-an: Female, reincarnated as a vampire.\n"
+    )
+    mock_response = MagicMock()
+    mock_response.content = asterisk_response
+    llm_client = MagicMock()
+    llm_client.generate = AsyncMock(return_value=mock_response)
+
+    result_lore, logs = await consolidate_context_lore(
+        llm_client=llm_client,
+        model_name="test-model",
+        global_lore=global_lore,
+    )
+
+    assert logs
+    assert "- Eric: Male, protagonist of Glory of Victory, currently a Lieutenant Colonel." in result_lore
+    assert "- Kim Ji-an: Female, reincarnated as a vampire." in result_lore
+
+
+@pytest.mark.asyncio
+async def test_consolidation_triggered_on_last_chunk():
+    """update_novel_context_chunk should run consolidation on the last chunk regardless of interval."""
+    # We mock the LLM client behavior to verify if generate is called for consolidation
+    llm_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.content = (
+        "[NEW_CHARACTERS]\n- Eric: Male, protagonist.\n"
+        "[IDENTITY_LINKS]\n"
+        "[NEW_GLOSSARY]\n"
+        "[DYNAMIC_STATE]\n"
+    )
+    
+    # Second response is for the consolidation pass
+    mock_consolidation = MagicMock()
+    mock_consolidation.content = "- Eric: Male, protagonist, soldier."
+    
+    llm_client.generate = AsyncMock()
+    llm_client.generate.side_effect = [mock_response, mock_consolidation]
+
+    from src.utils.novel_context import update_novel_context_chunk
+    
+    # chunk_index = 3, total_chunks = 3. Since it is the last chunk, it must trigger consolidation.
+    updated_lore, _, logs = await update_novel_context_chunk(
+        llm_client=llm_client,
+        model_name="test-model",
+        current_global_lore="# GLOBAL LORE\n\n## CHARACTERS & GENDERS\n- Eric: Male, protagonist.\n",
+        current_dynamic_state="",
+        source_chunk="Eric did something.",
+        translated_chunk=None,
+        source_language="en",
+        target_language="vi",
+        chunk_index=3,
+        total_chunks=3,
+    )
+    
+    # We verify that consolidation ran (which means generate was called twice)
+    assert llm_client.generate.call_count == 2
+    assert any("[Novel Context] Consolidation pass" in log for log in logs)
+    assert "soldier" in updated_lore
 
 
 def test_filter_abstract_concepts_and_spurious_delete():
