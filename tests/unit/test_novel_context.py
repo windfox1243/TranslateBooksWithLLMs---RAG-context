@@ -8,6 +8,7 @@ from src.utils.novel_context import (
     build_novel_context,
     compress_dynamic_state,
     decode_context_snapshot,
+    infer_dynamic_address_identity_links,
     is_safe_filename,
     list_novel_contexts,
     load_novel_context,
@@ -2902,6 +2903,49 @@ def test_korean_romanized_ssi_suffix_merges_into_base_character():
     assert updated.count("- Kim Min-su:") == 1
     assert "- Kim Min-su-ssi: Male" not in updated
     assert "addressed politely by classmates" in updated
+
+
+def test_dynamic_address_source_form_becomes_trusted_identity_link():
+    global_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Houjo Takuhei: Male, student.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    dynamic = (
+        "## CURRENT ADDRESSING FORMS\n"
+        "- Toda Hitona → Houjo Takuhei: \"\u62d3\u5e73\" | "
+        "\"Takuhei\" | casual, classmates\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+    )
+
+    assert infer_dynamic_address_identity_links(dynamic, global_lore) == (
+        "- \u62d3\u5e73: Houjo Takuhei"
+    )
+
+
+def test_trusted_dynamic_alias_bypasses_source_proof_gate():
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Houjo Takuhei: Male, student.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    updated, _ = merge_new_lore(
+        initial_lore,
+        "- \u62d3\u5e73: Male, childhood friend of Toda Hitona.",
+        "",
+        source_text="\u62d3\u5e73 looked at Toda Hitona.",
+        trusted_aliases="- \u62d3\u5e73: Houjo Takuhei",
+    )
+
+    assert updated.count("- Houjo Takuhei:") == 1
+    assert "- \u62d3\u5e73: Male" not in updated
+    assert "- \u62d3\u5e73: Houjo Takuhei" in updated
+    assert "childhood friend of Toda Hitona" in updated
 
 
 def test_unique_short_name_full_name_entries_merge_with_durable_alias():
