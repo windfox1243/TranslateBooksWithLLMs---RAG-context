@@ -59,6 +59,7 @@ from ..context_optimizer import AdaptiveContextManager, INITIAL_CONTEXT_SIZE, CO
 from src.config import (
     PLACEHOLDER_PATTERN,
     MAX_PLACEHOLDER_CORRECTION_ATTEMPTS,
+    STRUCTURED_REFINEMENT_HIDE_PLACEHOLDERS,
     create_placeholder,
     detect_placeholder_format_in_text,
     detect_format_from_placeholder,
@@ -152,6 +153,54 @@ def validate_placeholders(translated_text: str, local_tag_map: Dict[str, str]) -
     # Use centralized PlaceholderValidator
     is_valid, error_msg = PlaceholderValidator.validate_strict(translated_text, local_tag_map)
     return is_valid
+
+
+def _placeholder_tokens_for_indices(
+    placeholder_format: Tuple[str, str],
+    count: int,
+) -> List[str]:
+    prefix, suffix = placeholder_format
+    return [f"{prefix}{idx}{suffix}" for idx in range(count)]
+
+
+def _remove_placeholders_by_format(
+    text: str,
+    placeholder_format: Tuple[str, str],
+) -> str:
+    prefix, suffix = placeholder_format
+    pattern = re.escape(prefix) + r"\d+" + re.escape(suffix)
+    return re.sub(pattern, "", text)
+
+
+def _restore_local_placeholders_to_global(
+    text: str,
+    global_indices: List[int],
+    placeholder_format: Tuple[str, str],
+) -> str:
+    result = text
+    prefix, suffix = placeholder_format
+    for local_idx, _ in enumerate(global_indices):
+        local_ph = f"{prefix}{local_idx}{suffix}"
+        result = result.replace(local_ph, f"__TEMP_RESTORE_{local_idx}__")
+    for local_idx, global_idx in enumerate(global_indices):
+        result = result.replace(
+            f"__TEMP_RESTORE_{local_idx}__",
+            f"{prefix}{global_idx}{suffix}",
+        )
+    return result
+
+
+def _should_hide_structured_refinement_placeholders(
+    prompt_options: Optional[Dict],
+    local_tag_map: Dict[str, str],
+) -> bool:
+    if not local_tag_map:
+        return False
+    if prompt_options and "structured_refinement_hide_placeholders" in prompt_options:
+        return bool(prompt_options.get("structured_refinement_hide_placeholders"))
+    if prompt_options and "epub_refinement_hide_placeholders" in prompt_options:
+        return bool(prompt_options.get("epub_refinement_hide_placeholders"))
+    return STRUCTURED_REFINEMENT_HIDE_PLACEHOLDERS
 
 
 def build_specific_error_details(translated_text: str, expected_count: int, local_tag_map: Dict[str, str] = None) -> str:
@@ -658,6 +707,7 @@ def _create_chunks(
     log_callback: Optional[Callable] = None,
     container: Optional[TranslationContainer] = None,
     chapter_mode: bool = False,
+    chunking_note: Optional[str] = None,
 ) -> List[Dict]:
     """Chunk text into translatable segments.
 
@@ -689,10 +739,14 @@ def _create_chunks(
     chunks = chunker.chunk_html_with_placeholders(text, tag_map)
 
     if log_callback:
-        log_callback(
-            "chunks_created",
-            f"Created {len(chunks)} chunks with {max_tokens} source tokens per chunk",
-        )
+        if chunking_note:
+            message = f"Created {len(chunks)} chunks as {chunking_note}"
+        else:
+            message = (
+                f"Created {len(chunks)} chunks with "
+                f"{max_tokens} source tokens per chunk"
+            )
+        log_callback("chunks_created", message)
         if chapter_mode:
             chapter_count = len({
                 chunk.get("chapter_index", 0) for chunk in chunks
@@ -2021,6 +2075,29 @@ async def _refine_epub_chunks(
         for local_idx in range(len(global_indices)):
             text_for_refinement = text_for_refinement.replace(f"__TEMP_PH_{local_idx}__",
                                                               f"{placeholder_format[0]}{local_idx}{placeholder_format[1]}")
+        local_placeholders = _placeholder_tokens_for_indices(
+            placeholder_format,
+            len(global_indices),
+        )
+        hide_refinement_placeholders = _should_hide_structured_refinement_placeholders(
+            prompt_options,
+            local_tag_map,
+        )
+        prompt_text_for_refinement = (
+            _remove_placeholders_by_format(text_for_refinement, placeholder_format)
+            if hide_refinement_placeholders
+            else text_for_refinement
+        )
+        prompt_context_before = (
+            _remove_placeholders_by_format(context_before, placeholder_format)
+            if hide_refinement_placeholders
+            else context_before
+        )
+        prompt_context_after = (
+            _remove_placeholders_by_format(context_after, placeholder_format)
+            if hide_refinement_placeholders
+            else context_after
+        )
 
         context_content = await context_tracker.next_context(
             text=translated_text,
@@ -2051,12 +2128,12 @@ async def _refine_epub_chunks(
 
         # Generate refinement prompt using text with LOCAL indices
         prompt_pair = generate_post_processing_prompt(
-            translated_text=text_for_refinement,  # Use localized version
+            translated_text=prompt_text_for_refinement,
             target_language=target_language,
-            context_before=context_before,
-            context_after=context_after,
+            context_before=prompt_context_before,
+            context_after=prompt_context_after,
             additional_instructions=refinement_instructions,
-            has_placeholders=True,
+            has_placeholders=not hide_refinement_placeholders,
             placeholder_format=placeholder_format,
             prompt_options=local_prompt_options
         )
@@ -2105,6 +2182,18 @@ async def _refine_epub_chunks(
                 refined_text = llm_client.extract_translation(llm_response.content)
 
                 if refined_text:
+                    if hide_refinement_placeholders:
+                        from .token_alignment_fallback import TokenAlignmentFallback
+                        refined_plain_text = _remove_placeholders_by_format(
+                            refined_text,
+                            placeholder_format,
+                        )
+                        refined_text = TokenAlignmentFallback().align_and_insert_placeholders(
+                            text_for_refinement,
+                            refined_plain_text,
+                            local_placeholders,
+                        )
+
                     # CRITICAL: Validate placeholders before accepting refinement
                     # refined_text should have LOCAL indices (0, 1, 2...) matching local_tag_map
                     if local_tag_map and not validate_placeholders(refined_text, local_tag_map):
@@ -2113,19 +2202,11 @@ async def _refine_epub_chunks(
                         refined_chunks.append(translated_text)
                     else:
                         # Validation passed! Now convert LOCAL indices back to GLOBAL indices
-                        refined_with_global_indices = refined_text
-                        for local_idx, global_idx in enumerate(global_indices):
-                            local_ph = f"{placeholder_format[0]}{local_idx}{placeholder_format[1]}"
-                            global_ph = f"{placeholder_format[0]}{global_idx}{placeholder_format[1]}"
-                            # Replace local with temp markers first to avoid conflicts
-                            refined_with_global_indices = refined_with_global_indices.replace(local_ph, f"__TEMP_RESTORE_{local_idx}__")
-
-                        # Replace temp markers with global placeholders
-                        for local_idx, global_idx in enumerate(global_indices):
-                            refined_with_global_indices = refined_with_global_indices.replace(
-                                f"__TEMP_RESTORE_{local_idx}__",
-                                f"{placeholder_format[0]}{global_idx}{placeholder_format[1]}"
-                            )
+                        refined_with_global_indices = _restore_local_placeholders_to_global(
+                            refined_text,
+                            global_indices,
+                            placeholder_format,
+                        )
 
                         refined_chunks.append(refined_with_global_indices)
                         if log_callback:

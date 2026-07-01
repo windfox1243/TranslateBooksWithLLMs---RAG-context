@@ -687,7 +687,7 @@ async def test_standalone_refinement_rebuilds_context_before_refining(monkeypatc
     )
 
     assert result == ["Polished text"]
-    assert events == ["context", "refine"]
+    assert events == ["context", "context", "refine"]
 
 
 @pytest.mark.asyncio
@@ -895,6 +895,25 @@ def test_epub_refine_after_chapter_mode_uses_spine_units():
 
     assert budget >= 10_000_000
     assert chapter_mode is False
+
+
+def test_structured_chunk_log_can_hide_internal_token_budget():
+    from src.core.epub.xhtml_translator import _create_chunks
+
+    logs = []
+    _create_chunks(
+        "[id0]Hello[id1]",
+        {"[id0]": "<p>", "[id1]": "</p>"},
+        10_000_000,
+        log_callback=lambda event, message: logs.append((event, message)),
+        chunking_note="EPUB spine-file refinement unit(s)",
+    )
+
+    assert logs == [
+        ("chunks_created", "Created 1 chunks as EPUB spine-file refinement unit(s)")
+    ]
+    assert "10_000_000" not in logs[0][1]
+    assert "10000000" not in logs[0][1]
 
 
 def test_web_refine_after_uses_one_backend_refinement_phase():

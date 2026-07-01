@@ -809,6 +809,14 @@ async def test_global_only_resync_propagates_lore_without_llm(monkeypatch, tmp_p
     )[2]
     assert "Seria: Female" in load_novel_context("resync.txt", tmp_path)
     assert "DYN2" in load_novel_context("resync.txt", tmp_path)
+    progress_logs = [
+        call.args[1]
+        for call in state_manager.append_log.call_args_list
+        if "Global context propagation progress" in call.args[1]
+    ]
+    assert len(progress_logs) == 2
+    assert "1/2" in progress_logs[0]
+    assert "2/2" in progress_logs[1]
 
 
 @pytest.mark.asyncio

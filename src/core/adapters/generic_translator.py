@@ -928,6 +928,14 @@ async def _resync_context_snapshots_async(
                 state_manager,
             )
 
+    def should_log_resync_progress(processed_count, total_count):
+        if total_count <= 20:
+            return True
+        if processed_count in {1, total_count}:
+            return True
+        interval = max(1, total_count // 10)
+        return processed_count % interval == 0
+
     def run_follow_up():
         callback = post_resync_callback or auto_resume_callback
         if not callback:
@@ -1095,7 +1103,8 @@ async def _resync_context_snapshots_async(
             )
         else:
             latest_full_context = current_full_context
-            for chunk in chunks_to_process:
+            total_to_process = len(chunks_to_process)
+            for processed_count, chunk in enumerate(chunks_to_process, start=1):
                 idx = chunk['chunk_index']
                 if _pause_requested():
                     paused_state = _save_resync_state({
@@ -1152,6 +1161,16 @@ async def _resync_context_snapshots_async(
                             "status": "running",
                             "last_processed_chunk": idx,
                         })
+                        if should_log_resync_progress(
+                            processed_count,
+                            total_to_process,
+                        ):
+                            append_and_emit(
+                                "🔄 Global context propagation progress: "
+                                f"{processed_count}/{total_to_process} "
+                                f"saved snapshot(s) updated "
+                                f"(latest chunk {idx + 1})."
+                            )
                         break
                     if not snapshot_saved:
                         append_and_emit(f"❌ Chunk {idx} disappeared during resync.")
