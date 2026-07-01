@@ -389,6 +389,23 @@ _GENDERED_ROMANTIC_RELATION_LABELS = {
     "wife": "Female",
     "husband": "Male",
 }
+_KINSHIP_GENDERS = {
+    "father": "Male",
+    "mother": "Female",
+    "brother": "Male",
+    "sister": "Female",
+    "son": "Male",
+    "daughter": "Female",
+    "husband": "Male",
+    "wife": "Female",
+    "uncle": "Male",
+    "aunt": "Female",
+    "grandfather": "Male",
+    "grandmother": "Female",
+    "nephew": "Male",
+    "niece": "Female",
+}
+_KINSHIP_WORDS = set(_KINSHIP_GENDERS.keys())
 _ROMANTIC_RELATION_PATTERN = (
     r"(?:(?:ex|former)[-\s]+)?(?:girlfriend|boyfriend|lover|partner|"
     r"spouse|wife|husband|romantic\s+partner|significant\s+other|"
@@ -1058,6 +1075,64 @@ def _character_unique_roles(name: str, value: str = "") -> set[str]:
     return roles
 
 
+def _parse_kinship_name(name: str) -> Optional[Tuple[str, str]]:
+    words = _canonical_display_name(name).split()
+    if len(words) < 2:
+        return None
+    last_word = words[-1].lower().rstrip("'s").rstrip("’s")
+    if last_word in _KINSHIP_WORDS:
+        prefix = " ".join(words[:-1])
+        return prefix, last_word
+    return None
+
+
+def _kinship_identities_match(
+    first_name: str,
+    first_value: str,
+    second_name: str,
+    second_value: str,
+) -> bool:
+    parsed_first = _parse_kinship_name(first_name)
+    parsed_second = _parse_kinship_name(second_name)
+    if not parsed_first and not parsed_second:
+        return False
+        
+    if parsed_first:
+        kinship_name, kinship_val = first_name, first_value
+        target_name, target_val = second_name, second_value
+        prefix, kinship = parsed_first
+    else:
+        kinship_name, kinship_val = second_name, second_value
+        target_name, target_val = first_name, first_value
+        prefix, kinship = parsed_second
+        
+    prefix_key = _plain_key(prefix).rstrip("'s").rstrip("’s")
+    target_name_key = _plain_key(target_name)
+    
+    # 1. Target name must start with or contain the prefix/family name
+    if not (target_name_key.startswith(prefix_key) or prefix_key in target_name_key.split()):
+        return False
+        
+    # 2. Gender compatibility
+    kinship_gender = _KINSHIP_GENDERS.get(kinship)
+    target_gender, target_details = _split_gender_and_details(_normalize_character_value(target_val))
+    if kinship_gender and target_gender:
+        if kinship_gender.casefold() != target_gender.casefold():
+            return False
+            
+    # 3. Kinship role check in details
+    target_text = _clean_inline_text(target_details).casefold()
+    if kinship in target_text:
+        return True
+    target_words = target_name_key.split()
+    if target_words and target_words[-1] in _KINSHIP_WORDS:
+        target_kinship = target_words[-1]
+        if _KINSHIP_GENDERS.get(target_kinship) == kinship_gender:
+            return True
+            
+    return False
+
+
 def _character_identities_match(
     first_name: str,
     first_value: str,
@@ -1066,6 +1141,8 @@ def _character_identities_match(
 ) -> bool:
     """Match deterministic aliases, including a unique title revealed in lore."""
     if _character_names_match(first_name, second_name):
+        return True
+    if _kinship_identities_match(first_name, first_value, second_name, second_value):
         return True
     if _simple_plural_name_keys_match(
         first_name,
@@ -1247,12 +1324,13 @@ def _infer_singular_plural_alias_entries(
     return inferred, displays
 
 
-def _name_specificity(name: str) -> Tuple[int, int, int]:
+def _name_specificity(name: str) -> Tuple[int, int, int, int]:
     canonical = _canonical_display_name(name)
     key = _plain_key(canonical)
     role_only = int(key not in _ROLE_ONLY_TITLES)
+    has_no_kinship = int(not any(w.lower() in _KINSHIP_WORDS for w in canonical.split()))
     no_parenthetical = int("(" not in name and ")" not in name)
-    return role_only, len(canonical.split()), no_parenthetical
+    return role_only, has_no_kinship, len(canonical.split()), no_parenthetical
 
 
 def _preferred_character_name(first: str, second: str) -> str:
@@ -1320,6 +1398,20 @@ def _infer_gender_from_character_details(details: str) -> str:
     )
     if relationship_gender:
         return relationship_gender
+
+    # Infer gender from kinship phrase in details (e.g. "father of...")
+    clauses = [c.strip() for c in re.split(r"[,;]", details)]
+    allowed_prefixes = {"a", "an", "the", "young", "younger", "old", "older", "eldest", "elder", "former", "deceased", "late", "beloved", "original", "only", "biological"}
+    for clause in clauses:
+        words = re.findall(r"\w+", clause.casefold())
+        if not words:
+            continue
+        idx = 0
+        while idx < len(words) and words[idx] in allowed_prefixes:
+            idx += 1
+        if idx < len(words) and words[idx] in _KINSHIP_GENDERS:
+            if idx + 1 < len(words) and words[idx+1] == "of":
+                return _KINSHIP_GENDERS[words[idx]]
 
     kinship_object = (
         r"(?:own|brother|sister|mother|father|family|wife|husband|son|daughter)"
@@ -1854,6 +1946,31 @@ def _is_character_meta_fact(fact: str, name: str) -> bool:
     return any(re.search(pattern, fact, flags=re.IGNORECASE) for pattern in patterns)
 
 
+def _infer_gender_from_kinship(name: str, details: str) -> str:
+    # 1. Check name words
+    name_words = {w.casefold() for w in re.findall(r"\w+", name)}
+    for word, gender in _KINSHIP_GENDERS.items():
+        if word in name_words:
+            return gender
+            
+    # 2. Check details clauses
+    clauses = [c.strip() for c in re.split(r"[,;]", details)]
+    allowed_prefixes = {"a", "an", "the", "young", "younger", "old", "older", "eldest", "elder", "former", "deceased", "late", "beloved", "original", "only", "biological"}
+    for clause in clauses:
+        words = re.findall(r"\w+", clause.casefold())
+        if not words:
+            continue
+        # Find the first word that is not in allowed_prefixes
+        idx = 0
+        while idx < len(words) and words[idx] in allowed_prefixes:
+            idx += 1
+        if idx < len(words) and words[idx] in _KINSHIP_GENDERS:
+            # Check if followed by "of"
+            if idx + 1 < len(words) and words[idx+1] == "of":
+                return _KINSHIP_GENDERS[words[idx]]
+    return ""
+
+
 def _normalize_character_value_for_name(name: str, value: str) -> str:
     normalized = _normalize_character_value(value)
     gender, details = _split_gender_and_details(normalized)
@@ -1863,6 +1980,8 @@ def _normalize_character_value_for_name(name: str, value: str) -> str:
         ) or "Unspecified"
     elif _gender_belongs_to_previous_reincarnation_body(name, gender, details):
         gender = _current_reincarnated_form_gender(name, details) or "Unspecified"
+    if gender.casefold() in {"unknown", "unspecified"} or not gender:
+        gender = _infer_gender_from_kinship(name, details) or gender
     details = _normalize_reincarnation_details_for_name(name, details)
     details = _remove_self_references_from_details(details, name)
     details = _merge_character_details(details, "")

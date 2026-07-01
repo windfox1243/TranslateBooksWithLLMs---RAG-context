@@ -2198,14 +2198,14 @@ def test_gender_repair_does_not_use_pronouns_that_refer_to_another_character():
     raw_lore = (
         "# GLOBAL LORE\n\n"
         "## CHARACTERS & GENDERS\n"
-        "- Eric's sister: Unspecified, Eric's sibling seen in his dream.\n"
+        "- Eric's sibling: Unspecified, Eric's sibling seen in his dream.\n"
         "- Guard: Unspecified, a bodyguard assigned to her unit.\n\n"
         "## GLOSSARY & TERMINOLOGY\n"
     )
 
     normalized = normalize_global_lore(raw_lore)
 
-    assert "- Eric's sister: Unspecified" in normalized
+    assert "- Eric's sibling: Unspecified" in normalized
     assert "- Guard: Unspecified" in normalized
 
 
