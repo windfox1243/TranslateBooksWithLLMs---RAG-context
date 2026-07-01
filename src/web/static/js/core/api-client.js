@@ -403,10 +403,13 @@ export const ApiClient = {
      * @param {string} content - Context content
      * @returns {Promise<Object>} Resync result
      */
-    async resyncContextSnapshot(translationId, chunkIndex, content) {
+    async resyncContextSnapshot(translationId, chunkIndex, content, options = {}) {
         return await apiRequest(`/api/translation/${translationId}/context/${chunkIndex}/resync`, {
             method: 'POST',
-            body: JSON.stringify({ context_content: content })
+            body: JSON.stringify({
+                context_content: content,
+                ...options
+            })
         });
     },
 

@@ -797,6 +797,94 @@ async def test_epub_refine_runs_without_stats_callback(monkeypatch, tmp_path):
     assert output_path.read_bytes() == b"refined"
 
 
+@pytest.mark.asyncio
+async def test_epub_refine_emits_global_chunk_progress(monkeypatch, tmp_path):
+    from src.core.refine import epub_refiner
+
+    input_path = tmp_path / "input.epub"
+    output_path = tmp_path / "output.epub"
+    input_path.write_bytes(b"epub")
+    (tmp_path / "a.xhtml").write_text("<html><body>A</body></html>", encoding="utf-8")
+    (tmp_path / "b.xhtml").write_text("<html><body>B</body></html>", encoding="utf-8")
+
+    client = MagicMock()
+    client.close = AsyncMock()
+    monkeypatch.setattr(
+        epub_refiner,
+        "build_refine_client",
+        lambda **kwargs: (client, None),
+    )
+    monkeypatch.setattr(epub_refiner, "_extract_epub", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        epub_refiner,
+        "_parse_epub_manifest",
+        lambda *args, **kwargs: {
+            "content_files": ["a.xhtml", "b.xhtml"],
+            "opf_dir": str(tmp_path),
+        },
+    )
+    monkeypatch.setattr(
+        epub_refiner.etree,
+        "parse",
+        lambda *args, **kwargs: MagicMock(getroot=lambda: MagicMock()),
+    )
+    monkeypatch.setattr(
+        epub_refiner,
+        "_setup_translation",
+        lambda *args, **kwargs: ("body", MagicMock(), MagicMock()),
+    )
+    monkeypatch.setattr(
+        epub_refiner,
+        "_preserve_tags",
+        lambda *args, **kwargs: ("text", {}, ("__PH_", "__")),
+    )
+    monkeypatch.setattr(
+        epub_refiner,
+        "_create_chunks",
+        lambda *args, **kwargs: [
+            {"text": "chunk one", "global_indices": []},
+            {"text": "chunk two", "global_indices": []},
+        ],
+    )
+
+    async def fake_refine_one_xhtml(**kwargs):
+        kwargs["stats_callback"]({
+            "total_chunks": 2,
+            "completed_chunks": 1,
+            "failed_chunks": 0,
+        })
+        kwargs["stats_callback"]({
+            "total_chunks": 2,
+            "completed_chunks": 2,
+            "failed_chunks": 0,
+        })
+        return True
+
+    monkeypatch.setattr(epub_refiner, "_refine_one_xhtml", fake_refine_one_xhtml)
+
+    def fake_repackage(*, output_filepath, **kwargs):
+        Path(output_filepath).write_bytes(b"refined")
+
+    monkeypatch.setattr(epub_refiner, "_repackage_epub", fake_repackage)
+
+    stats_events = []
+    success = await epub_refiner.refine_epub_file(
+        input_filepath=str(input_path),
+        output_filepath=str(output_path),
+        target_language="English",
+        model_name="model",
+        stats_callback=lambda stats: stats_events.append(dict(stats)),
+    )
+
+    assert success is True
+    assert output_path.read_bytes() == b"refined"
+    assert all(event["total_chunks"] == 4 for event in stats_events)
+    completed = [event["completed_chunks"] for event in stats_events]
+    assert completed == sorted(completed)
+    assert completed[:3] == [0, 1, 2]
+    assert completed[-1] == 4
+
+
 def test_web_refine_after_uses_one_backend_refinement_phase():
     project_root = Path(__file__).resolve().parents[2]
     batch_controller = (
@@ -841,6 +929,7 @@ def test_context_resync_save_does_not_replace_latest_with_historical_snapshot():
     )[1]
     assert "NovelContextUI.latestContent = newContent" not in save_block
     assert "NovelContextUI.renderContextTabs(newContent, true)" in save_block
+    assert "scope: isGlobal ? 'global_lore' : 'snapshot'" in save_block
 
 
 def test_running_refinement_can_be_restored_after_browser_refresh():
