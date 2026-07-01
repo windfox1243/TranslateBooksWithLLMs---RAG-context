@@ -489,26 +489,29 @@ export const TranslationTracker = {
             
             const currentStats = StateManager.getState('translation.stats') || {};
             if (window.NovelContextUI) {
-                // Keep track of the latest content
-                window.NovelContextUI.latestContent = data.log_entry.data.content || '';
-                
-                // In-memory context rebuilt during standalone refinement has
-                // no persisted snapshots, so do not advertise chunk options
-                // that the snapshot endpoint cannot load.
-                if (!data.log_entry.data.ephemeral) {
-                    window.NovelContextUI.updateChunkSelector(
-                        currentStats.context_chunk_indices || []
-                    );
-                }
-                
-                const selector = document.getElementById('contextChunkSelector');
-                // Only update the display if the user is NOT currently editing the context
-                if (!window.NovelContextUI.isEditing) {
-                    if (!selector || selector.value === 'latest') {
-                        window.NovelContextUI.renderContextTabs(window.NovelContextUI.latestContent, false);
-                    } else {
-                        // Do not overwrite display if a specific chunk is selected, but refresh the loaded snapshot
-                        window.loadContextSnapshot(selector.value);
+                const hasContextContent = typeof data.log_entry.data.content === 'string';
+                if (hasContextContent) {
+                    // Keep track of the latest content
+                    window.NovelContextUI.latestContent = data.log_entry.data.content || '';
+                    
+                    // In-memory context rebuilt during standalone refinement has
+                    // no persisted snapshots, so do not advertise chunk options
+                    // that the snapshot endpoint cannot load.
+                    if (!data.log_entry.data.ephemeral) {
+                        window.NovelContextUI.updateChunkSelector(
+                            currentStats.context_chunk_indices || []
+                        );
+                    }
+                    
+                    const selector = document.getElementById('contextChunkSelector');
+                    // Only update the display if the user is NOT currently editing the context
+                    if (!window.NovelContextUI.isEditing) {
+                        if (!selector || selector.value === 'latest') {
+                            window.NovelContextUI.renderContextTabs(window.NovelContextUI.latestContent, false);
+                        } else {
+                            // Do not overwrite display if a specific chunk is selected, but refresh the loaded snapshot
+                            window.loadContextSnapshot(selector.value);
+                        }
                     }
                 }
             }
