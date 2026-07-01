@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.14.34 - 2026-07-01
+
+### Fixed
+
+- **Unicode novel-context filenames:** Auto-created novel context filenames now preserve Unicode letters and numbers, so source titles in Chinese, Japanese, Korean, and other scripts no longer collapse into underscores.
+- **Name alias consistency:** Novel-context glossary entries that point to an existing character now also act as identity aliases during context merging, preventing source-name variants from becoming duplicate character entries.
+- **CJK/Korean source-name variants:** Han full-name glossary entries now infer the common final two-character short form, and three-syllable Hangul names infer the two-syllable given-name form when the glossary target resolves to one known character.
+- **Address suffix aliases:** Romanized address forms such as `Akane-san`, `Takuhei-kun`, and `Kim Min-su-ssi` now merge into the base character entry instead of creating separate durable characters.
+
 ## 1.14.33 - 2026-07-01
 
 ### Fixed
