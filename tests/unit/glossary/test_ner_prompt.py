@@ -62,6 +62,25 @@ class TestGenerateNerExtractionPrompt:
         prompt = generate_ner_extraction_prompt(long_text, "Chinese", "English")
         assert long_text in prompt.user
 
+    def test_vietnamese_prompt_prefers_sino_vietnamese_skill_terms(self):
+        """Vietnamese NER guidance favors literary renderings for named skills."""
+        prompt = generate_ner_extraction_prompt(
+            "He activated Heavenly Sword Strike.",
+            "English",
+            "Vietnamese",
+        )
+        assert "Sino-Vietnamese literary target renderings" in prompt.system
+        assert "English named skills, abilities, techniques" in prompt.system
+
+    def test_non_vietnamese_prompt_omits_sino_vietnamese_skill_terms(self):
+        """Language-specific NER guidance stays out of other targets."""
+        prompt = generate_ner_extraction_prompt(
+            "He activated Heavenly Sword Strike.",
+            "English",
+            "French",
+        )
+        assert "Sino-Vietnamese literary target renderings" not in prompt.system
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

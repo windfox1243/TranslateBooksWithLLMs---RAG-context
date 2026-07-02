@@ -391,8 +391,6 @@ export const ResumeManager = {
             wireResumeOverrides(listContainer);
             scheduleResumableJobsPoll(jobs, () => this.loadResumableJobs());
 
-            MessageLogger.addLog(t('translation:paused_count_log', { count: jobs.length }));
-
         } catch (error) {
             // Hide loading, show error message
             if (loading) loading.style.display = 'none';

@@ -529,6 +529,8 @@ def test_vietnamese_prompts_guard_first_person_pronoun_consistency():
         assert "include, but are not limited to" in prompt.system
         assert "do not call or refer to that character" in prompt.system
         assert "indirect references in dialogue, thoughts, and narration" in prompt.system
+        assert "Sino-Vietnamese literary renderings" in prompt.system
+        assert "named powers and terminology, not people" in prompt.system
         assert 'target-language form "Frondier"' in prompt.user
 
 
@@ -3581,6 +3583,8 @@ def test_context_prompts_define_durable_dynamic_state_deltas():
         assert "register, social basis, scope, and reason" in prompt
         assert "direct address vs indirect reference scope" in prompt
         assert "exception to normal age hierarchy" in prompt
+        assert "Sino-Vietnamese literary target term" in prompt
+        assert "English named skill, ability, technique, spell, combat move, weapon, artifact, or equipment" in prompt
 
 
 def test_json_dynamic_addressing_preserves_social_basis_and_scope():

@@ -955,6 +955,9 @@ async def _resync_context_snapshots_async(
         return bool(state.get("pause_requested"))
 
     def append_and_emit(msg_str, resync_state=None):
+        logger.info(msg_str)
+        if resync_state is None:
+            _, resync_state = _load_resync_state()
         log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {msg_str}"
         if not state_manager.exists(translation_id):
             state_manager.restore_job_from_checkpoint(translation_id)
