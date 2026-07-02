@@ -257,6 +257,49 @@ def _build_corrective_refinement_config(config, output_filepath=None):
     return correction
 
 
+def _active_translation_conflict(state_manager, *, action="resume"):
+    active_translations = []
+    for tid, tdata in state_manager.get_all_translations().items():
+        status = tdata.get('status')
+        if status in ['running', 'queued']:
+            active_translations.append({
+                'id': tid,
+                'status': status,
+                'output_filename': (
+                    tdata.get('config', {}).get('output_filename', 'unknown')
+                ),
+            })
+    if not active_translations:
+        return None
+    action_label = (
+        "start continuation" if action == "continue" else "resume"
+    )
+    action_detail = (
+        "adding new content" if action == "continue" else "resuming"
+    )
+    active_info = ', '.join(
+        f"{item['output_filename']} ({item['status']})"
+        for item in active_translations
+    )
+    return jsonify({
+        "error": f"Cannot {action_label}: active translation in progress",
+        "message": (
+            "Please wait for active translation(s) to complete or interrupt "
+            f"them before {action_detail}. Active: {active_info}"
+        ),
+        "active_translations": active_translations,
+    }), 409
+
+
+def _continued_output_filename(filename):
+    path = Path(filename or "continued_translation.txt")
+    suffix = path.suffix
+    stem = path.stem if suffix else path.name
+    if not stem:
+        stem = "continued_translation"
+    return f"{stem} - continued{suffix}"
+
+
 def create_translation_blueprint(state_manager, start_translation_job, output_dir, socketio=None):
     """
     Create and configure the translation blueprint
@@ -486,24 +529,9 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
     def resume_translation_job_endpoint(translation_id):
         """Resume a paused or interrupted translation job"""
         # Check if there are any active translations
-        all_translations = state_manager.get_all_translations()
-        active_translations = []
-        for tid, tdata in all_translations.items():
-            status = tdata.get('status')
-            if status in ['running', 'queued']:
-                active_translations.append({
-                    'id': tid,
-                    'status': status,
-                    'output_filename': tdata.get('config', {}).get('output_filename', 'unknown')
-                })
-
-        if active_translations:
-            active_info = ', '.join([f"{t['output_filename']} ({t['status']})" for t in active_translations])
-            return jsonify({
-                "error": "Cannot resume: active translation in progress",
-                "message": f"Please wait for active translation(s) to complete or interrupt them before resuming. Active: {active_info}",
-                "active_translations": active_translations
-            }), 409  # 409 Conflict status code
+        active_error = _active_translation_conflict(state_manager)
+        if active_error is not None:
+            return active_error
 
         # Check if checkpoint exists
         checkpoint_data = state_manager.checkpoint_manager.load_checkpoint(translation_id)
@@ -575,6 +603,92 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "llm_provider": config.get('llm_provider')
         }), 200
 
+    @bp.route('/api/continue/<translation_id>', methods=['POST'])
+    def continue_translation_job_endpoint(translation_id):
+        """Create a new job that translates only content added after a checkpoint."""
+        active_error = _active_translation_conflict(
+            state_manager,
+            action="continue",
+        )
+        if active_error is not None:
+            return active_error
+
+        data = request.get_json(silent=True) or {}
+        if not data.get('file_path'):
+            return jsonify({"error": "Missing updated file_path"}), 400
+
+        checkpoint_data = state_manager.checkpoint_manager.load_checkpoint(
+            translation_id
+        )
+        if not checkpoint_data:
+            return jsonify({"error": "No checkpoint found for this translation"}), 404
+
+        base_job = checkpoint_data['job']
+        base_config = copy.deepcopy(base_job.get('config') or {})
+        base_file_type = base_job.get('file_type') or base_config.get('file_type')
+
+        safe_path, path_error = PathValidator.validate_upload_path(
+            data['file_path'],
+            uploads_dir,
+        )
+        if path_error is not None:
+            return jsonify({"error": path_error}), 403
+
+        updated_file_type = data.get('file_type') or base_file_type
+        if updated_file_type != base_file_type:
+            return jsonify({
+                "error": (
+                    "Updated file type must match the previous translation "
+                    f"({base_file_type})."
+                )
+            }), 400
+
+        new_translation_id = f"trans_{int(time.time() * 1000)}"
+        config = base_config
+        config.update({
+            'file_path': str(safe_path),
+            'preserved_input_path': str(safe_path),
+            'input_filename': data.get('input_filename') or safe_path.name,
+            'output_filename': _continued_output_filename(
+                data.get('output_filename') or base_config.get('output_filename')
+            ),
+            'file_type': base_file_type,
+            'resume_from_index': 0,
+            'is_resume': False,
+            'continuation_base_id': translation_id,
+            'continuation_mode': 'matching_prefix',
+        })
+        for transient_key in (
+            '_context_resync',
+            '_context_resync_refinement',
+            '_force_output_filepath',
+            'output_filepath',
+        ):
+            config.pop(transient_key, None)
+
+        prompt_options = dict(config.get('prompt_options') or {})
+        if prompt_options.get('novel_context_file'):
+            from src.utils.novel_context import normalize_novel_context_filename
+            try:
+                prompt_options['novel_context_file'] = (
+                    normalize_novel_context_filename(
+                        prompt_options['novel_context_file']
+                    )
+                )
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
+        config['prompt_options'] = prompt_options
+
+        state_manager.create_translation(new_translation_id, config)
+        start_translation_job(new_translation_id, config)
+
+        return jsonify({
+            "translation_id": new_translation_id,
+            "base_translation_id": translation_id,
+            "message": "Continuation queued.",
+            "output_filename": config['output_filename'],
+        }), 200
+
     @bp.route('/api/checkpoint/<translation_id>', methods=['DELETE'])
     def delete_checkpoint_endpoint(translation_id):
         """Delete a checkpoint (manual cleanup by user)"""
@@ -640,7 +754,6 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             from src.utils.novel_context import (
                 decode_context_snapshot,
                 load_novel_context,
-                normalize_refinement_context,
                 normalize_novel_context_filename,
                 resolve_novel_context_path,
             )
@@ -663,13 +776,19 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                     snapshot,
                     full_context,
                 )
-                # The selected chunk owns only time-sensitive state. Global
-                # characters, proven genders, and glossary terms are canonical
-                # book-wide lore, so the editor must show their latest values.
-                plain_text_context = normalize_refinement_context(
-                    historical_context,
-                    full_context,
-                )
+                if request.args.get('scope') == 'global_lore':
+                    from src.utils.novel_context import normalize_refinement_context
+                    # Explicit global edits should use the latest book-wide
+                    # lore while borrowing this chunk's dynamic-state anchor.
+                    plain_text_context = normalize_refinement_context(
+                        historical_context,
+                        full_context,
+                    )
+                else:
+                    # Historical chunk views should be timeline-safe: show the
+                    # exact stored snapshot instead of mixing in future global
+                    # facts from the latest context file.
+                    plain_text_context = historical_context
             else:
                 plain_text_context = full_context
         

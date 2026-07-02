@@ -21,15 +21,27 @@ REM STEP 1: Check Python Installation
 REM ========================================
 echo.
 echo [1/6] Checking Python Installation...
-python --version >nul 2>&1
-if errorlevel 1 (
+set "PYTHON_CMD="
+if exist "venv\Scripts\python.exe" (
+    set "PYTHON_CMD=venv\Scripts\python.exe"
+) else (
+    python --version >nul 2>&1
+    if not errorlevel 1 set "PYTHON_CMD=python"
+
+    if not defined PYTHON_CMD (
+        py -3 --version >nul 2>&1
+        if not errorlevel 1 set "PYTHON_CMD=py -3"
+    )
+)
+
+if not defined PYTHON_CMD (
     echo [X] Python is not installed or not in PATH
     echo     Please install Python 3.8+ from https://www.python.org/
     echo     Make sure to check "Add Python to PATH" during installation
     pause
     exit /b 1
 )
-for /f "tokens=2" %%i in ('python --version 2^>^&1') do set PYTHON_VERSION=%%i
+for /f "tokens=2" %%i in ('!PYTHON_CMD! --version 2^>^&1') do set PYTHON_VERSION=%%i
 echo     [OK] Python %PYTHON_VERSION% detected
 
 REM ========================================
@@ -39,7 +51,7 @@ echo.
 echo [2/6] Virtual Environment Setup...
 if not exist "venv" (
     echo     [..] First-time setup - creating virtual environment...
-    python -m venv venv
+    !PYTHON_CMD! -m venv venv
     if errorlevel 1 (
         echo     [X] Failed to create virtual environment
         pause
@@ -125,7 +137,7 @@ if "!NEEDS_UPDATE!"=="1" (
 
     echo     [..] Installing/updating dependencies...
     echo.
-    pip install -r requirements.txt --upgrade
+    python -m pip install -r requirements.txt --upgrade
     echo.
     if errorlevel 1 (
         echo     [X] Failed to install dependencies
@@ -169,8 +181,8 @@ if not exist "translated_files" (
 )
 
 REM Quick Integrity Check (Silent)
-if exist "fix_installation.py" (
-    python fix_installation.py >nul 2>&1
+if exist "scripts\fix_installation.py" (
+    python scripts\fix_installation.py >nul 2>&1
 )
 
 REM ========================================

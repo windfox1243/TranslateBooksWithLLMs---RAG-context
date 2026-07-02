@@ -373,6 +373,13 @@ export const ApiClient = {
         return await apiRequest(`/api/resume/${translationId}`, options);
     },
 
+    async continueJob(translationId, payload) {
+        return await apiRequest(`/api/continue/${translationId}`, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+    },
+
     /**
      * Delete a checkpoint
      * @param {string} translationId - Translation ID
@@ -390,8 +397,11 @@ export const ApiClient = {
      * @param {number} chunkIndex - Chunk index
      * @returns {Promise<Object>} Context snapshot data
      */
-    async getContextSnapshot(translationId, chunkIndex) {
-        return await apiRequest(`/api/translation/${translationId}/context/${chunkIndex}`, {
+    async getContextSnapshot(translationId, chunkIndex, options = {}) {
+        const params = new URLSearchParams();
+        if (options.scope) params.append('scope', options.scope);
+        const query = params.toString() ? `?${params.toString()}` : '';
+        return await apiRequest(`/api/translation/${translationId}/context/${chunkIndex}${query}`, {
             method: 'GET'
         });
     },

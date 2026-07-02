@@ -388,6 +388,12 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 f"↻ Resuming from chunk {resume_from_index} using "
                 f"{config.get('llm_provider', 'ollama')} / {config['model']}."
             )
+        if config.get('continuation_base_id'):
+            _log_message_callback(
+                "continuation_start",
+                "➕ Add New Content: comparing the updated source with the "
+                "previous checkpoint and reusing the matching translated prefix.",
+            )
 
         input_path_for_translate_module = config.get('file_path')
 
@@ -629,7 +635,8 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 prompt_options=translation_prompt_options,
                 bilingual_output=config.get('bilingual_output', False),
                 parallel_workers=config.get('parallel_workers', 1),
-                soft_limit_ratio=config.get('soft_limit_ratio')
+                soft_limit_ratio=config.get('soft_limit_ratio'),
+                continuation_base_id=config.get('continuation_base_id'),
             )
 
             if (

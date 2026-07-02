@@ -789,6 +789,7 @@ async def _translate_all_chunks_with_checkpoint(
     global_completed_chunks: Optional[int] = None,
     parallel_workers: int = 1,
     failed_chunk_indices: Optional[List[int]] = None,
+    continuation_base_id: Optional[str] = None,
 ) -> Tuple[List[str], TranslationMetrics, bool]:
     """
     Translate all chunks with checkpoint support.
@@ -896,6 +897,20 @@ async def _translate_all_chunks_with_checkpoint(
             ):
                 checkpoint_context_data_by_global_index[row_index] = dict(row_data)
 
+    continuation_context_seed = None
+    if continuation_base_id and checkpoint_manager:
+        previous_checkpoint = checkpoint_manager.load_checkpoint(
+            continuation_base_id
+        )
+        previous_chunks = (
+            previous_checkpoint.get('chunks', [])
+            if previous_checkpoint
+            else []
+        )
+        if previous_chunks:
+            from src.core.continuation import latest_context_seed
+            continuation_context_seed = latest_context_seed(previous_chunks)
+
     if novel_context_file:
         from src.utils.novel_context import (
             NovelContextSession,
@@ -969,6 +984,42 @@ async def _translate_all_chunks_with_checkpoint(
                         current_dialogue_scene_key = (
                             chunk_data.get("dialogue_attribution") or {}
                         ).get("scene_key")
+
+            if (
+                latest_restored_context_global_idx is None
+                and continuation_context_seed
+            ):
+                compressed_snapshot = continuation_context_seed.get(
+                    'context_snapshot'
+                )
+                if compressed_snapshot:
+                    _, current_global_lore, current_dynamic_state = decode_context_snapshot(
+                        compressed_snapshot,
+                        current_context_content,
+                    )
+                    latest_restored_context_global_idx = (
+                        continuation_context_seed.get('chunk_index')
+                    )
+                    if log_callback:
+                        log_callback(
+                            "continuation_context_seed",
+                            "Add New Content: continuing context from "
+                            "previous job chunk "
+                            f"{latest_restored_context_global_idx} snapshot.",
+                        )
+                current_dialogue_state = dict(
+                    continuation_context_seed.get('dialogue_state') or {}
+                )
+                from src.utils.dialogue_attribution import (
+                    canonicalize_dialogue_state,
+                )
+                current_dialogue_state = canonicalize_dialogue_state(
+                    current_dialogue_state,
+                    character_alias_map(current_global_lore),
+                )
+                current_dialogue_scene_key = (
+                    continuation_context_seed.get('dialogue_scene_key')
+                )
             
             prompt_options['novel_context'] = build_novel_context(
                 current_global_lore,
@@ -2278,6 +2329,7 @@ async def translate_xhtml_simplified(
     global_total_chunks: Optional[int] = None,
     global_completed_chunks: Optional[int] = None,
     parallel_workers: int = 1,
+    continuation_base_id: Optional[str] = None,
 ) -> Tuple[bool, 'TranslationMetrics']:
     """
     Translate an XHTML document using the simplified approach.
@@ -2420,6 +2472,48 @@ async def translate_xhtml_simplified(
         stats.total_chunks = len(chunks)
         original_chunks = chunks.copy() if bilingual else None
 
+        if continuation_base_id and checkpoint_manager and translation_id:
+            previous_checkpoint = checkpoint_manager.load_checkpoint(
+                continuation_base_id
+            )
+            previous_chunks = (
+                previous_checkpoint.get('chunks', [])
+                if previous_checkpoint
+                else []
+            )
+            if previous_chunks:
+                from src.core.continuation import seed_matching_prefix
+                prefix = seed_matching_prefix(
+                    checkpoint_manager=checkpoint_manager,
+                    translation_id=translation_id,
+                    previous_chunks=previous_chunks,
+                    new_source_units=[chunk.get('text', '') for chunk in chunks],
+                    total_units=global_total_chunks or len(chunks),
+                    offset=global_completed_chunks or 0,
+                    log_callback=log_callback,
+                    label="chunk",
+                )
+                if prefix:
+                    seeded_rows = {
+                        row.get('chunk_index'): row
+                        for row in checkpoint_manager.db.get_chunks(translation_id)
+                        or []
+                    }
+                    translated_chunks = []
+                    for local_index in range(prefix):
+                        global_index = (global_completed_chunks or 0) + local_index
+                        seeded = seeded_rows.get(global_index) or {}
+                        translated_chunks.append(seeded.get('translated_text') or "")
+                        chunk_data = seeded.get('chunk_data') or {}
+                        chunks[local_index]['context_snapshot'] = (
+                            chunk_data.get('context_snapshot')
+                        )
+                        chunks[local_index]['dialogue_attribution'] = (
+                            chunk_data.get('dialogue_attribution')
+                        )
+                    start_chunk_index = prefix
+                    stats.processed_chunks = prefix
+
     # At this point, whether resuming or starting fresh:
     # - chunks: List[Dict] complete
     # - global_tag_map: Dict[str, str]
@@ -2472,6 +2566,7 @@ async def translate_xhtml_simplified(
         global_completed_chunks=global_completed_chunks,
         parallel_workers=parallel_workers,
         failed_chunk_indices=failed_chunk_indices,
+        continuation_base_id=continuation_base_id,
     )
 
     # If interrupted, return without reconstruction

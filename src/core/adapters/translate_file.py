@@ -234,7 +234,8 @@ async def translate_file(
             check_interruption_callback=check_interruption_callback,
             checkpoint_manager=checkpoint_manager,
             translation_id=translation_id,
-            parallel_workers=parallel_workers
+            parallel_workers=parallel_workers,
+            continuation_base_id=additional_config.get('continuation_base_id'),
         )
         return result.get('success', False)
 

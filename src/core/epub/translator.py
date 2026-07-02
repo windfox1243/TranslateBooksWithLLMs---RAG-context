@@ -61,6 +61,7 @@ async def translate_epub_file(
     max_attempts: int = None,
     bilingual: bool = False,
     parallel_workers: int = 1,
+    continuation_base_id: Optional[str] = None,
 ) -> bool:
     """
     Translate an EPUB file using LLM with generic orchestrator.
@@ -223,6 +224,7 @@ async def translate_epub_file(
                 restored_docs=restored_docs,
                 parallel_workers=parallel_workers,
                 precomputed_chunk_counts=source_chunk_counts,
+                continuation_base_id=continuation_base_id,
             )
 
             # 4. Save translated files
@@ -607,6 +609,7 @@ async def _translate_single_xhtml_file(
     global_total_chunks: Optional[int] = None,
     global_completed_chunks: Optional[int] = None,
     parallel_workers: int = 1,
+    continuation_base_id: Optional[str] = None,
 ) -> Tuple[Optional[etree._Element], bool, Any]:
     """
     Translate a single XHTML file using GenericTranslationOrchestrator.
@@ -683,6 +686,7 @@ async def _translate_single_xhtml_file(
             global_total_chunks=global_total_chunks,
             global_completed_chunks=global_completed_chunks,
             parallel_workers=parallel_workers,
+            continuation_base_id=continuation_base_id,
         )
 
         return doc_root, success, stats
@@ -864,6 +868,7 @@ async def _process_all_content_files(
     restored_docs: Optional[Dict[str, etree._Element]] = None,
     parallel_workers: int = 1,
     precomputed_chunk_counts: Optional[Tuple[int, List[int]]] = None,
+    continuation_base_id: Optional[str] = None,
 ) -> Dict:
     """
     Process all XHTML content files using GenericTranslationOrchestrator.
@@ -1051,6 +1056,7 @@ async def _process_all_content_files(
             global_total_chunks=total_chunks,
             global_completed_chunks=completed_chunks_global,
             parallel_workers=parallel_workers,
+            continuation_base_id=continuation_base_id,
         )
 
         # Update global chunk counter. A fully-translated file contributes all

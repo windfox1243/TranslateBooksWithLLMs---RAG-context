@@ -1591,7 +1591,11 @@ window.loadContextSnapshot = async function(chunkValue) {
     
     try {
         console.log(`[Context] Loading snapshot for job=${translationId}, chunk=${resolvedChunkValue}`);
-        const result = await ApiClient.getContextSnapshot(translationId, resolvedChunkValue);
+        const result = await ApiClient.getContextSnapshot(
+            translationId,
+            resolvedChunkValue,
+            isGlobal ? { scope: 'global_lore' } : {}
+        );
         if (result && (result.context_content !== undefined && result.context_content !== null)) {
             // Check if novel context is configured
             if (result.has_novel_context === false && !result.context_content) {

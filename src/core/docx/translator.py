@@ -96,7 +96,8 @@ async def translate_docx_file(
         translation_id=translation_id,
         file_href=file_href,
         resume_state=resume_state,
-        parallel_workers=parallel_workers
+        parallel_workers=parallel_workers,
+        continuation_base_id=kwargs.get("continuation_base_id"),
     )
 
     # Check if translation was interrupted

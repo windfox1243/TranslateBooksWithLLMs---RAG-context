@@ -157,7 +157,7 @@ def test_refinement_context_uses_final_lore_with_historical_dynamic_state():
     assert "Unspecified" not in combined
 
 
-def test_context_editor_uses_latest_lore_with_selected_chunk_state(
+def test_context_editor_scope_controls_lore_leakage(
     monkeypatch,
     tmp_path,
 ):
@@ -225,15 +225,24 @@ def test_context_editor_uses_latest_lore_with_selected_chunk_state(
     )
 
     with app.test_client() as client:
-        response = client.get("/api/translation/job/context/0")
+        snapshot_response = client.get("/api/translation/job/context/0")
+        global_response = client.get(
+            "/api/translation/job/context/0?scope=global_lore"
+        )
 
-    assert response.status_code == 200
-    content = response.get_json()["context_content"]
-    assert "- Kriha: Female, Captain and loyal subordinate." in content
-    assert "- blood art: huyết thuật" in content
-    assert 'source form "Major" | formal' in content
-    assert 'source form "Valentine" | intimate' not in content
-    assert "Unspecified" not in content
+    assert snapshot_response.status_code == 200
+    snapshot_content = snapshot_response.get_json()["context_content"]
+    assert "- Kriha: Unspecified, Captain." in snapshot_content
+    assert "- blood art: huyết thuật" not in snapshot_content
+    assert 'source form "Major" | formal' in snapshot_content
+
+    assert global_response.status_code == 200
+    global_content = global_response.get_json()["context_content"]
+    assert "- Kriha: Female, Captain and loyal subordinate." in global_content
+    assert "- blood art: huyết thuật" in global_content
+    assert 'source form "Major" | formal' in global_content
+    assert 'source form "Valentine" | intimate' not in global_content
+    assert "Unspecified" not in global_content
 
 
 def test_context_resync_route_accepts_numeric_context_revision(
@@ -962,6 +971,21 @@ def test_context_resync_save_does_not_replace_latest_with_historical_snapshot():
     assert "NovelContextUI.latestContent = newContent" not in save_block
     assert "NovelContextUI.renderContextTabs(newContent, true)" in save_block
     assert "scope: isGlobal ? 'global_lore' : 'snapshot'" in save_block
+
+
+def test_chunk_context_snapshot_route_keeps_timeline_snapshot_isolated():
+    project_root = Path(__file__).resolve().parents[2]
+    routes = (
+        project_root / "src" / "api" / "blueprints"
+        / "translation_routes.py"
+    ).read_text(encoding="utf-8")
+
+    snapshot_block = routes.split(
+        "if request.args.get('scope') == 'global_lore':",
+        1,
+    )[1].split("return jsonify", 1)[0]
+    assert "normalize_refinement_context(" in snapshot_block
+    assert "plain_text_context = historical_context" in snapshot_block
 
 
 def test_refinement_context_state_omits_large_ui_payloads():

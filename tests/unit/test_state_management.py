@@ -535,8 +535,8 @@ class TestStateManagerCheckpointIntegration:
 
             checkpoint_mgr.close()
 
-    def test_get_resumable_jobs_returns_paused_and_interrupted(self):
-        """Resumable jobs should include paused and interrupted status."""
+    def test_get_resumable_jobs_returns_paused_interrupted_and_completed(self):
+        """Saved jobs should include resumable jobs and continuable bases."""
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = os.path.join(tmpdir, "test.db")
             checkpoint_mgr = CheckpointManager(db_path=db_path, server_session_id="session_1")
@@ -557,11 +557,11 @@ class TestStateManagerCheckpointIntegration:
             # Get resumable
             resumable = checkpoint_mgr.get_resumable_jobs()
 
-            # Should include paused and interrupted, not completed or running
+            # Should include paused/interrupted/completed, not running.
             resumable_ids = [j['translation_id'] for j in resumable]
             assert "trans_001" in resumable_ids  # paused
             assert "trans_002" in resumable_ids  # interrupted
-            assert "trans_003" not in resumable_ids  # completed
+            assert "trans_003" in resumable_ids  # completed continuation base
             assert "trans_004" not in resumable_ids  # running
 
             checkpoint_mgr.close()

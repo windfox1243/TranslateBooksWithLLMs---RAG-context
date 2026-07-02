@@ -37,6 +37,8 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
     const progressPercent = job.progress_percentage || 0;
     const fileType = (job.file_type || 'txt').toUpperCase();
     const isPartial = job.status === 'partial';
+    const isCompleted = job.status === 'completed';
+    const canResume = !hasActiveTranslation && !isCompleted;
 
     const failedBadgeLabel = t('translation:job_card_failed_badge', { count: failedChunks });
     const statusBadge = isPartial
@@ -67,7 +69,9 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
 
     const idValue = inputHash || job.translation_id.replace('trans_', '');
     const typeIdLine = t('translation:job_card_type_id', { type: fileType, id: idValue });
-    const resumeTitle = hasActiveTranslation
+    const resumeTitle = isCompleted
+        ? t('translation:job_card_completed_resume_title')
+        : hasActiveTranslation
         ? t('translation:cannot_resume_in_progress_title')
         : t('translation:resume_btn_title');
 
@@ -97,9 +101,20 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
                 <div style="display: flex; gap: 10px; flex-shrink: 0;">
                     <button class="btn btn-primary" onclick="resumeJob('${job.translation_id}')"
                             title="${resumeTitle}"
-                            ${hasActiveTranslation ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
+                            ${canResume ? '' : 'disabled style="opacity: 0.5; cursor: not-allowed;"'}>
                         ${t('translation:job_card_resume_btn')}
                     </button>
+                    <button class="btn btn-secondary continue-job-btn"
+                            data-tid="${job.translation_id}"
+                            data-file-type="${DomHelpers.escapeHtml(job.file_type || 'txt')}"
+                            title="${t('translation:add_new_content_title')}"
+                            ${hasActiveTranslation ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
+                        ${t('translation:add_new_content_btn')}
+                    </button>
+                    <input type="file" class="continue-job-file"
+                           data-tid="${job.translation_id}"
+                           accept=".txt,.epub,.srt,.docx"
+                           style="display: none;">
                     <button class="btn btn-danger" onclick="deleteCheckpoint('${job.translation_id}')" title="${t('translation:job_card_delete_title')}">
                         ${t('translation:job_card_delete_btn')}
                     </button>
@@ -122,8 +137,8 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
                 </div>
                 <button class="resume-change-model" data-tid="${job.translation_id}"
                         title="${t('translation:resume_change_model_title')}"
-                        ${hasActiveTranslation ? 'disabled' : ''}
-                        style="display: inline-flex; align-items: center; gap: 4px; background: none; border: none; padding: 2px 4px; font-size: 12px; color: #3b82f6; cursor: pointer; white-space: nowrap;${hasActiveTranslation ? ' opacity: 0.5; cursor: not-allowed;' : ''}">
+                        ${canResume ? '' : 'disabled'}
+                        style="display: inline-flex; align-items: center; gap: 4px; background: none; border: none; padding: 2px 4px; font-size: 12px; color: #3b82f6; cursor: pointer; white-space: nowrap;${canResume ? '' : ' opacity: 0.5; cursor: not-allowed;'}">
                     <span class="material-symbols-outlined" style="font-size: 0.95rem;">tune</span>
                     <span data-i18n="translation:resume_change_model">Change model</span>
                 </button>
@@ -241,6 +256,28 @@ function wireResumeOverrides(container) {
                 if (cfg.api_key) overrides.api_key = cfg.api_key;
             }
             ResumeManager.resumeJob(tid, overrides);
+        });
+    });
+
+    container.querySelectorAll('.continue-job-btn').forEach((btn) => {
+        if (btn.disabled) return;
+        btn.addEventListener('click', () => {
+            const tid = btn.dataset.tid;
+            const input = Array.from(
+                container.querySelectorAll('.continue-job-file')
+            ).find(item => item.dataset.tid === tid);
+            if (input) input.click();
+        });
+    });
+
+    container.querySelectorAll('.continue-job-file').forEach((input) => {
+        input.addEventListener('change', () => {
+            const file = input.files && input.files[0];
+            const tid = input.dataset.tid;
+            if (file && tid) {
+                ResumeManager.continueJob(tid, file);
+            }
+            input.value = '';
         });
     });
 }
@@ -440,6 +477,84 @@ export const ResumeManager = {
                 MessageLogger.addLog(t('translation:resume_network_error_log', { error: error.message }));
             }
             console.error('Error resuming job:', error);
+        }
+    },
+
+    async continueJob(translationId, file) {
+        const hasActive = StateManager.getState('translation.hasActive') || false;
+        const activeJobs = StateManager.getState('translation.activeJobs') || [];
+
+        if (hasActive) {
+            const activeNames = activeJobs.map(job => job.output_filename || t('translation:job_card_unknown')).join(', ');
+            MessageLogger.showMessage(
+                t('translation:cannot_resume_active', { names: activeNames }),
+                'error'
+            );
+            return;
+        }
+
+        if (!confirm(t('translation:confirm_add_new_content', { name: file.name }))) {
+            return;
+        }
+
+        try {
+            MessageLogger.addLog(t('translation:add_new_content_uploading_log', { name: file.name }));
+            const upload = await ApiClient.uploadFile(file);
+            MessageLogger.addLog(t('translation:add_new_content_starting_log'));
+
+            const data = await ApiClient.continueJob(translationId, {
+                file_path: upload.file_path,
+                file_type: upload.file_type,
+                input_filename: file.name
+            });
+
+            MessageLogger.showMessage(t('translation:add_new_content_success'), 'success');
+            MessageLogger.addLog(t('translation:add_new_content_success_log', {
+                id: data.translation_id
+            }));
+
+            StateManager.setState('translation.currentJob', {
+                translationId: data.translation_id,
+                fileRef: {
+                    name: data.output_filename || file.name,
+                    fileType: upload.file_type || 'txt'
+                }
+            });
+            StateManager.setState('translation.isBatchActive', true);
+            ProgressManager.reset();
+            ProgressManager.show();
+            const progressSection = DomHelpers.getElement('progressSection');
+            if (progressSection) {
+                progressSection.scrollIntoView({ behavior: 'smooth' });
+            }
+            DomHelpers.setText(
+                'currentFileProgressTitle',
+                t('translation:add_new_content_progress_title', {
+                    name: data.output_filename || file.name
+                })
+            );
+            DomHelpers.show('statsGrid');
+            const interruptBtn = DomHelpers.getElement('interruptBtn');
+            if (interruptBtn) {
+                DomHelpers.show('interruptBtn');
+                interruptBtn.disabled = false;
+            }
+
+            window.dispatchEvent(new CustomEvent('translationStarted', {
+                detail: { translationId: data.translation_id }
+            }));
+            setTimeout(() => {
+                this.loadResumableJobs();
+            }, 1000);
+        } catch (error) {
+            MessageLogger.showMessage(
+                t('translation:add_new_content_error', { error: error.message }),
+                'error'
+            );
+            MessageLogger.addLog(
+                t('translation:add_new_content_error_log', { error: error.message })
+            );
+            console.error('Error adding new content:', error);
         }
     },
 

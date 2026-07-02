@@ -147,6 +147,33 @@ class GenericTranslator:
             # 3. Check for checkpoint and resume
             restored_completed = set()
             checkpoint_data = self.checkpoint_manager.load_checkpoint(self.translation_id)
+            continuation_base_id = self.adapter.config.get('continuation_base_id')
+            continuation_context_seed = None
+            if continuation_base_id and checkpoint_data:
+                previous_checkpoint = self.checkpoint_manager.load_checkpoint(
+                    continuation_base_id
+                )
+                previous_chunks = (
+                    previous_checkpoint.get('chunks', [])
+                    if previous_checkpoint
+                    else []
+                )
+                if previous_chunks:
+                    from src.core.continuation import seed_matching_prefix
+                    seed_matching_prefix(
+                        checkpoint_manager=self.checkpoint_manager,
+                        translation_id=self.translation_id,
+                        previous_chunks=previous_chunks,
+                        new_source_units=[unit.content for unit in units],
+                        total_units=total_units,
+                        log_callback=log_callback,
+                        label="unit",
+                    )
+                    checkpoint_data = self.checkpoint_manager.load_checkpoint(
+                        self.translation_id
+                    )
+                from src.core.continuation import latest_context_seed
+                continuation_context_seed = latest_context_seed(previous_chunks)
 
             if checkpoint_data:
                 await self.adapter.resume_from_checkpoint(checkpoint_data)
@@ -226,6 +253,7 @@ class GenericTranslator:
             resume_snapshot_index = None
             resume_dialogue_state = None
             resume_dialogue_scene_key = None
+            used_continuation_context_seed = False
             analyzed_context_indices = set()
             checkpoint_context_data_by_index = {}
             if checkpoint_data:
@@ -298,6 +326,21 @@ class GenericTranslator:
                             ).get('scene_key')
                             break
 
+            if not resume_snapshot and continuation_context_seed:
+                resume_snapshot = continuation_context_seed.get(
+                    'context_snapshot'
+                )
+                resume_snapshot_index = continuation_context_seed.get(
+                    'chunk_index'
+                )
+                resume_dialogue_state = continuation_context_seed.get(
+                    'dialogue_state'
+                )
+                resume_dialogue_scene_key = continuation_context_seed.get(
+                    'dialogue_scene_key'
+                )
+                used_continuation_context_seed = True
+
             try:
                 context_session = open_novel_context_session(
                     prompt_options=prompt_options,
@@ -310,10 +353,21 @@ class GenericTranslator:
                     log_callback=log_callback,
                 )
                 if resume_snapshot and context_session and log_callback:
-                    log_callback(
-                        "novel_context_resume",
-                        f"Restored context from chunk {resume_snapshot_index} snapshot.",
+                    event_type = (
+                        "continuation_context_seed"
+                        if used_continuation_context_seed
+                        else "novel_context_resume"
                     )
+                    message = (
+                        "Add New Content: continuing context from previous "
+                        f"job chunk {resume_snapshot_index} snapshot."
+                        if event_type == "continuation_context_seed"
+                        else (
+                            f"Restored context from chunk "
+                            f"{resume_snapshot_index} snapshot."
+                        )
+                    )
+                    log_callback(event_type, message)
             except Exception as e:
                 context_session = None
                 if log_callback:
