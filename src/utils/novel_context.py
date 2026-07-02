@@ -694,10 +694,11 @@ def _is_unstable_physical_character_entry(name: str, value: str = "") -> bool:
 def _is_non_character_work_entry(name: str, value: str) -> bool:
     """Reject works/apps or abstract concepts that the model put in the character registry."""
     name_key = _plain_key(name)
-    _, details = _split_gender_and_details(_normalize_character_value(value))
+    gender, details = _split_gender_and_details(_normalize_character_value(value))
     key = _plain_key(details)
     if not key:
         return False
+    gender = _canonical_gender(gender).casefold()
 
     # Check for abstract concepts, hallucinations, metaphors, or inanimate objects
     if re.search(
@@ -726,6 +727,18 @@ def _is_non_character_work_entry(name: str, value: str) -> bool:
     ):
         return True
     if re.search(r"\bmentioned\s+in\s+(?:an?\s+)?(?:episode|chapter)\s+title\b", key):
+        return True
+    if gender not in _SPECIFIC_GENDER_LABELS and re.search(
+        r"\b(?:magic\s+(?:circle|array|formula|formation)|spell\s+circle|"
+        r"magic\s+item|artifact|artefact|relic|weapon|sword|bow|shield|"
+        r"item|reward|treasure|rune|sigil|spell|skill|ability|technique)\b",
+        key,
+    ) and re.search(
+        r"\b(?:acquired|activated|cast|circle|conquest|drawn|formation|"
+        r"granted|item|magic|obtained|reward|spell|stored|summoned|used|"
+        r"weapon|wielded)\b",
+        key,
+    ):
         return True
 
     words = re.findall(r"\w+", key)
