@@ -394,6 +394,93 @@ def test_context_resync_route_accepts_failed_source_snapshot(
     thread.start.assert_called_once()
 
 
+def test_resume_translation_blocks_unfinished_context_resync(tmp_path):
+    from src.api.blueprints.translation_routes import (
+        create_translation_blueprint,
+    )
+
+    checkpoint_manager = MagicMock()
+    checkpoint_manager.load_checkpoint.return_value = {
+        "job": {
+            "config": {
+                "file_path": str(tmp_path / "book.txt"),
+                "preserved_input_path": str(tmp_path / "book.txt"),
+                "_context_resync": {
+                    "status": "paused",
+                    "last_processed_chunk": 12,
+                },
+            },
+        },
+        "resume_from_index": 13,
+    }
+    state_manager = MagicMock()
+    state_manager.checkpoint_manager = checkpoint_manager
+    state_manager.get_all_translations.return_value = {}
+
+    app = Flask(__name__)
+    app.register_blueprint(
+        create_translation_blueprint(
+            state_manager,
+            lambda *_args, **_kwargs: None,
+            str(tmp_path),
+        )
+    )
+
+    with app.test_client() as client:
+        response = client.post("/api/resume/job")
+
+    assert response.status_code == 409
+    assert response.get_json()["context_resync_state"]["status"] == "paused"
+    state_manager.restore_job_from_checkpoint.assert_not_called()
+    checkpoint_manager.mark_running.assert_not_called()
+
+
+def test_resumable_jobs_expose_stale_context_resync_as_paused(tmp_path):
+    from src.api.blueprints.translation_routes import (
+        create_translation_blueprint,
+    )
+
+    config = {
+        "file_path": str(tmp_path / "book.txt"),
+        "output_filename": "book.out.txt",
+        "openai_api_key": "YOUR_API_KEY_HERE",
+        "_context_resync": {
+            "status": "running",
+            "last_processed_chunk": 7,
+        },
+    }
+    checkpoint_manager = MagicMock()
+    checkpoint_manager.get_job.return_value = {"config": config}
+    checkpoint_manager.update_job_config.return_value = True
+    state_manager = MagicMock()
+    state_manager.checkpoint_manager = checkpoint_manager
+    state_manager.get_resumable_jobs.return_value = [{
+        "translation_id": "job",
+        "status": "interrupted",
+        "file_type": "txt",
+        "config": dict(config),
+        "progress": {"completed_chunks": 7, "total_chunks": 10},
+    }]
+
+    app = Flask(__name__)
+    app.register_blueprint(
+        create_translation_blueprint(
+            state_manager,
+            lambda *_args, **_kwargs: None,
+            str(tmp_path),
+        )
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/resumable")
+
+    assert response.status_code == 200
+    job = response.get_json()["resumable_jobs"][0]
+    assert job["context_resync"]["status"] == "paused"
+    assert "openai_api_key" not in job["config"]
+    checkpoint_manager.update_job_config.assert_called_once()
+
+
 def test_refinement_source_survives_completed_checkpoint_cleanup(tmp_path):
     manager = CheckpointManager(db_path=str(tmp_path / "jobs.db"))
     manager.uploads_dir = tmp_path / "uploads"

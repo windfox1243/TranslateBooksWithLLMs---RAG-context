@@ -38,14 +38,30 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
     const fileType = (job.file_type || 'txt').toUpperCase();
     const isPartial = job.status === 'partial';
     const isCompleted = job.status === 'completed';
-    const canResume = !hasActiveTranslation && !isCompleted;
+    const cfg = job.config || {};
+    const resyncState = job.context_resync || cfg._context_resync || {};
+    const resyncStatus = resyncState.status || '';
+    const hasPendingResync = ['running', 'pause_requested', 'paused'].includes(resyncStatus);
+    const canResumeTranslation = !hasActiveTranslation && !isCompleted && !hasPendingResync;
+    const canResumeResync = !hasActiveTranslation && ['paused', 'pause_requested'].includes(resyncStatus);
+    const canResume = canResumeTranslation || canResumeResync;
 
     const failedBadgeLabel = t('translation:job_card_failed_badge', { count: failedChunks });
-    const statusBadge = isPartial
+    const failedStatusBadge = isPartial
         ? `<span style="display: inline-block; margin-left: 8px; padding: 2px 8px; font-size: 11px; font-weight: 600; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px;" title="${t('translation:job_card_partial_title', { count: failedChunks })}">${failedBadgeLabel}</span>`
         : (failedChunks > 0
             ? `<span style="display: inline-block; margin-left: 8px; padding: 2px 8px; font-size: 11px; font-weight: 600; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px;" title="${t('translation:job_card_failed_title', { count: failedChunks })}">${failedBadgeLabel}</span>`
             : '');
+    const resyncStatusKey = {
+        running: 'translation:context_resync_status_running',
+        pause_requested: 'translation:context_resync_status_pause_requested',
+        paused: 'translation:context_resync_status_paused'
+    }[resyncStatus];
+    const resyncStatusLabel = resyncStatusKey ? t(resyncStatusKey) : '';
+    const resyncStatusBadge = resyncStatusLabel
+        ? `<span style="display: inline-block; margin-left: 8px; padding: 2px 8px; font-size: 11px; font-weight: 600; color: #1d4ed8; background: #dbeafe; border: 1px solid #60a5fa; border-radius: 4px;" title="${resyncStatusLabel}">${resyncStatusLabel}</span>`
+        : '';
+    const statusBadge = `${failedStatusBadge}${resyncStatusBadge}`;
 
     const naText = t('translation:job_card_na');
     const dateLocale = getCurrentLocale();
@@ -73,12 +89,21 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
         ? t('translation:job_card_completed_resume_title')
         : hasActiveTranslation
         ? t('translation:cannot_resume_in_progress_title')
+        : hasPendingResync && !canResumeResync
+        ? resyncStatusLabel || t('translation:context_resume_resync_title')
+        : hasPendingResync
+        ? t('translation:context_resume_resync_title')
         : t('translation:resume_btn_title');
+    const primaryButtonText = hasPendingResync
+        ? t('translation:context_resume_resync_btn')
+        : t('translation:job_card_resume_btn');
+    const primaryButtonAttrs = hasPendingResync
+        ? `class="btn btn-primary resume-resync-job" data-tid="${job.translation_id}"`
+        : `class="btn btn-primary" onclick="resumeJob('${job.translation_id}')"`;
 
     // Original model/provider, used to seed the override picker and to show what
     // the resumed portion would switch away from. Keys were already stripped
     // server-side from job.config.
-    const cfg = job.config || {};
     const origProvider = cfg.llm_provider || 'ollama';
     const origModel = cfg.model || '';
     const origEndpoint = cfg.llm_api_endpoint || '';
@@ -99,16 +124,16 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
                 </div>
 
                 <div style="display: flex; gap: 10px; flex-shrink: 0;">
-                    <button class="btn btn-primary" onclick="resumeJob('${job.translation_id}')"
+                    <button ${primaryButtonAttrs}
                             title="${resumeTitle}"
                             ${canResume ? '' : 'disabled style="opacity: 0.5; cursor: not-allowed;"'}>
-                        ${t('translation:job_card_resume_btn')}
+                        ${primaryButtonText}
                     </button>
                     <button class="btn btn-secondary continue-job-btn"
                             data-tid="${job.translation_id}"
                             data-file-type="${DomHelpers.escapeHtml(job.file_type || 'txt')}"
                             title="${t('translation:add_new_content_title')}"
-                            ${hasActiveTranslation ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
+                            ${hasActiveTranslation || hasPendingResync ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
                         ${t('translation:add_new_content_btn')}
                     </button>
                     <input type="file" class="continue-job-file"
@@ -158,7 +183,7 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
                     ⚠️ <span data-i18n="translation:resume_style_warning">Switching model mid-book may cause a style break between the already-translated and remaining chunks.</span>
                 </div>
                 <div style="margin-top: 12px;">
-                    <button class="btn btn-primary resume-apply" data-tid="${job.translation_id}" data-i18n="translation:resume_apply_btn">
+                    <button class="btn btn-primary resume-apply" data-tid="${job.translation_id}" data-resync="${hasPendingResync ? 'true' : 'false'}" data-i18n="${hasPendingResync ? 'translation:context_resume_resync_btn' : 'translation:resume_apply_btn'}">
                         Resume with this model
                     </button>
                 </div>
@@ -255,7 +280,18 @@ function wireResumeOverrides(container) {
                 if (cfg.api_endpoint) overrides.llm_api_endpoint = cfg.api_endpoint;
                 if (cfg.api_key) overrides.api_key = cfg.api_key;
             }
+            if (btn.dataset.resync === 'true') {
+                ResumeManager.resumeContextResyncJob(tid, overrides);
+                return;
+            }
             ResumeManager.resumeJob(tid, overrides);
+        });
+    });
+
+    container.querySelectorAll('.resume-resync-job').forEach((btn) => {
+        if (btn.disabled) return;
+        btn.addEventListener('click', () => {
+            ResumeManager.resumeContextResyncJob(btn.dataset.tid);
         });
     });
 
@@ -472,11 +508,52 @@ export const ResumeManager = {
                     'error'
                 );
                 MessageLogger.addLog(`⚠️ ${error.data.message}`);
+            } else if (error.status === 409 && error.data?.context_resync_state) {
+                MessageLogger.showMessage(
+                    t('translation:resume_error', { error: error.message }),
+                    'error'
+                );
+                this.loadResumableJobs();
             } else {
                 MessageLogger.showMessage(t('translation:resume_error', { error: error.message }), 'error');
                 MessageLogger.addLog(t('translation:resume_network_error_log', { error: error.message }));
             }
             console.error('Error resuming job:', error);
+        }
+    },
+
+    async resumeContextResyncJob(translationId, overrides = null) {
+        const hasActive = StateManager.getState('translation.hasActive') || false;
+        const activeJobs = StateManager.getState('translation.activeJobs') || [];
+
+        if (hasActive) {
+            const activeNames = activeJobs.map(job => job.output_filename || t('translation:job_card_unknown')).join(', ');
+            MessageLogger.showMessage(
+                t('translation:cannot_resume_active', { names: activeNames }),
+                'error'
+            );
+            return;
+        }
+
+        try {
+            const result = await ApiClient.resumeContextResync(translationId, overrides);
+            MessageLogger.addLog(t('translation:context_resync_resumed_log'));
+            if (window.NovelContextUI?.lastResyncState !== undefined) {
+                window.NovelContextUI.lastResyncState = result?.resync_state || null;
+            }
+            setTimeout(() => {
+                this.loadResumableJobs();
+            }, 1000);
+        } catch (error) {
+            MessageLogger.showMessage(
+                t('translation:context_resync_resume_failed', { error: error.message }),
+                'error'
+            );
+            MessageLogger.addLog(
+                t('translation:context_resync_resume_failed', { error: error.message })
+            );
+            this.loadResumableJobs();
+            console.error('Error resuming context re-sync:', error);
         }
     },
 
