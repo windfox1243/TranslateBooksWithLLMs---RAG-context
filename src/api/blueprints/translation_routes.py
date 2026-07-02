@@ -83,6 +83,30 @@ def _context_resync_state_from_config(config):
     return dict(state) if isinstance(state, dict) else {}
 
 
+def _unfinished_context_resync_state(config):
+    state = _context_resync_state_from_config(config)
+    if state.get("status") in ("running", "pause_requested", "paused"):
+        return state
+    return None
+
+
+def _refresh_inactive_context_resync_state(checkpoint_manager, translation_id, config):
+    state = _context_resync_state_from_config(config)
+    if state.get("status") == "running" and not _is_context_resync_active(translation_id):
+        state = _update_context_resync_state(
+            checkpoint_manager,
+            translation_id,
+            {
+                "status": "paused",
+                "pause_requested": False,
+                "updated_at": time.time(),
+            },
+            base_config=config,
+        ) or state
+        config['_context_resync'] = state
+    return state
+
+
 def _update_context_resync_state(
     checkpoint_manager,
     translation_id,
@@ -522,6 +546,12 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         """
         resumable_jobs = state_manager.get_resumable_jobs()
         for job in resumable_jobs:
+            config = job.get('config') or {}
+            job['context_resync'] = _refresh_inactive_context_resync_state(
+                state_manager.checkpoint_manager,
+                job.get('translation_id'),
+                config,
+            )
             _strip_api_keys(job.get('config'))
         return jsonify({"resumable_jobs": resumable_jobs})
 
@@ -538,14 +568,37 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         if not checkpoint_data:
             return jsonify({"error": "No checkpoint found for this translation"}), 404
 
+        # Get job config and add resume parameters
+        job = checkpoint_data['job']
+        config = copy.deepcopy(job['config'])  # Create a deep copy to avoid mutating the stored config
+        resync_state = _unfinished_context_resync_state(config)
+        if resync_state:
+            if (
+                resync_state.get("status") == "running"
+                and not _is_context_resync_active(translation_id)
+            ):
+                resync_state = _update_context_resync_state(
+                    state_manager.checkpoint_manager,
+                    translation_id,
+                    {
+                        "status": "paused",
+                        "pause_requested": False,
+                        "updated_at": time.time(),
+                    },
+                    base_config=config,
+                ) or resync_state
+            return jsonify({
+                "error": (
+                    "Context re-sync is not complete. Resume or finish the "
+                    "context re-sync before resuming translation."
+                ),
+                "context_resync_state": resync_state,
+            }), 409
+
         # Restore job into state manager
         restored = state_manager.restore_job_from_checkpoint(translation_id)
         if not restored:
             return jsonify({"error": "Failed to restore job from checkpoint"}), 500
-
-        # Get job config and add resume parameters
-        job = checkpoint_data['job']
-        config = copy.deepcopy(job['config'])  # Create a deep copy to avoid mutating the stored config
 
         # Get preserved input file path if exists
         # Always use preserved_input_path from config (stored during job creation)
@@ -1262,18 +1315,11 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         if not checkpoint_data:
             return jsonify({"error": "Translation not found"}), 404
         config = checkpoint_data.get('job', {}).get('config', {}) or {}
-        state = _context_resync_state_from_config(config)
-        if state.get("status") == "running" and not _is_context_resync_active(translation_id):
-            state = _update_context_resync_state(
-                state_manager.checkpoint_manager,
-                translation_id,
-                {
-                    "status": "paused",
-                    "pause_requested": False,
-                    "updated_at": time.time(),
-                },
-                base_config=config,
-            ) or state
+        state = _refresh_inactive_context_resync_state(
+            state_manager.checkpoint_manager,
+            translation_id,
+            config,
+        )
         return jsonify({
             "translation_id": translation_id,
             "active": _is_context_resync_active(translation_id),
