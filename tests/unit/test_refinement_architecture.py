@@ -481,6 +481,87 @@ def test_resumable_jobs_expose_stale_context_resync_as_paused(tmp_path):
     checkpoint_manager.update_job_config.assert_called_once()
 
 
+def test_context_resync_resume_restores_auto_resume_follow_up(
+    monkeypatch,
+    tmp_path,
+):
+    from src.api.blueprints.translation_routes import (
+        create_translation_blueprint,
+    )
+
+    checkpoint_manager = MagicMock()
+    checkpoint_manager.load_checkpoint.return_value = {
+        "job": {
+            "config": {
+                "llm_provider": "openai",
+                "llm_api_endpoint": "http://localhost:1234/v1",
+                "_context_resync": {
+                    "status": "paused",
+                    "last_processed_chunk": 2,
+                    "follow_up_kind": "auto_resume_translation",
+                    "mode": "global_lore",
+                },
+            },
+        },
+        "resume_from_index": 3,
+        "chunks": [{
+            "chunk_index": 2,
+            "status": "completed",
+            "chunk_data": {
+                "context_snapshot": compress_dynamic_state("Context"),
+            },
+        }],
+    }
+    checkpoint_manager.update_job_config.return_value = True
+    state_manager = MagicMock()
+    state_manager.checkpoint_manager = checkpoint_manager
+
+    captured = {}
+
+    def fake_resync(*args):
+        captured["auto_resume_callback"] = args[5]
+
+    class ImmediateThread:
+        def __init__(self, target, **_kwargs):
+            self.target = target
+            self.daemon = False
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(
+        "src.api.blueprints.translation_routes._claim_context_resync",
+        lambda _translation_id: True,
+    )
+    monkeypatch.setattr(
+        "src.api.blueprints.translation_routes._release_context_resync",
+        lambda _translation_id: None,
+    )
+    monkeypatch.setattr(
+        "src.core.adapters.generic_translator.resync_context_snapshots_background",
+        fake_resync,
+    )
+    monkeypatch.setattr(
+        "src.api.blueprints.translation_routes.threading.Thread",
+        ImmediateThread,
+    )
+
+    app = Flask(__name__)
+    app.register_blueprint(
+        create_translation_blueprint(
+            state_manager,
+            lambda *_args, **_kwargs: None,
+            str(tmp_path),
+        )
+    )
+
+    with app.test_client() as client:
+        response = client.post("/api/translation/job/context/resync/resume")
+
+    assert response.status_code == 200
+    assert callable(captured["auto_resume_callback"])
+
+
 def test_refinement_source_survives_completed_checkpoint_cleanup(tmp_path):
     manager = CheckpointManager(db_path=str(tmp_path / "jobs.db"))
     manager.uploads_dir = tmp_path / "uploads"

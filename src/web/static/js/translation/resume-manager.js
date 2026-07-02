@@ -16,6 +16,22 @@ import { createProviderModelPicker } from '../providers/provider-model-picker.js
 // Live picker instances, keyed by translation_id, so the override panel keeps
 // its state while open and can be cleaned up on the next list render.
 const overridePickers = new Map();
+let resumableJobsPollTimer = null;
+
+function scheduleResumableJobsPoll(jobs, refresh) {
+    if (resumableJobsPollTimer) {
+        clearTimeout(resumableJobsPollTimer);
+        resumableJobsPollTimer = null;
+    }
+    const hasActiveResync = jobs.some((job) => {
+        const cfg = job.config || {};
+        const state = job.context_resync || cfg._context_resync || {};
+        return ['running', 'pause_requested'].includes(state.status);
+    });
+    if (hasActiveResync) {
+        resumableJobsPollTimer = setTimeout(refresh, 5000);
+    }
+}
 
 function destroyOverridePickers() {
     overridePickers.forEach((p) => p.destroy?.());
@@ -373,6 +389,7 @@ export const ResumeManager = {
             // override toggles / apply buttons.
             applyToDOM(listContainer);
             wireResumeOverrides(listContainer);
+            scheduleResumableJobsPoll(jobs, () => this.loadResumableJobs());
 
             MessageLogger.addLog(t('translation:paused_count_log', { count: jobs.length }));
 
@@ -536,11 +553,15 @@ export const ResumeManager = {
         }
 
         try {
+            StateManager.setState('translation.lastJobId', translationId);
             const result = await ApiClient.resumeContextResync(translationId, overrides);
             MessageLogger.addLog(t('translation:context_resync_resumed_log'));
             if (window.NovelContextUI?.lastResyncState !== undefined) {
                 window.NovelContextUI.lastResyncState = result?.resync_state || null;
             }
+            window.dispatchEvent(new CustomEvent('contextResyncResumed', {
+                detail: { translationId, resyncState: result?.resync_state || null }
+            }));
             setTimeout(() => {
                 this.loadResumableJobs();
             }, 1000);

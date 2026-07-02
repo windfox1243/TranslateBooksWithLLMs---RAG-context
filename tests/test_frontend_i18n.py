@@ -330,6 +330,19 @@ def test_context_preview_dynamic_strings_are_locale_reactive() -> None:
     assert "activeTabTitle" not in tracker
 
 
+def test_saved_card_context_resync_sets_last_job_for_socket_logs() -> None:
+    """Saved-card Resume Re-sync must let websocket logs target the log panel."""
+    resume_manager = (
+        JS_DIR / "translation" / "resume-manager.js"
+    ).read_text(encoding="utf-8")
+
+    assert "StateManager.setState('translation.lastJobId', translationId)" in resume_manager
+    assert "new CustomEvent('contextResyncResumed'" in resume_manager
+    assert "function scheduleResumableJobsPoll(jobs, refresh)" in resume_manager
+    assert "['running', 'pause_requested'].includes(state.status)" in resume_manager
+    assert "scheduleResumableJobsPoll(jobs, () => this.loadResumableJobs())" in resume_manager
+
+
 # ---------------------------------------------------------------------------
 # Hardcoded user-visible text in JS modules
 # ---------------------------------------------------------------------------
