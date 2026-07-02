@@ -331,6 +331,15 @@ class CheckpointManager:
         # Enrich with additional info
         for job in jobs:
             progress = job['progress']
+            chunk_status_counts = self.db.get_chunk_status_counts(
+                job['translation_id']
+            )
+            if chunk_status_counts:
+                progress['failed_chunks'] = chunk_status_counts.get('failed', 0)
+                progress['completed_chunks'] = chunk_status_counts.get(
+                    'completed',
+                    progress.get('completed_chunks', 0),
+                )
             total = progress.get('total_chunks', 0)
             completed = progress.get('completed_chunks', 0)
 

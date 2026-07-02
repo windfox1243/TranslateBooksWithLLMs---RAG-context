@@ -7,6 +7,9 @@
 - **Paused context re-sync recovery:** Saved translation cards now expose unfinished context re-sync state, convert stale background runs back to a resumable paused state, and route recovery through Resume Re-sync instead of normal translation resume.
 - **Context re-sync safety guard:** Normal translation resume now refuses to start while a context re-sync is still running, pausing, or paused, preventing stale context snapshots from being skipped.
 - **Context re-sync progress logs:** Checkpoint-only Resume Re-sync jobs now restore enough in-memory state to stream progress logs and status updates while saved snapshots are being propagated.
+- **Saved-card context re-sync refresh:** Saved translation cards now keep polling while a context re-sync is running, so the badge and action button update when the background job completes.
+- **Saved-card context re-sync auto-resume:** Resume Re-sync now preserves the pending translation auto-resume follow-up after the re-sync completes.
+- **Saved-job failure badges:** Saved translation cards now recompute failed chunk counts from checkpoint rows, so the warning badge disappears after a previously failed chunk is retried successfully.
 
 ## 1.14.38 - 2026-07-02
 

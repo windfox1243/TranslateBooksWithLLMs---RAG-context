@@ -439,6 +439,27 @@ class Database:
                 print(f"Error getting failed chunks: {e}")
                 return []
 
+    def get_chunk_status_counts(self, translation_id: str) -> Dict[str, int]:
+        """Return checkpoint chunk counts grouped by current row status."""
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT status, COUNT(*) AS count
+                    FROM checkpoint_chunks
+                    WHERE translation_id = ?
+                    GROUP BY status
+                """, (translation_id,))
+                return {
+                    row['status']: row['count']
+                    for row in cursor.fetchall()
+                    if row['status']
+                }
+            except Exception as e:
+                print(f"Error getting chunk status counts: {e}")
+                return {}
+
     def get_resumable_jobs(self, max_age_days: int = 30) -> List[Dict[str, Any]]:
         """
         Get all jobs that can resume or seed an Add New Content job.

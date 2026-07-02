@@ -566,6 +566,46 @@ class TestStateManagerCheckpointIntegration:
 
             checkpoint_mgr.close()
 
+    def test_get_resumable_jobs_recomputes_failed_chunks_from_rows(self):
+        """Saved-job badges should clear after failed chunks are retried."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "test.db")
+            checkpoint_mgr = CheckpointManager(
+                db_path=db_path,
+                server_session_id="session_1",
+            )
+
+            checkpoint_mgr.start_job("trans_001", "txt", {"file": "1.txt"})
+            checkpoint_mgr.db.update_job_progress(
+                "trans_001",
+                total_chunks=2,
+                completed_chunks=1,
+                failed_chunks=1,
+                status="interrupted",
+            )
+            checkpoint_mgr.db.save_chunk(
+                "trans_001",
+                0,
+                "Source 1",
+                "Translation 1",
+                status="completed",
+            )
+            checkpoint_mgr.db.save_chunk(
+                "trans_001",
+                1,
+                "Source 2",
+                "Translation 2",
+                status="completed",
+            )
+
+            [job] = checkpoint_mgr.get_resumable_jobs()
+
+            assert job["progress"]["failed_chunks"] == 0
+            assert job["progress"]["completed_chunks"] == 2
+            assert job["progress_percentage"] == 100
+
+            checkpoint_mgr.close()
+
     def test_update_job_config_updates_persistence(self):
         """Updating job configuration should persist in database."""
         with tempfile.TemporaryDirectory() as tmpdir:
