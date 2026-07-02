@@ -4182,12 +4182,14 @@ def test_filter_abstract_concepts_and_spurious_delete():
     assert _is_non_character_work_entry("Affection Level", "Unspecified, metric representing Kim Si-hu's favorability toward his summon") is True
     assert _is_non_character_work_entry("Evaluation center", "Unspecified, facility within the Academy used to verify summoner abilities") is True
     assert _is_non_character_work_entry("Granzel", "Unspecified, character mentioned in episode title") is True
+    assert _is_non_character_work_entry("Menosorpo", "Unspecified, a mysterious magic circle acquired as a dungeon conquest reward") is True
     assert _is_disposable_unnamed_character("Knight", "Unspecified, knight accompanying Lenya Robert, currently observing the interaction") is True
     assert _is_disposable_unnamed_character("Battle referee", "Unspecified, staff overseeing the match between Kim Si-hu and Lenya Robert") is True
 
     # Valid characters should NOT be filtered
     assert _is_non_character_work_entry("Reaper", "Female, girl in black rags who works for Valentine") is False
     assert _is_non_character_work_entry("Kim Si-hu", "Male, handsome student") is False
+    assert _is_non_character_work_entry("Frondier", "Male, student who acquired a mysterious magic circle") is False
     assert _is_disposable_unnamed_character("Butler", "Male, elderly servant working for the Robert family mansion") is False
 
     lore = (
@@ -4195,17 +4197,21 @@ def test_filter_abstract_concepts_and_spurious_delete():
         "## CHARACTERS & GENDERS\n"
         "- Distress Level: Unspecified, psychological metric of Kim Si-hu that must be managed to prevent his death.\n"
         "- Evaluation center: Unspecified, facility within the Academy used to verify summoner abilities.\n"
+        "- Menosorpo: Unspecified, a mysterious magic circle acquired as a dungeon conquest reward.\n"
         "- Knight: Unspecified, knight accompanying Lenya Robert, currently observing the interaction.\n"
         "- Kim Si-hu: Male, 17-year-old Summoner Academy student.\n\n"
         "## GLOSSARY & TERMINOLOGY\n"
         "- Distress Level: Mức độ căng thẳng\n"
+        "- Menosorpo: Menosorpo\n"
     )
     normalized = normalize_global_lore(lore)
     assert "- Distress Level: Unspecified" not in normalized
     assert "- Evaluation center: Unspecified" not in normalized
+    assert "- Menosorpo: Unspecified" not in normalized
     assert "- Knight: Unspecified" not in normalized
     assert "- Kim Si-hu: Male" in normalized
     assert "- Distress Level: Mức độ căng thẳng" in normalized
+    assert "- Menosorpo: Menosorpo" in normalized
 
     # Test that DELETE bullet entries are skipped
     parsed_bullets = _parse_bullet_entries("- DELETE:\n- DELETE: Death\n- Kim Si-hu: Male, student\n- DELETE")

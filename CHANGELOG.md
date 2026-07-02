@@ -7,6 +7,7 @@
 - **Relationship-based addressing:** Novel context prompts now store richer social basis, scope, and reason details for address forms, and translation prompts use those facts for direct address and indirect references across target languages.
 - **Short-name context selection:** Prompt context selection now matches distinctive short forms of romanized full names and avoids leaking unrelated one-sided relationship rows.
 - **Vietnamese address pairs:** Vietnamese prompt guidance now treats address as a paired social system, covering examples such as `em-cô`, `em-thầy`, `tớ-cậu`, `bố/mẹ-con`, title-only, name-only, and neutral forms without treating the list as exhaustive.
+- **Non-character magic terms:** Named magic circles, artifacts, rewards, and similar terms are filtered out of Characters & Genders while preserved as glossary terminology.
 
 ## 1.14.37 - 2026-07-01
 
