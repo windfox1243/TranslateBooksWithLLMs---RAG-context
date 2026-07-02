@@ -4489,6 +4489,56 @@ def _entry_mentions_reference(
     )
 
 
+_LATIN_NAME_PART_STOPWORDS = {
+    "al",
+    "bin",
+    "da",
+    "de",
+    "del",
+    "der",
+    "di",
+    "du",
+    "el",
+    "la",
+    "le",
+    "of",
+    "the",
+    "van",
+    "von",
+}
+
+
+def _reference_mentions_latin_name_part(
+    name: str,
+    reference_text: str,
+) -> bool:
+    """Match distinctive short forms for multi-part romanized names.
+
+    Context rows often store full names such as "Frondier De Roach", while
+    narration and dialogue use only "Frondier". Treating meaningful name parts
+    as selection hints keeps relevant addressing rows in the prompt without
+    requiring every short form to be discovered as an explicit alias first.
+    """
+    folded_reference = str(reference_text or "").casefold()
+    if not folded_reference.strip():
+        return False
+
+    clean_name = _strip_balanced_brackets(_clean_inline_text(name))
+    parts = [
+        part
+        for part in re.findall(r"[A-Za-z][A-Za-z'_-]{2,}", clean_name)
+        if part.casefold() not in _LATIN_NAME_PART_STOPWORDS
+    ]
+    if len(parts) < 2:
+        return False
+
+    for part in parts:
+        pattern = rf"(?<![A-Za-z]){re.escape(part.casefold())}(?![A-Za-z])"
+        if re.search(pattern, folded_reference):
+            return True
+    return False
+
+
 def _split_selected_entries(
     entries: List[Tuple[str, str]],
     reference_text: str,
@@ -4502,6 +4552,7 @@ def _split_selected_entries(
         if (
             name_key in selected_keys
             or _entry_mentions_reference(name, value, reference_text)
+            or _reference_mentions_latin_name_part(name, reference_text)
         ):
             selected.append((name, value))
         else:
@@ -4605,11 +4656,17 @@ def render_novel_context_for_prompt(
 
     selected_character_keys: set[str] = set()
     for name, value in character_entries:
-        if _entry_mentions_reference(name, value, reference_text):
+        if (
+            _entry_mentions_reference(name, value, reference_text)
+            or _reference_mentions_latin_name_part(name, reference_text)
+        ):
             selected_character_keys.add(_plain_key(name))
 
     for alias, target in alias_entries:
-        if _entry_mentions_reference(alias, target, reference_text):
+        if (
+            _entry_mentions_reference(alias, target, reference_text)
+            or _reference_mentions_latin_name_part(alias, reference_text)
+        ):
             selected_character_keys.add(_plain_key(target))
 
     selected_characters, remaining_characters = _split_selected_entries(
@@ -4635,6 +4692,18 @@ def render_novel_context_for_prompt(
     } | {
         target for _, target in selected_aliases
     }
+    dynamic_reference_keys = {
+        _plain_key(name)
+        for name in dynamic_reference_names
+    }
+
+    def dynamic_party_is_referenced(party: str) -> bool:
+        party = party.strip()
+        return (
+            _plain_key(party) in dynamic_reference_keys
+            or _text_mentions(party, reference_text)
+            or _reference_mentions_latin_name_part(party, reference_text)
+        )
 
     def split_dynamic_lines(text: str) -> Tuple[List[str], List[str]]:
         selected_lines: List[str] = []
@@ -4643,10 +4712,19 @@ def render_novel_context_for_prompt(
             line = raw_line.strip()
             if not line:
                 continue
-            if any(
-                _text_mentions(token, line)
-                for token in dynamic_reference_names
-            ) or _entry_mentions_reference(line, "", reference_text):
+            relation = _DYNAMIC_RELATION_PATTERN.match(line)
+            if relation:
+                parties = (relation.group("left"), relation.group("right"))
+                should_select = sum(
+                    1 for party in parties
+                    if dynamic_party_is_referenced(party)
+                ) >= 2
+            else:
+                should_select = any(
+                    _text_mentions(token, line)
+                    for token in dynamic_reference_names
+                ) or _entry_mentions_reference(line, "", reference_text)
+            if should_select:
                 selected_lines.append(line)
             else:
                 remaining_lines.append(line)
@@ -5608,10 +5686,10 @@ Your output must follow this strict format:
 [DYNAMIC_STATE]
 # DYNAMIC RELATIONSHIP STATE
 ## CURRENT ADDRESSING FORMS
-- Speaker → Addressee: source form "..." | target-language form "..." | register and reason
+- Speaker → Addressee: source form "..." | target-language form "..." | register, social basis, scope, and reason
 ## RELATIONSHIP EVOLUTION
 - Character A ↔ Character B: concise current relationship
-(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Do not duplicate these headings.)
+(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. In the final reason field, record the social basis when known: direct address vs indirect reference scope, age/school-year/seniority, family relation, rank/status, setting, intimacy, hostility, deference, or exception to normal age hierarchy. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Do not duplicate these headings.)
 
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
@@ -5672,10 +5750,10 @@ Your output must follow this strict format:
 [DYNAMIC_STATE]
 # DYNAMIC RELATIONSHIP STATE
 ## CURRENT ADDRESSING FORMS
-- Speaker → Addressee: source form "..." | recommended target-language form "..." | register and reason
+- Speaker → Addressee: source form "..." | recommended target-language form "..." | register, social basis, scope, and reason
 ## RELATIONSHIP EVOLUTION
 - Character A ↔ Character B: concise current relationship
-(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Keep it concise and do not duplicate headings.)
+(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. In the final reason field, record the social basis when known: direct address vs indirect reference scope, age/school-year/seniority, family relation, rank/status, setting, intimacy, hostility, deference, or exception to normal age hierarchy. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Keep it concise and do not duplicate headings.)
 
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
@@ -6452,6 +6530,18 @@ def _json_dynamic_line(item: Any, relationship: bool = False) -> str:
             _json_get(item, "target_form", "recommended_target_form")
         )
         register = _json_text(_json_get(item, "register", "reason"))
+        social_basis = _json_text(
+            _json_get(
+                item,
+                "social_basis",
+                "basis",
+                "relationship_basis",
+                "social_context",
+            )
+        )
+        scope = _json_text(
+            _json_get(item, "scope", "usage_scope", "addressing_scope")
+        )
         details = _json_text(_json_get(item, "details", "value"))
         if source_form:
             parts.append(f'source form "{source_form}"')
@@ -6459,6 +6549,10 @@ def _json_dynamic_line(item: Any, relationship: bool = False) -> str:
             parts.append(f'target-language form "{target_form}"')
         if register:
             parts.append(register)
+        if social_basis:
+            parts.append(social_basis)
+        if scope:
+            parts.append(scope)
         if details:
             parts.append(details)
         details = " | ".join(parts)
