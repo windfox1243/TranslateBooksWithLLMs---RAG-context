@@ -1649,8 +1649,10 @@ window.loadContextSnapshot = async function(chunkValue) {
     }
 };
 
-window.pauseContextResync = async function() {
-    const translationId = currentTranslationIdForContext();
+window.pauseContextResync = async function(targetTranslationId = null) {
+    const translationId = (typeof targetTranslationId === 'string' && targetTranslationId.trim())
+        ? targetTranslationId.trim()
+        : currentTranslationIdForContext();
     if (!translationId) {
         logContextResyncFailure('translation:context_no_job_body');
         return;
@@ -1663,6 +1665,9 @@ window.pauseContextResync = async function() {
             status: 'pause_requested'
         });
         MessageLogger.addLog(t('translation:context_resync_pause_requested_log'));
+        if (window.ResumeManager && typeof window.ResumeManager.loadResumableJobs === 'function') {
+            window.ResumeManager.loadResumableJobs();
+        }
     } catch (e) {
         logContextResyncFailure('translation:context_resync_pause_failed', {
             error: e.message
@@ -1671,8 +1676,10 @@ window.pauseContextResync = async function() {
     }
 };
 
-window.resumeContextResync = async function() {
-    const translationId = currentTranslationIdForContext();
+window.resumeContextResync = async function(targetTranslationId = null, overrides = null) {
+    const translationId = (typeof targetTranslationId === 'string' && targetTranslationId.trim())
+        ? targetTranslationId.trim()
+        : currentTranslationIdForContext();
     if (!translationId) {
         logContextResyncFailure('translation:context_no_job_body');
         return;
@@ -1680,14 +1687,23 @@ window.resumeContextResync = async function() {
     const btnResume = document.getElementById('btnResumeResync');
     try {
         if (btnResume) btnResume.disabled = true;
+        StateManager.setState('translation.lastJobId', translationId);
+        const reqOverrides = overrides || (
+            (!targetTranslationId || targetTranslationId === currentTranslationIdForContext())
+                ? collectContextResyncOverrides()
+                : null
+        );
         const result = await ApiClient.resumeContextResync(
             translationId,
-            collectContextResyncOverrides()
+            reqOverrides
         );
         updateContextResyncControls(result?.resync_state || {
             status: 'running'
         });
         MessageLogger.addLog(t('translation:context_resync_resumed_log'));
+        if (window.ResumeManager && typeof window.ResumeManager.loadResumableJobs === 'function') {
+            window.ResumeManager.loadResumableJobs();
+        }
     } catch (e) {
         logContextResyncFailure('translation:context_resync_resume_failed', {
             error: e.message

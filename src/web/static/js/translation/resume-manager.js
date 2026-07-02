@@ -120,11 +120,11 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
 
     if (isResyncRunning) {
         primaryButtonText = t('translation:context_pause_resync_btn');
-        primaryButtonAttrs = `class="btn btn-secondary pause-resync-job" onclick="pauseContextResync('${job.translation_id}')" ${resyncStatus === 'pause_requested' ? 'disabled' : ''}`;
+        primaryButtonAttrs = `class="btn btn-secondary pause-resync-job" data-tid="${job.translation_id}" ${resyncStatus === 'pause_requested' ? 'disabled' : ''}`;
         primaryCanResume = true;
     } else if (isResyncPaused) {
         primaryButtonText = t('translation:context_resume_resync_btn');
-        primaryButtonAttrs = `class="btn btn-primary resume-resync-job" onclick="resumeContextResync('${job.translation_id}')"`;
+        primaryButtonAttrs = `class="btn btn-primary resume-resync-job" data-tid="${job.translation_id}"`;
         primaryCanResume = !hasActiveTranslation;
     }
 
@@ -312,6 +312,13 @@ function wireResumeOverrides(container) {
                 return;
             }
             ResumeManager.resumeJob(tid, overrides);
+        });
+    });
+
+    container.querySelectorAll('.pause-resync-job').forEach((btn) => {
+        if (btn.disabled) return;
+        btn.addEventListener('click', () => {
+            ResumeManager.pauseContextResyncJob(btn.dataset.tid);
         });
     });
 
@@ -548,6 +555,25 @@ export const ResumeManager = {
                 MessageLogger.addLog(t('translation:resume_network_error_log', { error: error.message }));
             }
             console.error('Error resuming job:', error);
+        }
+    },
+
+    async pauseContextResyncJob(translationId) {
+        if (!translationId) return;
+        try {
+            const result = await ApiClient.pauseContextResync(translationId);
+            MessageLogger.addLog(t('translation:context_resync_pause_requested_log'));
+            if (window.NovelContextUI?.lastResyncState !== undefined) {
+                window.NovelContextUI.lastResyncState = result?.resync_state || null;
+            }
+            setTimeout(() => {
+                this.loadResumableJobs();
+            }, 1000);
+        } catch (error) {
+            MessageLogger.showMessage(
+                t('translation:context_resync_pause_failed', { error: error.message }),
+                'error'
+            );
         }
     },
 
