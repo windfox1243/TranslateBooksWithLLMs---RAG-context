@@ -523,6 +523,10 @@ def test_vietnamese_prompts_guard_first_person_pronoun_consistency():
         assert '"mình"' in prompt.system
         assert "CURRENT ADDRESSING FORMS" in prompt.system
         assert '"anh", "chị", or "em"' in prompt.system
+        assert "apply both sides of the pair" in prompt.system
+        assert "formal/neutral self-reference" in prompt.system
+        assert "second-person pronoun" in prompt.system
+        assert "vocative/address form" in prompt.system
         assert "paired social system" in prompt.system
         assert '"em-cô", "em-thầy"' in prompt.system
         assert '"bố/mẹ-con", "tớ-cậu"' in prompt.system
@@ -530,7 +534,7 @@ def test_vietnamese_prompts_guard_first_person_pronoun_consistency():
         assert "do not call or refer to that character" in prompt.system
         assert "indirect references in dialogue, thoughts, and narration" in prompt.system
         assert "Sino-Vietnamese literary renderings" in prompt.system
-        assert "named powers and terminology, not people" in prompt.system
+        assert "named powers, weapons, items, and terminology, not people" in prompt.system
         assert 'target-language form "Frondier"' in prompt.user
 
 
@@ -548,6 +552,9 @@ def test_prompt_injection_subtitles():
     )
     assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" not in prompt_pair_trans.system
     assert novel_context not in prompt_pair_trans.system
+    assert "VIETNAMESE STYLE GUARDRAILS" in prompt_pair_trans.system
+    assert "apply both sides of the pair" in prompt_pair_trans.system
+    assert "RELATIONSHIP AND ADDRESSING GUARDRAILS" in prompt_pair_trans.system
     assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair_trans.user
     assert novel_context in prompt_pair_trans.user
     
@@ -560,6 +567,9 @@ def test_prompt_injection_subtitles():
     )
     assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" not in prompt_pair_refine.system
     assert novel_context not in prompt_pair_refine.system
+    assert "VIETNAMESE STYLE GUARDRAILS" in prompt_pair_refine.system
+    assert "apply both sides of the pair" in prompt_pair_refine.system
+    assert "RELATIONSHIP AND ADDRESSING GUARDRAILS" in prompt_pair_refine.system
     assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair_refine.user
     assert novel_context in prompt_pair_refine.user
 
@@ -3583,6 +3593,9 @@ def test_context_prompts_define_durable_dynamic_state_deltas():
         assert "register, social basis, scope, and reason" in prompt
         assert "direct address vs indirect reference scope" in prompt
         assert "exception to normal age hierarchy" in prompt
+        assert "complete paired-address record" in prompt
+        assert "self-reference: ...; second-person pronoun: ...; vocative/address form: ..." in prompt
+        assert "Do not store only the addressee nickname" in prompt
         assert "Sino-Vietnamese literary target term" in prompt
         assert "English named skill, ability, technique, spell, combat move, weapon, artifact, or equipment" in prompt
 
@@ -3605,6 +3618,15 @@ def test_json_dynamic_addressing_preserves_social_basis_and_scope():
                     ),
                     "scope": "direct address and Ellen's indirect thoughts",
                     "details": "academy setting, not an elder-brother form",
+                },
+                {
+                    "speaker": "Elodie de Inies Rishae",
+                    "addressee": "Frondier De Roach",
+                    "source_form": "Fron",
+                    "self_reference": "casual self-reference",
+                    "second_person_pronoun": "casual second-person pronoun",
+                    "vocative_form": "nickname",
+                    "register": "casual nickname chosen while flustered",
                 }
             ]
         }
@@ -3618,6 +3640,13 @@ def test_json_dynamic_addressing_preserves_social_basis_and_scope():
     assert "same-year peer" in dynamic
     assert "indirect thoughts" in dynamic
     assert "not an elder-brother form" in dynamic
+    assert "Elodie de Inies Rishae → Frondier De Roach" in dynamic
+    assert (
+        'target-language form "self-reference: casual self-reference; '
+        'second-person pronoun: casual second-person pronoun; '
+        'vocative/address form: nickname"'
+    ) in dynamic
+    assert "casual nickname chosen while flustered" in dynamic
 
 
 @pytest.mark.asyncio

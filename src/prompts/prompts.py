@@ -151,6 +151,8 @@ def _build_target_language_style_section(target_language: str) -> str:
 - For serious literary first-person narration, prefer "tôi" unless the source or established character voice clearly requires an intimate/casual "mình".
 - Do not switch the same narrator from "tôi" to "mình" within the same scene or reflective passage unless the relationship/register intentionally changes.
 - Treat `## CURRENT ADDRESSING FORMS` as authoritative for direct address. If it gives a target-language form that is a name or title, use that form; do not replace it with Vietnamese kinship pronouns such as "anh", "chị", or "em".
+- When a matching addressing entry gives or implies a paired Vietnamese register, apply both sides of the pair: the speaker's self-reference and the addressee/reference form. Do not combine an intimate/casual addressee form or nickname with a formal/neutral self-reference unless the context explicitly says the speaker is keeping distance.
+- If a Vietnamese addressing entry spells out `self-reference`, `second-person pronoun`, or `vocative/address form`, obey each part exactly: use the self-reference for the speaker, the second-person pronoun for "you", and the vocative/address form only when directly calling or naming the addressee.
 - Do not infer "anh", "chị", or "em" from gender, status, affection, or politeness alone. Use them only when the source/context establishes the age, kinship, or seniority relationship, or when the addressing entry explicitly requires that form.
 - Vietnamese address is a paired social system, not a single pronoun. Choose both the speaker's self-reference and the addressee/reference form from the relationship and setting. Common pairs include, but are not limited to, "em-cô", "em-thầy", "con-mẹ/cha", "bố/mẹ-con", "tớ-cậu", "tôi-cậu", "mình-cậu", "tao-mày", name-only, title-only, or neutral forms when appropriate.
 - Apply age, family, school-year, seniority, and relationship facts to both direct address and indirect references in dialogue, thoughts, and narration. If the viewpoint speaker/thinker is older or senior to the referenced character, or the referenced character is a same-age peer of the speaker's younger sibling, do not call or refer to that character as "anh" or "chị"; use the stored name/title or a neutral peer form instead.
@@ -759,6 +761,10 @@ def generate_subtitle_refinement_block_prompt(
         additional_rules=subtitle_additional_rules,
         example_format=subtitle_example_format,
     )
+    relationship_addressing_section = _build_relationship_addressing_section()
+    target_language_style_section = _build_target_language_style_section(
+        target_language
+    )
 
     additional_instructions_section = ""
     if additional_instructions and additional_instructions.strip():
@@ -804,6 +810,8 @@ preserving the index markers and the one-subtitle-per-marker structure.
 - The one-subtitle-per-[index] structure (no merging, no splitting)
 - Intentional repetitions (e.g. "No. No. No.") and dialogue dashes ("- ...\\n- ...") when present in the draft
 - Inline formatting tags and any \\n line breaks inside a subtitle{additional_instructions_section}
+{relationship_addressing_section}
+{target_language_style_section}
 
 # CRITICAL REMINDERS
 
@@ -912,6 +920,10 @@ def generate_subtitle_block_prompt(
         additional_rules=subtitle_additional_rules,
         example_format=subtitle_example_format
     )
+    relationship_addressing_section = _build_relationship_addressing_section()
+    target_language_style_section = _build_target_language_style_section(
+        target_language
+    )
 
     # Build custom instructions section if provided
     custom_instructions_section = ""
@@ -953,6 +965,8 @@ Your output must be in {target_language} ONLY - do NOT use any other language.
 - Use natural, spoken {target_language} (not formal written style)
 - Preserve intentional repetitions (e.g. "No. No. No.") and dialogue dashes ("- ...\\n- ...") from the source
 - Preserve inline formatting tags (<i>, <b>, <font ...>, {{\\an8}}, etc.) and any \\n line breaks inside a subtitle{custom_instructions_section}
+{relationship_addressing_section}
+{target_language_style_section}
 
 # FINAL REMINDER: YOUR OUTPUT LANGUAGE
 
