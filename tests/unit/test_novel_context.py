@@ -198,6 +198,46 @@ def test_prompt_context_selector_prefers_relevant_dormant_relationships():
     assert "Irrelevant 39" not in selected
 
 
+def test_prompt_context_selector_uses_short_names_without_leaking_one_sided_rows():
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Frondier De Roach: Male, first-year student at Constel, Aster Evans's peer.\n"
+            "- Aster Evans: Male, first-year student at Constel.\n"
+            "- Ellen Evans: Female, student, Aster Evans's older sister.\n"
+            "- Maid: Female, servant of the Roach family.\n"
+            "- Enfer De Roach: Male, Frondier De Roach's father."
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Ellen Evans → Frondier De Roach: source form "Frondier" | '
+            'target-language form "Frondier" | informal, peer\n'
+            '- Maid → Frondier De Roach: source form "Master Frondier" | '
+            'target-language form "Cậu chủ Frondier" | formal, respectful\n'
+            '- Frondier De Roach → Enfer De Roach: source form "Father" | '
+            'target-language form "Cha" | formal, respectful\n\n'
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Ellen Evans ↔ Frondier De Roach: Ellen receives help from Frondier.\n"
+            "- Enfer De Roach ↔ Frondier De Roach: father and son."
+        ),
+    )
+
+    selected = render_novel_context_for_prompt(
+        context,
+        reference_text='Ellen looked at Frondier. "Frondier, are you with Aster?"',
+    )
+
+    assert "Frondier De Roach: Male" in selected
+    assert "Ellen Evans: Female" in selected
+    assert "Aster Evans: Male" in selected
+    assert "Ellen Evans → Frondier De Roach" in selected
+    assert "Ellen Evans ↔ Frondier De Roach" in selected
+    assert "Maid → Frondier De Roach" not in selected
+    assert "Frondier De Roach → Enfer De Roach" not in selected
+    assert "Enfer De Roach ↔ Frondier De Roach" not in selected
+
+
 def test_prompt_context_selector_filters_small_unrelated_context_by_default():
     context = build_novel_context(
         (
@@ -415,9 +455,44 @@ def test_prompt_injection_refinement():
     assert novel_context in prompt_pair.user
 
 
-def test_vietnamese_prompts_guard_first_person_pronoun_consistency():
+def test_prompts_guard_relationship_based_addressing_for_all_languages():
     translation_prompt = generate_translation_prompt(
-        main_content="Because it had been so long.",
+        main_content='Ellen looked at Frondier. "Frondier, are you with Aster?"',
+        context_before="",
+        context_after="",
+        previous_translation_context="",
+        source_language="English",
+        target_language="Japanese",
+        has_placeholders=False,
+    )
+    refinement_prompt = generate_refinement_prompt(
+        draft_translation="Ellen looked at Frondier.",
+        target_language="French",
+        has_placeholders=False,
+    )
+
+    for prompt in (translation_prompt, refinement_prompt):
+        assert "RELATIONSHIP AND ADDRESSING GUARDRAILS" in prompt.system
+        assert "direct address and indirect references" in prompt.system
+        assert "kinship, seniority, or respect markers" in prompt.system
+        assert "VIETNAMESE STYLE GUARDRAILS" not in prompt.system
+
+
+def test_vietnamese_prompts_guard_first_person_pronoun_consistency():
+    novel_context = (
+        "## CHARACTERS & GENDERS\n"
+        "- Frondier De Roach: Male, first-year student at Constel, Aster Evans's peer.\n"
+        "- Aster Evans: Male, first-year student at Constel.\n"
+        "- Ellen Evans: Female, student, Aster Evans's older sister.\n\n"
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Ellen Evans → Frondier De Roach: source form "Frondier" | '
+        'target-language form "Frondier" | informal, peer\n'
+        "---DYNAMIC_STATE_END---"
+    )
+    translation_prompt = generate_translation_prompt(
+        main_content='Ellen looked at Frondier. "Frondier, are you with Aster?"',
         context_before="",
         context_after="",
         previous_translation_context=(
@@ -426,22 +501,30 @@ def test_vietnamese_prompts_guard_first_person_pronoun_consistency():
         source_language="English",
         target_language="Vietnamese",
         has_placeholders=False,
+        prompt_options={"novel_context": novel_context},
     )
     refinement_prompt = generate_refinement_prompt(
         draft_translation=(
-            "Bởi vì đã lâu lắm rồi, mình mới lại cảm nhận được tình cảm."
+            'Ellen nhìn Frondier. "Anh Frondier, anh đi cùng Aster à?" '
+            'Cô nghĩ anh ấy thật khó đoán.'
         ),
         previous_refined_context=(
             "Bởi vì đã lâu lắm rồi, tôi mới lại cảm nhận được tình cảm."
         ),
         target_language="Vietnamese",
         has_placeholders=False,
+        prompt_options={"novel_context": novel_context},
     )
 
     for prompt in (translation_prompt, refinement_prompt):
         assert "VIETNAMESE STYLE GUARDRAILS" in prompt.system
         assert '"tôi"' in prompt.system
         assert '"mình"' in prompt.system
+        assert "CURRENT ADDRESSING FORMS" in prompt.system
+        assert '"anh", "chị", or "em"' in prompt.system
+        assert "do not call or refer to that character" in prompt.system
+        assert "indirect references in dialogue, thoughts, and narration" in prompt.system
+        assert 'target-language form "Frondier"' in prompt.user
 
 
 def test_prompt_injection_subtitles():
@@ -3447,6 +3530,42 @@ def test_context_prompts_define_durable_dynamic_state_deltas():
         assert "Omitted entries remain stored indefinitely." in prompt
         assert "Addressee: DELETE" in prompt
         assert "Character A ↔ Character B: DELETE" in prompt
+        assert "register, social basis, scope, and reason" in prompt
+        assert "direct address vs indirect reference scope" in prompt
+        assert "exception to normal age hierarchy" in prompt
+
+
+def test_json_dynamic_addressing_preserves_social_basis_and_scope():
+    from src.utils.novel_context import _json_dynamic_state
+
+    dynamic = _json_dynamic_state(
+        {
+            "current_addressing_forms": [
+                {
+                    "speaker": "Ellen Evans",
+                    "addressee": "Frondier De Roach",
+                    "source_form": "Frondier",
+                    "target_form": "Frondier",
+                    "register": "informal peer-like address",
+                    "social_basis": (
+                        "Ellen is Aster's older sister while Frondier is "
+                        "Aster's same-year peer"
+                    ),
+                    "scope": "direct address and Ellen's indirect thoughts",
+                    "details": "academy setting, not an elder-brother form",
+                }
+            ]
+        }
+    )
+
+    assert "## CURRENT ADDRESSING FORMS" in dynamic
+    assert "Ellen Evans → Frondier De Roach" in dynamic
+    assert 'source form "Frondier"' in dynamic
+    assert 'target-language form "Frondier"' in dynamic
+    assert "informal peer-like address" in dynamic
+    assert "same-year peer" in dynamic
+    assert "indirect thoughts" in dynamic
+    assert "not an elder-brother form" in dynamic
 
 
 @pytest.mark.asyncio

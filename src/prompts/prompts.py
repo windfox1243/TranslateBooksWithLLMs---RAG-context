@@ -150,7 +150,21 @@ def _build_target_language_style_section(target_language: str) -> str:
 - Maintain consistent Vietnamese pronouns and register across adjacent paragraphs.
 - For serious literary first-person narration, prefer "tôi" unless the source or established character voice clearly requires an intimate/casual "mình".
 - Do not switch the same narrator from "tôi" to "mình" within the same scene or reflective passage unless the relationship/register intentionally changes.
+- Treat `## CURRENT ADDRESSING FORMS` as authoritative for direct address. If it gives a target-language form that is a name or title, use that form; do not replace it with Vietnamese kinship pronouns such as "anh", "chị", or "em".
+- Do not infer "anh", "chị", or "em" from gender, status, affection, or politeness alone. Use them only when the source/context establishes the age, kinship, or seniority relationship, or when the addressing entry explicitly requires that form.
+- Apply age, family, school-year, seniority, and relationship facts to both direct address and indirect references in dialogue, thoughts, and narration. If the viewpoint speaker/thinker is older or senior to the referenced character, or the referenced character is a same-age peer of the speaker's younger sibling, do not call or refer to that character as "anh" or "chị"; use the stored name/title or a neutral peer form instead.
 - Preserve established addressing forms from the glossary, dialogue context, and previous paragraph."""
+
+
+def _build_relationship_addressing_section() -> str:
+    """Return language-neutral guardrails for social address consistency."""
+    return """
+# RELATIONSHIP AND ADDRESSING GUARDRAILS
+
+- Treat `## CURRENT ADDRESSING FORMS` as authoritative for direct address when a matching speaker/addressee pair is present.
+- For languages with pronouns, kinship terms, honorifics, particles, titles, or speech levels, choose them from proven relationship facts: age, family relationship, school year, rank, social status, intimacy, and seniority.
+- Apply those relationship facts to both direct address and indirect references in dialogue, thoughts, and narration.
+- Do not invent kinship, seniority, or respect markers from gender, affection, politeness, or genre expectation alone. If relationship facts are insufficient, prefer the stored name/title or a neutral form natural for the target language."""
 
 
 def _build_dialogue_attribution_section(prompt_options: dict) -> str:
@@ -311,6 +325,7 @@ def generate_translation_prompt(
 
     # Build optional prompt sections based on prompt_options
     optional_sections = _build_optional_prompt_sections(prompt_options)
+    relationship_addressing_section = _build_relationship_addressing_section()
     target_language_style_section = _build_target_language_style_section(
         target_language
     )
@@ -353,6 +368,7 @@ If unsure between literal and natural phrasing: **choose natural**.
 - Keep the exact text layout, spacing, line breaks, and indentation
 - **WRITE YOUR TRANSLATION IN {target_language.upper()} - THIS IS MANDATORY**
 {optional_sections}
+{relationship_addressing_section}
 {target_language_style_section}
 {placeholder_section}
 
@@ -562,6 +578,7 @@ def generate_refinement_prompt(
 
     # Build optional prompt sections
     optional_sections = _build_optional_prompt_sections(prompt_options)
+    relationship_addressing_section = _build_relationship_addressing_section()
     target_language_style_section = _build_target_language_style_section(
         target_language
     )
@@ -613,6 +630,7 @@ Your job is to REWRITE it with perfect literary {target_language} style.
 - Character names and proper nouns
 - Technical terms (if any)
 {optional_sections}
+{relationship_addressing_section}
 {target_language_style_section}
 {placeholder_section}
 {additional_instructions_section}
