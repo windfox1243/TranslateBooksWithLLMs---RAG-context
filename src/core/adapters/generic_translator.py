@@ -957,8 +957,7 @@ async def _resync_context_snapshots_async(
     def append_and_emit(msg_str, resync_state=None):
         timestamp = datetime.now().strftime('%H:%M:%S')
         full_msg = f"[{timestamp}] [context_resync] {msg_str}"
-        print(full_msg, flush=True)
-        logger.info(msg_str)
+        logger.info(f"[context_resync] {msg_str}")
         if resync_state is None:
             _, resync_state = _load_resync_state()
         if not state_manager.exists(translation_id):
@@ -990,11 +989,7 @@ async def _resync_context_snapshots_async(
             )
 
     def should_log_resync_progress(processed_count, total_count):
-        if total_count <= 50:
-            return True
-        if processed_count in {1, total_count}:
-            return True
-        return processed_count % 5 == 0
+        return True
 
     def run_follow_up():
         callback = post_resync_callback or auto_resume_callback
@@ -1016,7 +1011,6 @@ async def _resync_context_snapshots_async(
             f"at chunk {start_chunk_index + 1}; later chunks will be replayed "
             "from that context."
         )
-    logger.info(msg)
     append_and_emit(
         f"🔄 {msg}",
         _save_resync_state({
@@ -1027,7 +1021,6 @@ async def _resync_context_snapshots_async(
     
     if was_active:
         msg_pause = "Waiting for active translation to pause before resyncing..."
-        logger.info(msg_pause)
         append_and_emit(f"⏸️ {msg_pause}")
         
         import asyncio
@@ -1369,7 +1362,6 @@ async def _resync_context_snapshots_async(
         
         try:
             msg_resync = f"Resyncing chunk {idx + 1} from the saved context timeline..."
-            logger.info(msg_resync)
             append_and_emit(f"🔄 {msg_resync}")
             from src.utils.dialogue_attribution import (
                 canonicalize_dialogue_state,
