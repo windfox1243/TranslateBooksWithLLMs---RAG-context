@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.14.37 - 2026-07-01
+
+### Added
+
+- **Add New Content jobs:** Saved translations can now start a separate continuation job from an updated source file, reusing only the matching completed prefix and translating unfinished, changed, or newly added content into a new output file.
+- **Continuation progress logs:** Continuation jobs now log when prefix comparison starts and how many existing units were reused before translation begins.
+- **New-chapter-only context carryover:** When an Add New Content source contains only new chapters and no old prefix matches, the job now starts its novel context from the previous job's latest saved context snapshot.
+
+### Fixed
+
+- **Context timeline leakage:** Historical chunk context views now show their exact saved snapshot instead of mixing in future global lore, while explicit Global context edits still use the latest book-wide lore.
+- **Completed-job continuation bases:** Completed checkpoints now remain visible in the saved translations list as Add New Content bases, with normal Resume disabled for already-complete jobs.
+- **Windows venv setup:** `setup-and-update.bat` now uses an existing `venv\Scripts\python.exe` when available and falls back to `python` or `py -3` for first-time setup.
+
 ## 1.14.36 - 2026-07-01
 
 ### Fixed

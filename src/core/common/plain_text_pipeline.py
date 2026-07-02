@@ -218,6 +218,7 @@ async def translate_paragraphs_plain(
     translation_id: Optional[str] = None,
     global_chunk_offset: int = 0,
     paragraph_kinds: Optional[List[str]] = None,
+    continuation_base_id: Optional[str] = None,
 ) -> Tuple[List[str], TranslationMetrics, bool]:
     """
     Translate a list of plain-text paragraphs without placeholder preservation.
@@ -320,6 +321,37 @@ async def translate_paragraphs_plain(
 
     context_session = None
     checkpoint_context_data_by_index: Dict[int, Dict] = {}
+    continuation_reused_indices = set()
+    continuation_context_seed = None
+    if continuation_base_id and checkpoint_manager and translation_id:
+        previous_checkpoint = checkpoint_manager.load_checkpoint(
+            continuation_base_id
+        )
+        previous_chunks = (
+            previous_checkpoint.get('chunks', [])
+            if previous_checkpoint
+            else []
+        )
+        if previous_chunks:
+            from src.core.continuation import (
+                latest_context_seed,
+                seed_matching_prefix,
+            )
+            prefix = seed_matching_prefix(
+                checkpoint_manager=checkpoint_manager,
+                translation_id=translation_id,
+                previous_chunks=previous_chunks,
+                new_source_units=[
+                    chunk.get('main_content', '') for chunk in chunks
+                ],
+                total_units=global_chunk_offset + len(chunks),
+                offset=global_chunk_offset,
+                log_callback=log_callback,
+                label="unit",
+            )
+            continuation_reused_indices = set(range(prefix))
+            continuation_context_seed = latest_context_seed(previous_chunks)
+
     if checkpoint_manager and translation_id and hasattr(checkpoint_manager, "db"):
         for row in checkpoint_manager.db.get_chunks(translation_id) or []:
             row_index = row.get("chunk_index")
@@ -346,6 +378,7 @@ async def translate_paragraphs_plain(
             resume_snapshot = None
             resume_dialogue_state = None
             resume_dialogue_scene_key = None
+            used_continuation_context_seed = False
             if (
                 checkpoint_manager
                 and translation_id
@@ -376,6 +409,17 @@ async def translate_paragraphs_plain(
                     resume_dialogue_scene_key = (
                         previous_data.get("dialogue_attribution") or {}
                     ).get("scene_key")
+            if not resume_snapshot and continuation_context_seed:
+                resume_snapshot = continuation_context_seed.get(
+                    "context_snapshot"
+                )
+                resume_dialogue_state = continuation_context_seed.get(
+                    "dialogue_state"
+                )
+                resume_dialogue_scene_key = continuation_context_seed.get(
+                    "dialogue_scene_key"
+                )
+                used_continuation_context_seed = True
             context_session = open_novel_context_session(
                 prompt_options=prompt_options,
                 novel_contexts_dir=NOVEL_CONTEXTS_DIR,
@@ -386,6 +430,18 @@ async def translate_paragraphs_plain(
                 resume_dialogue_scene_key=resume_dialogue_scene_key,
                 log_callback=log_callback,
             )
+            if (
+                used_continuation_context_seed
+                and context_session
+                and log_callback
+            ):
+                log_callback(
+                    "continuation_context_seed",
+                    "Add New Content: continuing context from previous "
+                    "job chunk "
+                    f"{continuation_context_seed.get('chunk_index')} "
+                    "snapshot.",
+                )
         except Exception as e:
             if log_callback:
                 log_callback("novel_context_error", f"Error loading novel context '{novel_context_file}': {str(e)}")
@@ -403,6 +459,21 @@ async def translate_paragraphs_plain(
     # Index-addressed results so out-of-order completion still reassembles in
     # source order.
     translated_parts: List[Optional[str]] = [None] * len(chunks)
+    if continuation_reused_indices and checkpoint_manager and translation_id:
+        seeded_rows = {
+            row.get("chunk_index"): row
+            for row in checkpoint_manager.db.get_chunks(translation_id) or []
+        }
+        for local_index in continuation_reused_indices:
+            seeded = seeded_rows.get(global_chunk_offset + local_index) or {}
+            translated_parts[local_index] = seeded.get("translated_text")
+            if seeded.get("chunk_data"):
+                checkpoint_context_data_by_index[local_index] = dict(
+                    seeded.get("chunk_data") or {}
+                )
+        stats.processed_chunks = len(continuation_reused_indices)
+        if stats_callback:
+            stats_callback(stats.to_dict())
     previous_translation_context = ""
     failed_indices = set()
     reused_context_data_by_index: Dict[int, Dict] = {}
@@ -524,7 +595,10 @@ async def translate_paragraphs_plain(
             status='completed' if chunk_succeeded else 'partial',
         )
 
-    pending = list(range(len(chunks)))
+    pending = [
+        index for index in range(len(chunks))
+        if index not in continuation_reused_indices
+    ]
     rate_limit_error = None
     processed = 0
 

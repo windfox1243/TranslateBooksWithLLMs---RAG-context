@@ -441,7 +441,7 @@ class Database:
 
     def get_resumable_jobs(self, max_age_days: int = 30) -> List[Dict[str, Any]]:
         """
-        Get all jobs that can be resumed (status = paused or interrupted).
+        Get all jobs that can resume or seed an Add New Content job.
 
         Args:
             max_age_days: Maximum age in days for resumable jobs (default 30)
@@ -457,7 +457,9 @@ class Database:
                 # Only return jobs created within max_age_days
                 cursor.execute("""
                     SELECT * FROM translation_jobs
-                    WHERE status IN ('paused', 'interrupted', 'error', 'partial')
+                    WHERE status IN (
+                        'paused', 'interrupted', 'error', 'partial', 'completed'
+                    )
                     AND created_at > datetime('now', ? || ' days')
                     ORDER BY updated_at DESC
                 """, (f'-{max_age_days}',))
