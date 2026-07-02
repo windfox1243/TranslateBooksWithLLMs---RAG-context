@@ -8,6 +8,7 @@
 - **Short-name context selection:** Prompt context selection now matches distinctive short forms of romanized full names and avoids leaking unrelated one-sided relationship rows.
 - **Vietnamese address pairs:** Vietnamese prompt guidance now treats address as a paired social system, covering examples such as `em-cô`, `em-thầy`, `tớ-cậu`, `bố/mẹ-con`, title-only, name-only, and neutral forms without treating the list as exhaustive.
 - **Non-character magic terms:** Named magic circles, artifacts, rewards, and similar terms are filtered out of Characters & Genders while preserved as glossary terminology.
+- **Non-character organization terms:** Companies, organizations, factions, family houses, and similar proper nouns are pruned from Characters & Genders and left as glossary terminology when useful.
 
 ## 1.14.37 - 2026-07-01
 

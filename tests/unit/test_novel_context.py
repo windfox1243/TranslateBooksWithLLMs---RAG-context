@@ -4050,6 +4050,47 @@ async def test_consolidation_deduplicates_character_descriptions():
 
 
 @pytest.mark.asyncio
+async def test_consolidation_prunes_first_pass_non_character_entries():
+    """consolidation should remove non-character entries introduced by earlier context passes."""
+    global_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, protagonist and soldier.\n"
+        "- Hitchcock: Unspecified, company, a high-quality magical product company known for its eagle emblem.\n"
+        "- Menosorpo: Unspecified, a mysterious magic circle acquired as a dungeon conquest reward.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- Hitchcock: Hitchcock\n"
+        "- Menosorpo: Menosorpo\n"
+    )
+    llm_response = (
+        "- Eric: Male, protagonist and soldier.\n"
+        "- Hitchcock: Unspecified, company, a high-quality magical product company known for its eagle emblem.\n"
+        "- Menosorpo: Unspecified, a mysterious magic circle acquired as a dungeon conquest reward.\n"
+    )
+    mock_response = MagicMock()
+    mock_response.content = llm_response
+    llm_client = MagicMock()
+    llm_client.generate = AsyncMock(return_value=mock_response)
+
+    result_lore, logs = await consolidate_context_lore(
+        llm_client=llm_client,
+        model_name="test-model",
+        global_lore=global_lore,
+    )
+
+    system_prompt = llm_client.generate.call_args.kwargs["system_prompt"]
+    assert "companies" in system_prompt
+    assert "magic circles" in system_prompt
+    assert "romanization" in system_prompt
+    assert logs
+    assert "- Eric: Male, protagonist and soldier." in result_lore
+    assert "- Hitchcock: Unspecified" not in result_lore
+    assert "- Menosorpo: Unspecified" not in result_lore
+    assert "- Hitchcock: Hitchcock" in result_lore
+    assert "- Menosorpo: Menosorpo" in result_lore
+
+
+@pytest.mark.asyncio
 async def test_consolidation_skips_on_empty_llm_response():
     """consolidate_context_lore should return original lore unchanged on empty LLM response."""
     global_lore = (
@@ -4168,6 +4209,7 @@ async def test_consolidation_triggered_on_last_chunk():
 def test_filter_abstract_concepts_and_spurious_delete():
     from src.utils.novel_context import (
         _is_disposable_unnamed_character,
+        _is_non_character_group_entry,
         _is_non_character_work_entry,
         _parse_bullet_entries,
         normalize_global_lore,
@@ -4183,6 +4225,8 @@ def test_filter_abstract_concepts_and_spurious_delete():
     assert _is_non_character_work_entry("Evaluation center", "Unspecified, facility within the Academy used to verify summoner abilities") is True
     assert _is_non_character_work_entry("Granzel", "Unspecified, character mentioned in episode title") is True
     assert _is_non_character_work_entry("Menosorpo", "Unspecified, a mysterious magic circle acquired as a dungeon conquest reward") is True
+    assert _is_non_character_group_entry("Hitchcock", "Unspecified, company, a high-quality magical product company known for its eagle emblem") is True
+    assert _is_non_character_group_entry("Viet family", "Unspecified, noble family known for merchant power") is True
     assert _is_disposable_unnamed_character("Knight", "Unspecified, knight accompanying Lenya Robert, currently observing the interaction") is True
     assert _is_disposable_unnamed_character("Battle referee", "Unspecified, staff overseeing the match between Kim Si-hu and Lenya Robert") is True
 
@@ -4190,6 +4234,8 @@ def test_filter_abstract_concepts_and_spurious_delete():
     assert _is_non_character_work_entry("Reaper", "Female, girl in black rags who works for Valentine") is False
     assert _is_non_character_work_entry("Kim Si-hu", "Male, handsome student") is False
     assert _is_non_character_work_entry("Frondier", "Male, student who acquired a mysterious magic circle") is False
+    assert _is_non_character_group_entry("Quinie de Viet", "Female, daughter of the Viet family and a merchant student") is False
+    assert _is_non_character_group_entry("Hitchcock heir", "Male, heir of the Hitchcock company") is False
     assert _is_disposable_unnamed_character("Butler", "Male, elderly servant working for the Robert family mansion") is False
 
     lore = (
@@ -4198,20 +4244,26 @@ def test_filter_abstract_concepts_and_spurious_delete():
         "- Distress Level: Unspecified, psychological metric of Kim Si-hu that must be managed to prevent his death.\n"
         "- Evaluation center: Unspecified, facility within the Academy used to verify summoner abilities.\n"
         "- Menosorpo: Unspecified, a mysterious magic circle acquired as a dungeon conquest reward.\n"
+        "- Hitchcock: Unspecified, company, a high-quality magical product company known for its eagle emblem.\n"
+        "- Viet family: Unspecified, noble family known for merchant power.\n"
         "- Knight: Unspecified, knight accompanying Lenya Robert, currently observing the interaction.\n"
         "- Kim Si-hu: Male, 17-year-old Summoner Academy student.\n\n"
         "## GLOSSARY & TERMINOLOGY\n"
         "- Distress Level: Mức độ căng thẳng\n"
         "- Menosorpo: Menosorpo\n"
+        "- Hitchcock: Hitchcock\n"
     )
     normalized = normalize_global_lore(lore)
     assert "- Distress Level: Unspecified" not in normalized
     assert "- Evaluation center: Unspecified" not in normalized
     assert "- Menosorpo: Unspecified" not in normalized
+    assert "- Hitchcock: Unspecified" not in normalized
+    assert "- Viet family: Unspecified" not in normalized
     assert "- Knight: Unspecified" not in normalized
     assert "- Kim Si-hu: Male" in normalized
     assert "- Distress Level: Mức độ căng thẳng" in normalized
     assert "- Menosorpo: Menosorpo" in normalized
+    assert "- Hitchcock: Hitchcock" in normalized
 
     # Test that DELETE bullet entries are skipped
     parsed_bullets = _parse_bullet_entries("- DELETE:\n- DELETE: Death\n- Kim Si-hu: Male, student\n- DELETE")

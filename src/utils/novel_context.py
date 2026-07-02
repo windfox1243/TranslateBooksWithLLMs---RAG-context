@@ -347,22 +347,31 @@ _PHYSICAL_DESCRIPTOR_RELATIONS = (
     "with",
 )
 _GROUP_ENTITY_WORDS = {
+    "academy",
+    "agency",
     "army",
     "battalion",
     "clan",
     "company",
+    "corporation",
     "country",
+    "dynasty",
     "empire",
     "faction",
+    "family",
     "force",
     "government",
     "guild",
+    "house",
     "kingdom",
+    "lineage",
     "military",
     "nation",
     "organization",
     "party",
+    "school",
     "squad",
+    "temple",
     "unit",
 }
 _RECURRING_CHARACTER_MARKERS = {
@@ -761,19 +770,28 @@ def _is_non_character_work_entry(name: str, value: str) -> bool:
 def _is_non_character_group_entry(name: str, value: str) -> bool:
     """Reject factions, countries, companies, and military units as characters."""
     name_key = _plain_key(name)
-    _, details = _split_gender_and_details(_normalize_character_value(value))
+    gender, details = _split_gender_and_details(_normalize_character_value(value))
     details_key = _plain_key(details)
     if not name_key or not details_key:
         return False
+    if _canonical_gender(gender).casefold() in _SPECIFIC_GENDER_LABELS:
+        return False
 
     name_words = set(re.findall(r"\w+", name_key))
-    if not (name_words & _GROUP_ENTITY_WORDS):
-        return False
+    group_word_pattern = (
+        r"(?:academy|agency|army|battalion|clan|company|corporation|country|"
+        r"dynasty|empire|faction|family|force|government|guild|house|"
+        r"kingdom|lineage|military|nation|organization|party|school|"
+        r"squad|temple|unit)"
+    )
+    details_mentions_group = bool(re.search(rf"\b{group_word_pattern}\b", details_key))
+    if name_words & _GROUP_ENTITY_WORDS and details_mentions_group:
+        return True
     return bool(
-        re.search(
-            r"\b(?:army|battalion|clan|company|country|empire|faction|"
-            r"force|government|guild|kingdom|military|nation|organization|"
-            r"party|squad|unit)\b",
+        re.search(rf"^(?:(?:a|an|the)\s+)?{group_word_pattern}\b", details_key)
+        or re.search(
+            rf"\b(?:known|described|identified|introduced)\s+as\s+(?:(?:a|an|the)\s+)?"
+            rf"{group_word_pattern}\b",
             details_key,
         )
     )
@@ -5514,7 +5532,7 @@ def open_novel_context_session(
 
 
 CONSOLIDATION_SYSTEM_PROMPT = """You are a precise novel context editor.
-Your only job is to clean up a Characters & Genders list by merging duplicate or redundant entries.
+Your only job is to clean up a Characters & Genders list by merging duplicate or redundant entries and removing entries that are not characters.
 
 Rules:
 - Each canonical character must appear exactly once with one concise, non-repetitive description.
@@ -5524,6 +5542,10 @@ Rules:
 - Preserve the exact canonical name already shown in the input (do not rename characters).
 - Preserve gender labels exactly (Male / Female / Unspecified).
 - Identify and remove generic background NPCs (e.g., unnamed students, teachers, guards, bystanders) that do not have named proper counterparts or significant recurring, plot-driving descriptions.
+- Identify and remove first-pass non-character mistakes: companies, organizations, factions, families/houses/lineages, countries, facilities, magic circles, artifacts, weapons, skills, systems, metrics, titles, and abstract concepts do not belong in Characters & Genders.
+- If a non-character proper noun is useful terminology (e.g., a company name, family/house name, named artifact, named magic circle, or product name), omit it from this output; it belongs in Glossary & Terminology, not Characters & Genders.
+- Remove bare relationship labels such as "Brother", "Father", "Lover", "Girlfriend", "Wife", or "Husband" unless the entry clearly names a distinct source-named character; relationships belong in descriptions or dynamic state, not as fake character identities.
+- Remove duplicate romanization/source-name variants for Chinese, Japanese, and Korean names when the entries clearly describe the same person. Keep the existing canonical character name from the input and fold the facts into that one entry; do not invent a new pinyin, romaji, or revised-romanization canonical name.
 - Output ONLY the cleaned bullet list — one line per character in the format:
   - Canonical Name: Gender, concise description.
 - Do NOT add any heading, explanation, markdown fence, or extra text.
@@ -5627,7 +5649,7 @@ async def consolidate_context_lore(
         updated_lore = normalize_global_lore(updated_lore)
 
         if updated_lore != global_lore:
-            msg = "[Novel Context] Consolidation pass: character descriptions deduped/merged."
+            msg = "[Novel Context] Consolidation pass: character list deduped/merged and non-character entries pruned."
             change_logs.append(msg)
 
         return updated_lore, change_logs
