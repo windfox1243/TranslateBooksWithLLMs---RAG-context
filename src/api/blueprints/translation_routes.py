@@ -20,6 +20,9 @@ from src.config import (
 )
 from src.tts.tts_config import TTSConfig
 from src.api.api_keys import resolve_api_key as _resolve_api_key
+from src.utils.unified_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def _clamp_parallel_workers(value):
