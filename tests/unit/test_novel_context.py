@@ -2489,6 +2489,44 @@ def test_dynamic_state_requires_explicit_delete_for_durable_entries():
     assert "- Kriha → Valentine: Loyal subordinate." in merged
 
 
+def test_vietnamese_dynamic_state_rejects_incomplete_new_addressing_delta():
+    current = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Alice → Bob: "Bob" | "self-reference: tớ; second-person pronoun: cậu; '
+        'vocative/address form: Bob" | close classmates\n\n'
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Alice ↔ Bob: Close classmates."
+    )
+    proposed = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Charlie → Dana: "Dana" | "Dana" | close classmates\n'
+        '- Alice → Bob: "Bob" | "self-reference: tôi; second-person pronoun: cậu; '
+        'vocative/address form: Bob" | tense classmates\n\n'
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Charlie ↔ Dana: Close classmates."
+    )
+
+    merged = merge_dynamic_state(current, proposed, target_language="Vietnamese")
+
+    assert "Charlie → Dana" not in merged
+    assert 'self-reference: tôi; second-person pronoun: cậu' in merged
+    assert "- Charlie ↔ Dana: Close classmates." in merged
+
+
+def test_non_vietnamese_dynamic_state_keeps_legacy_addressing_delta():
+    proposed = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Charlie → Dana: "Dana" | "Dana" | close classmates\n\n'
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Charlie ↔ Dana: Close classmates."
+    )
+
+    merged = merge_dynamic_state("", proposed, target_language="English")
+
+    assert '- Charlie → Dana: "Dana" | "Dana" | close classmates' in merged
+    assert "- Charlie ↔ Dana: Close classmates." in merged
+
+
 def test_dynamic_state_delete_resolves_character_aliases():
     current = (
         "## CURRENT ADDRESSING FORMS\n"
@@ -2737,7 +2775,8 @@ async def test_update_novel_context_chunk_parses_legacy_blocks_with_dialogue_jso
         "[DYNAMIC_STATE]\n"
         "## CURRENT ADDRESSING FORMS\n"
         "- Li Fan → Sect Master: source form \"Sect Master\" | "
-        "target-language form \"Sư phụ\" | formal respect\n\n"
+        "target-language form \"self-reference: con; second-person pronoun: "
+        "sư phụ; vocative/address form: Sư phụ\" | formal respect\n\n"
         "## RELATIONSHIP EVOLUTION\n"
         "- Li Fan ↔ Sect Master: student showing formal respect\n\n"
         "[DIALOGUE_ATTRIBUTION]\n"
@@ -3434,7 +3473,8 @@ async def test_update_chunk_identity_link_canonicalizes_every_context_layer():
         "[DYNAMIC_STATE]\n"
         "## CURRENT ADDRESSING FORMS\n"
         '- Valentine → Lieutenant Colonel: source form "Lieutenant Colonel" '
-        "| formal\n\n"
+        '| target-language form "self-reference: tôi; second-person pronoun: '
+        'ngài; vocative/address form: Lieutenant Colonel" | formal\n\n'
         "## RELATIONSHIP EVOLUTION\n"
         "- Lieutenant Colonel ↔ Valentine: Mutual suspicion.\n\n"
         "[DIALOGUE_ATTRIBUTION]\n"

@@ -4058,6 +4058,40 @@ def _format_dynamic_sections(addressing: str, relationships: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _is_vietnamese_target_language(target_language: Optional[str]) -> bool:
+    target = str(target_language or "").strip().casefold()
+    return target in {"vietnamese", "vietnamien", "viet", "tiếng việt", "tieng viet"}
+
+
+def _has_complete_vietnamese_addressing_details(details: str) -> bool:
+    clean = details.casefold()
+    return (
+        "self-reference:" in clean
+        and "second-person pronoun:" in clean
+        and "vocative/address form:" in clean
+    )
+
+
+def _filter_vietnamese_addressing_delta(
+    proposed_addressing: str,
+    alias_map: Dict[str, str],
+) -> str:
+    """Drop new Vietnamese addressing rows that do not carry full pair data."""
+    output: List[str] = []
+    for raw_line in proposed_addressing.splitlines():
+        parsed = _parse_dynamic_relation(raw_line, alias_map)
+        if not parsed:
+            output.append(raw_line)
+            continue
+        _, _, details = parsed
+        is_delete = details.strip().rstrip(" .;:").casefold() in (
+            _DYNAMIC_DELETE_VALUES
+        )
+        if is_delete or _has_complete_vietnamese_addressing_details(details):
+            output.append(raw_line)
+    return "\n".join(output).strip()
+
+
 def normalize_dynamic_state(
     dynamic_state: str,
     character_aliases: Optional[Dict[str, str]] = None,
@@ -4077,6 +4111,7 @@ def merge_dynamic_state(
     current_dynamic_state: str,
     proposed_dynamic_state: str,
     character_aliases: Optional[Dict[str, str]] = None,
+    target_language: Optional[str] = None,
 ) -> str:
     """Merge durable addressing and relationship deltas by participant key.
 
@@ -4097,6 +4132,11 @@ def merge_dynamic_state(
     )
 
     if proposed_has_sections:
+        if _is_vietnamese_target_language(target_language):
+            proposed_addressing = _filter_vietnamese_addressing_delta(
+                proposed_addressing,
+                aliases,
+            )
         addressing = _merge_dynamic_entries(
             current_addressing,
             proposed_addressing,
@@ -5245,6 +5285,7 @@ class RefinementContextTracker:
                 self.dynamic_state,
                 historical_dynamic,
                 _character_alias_map(self.global_lore),
+                target_language=target_language,
             )
             full_context = build_novel_context(
                 self.global_lore,
@@ -6945,6 +6986,7 @@ async def update_novel_context_chunk(
             current_dynamic_state,
             new_dynamic,
             _character_alias_map(updated_global_lore),
+            target_language=target_language,
         )
 
         # LLM consolidation pass: periodically deduplicate character descriptions
