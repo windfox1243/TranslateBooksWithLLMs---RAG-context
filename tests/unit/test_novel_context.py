@@ -849,6 +849,7 @@ async def test_global_only_resync_propagates_lore_without_llm(monkeypatch, tmp_p
     checkpoint_manager.update_job_config.return_value = True
     checkpoint_manager.db = MagicMock()
     state_manager.checkpoint_manager = checkpoint_manager
+    state_manager.exists.side_effect = [False] + [True] * 20
 
     monkeypatch.setattr(src.config, "NOVEL_CONTEXTS_DIR", tmp_path)
     monkeypatch.setattr(
@@ -868,6 +869,7 @@ async def test_global_only_resync_propagates_lore_without_llm(monkeypatch, tmp_p
         )
 
     assert result is True
+    state_manager.restore_job_from_checkpoint.assert_called_once_with("job")
     llm_client.assert_not_called()
     update_context.assert_not_called()
     assert checkpoint_manager.db.save_chunk.call_count == 2

@@ -6,6 +6,7 @@
 
 - **Paused context re-sync recovery:** Saved translation cards now expose unfinished context re-sync state, convert stale background runs back to a resumable paused state, and route recovery through Resume Re-sync instead of normal translation resume.
 - **Context re-sync safety guard:** Normal translation resume now refuses to start while a context re-sync is still running, pausing, or paused, preventing stale context snapshots from being skipped.
+- **Context re-sync progress logs:** Checkpoint-only Resume Re-sync jobs now restore enough in-memory state to stream progress logs and status updates while saved snapshots are being propagated.
 
 ## 1.14.38 - 2026-07-02
 
