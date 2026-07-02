@@ -956,6 +956,8 @@ async def _resync_context_snapshots_async(
 
     def append_and_emit(msg_str, resync_state=None):
         log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {msg_str}"
+        if not state_manager.exists(translation_id):
+            state_manager.restore_job_from_checkpoint(translation_id)
         state_manager.append_log(translation_id, log_entry)
         if socketio:
             data = {
@@ -1211,7 +1213,7 @@ async def _resync_context_snapshots_async(
                             status=c.get('status') or 'completed',
                         )
                         snapshot_saved = True
-                        _save_resync_state({
+                        progress_state = _save_resync_state({
                             "status": "running",
                             "last_processed_chunk": idx,
                         })
@@ -1223,7 +1225,8 @@ async def _resync_context_snapshots_async(
                                 "🔄 Global context propagation progress: "
                                 f"{processed_count}/{total_to_process} "
                                 f"saved snapshot(s) updated "
-                                f"(latest chunk {idx + 1})."
+                                f"(latest chunk {idx + 1}).",
+                                progress_state,
                             )
                         break
                     if not snapshot_saved:
