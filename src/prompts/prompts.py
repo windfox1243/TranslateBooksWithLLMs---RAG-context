@@ -154,6 +154,9 @@ def _build_target_language_style_section(target_language: str) -> str:
 - Do not infer "anh", "chị", or "em" from gender, status, affection, or politeness alone. Use them only when the source/context establishes the age, kinship, or seniority relationship, or when the addressing entry explicitly requires that form.
 - Vietnamese address is a paired social system, not a single pronoun. Choose both the speaker's self-reference and the addressee/reference form from the relationship and setting. Common pairs include, but are not limited to, "em-cô", "em-thầy", "con-mẹ/cha", "bố/mẹ-con", "tớ-cậu", "tôi-cậu", "mình-cậu", "tao-mày", name-only, title-only, or neutral forms when appropriate.
 - Apply age, family, school-year, seniority, and relationship facts to both direct address and indirect references in dialogue, thoughts, and narration. If the viewpoint speaker/thinker is older or senior to the referenced character, or the referenced character is a same-age peer of the speaker's younger sibling, do not call or refer to that character as "anh" or "chị"; use the stored name/title or a neutral peer form instead.
+- For English named skills, abilities, techniques, spells, combat moves, weapons, artifacts, and equipment, prefer concise Sino-Vietnamese literary renderings when that sounds natural in Vietnamese fantasy or game prose.
+- Do not leave an English skill, technique, or named item untranslated merely because it is capitalized. Preserve the English form only when it is a brand, code label, UI/system key, or a required glossary entry says to keep it.
+- Keep character names exact; the Sino-Vietnamese rendering preference applies to named powers, weapons, items, and terminology, not people.
 - Preserve established addressing forms from the glossary, dialogue context, and previous paragraph."""
 
 
@@ -453,6 +456,16 @@ def generate_ner_extraction_prompt(
     Output is wrapped in <NER_JSON>...</NER_JSON> with a strict schema. The
     parser is permissive (handles markdown fences, missing tags, partial JSON).
     """
+    vietnamese_skill_guidance = ""
+    if (target_language or "").strip().casefold() in {
+        "vietnamese",
+        "tiếng việt",
+        "tieng viet",
+        "vi",
+    }:
+        vietnamese_skill_guidance = """
+7. For English named skills, abilities, techniques, spells, combat moves, weapons, artifacts, and equipment, prefer concise Sino-Vietnamese literary target renderings when natural for Vietnamese fantasy or game prose. Preserve English only for brands, code labels, UI/system keys, or terms that clearly should remain untranslated."""
+
     system_prompt = f"""You are a literary entity extractor. Your job is to read a passage written in {source_language} and identify recurring proper nouns that a translator would want to keep consistent across an entire book.
 
 # CATEGORIES (use exactly these labels)
@@ -472,6 +485,7 @@ def generate_ner_extraction_prompt(
 4. Deduplicate: if the same entity appears multiple times in the passage, list it once.
 5. If you are unsure about an entry, omit it rather than guessing.
 6. Preserve the original {source_language} form exactly as it appears in the text (no extra spaces, no normalization).
+{vietnamese_skill_guidance}
 
 # OUTPUT FORMAT
 

@@ -1455,6 +1455,10 @@ function updateContextResyncControls(resyncState = null) {
     const btnPause = document.getElementById('btnPauseResync');
     const btnResume = document.getElementById('btnResumeResync');
     const badge = document.getElementById('contextResyncStatusBadge');
+    
+    if (!resyncState && window.NovelContextUI?.lastResyncState) {
+        resyncState = window.NovelContextUI.lastResyncState;
+    }
     if (window.NovelContextUI) {
         window.NovelContextUI.lastResyncState = resyncState;
     }
@@ -1466,7 +1470,7 @@ function updateContextResyncControls(resyncState = null) {
 
     updateContextResyncPolling(status);
 
-    if (hasResyncState) {
+    if (hasResyncState && (isRunning || isPaused)) {
         const contextSection = document.getElementById('novelContextPreviewSection');
         if (contextSection) {
             contextSection.style.display = 'block';
