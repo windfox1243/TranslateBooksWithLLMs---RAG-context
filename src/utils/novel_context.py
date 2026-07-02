@@ -5751,7 +5751,7 @@ Your output must follow this strict format:
 - Speaker → Addressee: source form "..." | target-language form "..." | register, social basis, scope, and reason
 ## RELATIONSHIP EVOLUTION
 - Character A ↔ Character B: concise current relationship
-(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. In the final reason field, record the social basis when known: direct address vs indirect reference scope, age/school-year/seniority, family relation, rank/status, setting, intimacy, hostility, deference, or exception to normal age hierarchy. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Do not duplicate these headings.)
+(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. For Vietnamese, every addressing entry must make the target-language form a complete paired-address record with all applicable parts: `self-reference: ...; second-person pronoun: ...; vocative/address form: ...`. Use `none` only for a part that truly does not apply. Do not store only the addressee nickname if the speaker's self-reference should also change. In the final reason field, record the social basis when known: direct address vs indirect reference scope, age/school-year/seniority, family relation, rank/status, setting, intimacy, hostility, deference, or exception to normal age hierarchy. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Do not duplicate these headings.)
 
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
@@ -5816,7 +5816,7 @@ Your output must follow this strict format:
 - Speaker → Addressee: source form "..." | recommended target-language form "..." | register, social basis, scope, and reason
 ## RELATIONSHIP EVOLUTION
 - Character A ↔ Character B: concise current relationship
-(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. In the final reason field, record the social basis when known: direct address vs indirect reference scope, age/school-year/seniority, family relation, rank/status, setting, intimacy, hostility, deference, or exception to normal age hierarchy. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Keep it concise and do not duplicate headings.)
+(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. For Vietnamese, every addressing entry must make the recommended target-language form a complete paired-address record with all applicable parts: `self-reference: ...; second-person pronoun: ...; vocative/address form: ...`. Use `none` only for a part that truly does not apply. Do not store only the addressee nickname if the speaker's self-reference should also change. In the final reason field, record the social basis when known: direct address vs indirect reference scope, age/school-year/seniority, family relation, rank/status, setting, intimacy, hostility, deference, or exception to normal age hierarchy. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Keep it concise and do not duplicate headings.)
 
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
@@ -6589,6 +6589,41 @@ def _json_dynamic_line(item: Any, relationship: bool = False) -> str:
         right = _json_text(_json_get(item, "addressee", "character_b"))
         parts = []
         source_form = _json_text(_json_get(item, "source_form"))
+        self_reference = _json_text(
+            _json_get(
+                item,
+                "self_reference",
+                "speaker_self_reference",
+                "target_self_reference",
+            )
+        )
+        addressee_form = _json_text(
+            _json_get(
+                item,
+                "addressee_form",
+                "target_addressee_form",
+                "reference_form",
+            )
+        )
+        second_person_pronoun = _json_text(
+            _json_get(
+                item,
+                "second_person_pronoun",
+                "target_second_person_pronoun",
+                "you_pronoun",
+            )
+        )
+        vocative_nickname = _json_text(
+            _json_get(
+                item,
+                "vocative_nickname",
+                "vocative_form",
+                "address_form",
+                "target_address_form",
+                "nickname",
+                "target_vocative",
+            )
+        )
         target_form = _json_text(
             _json_get(item, "target_form", "recommended_target_form")
         )
@@ -6608,6 +6643,22 @@ def _json_dynamic_line(item: Any, relationship: bool = False) -> str:
         details = _json_text(_json_get(item, "details", "value"))
         if source_form:
             parts.append(f'source form "{source_form}"')
+        if not target_form and (
+            self_reference
+            or addressee_form
+            or second_person_pronoun
+            or vocative_nickname
+        ):
+            paired = []
+            if self_reference:
+                paired.append(f"self-reference: {self_reference}")
+            if second_person_pronoun:
+                paired.append(f"second-person pronoun: {second_person_pronoun}")
+            if vocative_nickname:
+                paired.append(f"vocative/address form: {vocative_nickname}")
+            if addressee_form:
+                paired.append(f"addressee form: {addressee_form}")
+            target_form = "; ".join(paired)
         if target_form:
             parts.append(f'target-language form "{target_form}"')
         if register:
