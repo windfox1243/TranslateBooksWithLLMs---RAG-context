@@ -3013,14 +3013,14 @@ def infer_source_identity_links(
     return "\n".join(f"- {alias}: {target}" for alias, target in links)
 
 
-def _source_proves_identity_link(
+def _source_identity_link_proof_status(
     source_text: str,
     current_global_lore: str,
     new_characters: str,
     alias: str,
     target: str,
-) -> bool:
-    """Return whether raw source text directly proves an alias mapping.
+) -> Tuple[bool, str]:
+    """Return whether raw source text directly proves an alias mapping, with reason.
 
     A model-proposed identity link can merge two durable character entries, so
     source-analysis updates require direct evidence. Existing/manual context
@@ -3030,13 +3030,13 @@ def _source_proves_identity_link(
     alias = _strip_balanced_brackets(alias)
     target = _canonical_display_name(target)
     if not text or _is_invalid_context_key(alias) or _is_invalid_context_key(target):
-        return False
+        return False, "missing source text or invalid alias/target"
 
     candidates = _candidate_named_characters(current_global_lore, new_characters)
     candidate_keys = {_plain_key(name): name for name in candidates}
     target_key = _plain_key(target)
     if target_key not in candidate_keys:
-        return False
+        return False, "target is not a current or newly proposed canonical character"
 
     inferred = {
         _plain_key(inferred_alias): _plain_key(inferred_target)
@@ -3049,7 +3049,7 @@ def _source_proves_identity_link(
         )
     }
     if inferred.get(_plain_key(alias)) == target_key:
-        return True
+        return True, "source title/coreference backstop proved the link"
 
     alias_pattern = re.escape(alias).replace(r"\ ", r"\s+")
     target_pattern = _name_reference_pattern(candidate_keys[target_key])
@@ -3064,12 +3064,20 @@ def _source_proves_identity_link(
         rf"(?:the\s+)?{alias_pattern}\b",
         rf"{target_pattern}\s*,\s*(?:the\s+)?{alias_pattern}\b",
         rf"\b(?:the\s+)?{alias_pattern}\s*,\s*{target_pattern}",
+        rf"\b(?:the\s+)?{alias_pattern}\s*\(\s*{target_pattern}\s*\)",
+        rf"{target_pattern}\s*\(\s*(?:the\s+)?{alias_pattern}\s*\)",
+        rf"\b(?:the\s+)?{alias_pattern}\b[\s\S]{{0,80}}"
+        rf"\b(?:also\s+known\s+as|a\.?k\.?a\.?|aka)\s+{target_pattern}",
+        rf"{target_pattern}[\s\S]{{0,80}}\b(?:also\s+known\s+as|"
+        rf"a\.?k\.?a\.?|aka)\s+(?:the\s+)?{alias_pattern}\b",
+        rf"\b(?:the\s+)?{alias_pattern}'s\s+(?:real\s+|true\s+)?name\s+"
+        rf"(?:is|was)\s+{target_pattern}",
     )
     if any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in strong_patterns):
-        return True
+        return True, "source contains an explicit identity statement or apposition"
 
     if alias_is_named_character:
-        return False
+        return False, "alias is already a named character and no explicit identity statement was found"
 
     if re.search(
         rf"\b(?:the\s+)?{alias_pattern}'s\s+"
@@ -3079,7 +3087,7 @@ def _source_proves_identity_link(
         text,
         flags=re.IGNORECASE,
     ):
-        return True
+        return True, "source links the title/role to the target by local narration"
 
     target_words = candidate_keys[target_key].split()
     surname = target_words[-1] if target_words else ""
@@ -3088,9 +3096,27 @@ def _source_proves_identity_link(
         text,
         flags=re.IGNORECASE,
     ):
-        return True
+        return True, "source uses the alias directly with the target name"
 
-    return False
+    return False, "source chunk does not directly prove this alias-target mapping"
+
+
+def _source_proves_identity_link(
+    source_text: str,
+    current_global_lore: str,
+    new_characters: str,
+    alias: str,
+    target: str,
+) -> bool:
+    """Return whether raw source text directly proves an alias mapping."""
+    proved, _ = _source_identity_link_proof_status(
+        source_text,
+        current_global_lore,
+        new_characters,
+        alias,
+        target,
+    )
+    return proved
 
 
 def _source_reincarnation_gender_for_name(source_text: str, name: str) -> str:
@@ -5919,22 +5945,22 @@ def merge_new_lore(
             explicit_aliases.get(alias_key) == target
             for alias_key in alias_keys
         )
-        if (
-            source_text
-            and not is_trusted_alias
-            and not already_linked
-            and not _source_proves_identity_link(
+        identity_link_proved = True
+        identity_link_skip_reason = ""
+        if source_text and not is_trusted_alias and not already_linked:
+            identity_link_proved, identity_link_skip_reason = _source_identity_link_proof_status(
                 source_text,
                 lore,
                 new_characters,
                 raw_alias,
                 target,
             )
-        ):
+        if not identity_link_proved:
             logger.warning(
-                "[Novel Context] Skipped unsafe identity link '%s' -> '%s'.",
+                "[Novel Context] Skipped unsafe identity link '%s' -> '%s': %s.",
                 _plain_key(raw_alias),
                 target,
+                identity_link_skip_reason,
             )
             continue
         changed = any(

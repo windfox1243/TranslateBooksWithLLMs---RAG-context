@@ -1,4 +1,5 @@
 import json
+import logging
 import pytest
 import tempfile
 import shutil
@@ -2853,7 +2854,7 @@ async def test_json_only_context_update_does_not_modify_lore():
 
 
 @pytest.mark.asyncio
-async def test_unproven_model_identity_link_does_not_merge_named_characters():
+async def test_unproven_model_identity_link_does_not_merge_named_characters(caplog):
     from src.utils.novel_context import update_novel_context_chunk
 
     response = MagicMock()
@@ -2878,16 +2879,17 @@ async def test_unproven_model_identity_link_does_not_merge_named_characters():
         "## GLOSSARY & TERMINOLOGY\n"
     )
 
-    updated_lore, updated_dynamic, _ = await update_novel_context_chunk(
-        llm_client=client,
-        model_name="test-model",
-        current_global_lore=initial_lore,
-        current_dynamic_state="",
-        source_chunk="Alice protects Clara while Bob repairs a sword.",
-        translated_chunk=None,
-        source_language="English",
-        target_language="Vietnamese",
-    )
+    with caplog.at_level(logging.WARNING, logger="novel_context"):
+        updated_lore, updated_dynamic, _ = await update_novel_context_chunk(
+            llm_client=client,
+            model_name="test-model",
+            current_global_lore=initial_lore,
+            current_dynamic_state="",
+            source_chunk="Alice protects Clara while Bob repairs a sword.",
+            translated_chunk=None,
+            source_language="English",
+            target_language="Vietnamese",
+        )
 
     assert "- Alice: Female, healer from the east." in updated_lore
     assert "- Bob: Male, blacksmith from the west." in updated_lore
@@ -2895,6 +2897,46 @@ async def test_unproven_model_identity_link_does_not_merge_named_characters():
     assert "healer from the east; blacksmith from the west" not in updated_lore
     assert "- Alice ↔ Clara: Alice protects Clara" in updated_dynamic
     assert "- Bob ↔ Clara" not in updated_dynamic
+    assert "Skipped unsafe identity link 'alice' -> 'Bob'" in caplog.text
+    assert "alias is already a named character" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_model_identity_link_accepts_explicit_parenthetical_alias():
+    from src.utils.novel_context import update_novel_context_chunk
+
+    response = MagicMock()
+    response.content = (
+        "[NEW_CHARACTERS]\n\n"
+        "[IDENTITY_LINKS]\n"
+        "- Imperial Hawk: Eric\n\n"
+        "[NEW_GLOSSARY]\n\n"
+        "[DYNAMIC_STATE]\n"
+        "## CURRENT ADDRESSING FORMS\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+    )
+    client = MagicMock()
+    client.generate = AsyncMock(return_value=response)
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Eric: Male, imperial officer.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+
+    updated_lore, _, _ = await update_novel_context_chunk(
+        llm_client=client,
+        model_name="test-model",
+        current_global_lore=initial_lore,
+        current_dynamic_state="",
+        source_chunk="The Imperial Hawk (Eric) entered the room.",
+        translated_chunk=None,
+        source_language="English",
+        target_language="Vietnamese",
+    )
+
+    assert "- Imperial Hawk: Eric" in updated_lore
+    assert updated_lore.count("- Eric:") == 1
 
 
 def test_role_only_summoner_update_is_quarantined_not_character():
