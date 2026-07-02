@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.14.38 - 2026-07-02
+
+### Fixed
+
+- **Relationship-based addressing:** Novel context prompts now store richer social basis, scope, and reason details for address forms, and translation prompts use those facts for direct address and indirect references across target languages.
+- **Short-name context selection:** Prompt context selection now matches distinctive short forms of romanized full names and avoids leaking unrelated one-sided relationship rows.
+- **Vietnamese address pairs:** Vietnamese prompt guidance now treats address as a paired social system, covering examples such as `em-cô`, `em-thầy`, `tớ-cậu`, `bố/mẹ-con`, title-only, name-only, and neutral forms without treating the list as exhaustive.
+
 ## 1.14.37 - 2026-07-01
 
 ### Added
@@ -11,8 +19,6 @@
 ### Fixed
 
 - **Context timeline leakage:** Historical chunk context views now show their exact saved snapshot instead of mixing in future global lore, while explicit Global context edits still use the latest book-wide lore.
-- **Relationship-based addressing:** Novel context prompts now store richer social basis, scope, and reason details for address forms, and translation prompts use those facts for direct address and indirect references across target languages.
-- **Short-name context selection:** Prompt context selection now matches distinctive short forms of romanized full names and avoids leaking unrelated one-sided relationship rows.
 - **Completed-job continuation bases:** Completed checkpoints now remain visible in the saved translations list as Add New Content bases, with normal Resume disabled for already-complete jobs.
 - **Windows venv setup:** `setup-and-update.bat` now uses an existing `venv\Scripts\python.exe` when available and falls back to `python` or `py -3` for first-time setup.
 

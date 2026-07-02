@@ -522,6 +522,10 @@ def test_vietnamese_prompts_guard_first_person_pronoun_consistency():
         assert '"mình"' in prompt.system
         assert "CURRENT ADDRESSING FORMS" in prompt.system
         assert '"anh", "chị", or "em"' in prompt.system
+        assert "paired social system" in prompt.system
+        assert '"em-cô", "em-thầy"' in prompt.system
+        assert '"bố/mẹ-con", "tớ-cậu"' in prompt.system
+        assert "include, but are not limited to" in prompt.system
         assert "do not call or refer to that character" in prompt.system
         assert "indirect references in dialogue, thoughts, and narration" in prompt.system
         assert 'target-language form "Frondier"' in prompt.user
