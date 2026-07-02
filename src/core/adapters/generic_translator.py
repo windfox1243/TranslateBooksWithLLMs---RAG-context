@@ -863,7 +863,7 @@ def resync_context_snapshots_background(
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            asyncio.run_coroutine_threadsafe(
+            future = asyncio.run_coroutine_threadsafe(
                 _resync_context_snapshots_async(
                     translation_id,
                     start_chunk_index,
@@ -877,11 +877,11 @@ def resync_context_snapshots_background(
                 ),
                 loop,
             )
-            return
+            return future.result()
     except RuntimeError:
         pass
         
-    asyncio.run(
+    return asyncio.run(
         _resync_context_snapshots_async(
             translation_id,
             start_chunk_index,
@@ -955,13 +955,15 @@ async def _resync_context_snapshots_async(
         return bool(state.get("pause_requested"))
 
     def append_and_emit(msg_str, resync_state=None):
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        full_msg = f"[{timestamp}] [context_resync] {msg_str}"
+        print(full_msg, flush=True)
         logger.info(msg_str)
         if resync_state is None:
             _, resync_state = _load_resync_state()
-        log_entry = f"[{datetime.now().strftime('%H:%M:%S')}] {msg_str}"
         if not state_manager.exists(translation_id):
             state_manager.restore_job_from_checkpoint(translation_id)
-        state_manager.append_log(translation_id, log_entry)
+        state_manager.append_log(translation_id, full_msg)
         if socketio:
             data = {
                 "ui_step": "context_resync",
@@ -988,12 +990,11 @@ async def _resync_context_snapshots_async(
             )
 
     def should_log_resync_progress(processed_count, total_count):
-        if total_count <= 20:
+        if total_count <= 50:
             return True
         if processed_count in {1, total_count}:
             return True
-        interval = max(1, total_count // 10)
-        return processed_count % interval == 0
+        return processed_count % 5 == 0
 
     def run_follow_up():
         callback = post_resync_callback or auto_resume_callback

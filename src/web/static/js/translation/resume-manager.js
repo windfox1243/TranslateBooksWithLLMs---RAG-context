@@ -101,21 +101,32 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
 
     const idValue = inputHash || job.translation_id.replace('trans_', '');
     const typeIdLine = t('translation:job_card_type_id', { type: fileType, id: idValue });
-    const resumeTitle = isCompleted
+    const isResyncRunning = ['running', 'pause_requested'].includes(resyncStatus);
+    const isResyncPaused = resyncStatus === 'paused';
+
+    let resumeTitle = isCompleted
         ? t('translation:job_card_completed_resume_title')
         : hasActiveTranslation
         ? t('translation:cannot_resume_in_progress_title')
-        : hasPendingResync && !canResumeResync
-        ? resyncStatusLabel || t('translation:context_resume_resync_title')
-        : hasPendingResync
+        : isResyncRunning
+        ? t('translation:context_pause_resync_title')
+        : isResyncPaused
         ? t('translation:context_resume_resync_title')
         : t('translation:resume_btn_title');
-    const primaryButtonText = hasPendingResync
-        ? t('translation:context_resume_resync_btn')
-        : t('translation:job_card_resume_btn');
-    const primaryButtonAttrs = hasPendingResync
-        ? `class="btn btn-primary resume-resync-job" data-tid="${job.translation_id}"`
-        : `class="btn btn-primary" onclick="resumeJob('${job.translation_id}')"`;
+        
+    let primaryButtonText = t('translation:job_card_resume_btn');
+    let primaryButtonAttrs = `class="btn btn-primary" onclick="resumeJob('${job.translation_id}')"`;
+    let primaryCanResume = canResume;
+
+    if (isResyncRunning) {
+        primaryButtonText = t('translation:context_pause_resync_btn');
+        primaryButtonAttrs = `class="btn btn-secondary pause-resync-job" onclick="pauseContextResync('${job.translation_id}')" ${resyncStatus === 'pause_requested' ? 'disabled' : ''}`;
+        primaryCanResume = true;
+    } else if (isResyncPaused) {
+        primaryButtonText = t('translation:context_resume_resync_btn');
+        primaryButtonAttrs = `class="btn btn-primary resume-resync-job" onclick="resumeContextResync('${job.translation_id}')"`;
+        primaryCanResume = !hasActiveTranslation;
+    }
 
     // Original model/provider, used to seed the override picker and to show what
     // the resumed portion would switch away from. Keys were already stripped
@@ -142,7 +153,7 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
                 <div style="display: flex; gap: 10px; flex-shrink: 0;">
                     <button ${primaryButtonAttrs}
                             title="${resumeTitle}"
-                            ${canResume ? '' : 'disabled style="opacity: 0.5; cursor: not-allowed;"'}>
+                            ${primaryCanResume ? '' : 'disabled style="opacity: 0.5; cursor: not-allowed;"'}>
                         ${primaryButtonText}
                     </button>
                     <button class="btn btn-secondary continue-job-btn"
@@ -338,16 +349,18 @@ export const ResumeManager = {
     /**
      * Load and display resumable jobs
      */
-    async loadResumableJobs() {
+    async loadResumableJobs(isPoll = false) {
         const section = DomHelpers.getElement('resumableJobsSection');
         const loading = DomHelpers.getElement('resumableJobsLoading');
         const listContainer = DomHelpers.getElement('resumableJobsList');
         const emptyMessage = DomHelpers.getElement('resumableJobsEmpty');
 
-        // Show loading, hide list and empty message (use inline style to override)
-        if (loading) loading.style.display = 'block';
-        if (listContainer) listContainer.style.display = 'none';
-        if (emptyMessage) emptyMessage.style.display = 'none';
+        // Only show loading spinner and hide list container on explicit initial load, not background polls
+        if (!isPoll) {
+            if (loading) loading.style.display = 'block';
+            if (listContainer) listContainer.style.display = 'none';
+            if (emptyMessage) emptyMessage.style.display = 'none';
+        }
 
         try {
             const data = await ApiClient.getResumableJobs();
@@ -382,14 +395,15 @@ export const ResumeManager = {
                 return;
             }
 
-            // Drop pickers from the previous render before wiping their DOM.
-            destroyOverridePickers();
-            listContainer.innerHTML = warningBanner + jobsHtml;
-            // Translate the freshly injected data-i18n markup, then wire the
-            // override toggles / apply buttons.
-            applyToDOM(listContainer);
-            wireResumeOverrides(listContainer);
-            scheduleResumableJobsPoll(jobs, () => this.loadResumableJobs());
+            // Avoid DOM wipe if HTML content is identical during poll
+            const newContent = warningBanner + jobsHtml;
+            if (!isPoll || listContainer.innerHTML !== newContent) {
+                destroyOverridePickers();
+                listContainer.innerHTML = newContent;
+                applyToDOM(listContainer);
+                wireResumeOverrides(listContainer);
+            }
+            scheduleResumableJobsPoll(jobs, () => this.loadResumableJobs(true));
 
         } catch (error) {
             // Hide loading, show error message
