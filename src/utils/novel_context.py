@@ -3862,6 +3862,14 @@ def _parse_dynamic_relation(
     if _is_invalid_context_key(left) or _is_invalid_context_key(right):
         return None
 
+    # Auto-format unquoted/2-part Vietnamese addressing lines into canonical 3-part format
+    if "self-reference:" in details and not details.startswith('"'):
+        pipe_parts = [p.strip() for p in details.split("|")]
+        if len(pipe_parts) == 2:
+            details_body = pipe_parts[0].strip().strip('"')
+            reason = pipe_parts[1].strip()
+            details = f'"{right}" | "{details_body}" | {reason}'
+
     key_left = _plain_key(left)
     key_right = _plain_key(right)
     if key_left == key_right:
@@ -4103,11 +4111,16 @@ def _is_vietnamese_target_language(target_language: Optional[str]) -> bool:
 
 def _has_complete_vietnamese_addressing_details(details: str) -> bool:
     clean = details.casefold()
-    return (
+    if not (
         "self-reference:" in clean
         and "second-person pronoun:" in clean
         and "vocative/address form:" in clean
-    )
+    ):
+        return False
+    self_ref = _vietnamese_addressing_field(details, "self-reference")
+    second_p = _vietnamese_addressing_field(details, "second-person pronoun")
+    vocative_f = _vietnamese_addressing_field(details, "vocative/address form")
+    return bool(self_ref and second_p and vocative_f)
 
 
 def _vietnamese_addressing_field(details: str, field_name: str) -> str:
