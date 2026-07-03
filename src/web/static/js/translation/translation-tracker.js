@@ -1383,8 +1383,8 @@ window.NovelContextUI = {
             selector.appendChild(opt);
         });
         
-        if (currentVal && Array.from(selector.options).some(o => o.value === currentVal)) {
-            selector.value = currentVal;
+        if (currentVal && Array.from(selector.options).some(o => String(o.value) === String(currentVal))) {
+            selector.value = String(currentVal);
         }
     }
 };
@@ -1455,6 +1455,7 @@ function updateContextResyncControls(resyncState = null) {
     const btnPause = document.getElementById('btnPauseResync');
     const btnResume = document.getElementById('btnResumeResync');
     const badge = document.getElementById('contextResyncStatusBadge');
+    const btnEdit = document.getElementById('btnEditResync');
     
     if (!resyncState && window.NovelContextUI?.lastResyncState) {
         resyncState = window.NovelContextUI.lastResyncState;
@@ -1475,6 +1476,10 @@ function updateContextResyncControls(resyncState = null) {
         if (contextSection) {
             contextSection.style.display = 'block';
         }
+    }
+
+    if (btnEdit) {
+        btnEdit.disabled = isRunning;
     }
 
     if (!btnPause || !btnResume) return;
@@ -1908,6 +1913,13 @@ window.saveContextResync = async function() {
         logContextResyncFailure('translation:context_resync_unavailable');
         return;
     }
+
+    let translationId = currentTranslationIdForContext();
+    if (!translationId) {
+        console.warn('[Context] No translationId available for resync');
+        logContextResyncFailure('translation:context_no_job_body');
+        return;
+    }
     
     let newContent = "";
     if (window.NovelContextUI.editSections) {
@@ -1929,9 +1941,15 @@ window.saveContextResync = async function() {
     }
     
     const isGlobal = selector.value === 'global';
-    const chunkIndex = isGlobal
+    let chunkIndex = isGlobal
         ? window.NovelContextUI.globalAnchorChunkIndex
         : parseInt(selector.value);
+
+    if (isGlobal && !Number.isInteger(chunkIndex)) {
+        chunkIndex = window.NovelContextUI.availableChunkIndices?.[0] ?? 0;
+        window.NovelContextUI.globalAnchorChunkIndex = chunkIndex;
+    }
+
     if (!Number.isInteger(chunkIndex)) {
         logContextResyncFailure('translation:context_resync_unavailable');
         return;
@@ -1939,8 +1957,26 @@ window.saveContextResync = async function() {
 
     let submittedContent = newContent;
     if (isGlobal) {
-        const anchorContent = window.NovelContextUI.globalAnchorFullContent || '';
-        const dynamicMarker = anchorContent.indexOf('---DYNAMIC_STATE_START---');
+        let anchorContent = window.NovelContextUI.globalAnchorFullContent || '';
+        let dynamicMarker = anchorContent.indexOf('---DYNAMIC_STATE_START---');
+
+        if (dynamicMarker < 0) {
+            try {
+                const snapshot = await ApiClient.getContextSnapshot(
+                    translationId,
+                    chunkIndex,
+                    { scope: 'global_lore' }
+                );
+                if (snapshot?.context_content) {
+                    anchorContent = snapshot.context_content;
+                    window.NovelContextUI.globalAnchorFullContent = anchorContent;
+                    dynamicMarker = anchorContent.indexOf('---DYNAMIC_STATE_START---');
+                }
+            } catch (err) {
+                console.error('[Context] Failed to load missing global anchor snapshot:', err);
+            }
+        }
+
         if (dynamicMarker < 0) {
             logContextResyncFailure('translation:context_global_anchor_missing');
             return;
@@ -1950,23 +1986,8 @@ window.saveContextResync = async function() {
         );
     }
     
-    let translationId = null;
-    const currentJob = StateManager.getState('translation.currentJob');
-    if (currentJob && currentJob.translationId) {
-        translationId = currentJob.translationId;
-    }
-    if (!translationId) {
-        translationId = StateManager.getState('translation.lastJobId');
-    }
-    
-    if (!translationId) {
-        console.warn('[Context] No translationId available for resync');
-        logContextResyncFailure('translation:context_no_job_body');
-        return;
-    }
-    
+    const btnSave = document.getElementById('btnSaveResync');
     try {
-        const btnSave = document.getElementById('btnSaveResync');
         if (btnSave) btnSave.disabled = true;
         
         const resyncResult = await ApiClient.resyncContextSnapshot(
@@ -1993,9 +2014,6 @@ window.saveContextResync = async function() {
         window.NovelContextUI.editSections = null;
         const header = document.getElementById('contextTabsHeader');
         if (header) header.style.display = 'flex';
-        // Keep displaying the edited historical snapshot, but do not replace
-        // the separately tracked latest state. The resync worker will emit the
-        // new canonical latest context when its forward pass completes.
         if (isGlobal) {
             window.NovelContextUI.globalAnchorFullContent = submittedContent;
         }
@@ -2013,7 +2031,6 @@ window.saveContextResync = async function() {
     } catch (e) {
         console.error("Failed to start resync:", e);
         MessageLogger.addLog(t('translation:context_resync_failed_log', { error: e.message }));
-        const btnSave = document.getElementById('btnSaveResync');
         if (btnSave) btnSave.disabled = false;
     }
 };

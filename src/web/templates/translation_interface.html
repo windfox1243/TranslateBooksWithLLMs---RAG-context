@@ -580,14 +580,14 @@
 
                     <!-- Context Preview -->
                     <div id="novelContextPreviewSection" style="margin-top: 20px; display: none;">
-                        <h4 style="margin: 0 0 10px 0; color: var(--text-dark); font-weight: 700; display: flex; align-items: center; justify-content: space-between;">
-                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <h4 style="margin: 0 0 10px 0; color: var(--text-dark); font-weight: 700; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                                 <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 1.25rem;">menu_book</span>
                                 <span data-i18n="translation:context_preview_title">Context Preview</span>
                                 <span id="contextPreviewFilename" style="font-weight: 400; font-size: 0.85rem; color: var(--text-muted-light); margin-left: 0.5rem;"></span>
                                 <span id="contextResyncStatusBadge" class="status-badge" style="display: none; font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--bg-light); border: 1px solid var(--border-color); color: var(--text-muted-light);" data-i18n="translation:context_resync_status_idle">Re-sync: idle</span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                                 <button id="btnEditResync" class="btn btn-warning" onclick="enableContextEdit()" style="display: none; padding: 0.25rem 0.75rem; font-size: 0.85rem; align-items: center; gap: 0.25rem;" title="Edit this snapshot and re-sync all subsequent chunks" data-i18n-attr="title:translation:context_edit_resync_title">
                                     <span class="material-symbols-outlined" style="font-size: 1rem;">edit</span>
                                     <span data-context-action-label data-i18n="translation:context_edit_resync_btn">Edit & Re-sync</span>
