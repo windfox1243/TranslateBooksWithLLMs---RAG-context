@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.44 - 2026-07-03
+
+### Fixed
+
+- **Save & Re-sync button reactivity:** Fixed issue where context snapshot re-sync could only be triggered once due to chunk selection value resets, missing global anchor fallbacks, and unreleased button lock states on error.
+- **Context Preview header layout:** Added flex wrapping to the Context Preview header flex containers so action buttons and controls wrap cleanly instead of overflowing off-screen on smaller viewports.
+
 ## 1.14.43 - 2026-07-03
 
 ### Fixed
