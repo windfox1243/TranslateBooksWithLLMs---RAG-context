@@ -169,7 +169,7 @@ def _build_vietnamese_style_section() -> str:
 - Keep character names exact; the Sino-Vietnamese rendering preference applies to named powers, weapons, items, and terminology, not people.
 - For Korean source texts, do not leak raw Korean honorific suffixes (such as "-ssi" / -씨, "-nim" / -님) directly into the Vietnamese translated text (e.g. do not write "Aten-ssi" or "Renzo-ssi"). Convert them into natural Vietnamese address forms, pronouns, or standard character names according to context and established addressing forms.
 - For Japanese source texts, familiar Japanese honorific suffixes (such as "-sama", "-senpai", "-san", "-kun", "-chan", "-dono") may be preserved in Vietnamese light novel/manga prose when consistent with established character voice, context, or stored addressing forms.
-- In academy, school, or peer settings (e.g. academy classmates), do not default to archaic royal or historical address pairs like "ta-nàng" or "ta-ngươi" merely because a character holds a title like princess, prince, or noble, unless formal court etiquette or explicit context requires it. Prefer peer addressing such as "tớ-cậu" or "tôi-cậu" matching their classmate relationship.
+- Do not default to generic fantasy or archaic address pairs (such as "ta-nàng" or "ta-ngươi") merely because a character holds a title like princess, prince, or noble. Addressing MUST strictly conform to the established context of their relationship, setting, intimacy, and character dynamics (e.g. classmates, peers, colleagues, or formal court etiquette when explicitly required).
 - Preserve established addressing forms from the glossary, dialogue context, and previous paragraph."""
 
 
