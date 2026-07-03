@@ -4110,13 +4110,6 @@ def _is_vietnamese_target_language(target_language: Optional[str]) -> bool:
 
 
 def _has_complete_vietnamese_addressing_details(details: str) -> bool:
-    clean = details.casefold()
-    if not (
-        "self-reference:" in clean
-        and "second-person pronoun:" in clean
-        and "vocative/address form:" in clean
-    ):
-        return False
     self_ref = _vietnamese_addressing_field(details, "self-reference")
     second_p = _vietnamese_addressing_field(details, "second-person pronoun")
     vocative_f = _vietnamese_addressing_field(details, "vocative/address form")
@@ -4124,8 +4117,14 @@ def _has_complete_vietnamese_addressing_details(details: str) -> bool:
 
 
 def _vietnamese_addressing_field(details: str, field_name: str) -> str:
+    key_patterns = {
+        "self-reference": r"(?:self[-_\s]*reference|xưng(?:[-_\s]*hô)?)",
+        "second-person pronoun": r"(?:second[-_\s]*person(?:[-_\s]*pronoun)?|gọi)",
+        "vocative/address form": r"(?:vocative(?:[/-_]address)?(?:[-_\s]*form)?|danh[-_\s]*xưng|tên[-_\s]*gọi)"
+    }
+    pattern = key_patterns.get(field_name.casefold(), re.escape(field_name))
     match = re.search(
-        rf"{re.escape(field_name)}\s*:\s*(?P<value>[^;|\"\n]+)",
+        rf"(?:\b{pattern}\s*[:=]\s*)(?P<value>[^;|\"\n]+)",
         str(details or ""),
         flags=re.IGNORECASE,
     )
@@ -4137,8 +4136,14 @@ def _replace_vietnamese_addressing_field(
     field_name: str,
     value: str,
 ) -> str:
+    key_patterns = {
+        "self-reference": r"(?:self[-_\s]*reference|xưng(?:[-_\s]*hô)?)",
+        "second-person pronoun": r"(?:second[-_\s]*person(?:[-_\s]*pronoun)?|gọi)",
+        "vocative/address form": r"(?:vocative(?:[/-_]address)?(?:[-_\s]*form)?|danh[-_\s]*xưng|tên[-_\s]*gọi)"
+    }
+    pattern = key_patterns.get(field_name.casefold(), re.escape(field_name))
     return re.sub(
-        rf"(?P<prefix>{re.escape(field_name)}\s*:\s*)[^;|\"\n]+",
+        rf"(?P<prefix>\b{pattern}\s*[:=]\s*)[^;|\"\n]+",
         lambda match: f"{match.group('prefix')}{value}",
         str(details or ""),
         count=1,
@@ -4153,7 +4158,7 @@ def _vietnamese_rule_has_required_cue(
     clean = _clean_inline_text(details).casefold()
     second_person_terms = set(rule.get("second_person") or ())
     return any(cue in clean for cue in rule.get("cues", ())) or (
-        "biological sibling" in clean
+        ("biological sibling" in clean or "kinship" in clean)
         and bool(second_person_terms & {
             _vietnamese_addressing_field(
                 details,
@@ -4167,9 +4172,25 @@ def _vietnamese_rule_has_required_cue(
     )
 
 
+def _is_vietnamese_attitude_shift(details: str) -> bool:
+    clean = _clean_inline_text(details).casefold()
+    attitude_cues = (
+        "ironic mockery",
+        "sarcastic hostility",
+        "mỉa mai",
+        "châm biếm",
+        "thù địch",
+        "đổi thái độ",
+        "từ mặt",
+    )
+    return any(cue in clean for cue in attitude_cues)
+
+
 def _repair_vietnamese_addressing_details(details: str) -> str:
     """Normalize obvious Vietnamese kinship pairs before merge/sanitize."""
     if not _has_complete_vietnamese_addressing_details(details):
+        return details
+    if _is_vietnamese_attitude_shift(details):
         return details
     self_reference = _vietnamese_addressing_field(
         details,
@@ -4225,7 +4246,7 @@ def _repair_vietnamese_addressing_block(
 
 def _has_vietnamese_hierarchy_addressing_mismatch(details: str) -> bool:
     clean = _clean_inline_text(details).casefold()
-    if not clean:
+    if not clean or _is_vietnamese_attitude_shift(details):
         return False
 
     self_reference = _vietnamese_addressing_field(details, "self-reference").casefold()
@@ -4259,11 +4280,14 @@ def _has_vietnamese_hierarchy_addressing_mismatch(details: str) -> bool:
         "older brother",
         "lớn tuổi",
         "hơn tuổi",
+        "sư huynh",
+        "sư tỷ",
+        "huynh trưởng",
     )
     has_hierarchy_cue = any(cue in clean for cue in hierarchy_cues)
     vocative_marks_seniority = any(
         cue in vocative
-        for cue in ("senior", "tiền bối", "anh ", "chị ", "thầy", "cô")
+        for cue in ("senior", "tiền bối", "anh ", "chị ", "thầy", "cô", "sư huynh", "sư tỷ")
     )
     return (has_hierarchy_cue or vocative_marks_seniority) and (
         casual_second or (casual_self and not vocative_marks_seniority)
@@ -4272,7 +4296,7 @@ def _has_vietnamese_hierarchy_addressing_mismatch(details: str) -> bool:
 
 def _has_vietnamese_register_addressing_mismatch(details: str) -> bool:
     clean = _clean_inline_text(details).casefold()
-    if not clean:
+    if not clean or _is_vietnamese_attitude_shift(details):
         return False
 
     self_reference = _vietnamese_addressing_field(details, "self-reference").casefold()
@@ -4327,6 +4351,33 @@ _VIETNAMESE_KINSHIP_ADDRESSING_CUES = (
     "sister",
     "younger brother",
     "younger sister",
+    "sư huynh",
+    "sư tỷ",
+    "sư đệ",
+    "sư muội",
+    "sư phụ",
+    "sư tôn",
+    "sư phó",
+    "huynh trưởng",
+    "tỷ tỷ",
+    "ca ca",
+    "muội muội",
+    "đại ca",
+    "nhị ca",
+    "tam ca",
+    "tiểu muội",
+    "bác",
+    "chú",
+    "dì",
+    "thím",
+    "dượng",
+    "cụ",
+    "cụ ông",
+    "cụ bà",
+    "phụ thân",
+    "mẫu thân",
+    "nương",
+    "huynh đệ",
 )
 _VIETNAMESE_STATUS_ADDRESSING_CUES = (
     "bệ hạ",
@@ -4347,11 +4398,27 @@ _VIETNAMESE_STATUS_ADDRESSING_CUES = (
     "royal",
     "title",
     "your majesty",
+    "tông chủ",
+    "trưởng lão",
+    "thiếu gia",
+    "tiểu thư",
+    "quận chúa",
+    "công tử",
+    "thế tử",
+    "chủ nhân",
+    "thiên tuế",
+    "chủ tịch",
+    "giám đốc",
+    "quản gia",
+    "bác sĩ",
+    "luật sư",
+    "thầy giáo",
+    "cô giáo",
 )
 _VIETNAMESE_INCOMPATIBLE_ADDRESSING_REPAIRS = (
     {
         "self_references": {"mình", "tôi", "tớ"},
-        "second_person": {"chị"},
+        "second_person": {"chị", "sư tỷ", "tỷ tỷ"},
         "replacement_self_reference": "em",
         "cues": (
             "big sister",
@@ -4359,11 +4426,14 @@ _VIETNAMESE_INCOMPATIBLE_ADDRESSING_REPAIRS = (
             "chị ruột",
             "elder sister",
             "older sister",
+            "sư tỷ",
+            "tỷ tỷ",
+            "chị gái",
         ),
     },
     {
         "self_references": {"mình", "tôi", "tớ"},
-        "second_person": {"anh"},
+        "second_person": {"anh", "sư huynh", "ca ca"},
         "replacement_self_reference": "em",
         "cues": (
             "anh em",
@@ -4371,6 +4441,26 @@ _VIETNAMESE_INCOMPATIBLE_ADDRESSING_REPAIRS = (
             "big brother",
             "elder brother",
             "older brother",
+            "sư huynh",
+            "ca ca",
+            "huynh trưởng",
+            "anh trai",
+        ),
+    },
+    {
+        "self_references": {"mình", "tôi", "tớ"},
+        "second_person": {"bác", "chú", "dì", "thím", "dượng"},
+        "replacement_self_reference": "cháu",
+        "cues": (
+            "bác",
+            "chú",
+            "dì",
+            "thím",
+            "dượng",
+            "nephew",
+            "niece",
+            "uncle",
+            "aunt",
         ),
     },
 )
@@ -4396,6 +4486,8 @@ def _vietnamese_addressing_anchor_score(details: str) -> int:
         "status",
         "tiền bối",
         "trên tuổi",
+        "sư huynh",
+        "sư tỷ",
     )
     if any(cue in clean for cue in hierarchy_cues):
         score += 2
@@ -4415,6 +4507,24 @@ def _is_generic_vietnamese_neutral_pair(details: str) -> bool:
         details,
         "vocative/address form",
     ).casefold()
+
+    # Professional and formal titles are exempt from generic neutral downgrade status
+    formal_titles = (
+        "chủ tịch",
+        "giám đốc",
+        "quản gia",
+        "bác sĩ",
+        "luật sư",
+        "thanh tra",
+        "giáo sư",
+        "quý khách",
+        "ngài",
+        "sư phụ",
+        "trưởng lão",
+    )
+    if any(title in second_person or title in vocative for title in formal_titles):
+        return False
+
     return (
         self_reference in _VIETNAMESE_GENERIC_NEUTRAL_SELF_REFERENCES
         and second_person in _VIETNAMESE_GENERIC_NEUTRAL_SECOND_PERSON

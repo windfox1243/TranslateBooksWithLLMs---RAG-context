@@ -4868,3 +4868,72 @@ def test_filter_abstract_concepts_and_spurious_delete():
     parsed_bullets = _parse_bullet_entries("- DELETE:\n- DELETE: Death\n- Kim Si-hu: Male, student\n- DELETE")
     assert len(parsed_bullets) == 1
     assert parsed_bullets[0] == ("Kim Si-hu", "Male, student")
+
+
+def test_vietnamese_addressing_flexible_field_parsing_and_eastern_cues():
+    from src.utils.novel_context import (
+        _repair_vietnamese_addressing_details,
+        _vietnamese_addressing_field,
+        merge_dynamic_state,
+    )
+    # Flexible field extraction (underscores / Vietnamese labels)
+    details = "xưng: tôi; gọi: sư tỷ; danh xưng: sư tỷ | sư tỷ, kinship"
+    assert _vietnamese_addressing_field(details, "self-reference") == "tôi"
+    assert _vietnamese_addressing_field(details, "second-person pronoun") == "sư tỷ"
+
+    # Eastern fantasy kinship repair (sư tỷ -> em)
+    repaired = _repair_vietnamese_addressing_details(details)
+    assert "xưng: em" in repaired or "self-reference: em" in repaired
+
+    # Eastern martial arts status cues merge
+    current = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Xiao Chen → Sovereign: "Tông chủ" | "self-reference: đệ tử; second-person pronoun: tông chủ; vocative/address form: Tông chủ" | tông chủ, sect leader\n'
+        "---DYNAMIC_STATE_END---"
+    )
+    proposed = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Xiao Chen → Sovereign: "Sovereign" | "self-reference: tôi; second-person pronoun: cô; vocative/address form: cô" | formal neutral address\n'
+        "---DYNAMIC_STATE_END---"
+    )
+    merged = merge_dynamic_state(current, proposed, target_language="Vietnamese")
+    assert "second-person pronoun: tông chủ" in merged
+
+
+def test_vietnamese_addressing_respects_attitude_shift():
+    from src.utils.novel_context import (
+        _has_vietnamese_addressing_mismatch,
+        _repair_vietnamese_addressing_details,
+    )
+    details = "self-reference: tôi; second-person pronoun: ngươi; vocative/address form: ngươi | mỉa mai, thù địch"
+    # Attitude shift should bypass mismatch reject
+    assert _has_vietnamese_addressing_mismatch(details) is False
+
+    kinship_details = "self-reference: tôi; second-person pronoun: chị; vocative/address form: chị | mỉa mai"
+    # Attitude shift should not force repair to em
+    assert _repair_vietnamese_addressing_details(kinship_details) == kinship_details
+
+
+def test_vietnamese_addressing_exempts_formal_workplace_titles():
+    from src.utils.novel_context import merge_dynamic_state
+    current = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Lawyer → Client: "Quý khách" | "self-reference: tôi; second-person pronoun: quý khách; vocative/address form: quý khách" | professional lawyer\n'
+        "---DYNAMIC_STATE_END---"
+    )
+    proposed = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Lawyer → Client: "Client" | "self-reference: tôi; second-person pronoun: giám đốc; vocative/address form: giám đốc" | professional director\n'
+        "---DYNAMIC_STATE_END---"
+    )
+    merged = merge_dynamic_state(current, proposed, target_language="Vietnamese")
+    assert "second-person pronoun: giám đốc" in merged
+

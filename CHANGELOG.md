@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.14.45 - 2026-07-03
+
+### Fixed
+
+- **Vietnamese addressing filter resilience:** Added flexible Regex field extraction for LLM key variations (`self-reference`, `xưng`, `second-person pronoun`, `gọi`, `vocative/address form`, `danh xưng`).
+- **Expanded Eastern & extended family cues:** Expanded kinship and status cue dictionaries with Eastern fantasy, xianxia, wuxia, and extended family terms (`sư huynh`, `sư tỷ`, `sư đệ`, `sư phụ`, `sư tôn`, `tông chủ`, `trưởng lão`, `thiếu gia`, `tiểu thư`, `bác`, `chú`, `dì`, `thím`, `dượng`).
+- **Attitude shift & workplace title exemptions:** Preserved intentional sarcasm / attitude shift registers (`mỉa mai`, `châm biếm`, `thù địch`) without forcing kinship repairs, and exempted formal workplace/professional titles (`chủ tịch`, `giám đốc`, `quản gia`, `bác sĩ`, `luật sư`, `thanh tra`, `giáo sư`) from generic neutral downgrade filters.
+
 ## 1.14.44 - 2026-07-03
 
 ### Fixed
