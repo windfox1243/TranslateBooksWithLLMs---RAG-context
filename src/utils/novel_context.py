@@ -4192,6 +4192,41 @@ def _filter_vietnamese_addressing_delta(
     return "\n".join(output).strip()
 
 
+def _remove_vietnamese_hierarchy_mismatches(
+    addressing: str,
+    alias_map: Dict[str, str],
+) -> str:
+    """Drop stored Vietnamese rows only when their own hierarchy data conflicts."""
+    output: List[str] = []
+    for raw_line in addressing.splitlines():
+        parsed = _parse_dynamic_relation(raw_line, alias_map)
+        if not parsed:
+            output.append(raw_line)
+            continue
+        _, _, details = parsed
+        if not _has_vietnamese_hierarchy_addressing_mismatch(details):
+            output.append(raw_line)
+    return "\n".join(output).strip()
+
+
+def _sanitize_vietnamese_dynamic_state(
+    dynamic_state: str,
+    alias_map: Dict[str, str],
+    discarded_character_aliases: Optional[set[str]] = None,
+) -> str:
+    """Remove stored Vietnamese addressing rows whose hierarchy data conflicts."""
+    normalized = normalize_dynamic_state(
+        dynamic_state,
+        alias_map,
+        discarded_character_aliases,
+    )
+    addressing, relationships, _ = _split_dynamic_sections(normalized)
+    return _format_dynamic_sections(
+        _remove_vietnamese_hierarchy_mismatches(addressing, alias_map),
+        relationships,
+    )
+
+
 def normalize_dynamic_state(
     dynamic_state: str,
     character_aliases: Optional[Dict[str, str]] = None,
@@ -4221,6 +4256,8 @@ def merge_dynamic_state(
     """
     aliases = character_aliases or {}
     current = normalize_dynamic_state(current_dynamic_state, aliases)
+    if _is_vietnamese_target_language(target_language):
+        current = _sanitize_vietnamese_dynamic_state(current, aliases)
     if not str(proposed_dynamic_state or "").strip():
         return current
 
@@ -4587,6 +4624,16 @@ def build_novel_context(
         f"{DYNAMIC_STATE_START}\n"
         "# DYNAMIC RELATIONSHIP STATE\n"
         f"{normalized_dynamic.strip()}\n"
+        f"{DYNAMIC_STATE_END}"
+    ).strip()
+
+
+def _compose_novel_context_from_parts(global_lore: str, dynamic_state: str) -> str:
+    return (
+        f"{str(global_lore or '').strip()}\n\n"
+        f"{DYNAMIC_STATE_START}\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        f"{str(dynamic_state or '').strip()}\n"
         f"{DYNAMIC_STATE_END}"
     ).strip()
 
@@ -5675,12 +5722,32 @@ def open_novel_context_session(
         global_lore = extract_global_lore(current_content)
         dynamic_state = extract_dynamic_state_from_text(current_content) or ""
 
+    character_aliases = (
+        _normalized_character_alias_map(global_lore)
+        if resume_snapshot
+        else _character_alias_map(global_lore)
+    )
+    target_language = (
+        prompt_options.get("target_language")
+        or prompt_options.get("target_lang")
+        or prompt_options.get("language")
+    )
+    if _is_vietnamese_target_language(target_language):
+        sanitized_dynamic_state = _sanitize_vietnamese_dynamic_state(
+            dynamic_state,
+            character_aliases,
+        )
+        if sanitized_dynamic_state != str(dynamic_state or "").strip():
+            dynamic_state = sanitized_dynamic_state
+            current_content = _compose_novel_context_from_parts(
+                global_lore,
+                dynamic_state,
+            )
+
     from src.utils.dialogue_attribution import canonicalize_dialogue_state
     resume_dialogue_state = canonicalize_dialogue_state(
         resume_dialogue_state,
-        _normalized_character_alias_map(global_lore)
-        if resume_snapshot
-        else _character_alias_map(global_lore),
+        character_aliases,
     )
 
     session = NovelContextSession(
