@@ -611,10 +611,15 @@ select.form-control {
     transform: scale(0.98);
 }
 
-.btn-primary:disabled {
+.btn:disabled,
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-warning:disabled {
     opacity: 0.5;
     cursor: not-allowed;
     transform: none;
+    pointer-events: none;
+    box-shadow: none;
 }
 
 .btn-secondary {

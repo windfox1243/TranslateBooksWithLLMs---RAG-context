@@ -1186,6 +1186,18 @@ async def _translate_all_chunks_with_checkpoint(
             reused_context_data_by_index[i] = dict(checkpoint_context_data)
         elif analyze_context and auto_update_context and context_session:
             context_session.remember_source(chunk['text'])
+
+        if novel_context_path and novel_context_path.is_file():
+            try:
+                disk_content = load_novel_context(novel_context_path.name, novel_context_path.parent)
+                disk_global_lore = extract_global_lore(disk_content)
+                if disk_global_lore:
+                    prompt_options['novel_context'] = build_novel_context(
+                        disk_global_lore,
+                        current_dynamic_state or "",
+                    )
+            except Exception:
+                pass
         return await translate_chunk_with_fallback(
             chunk_text=chunk['text'],
             local_tag_map=chunk['local_tag_map'],
