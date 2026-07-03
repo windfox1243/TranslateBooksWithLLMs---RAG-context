@@ -1,6 +1,14 @@
 # Changelog
 
+## 1.14.41 - 2026-07-03
+
+### Fixed
+
+- **Vietnamese register addressing:** Enforced coherent register rules for Vietnamese dynamic addressing deltas, rejecting mismatched pronoun pairs such as `tôi` paired with contemptuous `ngươi`.
+- **Release title naming:** Release workflows now set GitHub Release titles directly to tag names (`v1.14.41`), omitting the `TranslateBooksWithLLMs` prefix.
+
 ## 1.14.40 - 2026-07-03
+
 
 ### Fixed
 

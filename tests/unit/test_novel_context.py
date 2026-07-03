@@ -2559,6 +2559,47 @@ def test_vietnamese_dynamic_state_sanitizes_existing_hierarchy_mismatch():
     assert "- Dier Aigar ↔ Aster Evans: Ally." in merged
 
 
+def test_vietnamese_dynamic_state_rejects_register_mismatched_ngươi_delta():
+    proposed = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Sybil Forte → Marco: "Marco" | "self-reference: tôi; '
+        'second-person pronoun: ngươi; vocative/address form: Marco" | '
+        "teasing contempt, enemies\n"
+        '- Marco → Sybil Forte: "Sybil Forte" | "self-reference: ta; '
+        'second-person pronoun: ngươi; vocative/address form: Sybil" | '
+        "arrogant contempt, enemies\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Sybil Forte ↔ Marco: Enemies."
+    )
+
+    merged = merge_dynamic_state("", proposed, target_language="Vietnamese")
+
+    assert "Sybil Forte → Marco" not in merged
+    assert "Marco → Sybil Forte" in merged
+    assert "self-reference: ta; second-person pronoun: ngươi" in merged
+    assert "- Sybil Forte ↔ Marco: Enemies." in merged
+
+
+def test_vietnamese_dynamic_state_sanitizes_existing_register_mismatched_ngươi():
+    current = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Sybil Forte → Marco: "Marco" | "self-reference: tôi; '
+        'second-person pronoun: ngươi; vocative/address form: Marco" | '
+        "teasing contempt, enemies\n"
+        '- Marco → Sybil Forte: "Sybil Forte" | "self-reference: ta; '
+        'second-person pronoun: ngươi; vocative/address form: Sybil" | '
+        "arrogant contempt, enemies\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Sybil Forte ↔ Marco: Enemies."
+    )
+
+    merged = merge_dynamic_state(current, "", target_language="Vietnamese")
+
+    assert "Sybil Forte → Marco" not in merged
+    assert "Marco → Sybil Forte" in merged
+    assert "- Sybil Forte ↔ Marco: Enemies." in merged
+
+
 def test_non_vietnamese_dynamic_state_keeps_legacy_addressing_delta():
     proposed = (
         "## CURRENT ADDRESSING FORMS\n"
