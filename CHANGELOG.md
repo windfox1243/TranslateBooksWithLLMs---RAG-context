@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.14.43 - 2026-07-03
+
+### Fixed
+
+- **Vietnamese novel-context addressing:** Repaired incompatible kinship pairs such as `tớ/chị` into coherent family-register forms and blocked generic downgrades like `tôi/cô` when existing context proves a sibling, seniority, royal, or title-based relationship.
+- **Selective context injection:** Prompt context selection now includes addressing rows when the source form or dialogue metadata references the pair, so entries such as `Aster Evans → Ellen Evans: "Sis"` are not dropped from translation/refinement prompts.
+- **Skipped-chunk source memory:** Novel context sessions now retain source text from chunks skipped by the update interval, giving later context updates the evidence needed for relationship and addressing corrections without extra LLM calls.
+- **Dialogue continuity:** Scene-local dialogue state now survives narration-only chunks and context re-sync passes instead of being cleared when no new dialogue turns are detected.
+- **Novel context snapshot resume:** Decoded resume snapshots now return canonical dynamic state text, preventing legacy dynamic-only snapshots from leaking malformed sections into later context views.
+- **Sample prompt context loading:** Sample generation now normalizes novel context filenames before loading them, matching the safer web/API-managed context-file behavior used by translation routes.
+
+### Tests
+
+- Added regression coverage for Vietnamese addressing repair, dialogue-driven context selection, skipped source memory, narration-only dialogue carryover, and canonical snapshot decoding.
+
 ## 1.14.42 - 2026-07-03
 
 ### Fixed

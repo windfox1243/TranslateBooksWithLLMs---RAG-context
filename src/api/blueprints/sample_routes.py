@@ -957,8 +957,13 @@ def create_sample_blueprint(sample_state_manager, socketio=None, output_dir=".")
         if novel_context_file and novel_context_file.strip():
             try:
                 from src.config import NOVEL_CONTEXTS_DIR
-                from src.utils.novel_context import resolve_novel_context_path, load_novel_context
-                nc_path = resolve_novel_context_path(novel_context_file, NOVEL_CONTEXTS_DIR)
+                from src.utils.novel_context import (
+                    load_novel_context,
+                    normalize_novel_context_filename,
+                    resolve_novel_context_path,
+                )
+                safe_context_file = normalize_novel_context_filename(novel_context_file)
+                nc_path = resolve_novel_context_path(safe_context_file, NOVEL_CONTEXTS_DIR)
                 prompt_options['novel_context'] = load_novel_context(nc_path.name, nc_path.parent)
             except Exception as exc:
                 logger.warning("sample: failed to load novel context %r: %s", novel_context_file, exc)

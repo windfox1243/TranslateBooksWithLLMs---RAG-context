@@ -1184,6 +1184,8 @@ async def _translate_all_chunks_with_checkpoint(
                     )
         elif checkpoint_context_data:
             reused_context_data_by_index[i] = dict(checkpoint_context_data)
+        elif analyze_context and auto_update_context and context_session:
+            context_session.remember_source(chunk['text'])
         return await translate_chunk_with_fallback(
             chunk_text=chunk['text'],
             local_tag_map=chunk['local_tag_map'],
@@ -1507,11 +1509,12 @@ async def _translate_all_chunks(
                     log_callback("translation_interrupted", f"Translation interrupted at chunk {i}/{len(chunks)}")
                 break
 
-        if (
+        should_analyze_context = (
             auto_update_context
             and context_session
             and should_update_novel_context_for_index(i, prompt_options)
-        ):
+        )
+        if should_analyze_context:
             if log_callback:
                 log_callback(
                     "novel_context_updating",
@@ -1546,6 +1549,8 @@ async def _translate_all_chunks(
                         "novel_context_update_failed",
                         f"Failed to prepare novel context: {str(e)}",
                     )
+        elif auto_update_context and context_session:
+            context_session.remember_source(chunk['text'])
 
         translated = await translate_chunk_with_fallback(
             chunk_text=chunk['text'],

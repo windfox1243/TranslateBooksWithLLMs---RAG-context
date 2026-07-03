@@ -487,12 +487,13 @@ async def translate_paragraphs_plain(
         if not main_content.strip():
             return ('empty', main_content)
 
-        if (
+        should_analyze_context = (
             analyze_context
             and auto_update_context
             and context_session
             and should_update_novel_context_for_index(i, prompt_options)
-        ):
+        )
+        if should_analyze_context:
             reused_context_data_by_index.pop(i, None)
             if log_callback:
                 log_callback(
@@ -536,6 +537,8 @@ async def translate_paragraphs_plain(
             reused_context_data_by_index[i] = dict(
                 checkpoint_context_data_by_index[i]
             )
+        elif analyze_context and auto_update_context and context_session:
+            context_session.remember_source(main_content)
 
         translated = await generate_translation_request(
             main_content=main_content,
