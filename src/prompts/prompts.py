@@ -142,8 +142,16 @@ def _build_optional_prompt_sections(prompt_options: dict) -> str:
 def _build_target_language_style_section(target_language: str) -> str:
     """Return target-language-specific style guardrails."""
     target = (target_language or "").strip().casefold()
-    if target not in {"vietnamese", "tiếng việt", "tieng viet", "vi"}:
-        return ""
+    if target in {"vietnamese", "tiếng việt", "tieng viet", "vi"}:
+        return _build_vietnamese_style_section()
+    if target in {"japanese", "日本語", "nihongo", "ja"}:
+        return _build_japanese_style_section()
+    if target in {"korean", "한국어", "hangul", "ko"}:
+        return _build_korean_style_section()
+    return ""
+
+
+def _build_vietnamese_style_section() -> str:
     return """
 # VIETNAMESE STYLE GUARDRAILS
 
@@ -160,6 +168,27 @@ def _build_target_language_style_section(target_language: str) -> str:
 - Do not leave an English skill, technique, or named item untranslated merely because it is capitalized. Preserve the English form only when it is a brand, code label, UI/system key, or a required glossary entry says to keep it.
 - Keep character names exact; the Sino-Vietnamese rendering preference applies to named powers, weapons, items, and terminology, not people.
 - Preserve established addressing forms from the glossary, dialogue context, and previous paragraph."""
+
+
+def _build_japanese_style_section() -> str:
+    return """
+# JAPANESE STYLE GUARDRAILS
+
+- Treat `## CURRENT ADDRESSING FORMS` as authoritative for direct address, speech levels, and honorific suffixes.
+- Preserve character honorific suffixes (e.g. "-sama" / 様, "-senpai" / 先輩, "-san" / さん, "-kun" / 君, "-chan" / ちゃん, "-dono" / 殿) when established by character relationship context, source text, or stored addressing forms.
+- Do not drop or replace honorific suffixes with Western neutral pronouns unless context explicitly indicates a change in intimacy or register.
+- Maintain consistent first-person (watashi, boku, ore, etc.) and second-person (anata, kimi, omae, etc.) personal pronouns matching each character's established persona across adjacent paragraphs.
+- Apply appropriate politeness and speech levels (Desu/Masu vs Tameguchi / formal vs casual register) consistently within each scene."""
+
+
+def _build_korean_style_section() -> str:
+    return """
+# KOREAN STYLE GUARDRAILS
+
+- Treat `## CURRENT ADDRESSING FORMS` as authoritative for direct address, speech levels, and honorific titles.
+- Preserve character honorific titles and suffixes (e.g. "-ssi" / -씨, "-nim" / -님, "sunbae" / 선배, "oppa" / 오빠, "unnie" / 언니, "hyung" / 형, "noona" / 누나) when established by character relationship context or stored addressing forms.
+- Maintain consistent honorific registers (Jondaetmal / 존댓말 vs Banmal / 반말) matching each speaker's seniority, rank, and intimacy level across adjacent paragraphs.
+- Do not drop honorific suffixes or switch speech levels abruptly within the same scene unless the relationship or context explicitly changes."""
 
 
 def _build_relationship_addressing_section() -> str:

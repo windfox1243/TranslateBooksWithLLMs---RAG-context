@@ -559,6 +559,54 @@ def test_prompts_guard_relationship_based_addressing_for_all_languages():
         assert "VIETNAMESE STYLE GUARDRAILS" not in prompt.system
 
 
+def test_japanese_prompts_include_japanese_style_guardrails():
+    translation_prompt = generate_translation_prompt(
+        main_content='Ellen looked at Frondier. "Frondier-senpai, are you with Aster?"',
+        context_before="",
+        context_after="",
+        previous_translation_context="",
+        source_language="English",
+        target_language="Japanese",
+        has_placeholders=False,
+    )
+    refinement_prompt = generate_refinement_prompt(
+        draft_translation="Ellen looked at Frondier.",
+        target_language="Japanese",
+        has_placeholders=False,
+    )
+
+    for prompt in (translation_prompt, refinement_prompt):
+        assert "JAPANESE STYLE GUARDRAILS" in prompt.system
+        assert "-sama" in prompt.system or "様" in prompt.system
+        assert "-senpai" in prompt.system or "先輩" in prompt.system
+        assert "VIETNAMESE STYLE GUARDRAILS" not in prompt.system
+
+
+def test_korean_prompts_include_korean_style_guardrails():
+    translation_prompt = generate_translation_prompt(
+        main_content='Ellen looked at Frondier. "Frondier-ssi, are you with Aster?"',
+        context_before="",
+        context_after="",
+        previous_translation_context="",
+        source_language="English",
+        target_language="Korean",
+        has_placeholders=False,
+    )
+    refinement_prompt = generate_refinement_prompt(
+        draft_translation="Ellen looked at Frondier.",
+        target_language="Korean",
+        has_placeholders=False,
+    )
+
+    for prompt in (translation_prompt, refinement_prompt):
+        assert "KOREAN STYLE GUARDRAILS" in prompt.system
+        assert "-ssi" in prompt.system or "-씨" in prompt.system
+        assert "Jondaetmal" in prompt.system or "존댓말" in prompt.system
+        assert "VIETNAMESE STYLE GUARDRAILS" not in prompt.system
+
+
+
+
 def test_vietnamese_prompts_guard_first_person_pronoun_consistency():
     novel_context = (
         "## CHARACTERS & GENDERS\n"

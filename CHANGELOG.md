@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.14.46 - 2026-07-03
+
+### Added
+
+- **Japanese & Korean target language style guardrails:** Added dedicated style guardrails to prompt generation for Japanese (`JAPANESE STYLE GUARDRAILS`) and Korean (`KOREAN STYLE GUARDRAILS`) target languages, enforcing preservation of honorific suffixes/titles (`-sama`, `-senpai`, `-san`, `-kun`, `-chan`, `-dono`, `-ssi`, `-nim`, `sunbae`, `oppa`, `unnie`, `hyung`, `noona`) and speech/politeness registers (`Desu/Masu` vs `Tameguchi`, `Jondaetmal` vs `Banmal`).
+
 ## 1.14.45 - 2026-07-03
 
 ### Fixed
