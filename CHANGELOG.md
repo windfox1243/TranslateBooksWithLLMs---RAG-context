@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.42 - 2026-07-03
+
+### Fixed
+
+- **Novel context addressing auto-formatting:** Added auto-sanitization for unquoted/2-part dynamic addressing entries into canonical 3-part format (`- Speaker → Addressee: "Alias" | "details" | reason`).
+- **Addressing field completeness validation:** Strengthened `_has_complete_vietnamese_addressing_details` to verify that all three addressing fields (`self-reference`, `second-person pronoun`, `vocative/address form`) are non-empty.
+
 ## 1.14.41 - 2026-07-03
 
 ### Fixed
