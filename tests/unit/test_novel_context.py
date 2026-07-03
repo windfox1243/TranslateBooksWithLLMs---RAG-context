@@ -4327,6 +4327,49 @@ async def test_consolidation_prunes_first_pass_non_character_entries():
 
 
 @pytest.mark.asyncio
+async def test_consolidation_preserves_identity_link_for_merged_nonhuman_label():
+    global_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Gelatinous Monster: Unspecified, a transparent, liquid-like creature from another world that can turn invisible.\n"
+        "- Metamorph: Unspecified, a created experimental subject and calamity from another world that can replicate abilities and forms.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    dynamic_state = (
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Frondier De Roach ↔ Gelatinous Monster: Frondier trains the creature to awaken its memories.\n"
+        "- Frondier De Roach ↔ Metamorph: Frondier controls the experimental otherworldly entity.\n"
+        "- Eric ↔ Kim Ji-an: unrelated human relationship that should not be sent as identity evidence.\n"
+    )
+    llm_response = (
+        "[CHARACTERS]\n"
+        "- Metamorph: Unspecified, transparent liquid-like created experimental subject and calamity from another world that can turn invisible, replicate abilities and forms, and is controlled by Frondier.\n"
+        "[IDENTITY_LINKS]\n"
+        "- Gelatinous Monster: Metamorph\n"
+    )
+    mock_response = MagicMock()
+    mock_response.content = llm_response
+    llm_client = MagicMock()
+    llm_client.generate = AsyncMock(return_value=mock_response)
+
+    result_lore, logs = await consolidate_context_lore(
+        llm_client=llm_client,
+        model_name="test-model",
+        global_lore=global_lore,
+        dynamic_state=dynamic_state,
+    )
+
+    user_prompt = llm_client.generate.call_args.kwargs["prompt"]
+    assert "Frondier De Roach ↔ Gelatinous Monster" in user_prompt
+    assert "Eric ↔ Kim Ji-an" not in user_prompt
+    assert logs
+    assert "- Gelatinous Monster: Unspecified" not in result_lore
+    assert "- Metamorph: Unspecified, transparent liquid-like created experimental subject" in result_lore
+    assert "- Gelatinous Monster: Metamorph" in result_lore
+
+
+@pytest.mark.asyncio
 async def test_consolidation_skips_on_empty_llm_response():
     """consolidate_context_lore should return original lore unchanged on empty LLM response."""
     global_lore = (
