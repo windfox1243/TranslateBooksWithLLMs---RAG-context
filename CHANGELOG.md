@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.14.40 - 2026-07-03
+
+### Fixed
+
+- **Context identity consolidation:** Character consolidation can now preserve
+  source-proven identity links when it merges stable labels, forms, disguises,
+  codenames, or masked identities into a retained canonical character.
+- **Focused identity evidence:** Consolidation receives only identity-relevant
+  dynamic relationship lines instead of the full relationship state, reducing
+  prompt noise while still catching far-apart alias evidence.
+- **Context snapshot identity repair:** Resume/refine snapshots now keep merged
+  identity aliases such as transformed forms and source-side labels from
+  reappearing as separate canonical characters.
+
 ## 1.14.39 - 2026-07-02
 
 ### Fixed
