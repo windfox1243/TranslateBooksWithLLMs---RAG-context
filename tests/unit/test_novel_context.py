@@ -6,9 +6,12 @@ import shutil
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 from src.utils.novel_context import (
+    ADDRESSING_SECTION,
     build_novel_context,
     compress_dynamic_state,
     decode_context_snapshot,
+    DYNAMIC_STATE_END,
+    DYNAMIC_STATE_START,
     infer_dynamic_address_identity_links,
     is_safe_filename,
     list_novel_contexts,
@@ -3787,6 +3790,30 @@ def test_snapshot_decode_returns_canonical_lore_for_resume():
 
     assert global_lore.count("- Serena Augusta:") == 1
     assert "- Emperor:" not in global_lore
+
+
+def test_full_snapshot_decode_can_skip_recanonicalization_for_runtime_resume():
+    raw = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Emperor: Female, ruler of the Empire.\n"
+        "- Serena Augusta: Female, Emperor of the Empire.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n\n"
+        f"{DYNAMIC_STATE_START}\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        f"{ADDRESSING_SECTION}\n"
+        f"{DYNAMIC_STATE_END}"
+    )
+
+    decoded, global_lore, dynamic_state = decode_context_snapshot(
+        compress_dynamic_state(raw),
+        "",
+        canonicalize_full_snapshot=False,
+    )
+
+    assert decoded == raw
+    assert "- Emperor:" in global_lore
+    assert ADDRESSING_SECTION in dynamic_state
 
 
 def test_make_novel_context_filename_is_safe_for_every_input_name():

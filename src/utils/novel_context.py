@@ -2352,6 +2352,11 @@ def _infer_gender_reference_to_character(details: str, name: str) -> str:
     text = _clean_inline_text(details)
     if not text:
         return ""
+    canonical_name = _canonical_display_name(name)
+    if not canonical_name:
+        return ""
+    if canonical_name.casefold() not in text.casefold():
+        return ""
     name_pattern = _name_reference_pattern(name)
     object_pattern = "|".join(
         re.escape(item).replace(r"\ ", r"\s+")
@@ -3690,6 +3695,39 @@ def character_alias_map(global_lore: str) -> Dict[str, str]:
 _character_alias_map = character_alias_map
 
 
+def _normalized_character_alias_map(global_lore: str) -> Dict[str, str]:
+    """Build aliases from already-normalized lore without re-deduplicating it."""
+    bounds = _find_lore_section(global_lore, CHARACTERS_SECTION)
+    if not bounds:
+        return {}
+
+    alias_bounds = _find_lore_section(global_lore, ALIASES_SECTION)
+    aliases = _alias_entries_to_map(
+        _parse_alias_entries(
+            global_lore[alias_bounds[1]:alias_bounds[2]]
+        )
+        if alias_bounds
+        else []
+    )
+
+    _, body_start, body_end = bounds
+    for name, _ in _parse_bullet_entries(global_lore[body_start:body_end]):
+        canonical = _canonical_display_name(name)
+        if (
+            _is_invalid_context_key(canonical)
+            or _is_quarantined_character_entry(canonical)
+        ):
+            continue
+        for alias_key in _character_alias_keys(canonical):
+            aliases.setdefault(alias_key, canonical)
+
+    return {
+        alias: target
+        for alias, target in aliases.items()
+        if not _is_quarantined_character_entry(target)
+    }
+
+
 def _normalize_relationship_notation(text: str) -> str:
     """Convert model-produced LaTeX/ASCII arrows to portable Unicode text."""
     replacements = (
@@ -4479,7 +4517,7 @@ def build_novel_context(
     )
     normalized_dynamic = normalize_dynamic_state(
         dynamic_state,
-        _character_alias_map(normalized_global),
+        _normalized_character_alias_map(normalized_global),
         discarded_character_aliases,
     )
     return (
@@ -5011,6 +5049,7 @@ def normalize_novel_context_filename(filename: str) -> str:
 def decode_context_snapshot(
     compressed_snapshot: Optional[str],
     fallback_context: str = "",
+    canonicalize_full_snapshot: bool = True,
 ) -> Tuple[str, str, str]:
     """Decode full snapshots and legacy dynamic-only snapshots.
 
@@ -5018,14 +5057,16 @@ def decode_context_snapshot(
     contain the full canonical context, while old snapshots are combined with
     the supplied fallback global lore.
     """
-    fallback_global = extract_global_lore(fallback_context)
-    fallback_dynamic = extract_dynamic_state_from_text(fallback_context) or ""
     decoded = decompress_dynamic_state(compressed_snapshot) if compressed_snapshot else ""
 
     if DYNAMIC_STATE_START in decoded:
         global_lore = extract_global_lore(decoded)
         dynamic_state = extract_dynamic_state_from_text(decoded) or ""
+        if not canonicalize_full_snapshot:
+            return decoded.strip(), global_lore, dynamic_state
     else:
+        fallback_global = extract_global_lore(fallback_context)
+        fallback_dynamic = extract_dynamic_state_from_text(fallback_context) or ""
         global_lore = fallback_global
         dynamic_state = decoded or fallback_dynamic
 
@@ -5555,20 +5596,29 @@ def open_novel_context_session(
         return None
 
     path = resolve_novel_context_path(novel_context_file, novel_contexts_dir)
-    current_content = load_novel_context(path.name, path.parent)
     if resume_snapshot:
         current_content, global_lore, dynamic_state = decode_context_snapshot(
             resume_snapshot,
-            current_content,
+            "",
+            canonicalize_full_snapshot=False,
         )
+        if not global_lore.strip():
+            current_content = load_novel_context(path.name, path.parent)
+            current_content, global_lore, dynamic_state = decode_context_snapshot(
+                resume_snapshot,
+                current_content,
+            )
     else:
+        current_content = load_novel_context(path.name, path.parent)
         global_lore = extract_global_lore(current_content)
         dynamic_state = extract_dynamic_state_from_text(current_content) or ""
 
     from src.utils.dialogue_attribution import canonicalize_dialogue_state
     resume_dialogue_state = canonicalize_dialogue_state(
         resume_dialogue_state,
-        _character_alias_map(global_lore),
+        _normalized_character_alias_map(global_lore)
+        if resume_snapshot
+        else _character_alias_map(global_lore),
     )
 
     session = NovelContextSession(
@@ -5584,7 +5634,11 @@ def open_novel_context_session(
             else None
         ),
     )
-    content = session.sync_prompt()
+    if resume_snapshot:
+        content = current_content
+        session.prompt_options["novel_context"] = content
+    else:
+        content = session.sync_prompt()
     if log_callback:
         log_callback(
             "novel_context_state",
