@@ -242,6 +242,33 @@ def test_prompt_context_selector_uses_short_names_without_leaking_one_sided_rows
     assert "Enfer De Roach ↔ Frondier De Roach" not in selected
 
 
+def test_prompt_context_selector_selects_addressing_by_source_form():
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Aster Evans: Male, Ellen Evans's younger brother.\n"
+            "- Ellen Evans: Female, Aster Evans's older sister."
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Aster Evans → Ellen Evans: source form "Sis" | '
+            'self-reference "em"; second-person pronoun "chị"; '
+            'vocative/address form "chị" | siblings\n\n'
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Aster Evans ↔ Ellen Evans: siblings."
+        ),
+    )
+
+    selected = render_novel_context_for_prompt(
+        context,
+        reference_text='"Sis, are you there?"',
+    )
+
+    assert "Aster Evans → Ellen Evans" in selected
+    assert 'source form "Sis"' in selected
+
+
 def test_prompt_context_selector_filters_small_unrelated_context_by_default():
     context = build_novel_context(
         (
@@ -343,6 +370,56 @@ def test_translation_prompt_uses_selective_context_injection_by_default():
     assert "Bob: Male" in prompt_pair.user
     assert "Alice: Female" in prompt_pair.user
     assert "Alice: Female, mage from a distant kingdom" not in prompt_pair.user
+
+
+def test_translation_prompt_selects_addressing_from_dialogue_metadata():
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Aster Evans: Male, Ellen Evans's younger brother.\n"
+            "- Ellen Evans: Female, Aster Evans's older sister."
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Aster Evans → Ellen Evans: source form "Sis" | '
+            'self-reference "em"; second-person pronoun "chị"; '
+            'vocative/address form "chị" | siblings\n\n'
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Aster Evans ↔ Ellen Evans: siblings."
+        ),
+    )
+
+    prompt_pair = generate_translation_prompt(
+        main_content='"Are you there?"',
+        context_before="",
+        context_after="",
+        previous_translation_context="",
+        source_language="English",
+        target_language="Vietnamese",
+        prompt_options={
+            "novel_context": context,
+            "dialogue_attribution": {
+                "version": 1,
+                "turns": [
+                    {
+                        "id": "q0",
+                        "cue": '"Are you there?"',
+                        "speaker": "Aster Evans",
+                        "addressee": "Ellen Evans",
+                        "confidence": 0.95,
+                    }
+                ],
+                "state_after": {
+                    "speaker": "Aster Evans",
+                    "addressee": "Ellen Evans",
+                },
+            },
+        },
+    )
+
+    assert "Aster Evans → Ellen Evans" in prompt_pair.user
+    assert 'source form "Sis"' in prompt_pair.user
 
 
 def test_translation_prompt_can_disable_selective_context_injection():
@@ -2114,6 +2191,110 @@ async def test_context_session_passes_bounded_previous_source_memory(tmp_path):
     assert "When I woke up again, I had become a girl." in second_prompt
 
 
+@pytest.mark.asyncio
+async def test_context_session_uses_remembered_skipped_source_memory(tmp_path):
+    from src.utils.novel_context import NovelContextSession
+
+    response = MagicMock()
+    response.content = (
+        "[NEW_CHARACTERS]\n\n"
+        "[IDENTITY_LINKS]\n\n"
+        "[NEW_GLOSSARY]\n\n"
+        "[DYNAMIC_STATE]\n"
+        "## CURRENT ADDRESSING FORMS\n\n"
+        "## RELATIONSHIP EVOLUTION\n\n"
+        "[DIALOGUE_ATTRIBUTION]\n"
+        '{"turns":[],"state_after":{}}'
+    )
+    client = MagicMock()
+    client.generate = AsyncMock(return_value=response)
+    session = NovelContextSession(
+        path=tmp_path / "novel.txt",
+        prompt_options={},
+        global_lore=(
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Ellen Evans: Female, Aster Evans's older sister.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        dynamic_state="",
+    )
+
+    session.remember_source('Aster called out, "Sis!"')
+    await session.analyze_source(
+        llm_client=client,
+        model_name="model",
+        source_chunk="Ellen turned back toward him.",
+        source_language="English",
+        target_language="Vietnamese",
+        chunk_index=2,
+        total_chunks=2,
+    )
+
+    prompts = [
+        call.kwargs["prompt"]
+        for call in client.generate.call_args_list
+    ]
+    prompt = next(
+        prompt for prompt in prompts
+        if "### RECENT SOURCE MEMORY" in prompt
+    )
+    assert "### RECENT SOURCE MEMORY" in prompt
+    assert 'Aster called out, "Sis!"' in prompt
+    assert "Ellen turned back toward him." in prompt
+
+
+@pytest.mark.asyncio
+async def test_context_session_preserves_dialogue_state_through_narration(tmp_path):
+    from src.utils.novel_context import NovelContextSession
+
+    response = MagicMock()
+    response.content = (
+        "[NEW_CHARACTERS]\n\n"
+        "[IDENTITY_LINKS]\n\n"
+        "[NEW_GLOSSARY]\n\n"
+        "[DYNAMIC_STATE]\n"
+        "## CURRENT ADDRESSING FORMS\n\n"
+        "## RELATIONSHIP EVOLUTION\n\n"
+        "[DIALOGUE_ATTRIBUTION]\n"
+        '{"turns":[],"state_after":{}}'
+    )
+    client = MagicMock()
+    client.generate = AsyncMock(return_value=response)
+    session = NovelContextSession(
+        path=tmp_path / "novel.txt",
+        prompt_options={},
+        global_lore=(
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Aster Evans: Male, Ellen Evans's younger brother.\n"
+            "- Ellen Evans: Female, Aster Evans's older sister.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        dynamic_state="",
+        dialogue_state={
+            "speaker": "Aster Evans",
+            "addressee": "Ellen Evans",
+        },
+    )
+
+    await session.analyze_source(
+        llm_client=client,
+        model_name="model",
+        source_chunk="The hallway fell silent for a moment.",
+        source_language="English",
+        target_language="Vietnamese",
+        chunk_index=2,
+        total_chunks=2,
+    )
+
+    assert session.dialogue_state == {
+        "speaker": "Aster Evans",
+        "addressee": "Ellen Evans",
+    }
+    assert session.dialogue_attribution["state_after"] == session.dialogue_state
+
+
 def test_source_identity_links_direct_addressed_title_to_named_responder():
     from src.utils.novel_context import infer_source_identity_links
 
@@ -3825,6 +4006,103 @@ def test_json_dynamic_addressing_preserves_social_basis_and_scope():
     assert "casual nickname chosen while flustered" in dynamic
 
 
+def test_vietnamese_addressing_repairs_family_pair_and_blocks_generic_downgrade():
+    from src.utils.novel_context import merge_dynamic_state
+
+    current = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Aster Evans → Ellen Evans: "Sis" | "self-reference: tớ; '
+        'second-person pronoun: chị; vocative/address form: chị" | '
+        "intimate, biological siblings; Ellen is Aster's older sister.\n\n"
+        "## RELATIONSHIP EVOLUTION"
+    )
+    proposed = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Aster Evans → Ellen Evans: "Ellen" | "self-reference: tôi; '
+        'second-person pronoun: cô; vocative/address form: cô" | '
+        "formal neutral address.\n\n"
+        "## RELATIONSHIP EVOLUTION"
+    )
+
+    merged = merge_dynamic_state(current, proposed, target_language="Vietnamese")
+
+    assert "self-reference: em" in merged
+    assert "second-person pronoun: chị" in merged
+    assert "biological siblings" in merged
+    assert "self-reference: tớ" not in merged
+    assert "second-person pronoun: cô" not in merged
+
+
+def test_vietnamese_addressing_repairs_new_older_sibling_delta():
+    from src.utils.novel_context import merge_dynamic_state
+
+    proposed = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Aster Evans → Ellen Evans: "Sis" | "self-reference: tớ; '
+        'second-person pronoun: chị; vocative/address form: chị" | '
+        "intimate, biological siblings; Ellen is Aster's older sister.\n\n"
+        "## RELATIONSHIP EVOLUTION"
+    )
+
+    merged = merge_dynamic_state("", proposed, target_language="Vietnamese")
+
+    assert "self-reference: em" in merged
+    assert "second-person pronoun: chị" in merged
+    assert "self-reference: tớ" not in merged
+
+
+def test_vietnamese_addressing_allows_source_proven_family_correction():
+    from src.utils.novel_context import merge_dynamic_state
+
+    current = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Aster Evans → Ellen Evans: "Sis" | "self-reference: tớ; '
+        'second-person pronoun: chị; vocative/address form: chị" | '
+        "intimate, biological siblings; Ellen is Aster's older sister.\n\n"
+        "## RELATIONSHIP EVOLUTION"
+    )
+    proposed = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Aster Evans → Ellen Evans: "Sis" | "self-reference: em; '
+        'second-person pronoun: chị; vocative/address form: chị" | '
+        "source-proven correction; intimate biological siblings; Ellen is "
+        "Aster's older sister.\n\n"
+        "## RELATIONSHIP EVOLUTION"
+    )
+
+    merged = merge_dynamic_state(current, proposed, target_language="Vietnamese")
+
+    assert "self-reference: em" in merged
+    assert "source-proven correction" in merged
+    assert "self-reference: tớ" not in merged
+
+
+def test_vietnamese_addressing_does_not_downgrade_royal_title_to_generic_co():
+    from src.utils.novel_context import merge_dynamic_state
+
+    current = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Frondier De Roach → Philly: "Your Majesty" | '
+        '"self-reference: tôi; second-person pronoun: ngài; '
+        'vocative/address form: Hoàng hậu Philly" | formal deference; '
+        "Philly is the queen/empress.\n\n"
+        "## RELATIONSHIP EVOLUTION"
+    )
+    proposed = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Frondier De Roach → Philly: "Philly" | '
+        '"self-reference: tôi; second-person pronoun: cô; '
+        'vocative/address form: cô" | formal neutral address.\n\n'
+        "## RELATIONSHIP EVOLUTION"
+    )
+
+    merged = merge_dynamic_state(current, proposed, target_language="Vietnamese")
+
+    assert "second-person pronoun: ngài" in merged
+    assert "Hoàng hậu Philly" in merged
+    assert "second-person pronoun: cô" not in merged
+
+
 @pytest.mark.asyncio
 async def test_update_novel_context_chunk_deduplicates_headers():
     from unittest.mock import MagicMock, AsyncMock
@@ -3900,7 +4178,8 @@ def test_canonical_snapshot_decodes_full_and_legacy_formats():
         fallback,
     )
     assert global_lore == "GLOBAL"
-    assert dynamic_state == "LEGACY DYNAMIC"
+    assert "## CURRENT ADDRESSING FORMS" in dynamic_state
+    assert "## RELATIONSHIP EVOLUTION\nLEGACY DYNAMIC" in dynamic_state
     assert decoded_legacy == build_novel_context("GLOBAL", "LEGACY DYNAMIC")
 
 

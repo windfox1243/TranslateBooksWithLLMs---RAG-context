@@ -29,6 +29,8 @@ tests/.placeholder_tests/
 /[Dd]ebug/
 /.tmp/
 /.test-tmp-*/
+/.pytest_tmp_*/
+/.tools/
 /scratch/
 /TranslateBook_Data/
 /build/TranslateBook/

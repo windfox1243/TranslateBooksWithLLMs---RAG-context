@@ -4132,6 +4132,97 @@ def _vietnamese_addressing_field(details: str, field_name: str) -> str:
     return _clean_inline_text(match.group("value")).strip(" \"'") if match else ""
 
 
+def _replace_vietnamese_addressing_field(
+    details: str,
+    field_name: str,
+    value: str,
+) -> str:
+    return re.sub(
+        rf"(?P<prefix>{re.escape(field_name)}\s*:\s*)[^;|\"\n]+",
+        lambda match: f"{match.group('prefix')}{value}",
+        str(details or ""),
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
+
+def _vietnamese_rule_has_required_cue(
+    details: str,
+    rule: Dict[str, Any],
+) -> bool:
+    clean = _clean_inline_text(details).casefold()
+    second_person_terms = set(rule.get("second_person") or ())
+    return any(cue in clean for cue in rule.get("cues", ())) or (
+        "biological sibling" in clean
+        and bool(second_person_terms & {
+            _vietnamese_addressing_field(
+                details,
+                "second-person pronoun",
+            ).casefold(),
+            _vietnamese_addressing_field(
+                details,
+                "vocative/address form",
+            ).casefold(),
+        })
+    )
+
+
+def _repair_vietnamese_addressing_details(details: str) -> str:
+    """Normalize obvious Vietnamese kinship pairs before merge/sanitize."""
+    if not _has_complete_vietnamese_addressing_details(details):
+        return details
+    self_reference = _vietnamese_addressing_field(
+        details,
+        "self-reference",
+    ).casefold()
+    second_person = _vietnamese_addressing_field(
+        details,
+        "second-person pronoun",
+    ).casefold()
+    vocative = _vietnamese_addressing_field(
+        details,
+        "vocative/address form",
+    ).casefold()
+    for rule in _VIETNAMESE_INCOMPATIBLE_ADDRESSING_REPAIRS:
+        second_person_terms = set(rule.get("second_person") or ())
+        if not (
+            self_reference in set(rule.get("self_references") or ())
+            and (second_person in second_person_terms or vocative in second_person_terms)
+            and _vietnamese_rule_has_required_cue(details, rule)
+        ):
+            continue
+        return _replace_vietnamese_addressing_field(
+            details,
+            "self-reference",
+            str(rule["replacement_self_reference"]),
+        )
+    return details
+
+
+def _repair_vietnamese_addressing_line(
+    line: str,
+    alias_map: Dict[str, str],
+) -> str:
+    parsed = _parse_dynamic_relation(line, alias_map)
+    if not parsed:
+        return line
+    _, rendered, details = parsed
+    repaired_details = _repair_vietnamese_addressing_details(details)
+    if repaired_details == details:
+        return rendered
+    return f"{rendered[:-len(details)]}{repaired_details}" if details else rendered
+
+
+def _repair_vietnamese_addressing_block(
+    addressing: str,
+    alias_map: Dict[str, str],
+) -> str:
+    return "\n".join(
+        _repair_vietnamese_addressing_line(raw_line, alias_map)
+        for raw_line in addressing.splitlines()
+    ).strip()
+
+
 def _has_vietnamese_hierarchy_addressing_mismatch(details: str) -> bool:
     clean = _clean_inline_text(details).casefold()
     if not clean:
@@ -4175,7 +4266,7 @@ def _has_vietnamese_hierarchy_addressing_mismatch(details: str) -> bool:
         for cue in ("senior", "tiền bối", "anh ", "chị ", "thầy", "cô")
     )
     return (has_hierarchy_cue or vocative_marks_seniority) and (
-        casual_self or casual_second
+        casual_second or (casual_self and not vocative_marks_seniority)
     )
 
 
@@ -4213,23 +4304,179 @@ def _has_vietnamese_addressing_mismatch(details: str) -> bool:
     )
 
 
+_VIETNAMESE_GENERIC_NEUTRAL_SELF_REFERENCES = {"tôi"}
+_VIETNAMESE_GENERIC_NEUTRAL_SECOND_PERSON = {
+    "anh",
+    "bà",
+    "bạn",
+    "chị",
+    "cậu",
+    "cô",
+    "ông",
+}
+_VIETNAMESE_KINSHIP_ADDRESSING_CUES = (
+    "anh em",
+    "biological sibling",
+    "brother",
+    "chị em",
+    "em ruột",
+    "family",
+    "older brother",
+    "older sister",
+    "sibling",
+    "sister",
+    "younger brother",
+    "younger sister",
+)
+_VIETNAMESE_STATUS_ADDRESSING_CUES = (
+    "bệ hạ",
+    "công chúa",
+    "deference",
+    "điện hạ",
+    "emperor",
+    "empress",
+    "her majesty",
+    "highness",
+    "his majesty",
+    "hoàng đế",
+    "hoàng hậu",
+    "majesty",
+    "ngài",
+    "nữ hoàng",
+    "queen",
+    "royal",
+    "title",
+    "your majesty",
+)
+_VIETNAMESE_INCOMPATIBLE_ADDRESSING_REPAIRS = (
+    {
+        "self_references": {"mình", "tôi", "tớ"},
+        "second_person": {"chị"},
+        "replacement_self_reference": "em",
+        "cues": (
+            "big sister",
+            "chị em",
+            "chị ruột",
+            "elder sister",
+            "older sister",
+        ),
+    },
+    {
+        "self_references": {"mình", "tôi", "tớ"},
+        "second_person": {"anh"},
+        "replacement_self_reference": "em",
+        "cues": (
+            "anh em",
+            "anh ruột",
+            "big brother",
+            "elder brother",
+            "older brother",
+        ),
+    },
+)
+
+
+def _vietnamese_addressing_anchor_score(details: str) -> int:
+    clean = _clean_inline_text(details).casefold()
+    if not clean:
+        return 0
+
+    score = 0
+    if any(cue in clean for cue in _VIETNAMESE_KINSHIP_ADDRESSING_CUES):
+        score += 3
+    if any(cue in clean for cue in _VIETNAMESE_STATUS_ADDRESSING_CUES):
+        score += 3
+    hierarchy_cues = (
+        "age",
+        "hierarchy",
+        "older",
+        "rank",
+        "senior",
+        "seniority",
+        "status",
+        "tiền bối",
+        "trên tuổi",
+    )
+    if any(cue in clean for cue in hierarchy_cues):
+        score += 2
+    return score
+
+
+def _is_generic_vietnamese_neutral_pair(details: str) -> bool:
+    self_reference = _vietnamese_addressing_field(
+        details,
+        "self-reference",
+    ).casefold()
+    second_person = _vietnamese_addressing_field(
+        details,
+        "second-person pronoun",
+    ).casefold()
+    vocative = _vietnamese_addressing_field(
+        details,
+        "vocative/address form",
+    ).casefold()
+    return (
+        self_reference in _VIETNAMESE_GENERIC_NEUTRAL_SELF_REFERENCES
+        and second_person in _VIETNAMESE_GENERIC_NEUTRAL_SECOND_PERSON
+        and (
+            not vocative
+            or vocative == second_person
+            or vocative in _VIETNAMESE_GENERIC_NEUTRAL_SECOND_PERSON
+        )
+    )
+
+
+def _is_vietnamese_social_downgrade(
+    current_details: str,
+    proposed_details: str,
+) -> bool:
+    if not (
+        _has_complete_vietnamese_addressing_details(current_details)
+        and _has_complete_vietnamese_addressing_details(proposed_details)
+    ):
+        return False
+    current_anchor_score = _vietnamese_addressing_anchor_score(current_details)
+    if current_anchor_score <= 0:
+        return False
+    proposed_anchor_score = _vietnamese_addressing_anchor_score(proposed_details)
+    return (
+        _is_generic_vietnamese_neutral_pair(proposed_details)
+        and proposed_anchor_score < current_anchor_score
+    )
+
+
 def _filter_vietnamese_addressing_delta(
     proposed_addressing: str,
     alias_map: Dict[str, str],
+    current_addressing: str = "",
 ) -> str:
     """Drop Vietnamese addressing rows with incomplete or self-conflicting data."""
+    current_details_by_key: Dict[Tuple[str, str, str], str] = {}
+    for raw_line in current_addressing.splitlines():
+        parsed = _parse_dynamic_relation(raw_line, alias_map)
+        if parsed:
+            relation_key, _, details = parsed
+            current_details_by_key[relation_key] = details
+
     output: List[str] = []
     for raw_line in proposed_addressing.splitlines():
+        raw_line = _repair_vietnamese_addressing_line(raw_line, alias_map)
         parsed = _parse_dynamic_relation(raw_line, alias_map)
         if not parsed:
             output.append(raw_line)
             continue
-        _, _, details = parsed
+        relation_key, _, details = parsed
         is_delete = details.strip().rstrip(" .;:").casefold() in (
             _DYNAMIC_DELETE_VALUES
         )
         if is_delete:
             output.append(raw_line)
+            continue
+        current_details = current_details_by_key.get(relation_key, "")
+        if current_details and _is_vietnamese_social_downgrade(
+            current_details,
+            details,
+        ):
             continue
         if (
             _has_complete_vietnamese_addressing_details(details)
@@ -4268,6 +4515,7 @@ def _sanitize_vietnamese_dynamic_state(
         discarded_character_aliases,
     )
     addressing, relationships, _ = _split_dynamic_sections(normalized)
+    addressing = _repair_vietnamese_addressing_block(addressing, alias_map)
     return _format_dynamic_sections(
         _remove_vietnamese_addressing_mismatches(addressing, alias_map),
         relationships,
@@ -4317,9 +4565,14 @@ def merge_dynamic_state(
 
     if proposed_has_sections:
         if _is_vietnamese_target_language(target_language):
+            current_addressing = _repair_vietnamese_addressing_block(
+                current_addressing,
+                aliases,
+            )
             proposed_addressing = _filter_vietnamese_addressing_delta(
                 proposed_addressing,
                 aliases,
+                current_addressing,
             )
         addressing = _merge_dynamic_entries(
             current_addressing,
@@ -4996,6 +5249,12 @@ def render_novel_context_for_prompt(
             or _reference_mentions_latin_name_part(party, reference_text)
         )
 
+    def dynamic_line_address_form_is_referenced(line: str) -> bool:
+        for quoted in re.findall(r'"([^"\n]{1,80})"', line):
+            if _text_mentions(quoted, reference_text):
+                return True
+        return False
+
     def split_dynamic_lines(text: str) -> Tuple[List[str], List[str]]:
         selected_lines: List[str] = []
         remaining_lines: List[str] = []
@@ -5009,7 +5268,7 @@ def render_novel_context_for_prompt(
                 should_select = sum(
                     1 for party in parties
                     if dynamic_party_is_referenced(party)
-                ) >= 2
+                ) >= 2 or dynamic_line_address_form_is_referenced(line)
             else:
                 should_select = any(
                     _text_mentions(token, line)
@@ -5228,7 +5487,8 @@ def decode_context_snapshot(
 
     full_context = build_novel_context(global_lore, dynamic_state)
     canonical_global = extract_global_lore(full_context)
-    return full_context, canonical_global, dynamic_state
+    canonical_dynamic = extract_dynamic_state_from_text(full_context) or ""
+    return full_context, canonical_global, canonical_dynamic
 
 
 def normalize_refinement_context(
@@ -5610,6 +5870,23 @@ class NovelContextSession:
         """Return a compressed full-context snapshot."""
         return compress_dynamic_state(self.content)
 
+    def remember_source(self, source_chunk: str) -> None:
+        """Retain source text for later context updates without calling the LLM."""
+        clean_source = _clean_source_memory_chunk(source_chunk)
+        if not clean_source:
+            return
+        self.source_memory.append(clean_source)
+        self.source_memory = [
+            chunk for chunk in self.source_memory
+            if chunk.strip()
+        ]
+        bounded = _bounded_source_memory(self.source_memory)
+        self.source_memory = (
+            bounded.split("\n\n--- Previous source chunk ---\n\n")
+            if bounded
+            else []
+        )
+
     async def analyze_source(
         self,
         llm_client: Any,
@@ -5666,23 +5943,13 @@ class NovelContextSession:
                 "novel_context_update_prompt_max_tokens",
             ),
         )
-        clean_source = _clean_source_memory_chunk(source_chunk)
-        if clean_source:
-            self.source_memory.append(clean_source)
-            self.source_memory = [
-                chunk for chunk in self.source_memory
-                if chunk.strip()
-            ]
-            bounded = _bounded_source_memory(self.source_memory)
-            self.source_memory = (
-                bounded.split("\n\n--- Previous source chunk ---\n\n")
-                if bounded
-                else []
-            )
+        self.remember_source(source_chunk)
+        dialogue_state_after = dialogue_sink.get("state_after") or {}
         self.dialogue_attribution = (
             dialogue_sink
-            or empty_dialogue_attribution()
-        )
+            if dialogue_turns or dialogue_state_after
+            else empty_dialogue_attribution(self.dialogue_state)
+        ) or empty_dialogue_attribution()
         self.dialogue_state = dict(
             self.dialogue_attribution.get("state_after") or {}
         )

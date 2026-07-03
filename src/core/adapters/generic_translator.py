@@ -475,6 +475,8 @@ class GenericTranslator:
                         checkpoint_context_data_by_index[i]
                     )
                     unit.metadata.update(reused_context_data_by_index[i])
+                elif analyze_context and auto_update_context and context_session:
+                    context_session.remember_source(unit.content)
                 elif (
                     not analyze_context
                     and unit.metadata
@@ -1367,6 +1369,7 @@ async def _resync_context_snapshots_async(
                 canonicalize_dialogue_state,
                 detect_dialogue_turns,
                 dialogue_attribution_stats,
+                empty_dialogue_attribution,
             )
 
             dialogue_sink = {}
@@ -1421,12 +1424,17 @@ async def _resync_context_snapshots_async(
                     if bounded_source_memory
                     else []
                 )
-            current_dialogue_state = dict(
-                canonicalize_dialogue_state(
-                    dialogue_sink.get('state_after') or {},
-                    character_alias_map(global_lore),
+            if dialogue_turns or dialogue_sink.get('state_after'):
+                current_dialogue_state = dict(
+                    canonicalize_dialogue_state(
+                        dialogue_sink.get('state_after') or {},
+                        character_alias_map(global_lore),
+                    )
                 )
-            )
+            else:
+                dialogue_sink = empty_dialogue_attribution(
+                    current_dialogue_state
+                )
             if normalized_scene_key is not None:
                 dialogue_sink['scene_key'] = normalized_scene_key
             if dialogue_turns:

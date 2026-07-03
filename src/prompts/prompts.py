@@ -150,7 +150,7 @@ def _build_target_language_style_section(target_language: str) -> str:
 - Maintain consistent Vietnamese pronouns and register across adjacent paragraphs.
 - For serious literary first-person narration, prefer "tôi" unless the source or established character voice clearly requires an intimate/casual "mình".
 - Do not switch the same narrator from "tôi" to "mình" within the same scene or reflective passage unless the relationship/register intentionally changes.
-- Treat `## CURRENT ADDRESSING FORMS` as authoritative for direct address. If it gives a target-language form that is a name or title, use that form; do not replace it with Vietnamese kinship pronouns such as "anh", "chị", or "em".
+- Treat `## CURRENT ADDRESSING FORMS` as authoritative for direct address. If it gives a target-language form that is a name or title, use that form; do not replace it with Vietnamese kinship pronouns such as "anh", "chị", or "em", and do not call or refer to that character with an unrelated kinship pronoun.
 - When a matching addressing entry gives or implies a paired Vietnamese register, apply both sides of the pair: the speaker's self-reference and the addressee/reference form. Do not combine an intimate/casual addressee form or nickname with a formal/neutral self-reference unless the context explicitly says the speaker is keeping distance.
 - If a Vietnamese addressing entry spells out `self-reference`, `second-person pronoun`, `third-person pronoun`, or `vocative/address form`, obey each part exactly: use the self-reference for the speaker, the second-person pronoun for "you", the third-person pronoun when referring to that character to others (e.g. "cậu" -> "cậu ấy"/"cậu ta"), and the vocative/address form only when directly calling or naming the addressee.
 - Do not infer "anh", "chị", or "em" from gender, status, affection, or politeness alone. Use them only when the source/context establishes the age, kinship, or seniority relationship, or when the addressing entry explicitly requires that form.
@@ -400,6 +400,7 @@ For consistency and natural flow, here's what came immediately before:
     # Glossary block lives in the user prompt: it changes per chunk, so
     # keeping it out of the system prompt lets the system prompt stay
     # stable and cacheable across chunks.
+    dialogue_section = _build_dialogue_attribution_section(prompt_options)
     novel_context_section = _build_novel_context_section(
         prompt_options,
         reference_text="\n".join(
@@ -408,6 +409,7 @@ For consistency and natural flow, here's what came immediately before:
                 main_content,
                 context_after,
                 previous_translation_context,
+                dialogue_section,
             )
             if part
         ),
@@ -415,7 +417,6 @@ For consistency and natural flow, here's what came immediately before:
     if novel_context_section:
         novel_context_section = f"{novel_context_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
-    dialogue_section = _build_dialogue_attribution_section(prompt_options)
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
@@ -676,6 +677,7 @@ For consistency and natural flow, here's what came immediately before:
 
 """
 
+    dialogue_section = _build_dialogue_attribution_section(prompt_options)
     # Glossary block injected here (per-chunk dynamic) so the system prompt
     # stays cacheable across chunks.
     novel_context_section = _build_novel_context_section(
@@ -686,6 +688,7 @@ For consistency and natural flow, here's what came immediately before:
                 draft_translation,
                 context_after,
                 previous_refined_context,
+                dialogue_section,
             )
             if part
         ),
@@ -694,7 +697,6 @@ For consistency and natural flow, here's what came immediately before:
     if novel_context_section:
         novel_context_section = f"{novel_context_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
-    dialogue_section = _build_dialogue_attribution_section(prompt_options)
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
@@ -837,12 +839,14 @@ For continuity and consistency, here's the previous refined block:
     formatted_subtitles = [f"[{idx}]{text}" for idx, text in subtitle_blocks]
     formatted_subtitles_text = "\n".join(formatted_subtitles)
 
+    dialogue_section = _build_dialogue_attribution_section(prompt_options)
     novel_context_section = _build_novel_context_section(
         prompt_options,
         reference_text="\n".join(
             part for part in (
                 previous_refined_block,
                 formatted_subtitles_text,
+                dialogue_section,
             )
             if part
         ),
@@ -851,7 +855,6 @@ For continuity and consistency, here's the previous refined block:
     if novel_context_section:
         novel_context_section = f"{novel_context_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
-    dialogue_section = _build_dialogue_attribution_section(prompt_options)
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
@@ -993,6 +996,7 @@ For continuity and consistency, here's the previous subtitle block:
     # Join subtitles outside f-string to avoid Python 3.11 backslash issues
     formatted_subtitles_text = "\n".join(formatted_subtitles)
 
+    dialogue_section = _build_dialogue_attribution_section(prompt_options)
     # Novel context and glossary blocks live in the user prompt because they
     # vary per chunk/block.
     novel_context_section = _build_novel_context_section(
@@ -1001,6 +1005,7 @@ For continuity and consistency, here's the previous subtitle block:
             part for part in (
                 previous_translation_block,
                 formatted_subtitles_text,
+                dialogue_section,
             )
             if part
         ),
@@ -1008,7 +1013,6 @@ For continuity and consistency, here's the previous subtitle block:
     if novel_context_section:
         novel_context_section = f"{novel_context_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
-    dialogue_section = _build_dialogue_attribution_section(prompt_options)
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
