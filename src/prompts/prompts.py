@@ -167,6 +167,8 @@ def _build_vietnamese_style_section() -> str:
 - For English named skills, abilities, techniques, spells, combat moves, weapons, artifacts, and equipment, prefer concise Sino-Vietnamese literary renderings when that sounds natural in Vietnamese fantasy or game prose.
 - Do not leave an English skill, technique, or named item untranslated merely because it is capitalized. Preserve the English form only when it is a brand, code label, UI/system key, or a required glossary entry says to keep it.
 - Keep character names exact; the Sino-Vietnamese rendering preference applies to named powers, weapons, items, and terminology, not people.
+- For Korean source texts, do not leak raw Korean honorific suffixes (such as "-ssi" / -씨, "-nim" / -님) directly into the Vietnamese translated text (e.g. do not write "Aten-ssi" or "Renzo-ssi"). Convert them into natural Vietnamese address forms, pronouns, or standard character names according to context and established addressing forms.
+- For Japanese source texts, familiar Japanese honorific suffixes (such as "-sama", "-senpai", "-san", "-kun", "-chan", "-dono") may be preserved in Vietnamese light novel/manga prose when consistent with established character voice, context, or stored addressing forms.
 - Preserve established addressing forms from the glossary, dialogue context, and previous paragraph."""
 
 
