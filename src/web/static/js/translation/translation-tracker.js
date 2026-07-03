@@ -1987,9 +1987,25 @@ window.saveContextResync = async function() {
     }
     
     const btnSave = document.getElementById('btnSaveResync');
+    const btnCancel = document.getElementById('btnCancelResync');
     try {
-        if (btnSave) btnSave.disabled = true;
-        
+        if (btnSave) {
+            btnSave.disabled = true;
+        }
+        if (btnCancel) {
+            btnCancel.disabled = true;
+        }
+
+        // Show immediate visual status that the request is in progress
+        updateContextResyncControls({ status: 'running' });
+        MessageLogger.addLog(
+            isGlobal
+                ? t('translation:context_global_resync_started_log')
+                : t('translation:context_resync_started_log', {
+                    chunk: chunkIndex + 1
+                })
+        );
+
         const resyncResult = await ApiClient.resyncContextSnapshot(
             translationId,
             chunkIndex,
@@ -2001,13 +2017,6 @@ window.saveContextResync = async function() {
         updateContextResyncControls(resyncResult?.resync_state || {
             status: 'running'
         });
-        MessageLogger.addLog(
-            isGlobal
-                ? t('translation:context_global_resync_started_log')
-                : t('translation:context_resync_started_log', {
-                    chunk: chunkIndex + 1
-                })
-        );
         
         // Reload tabs
         window.NovelContextUI.isEditing = false;
@@ -2025,12 +2034,15 @@ window.saveContextResync = async function() {
             btnSave.style.display = 'none';
             btnSave.disabled = true;
         }
-        const btnCancel = document.getElementById('btnCancelResync');
-        if (btnCancel) btnCancel.style.display = 'none';
+        if (btnCancel) {
+            btnCancel.style.display = 'none';
+            btnCancel.disabled = false;
+        }
         
     } catch (e) {
         console.error("Failed to start resync:", e);
         MessageLogger.addLog(t('translation:context_resync_failed_log', { error: e.message }));
         if (btnSave) btnSave.disabled = false;
+        if (btnCancel) btnCancel.disabled = false;
     }
 };
