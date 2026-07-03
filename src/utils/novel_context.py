@@ -4227,11 +4227,26 @@ def _repair_vietnamese_addressing_line(
     parsed = _parse_dynamic_relation(line, alias_map)
     if not parsed:
         return line
-    _, rendered, details = parsed
+    relation_key, rendered, details = parsed
+    _, _, right_party = relation_key
+
+    # Auto-format simple 2-part pairs (e.g. "tớ - cậu", "tôi - cậu (bạn học)") into 3-part canonical format
+    clean_details = _clean_inline_text(details).strip('" ')
+    if not _vietnamese_addressing_field(details, "self-reference"):
+        pair_match = re.search(
+            r"^\s*(?P<self>[\w\s]+)\s*[-–—/]\s*(?P<second>[\w\s]+)(?:\s*\((?P<reason>.*?)\))?\s*$",
+            clean_details,
+        )
+        if pair_match:
+            self_val = pair_match.group("self").strip()
+            second_val = pair_match.group("second").strip()
+            reason = (pair_match.group("reason") or "addressing").strip()
+            target_display = right_party.title()
+            details = f'"{target_display}" | "self-reference: {self_val}; second-person pronoun: {second_val}; vocative/address form: {target_display}" | {reason}'
+
     repaired_details = _repair_vietnamese_addressing_details(details)
-    if repaired_details == details:
-        return rendered
-    return f"{rendered[:-len(details)]}{repaired_details}" if details else rendered
+    left_part = rendered[:-len(parsed[2])] if parsed[2] else f"{rendered}: "
+    return f"{left_part}{repaired_details}"
 
 
 def _repair_vietnamese_addressing_block(
