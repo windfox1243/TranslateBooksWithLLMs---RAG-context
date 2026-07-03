@@ -2516,6 +2516,28 @@ def test_vietnamese_dynamic_state_rejects_incomplete_new_addressing_delta():
     assert "- Charlie ↔ Dana: Close classmates." in merged
 
 
+def test_vietnamese_dynamic_state_rejects_peer_pronouns_for_hierarchy_delta():
+    proposed = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Dier Aigar → Aster Evans: "Senior Aster" | "self-reference: tớ; '
+        'second-person pronoun: cậu; vocative/address form: Senior Aster" | '
+        "respectful, first-year student to upper-year student\n"
+        '- Dier Aigar → Elodie de Inies Rishae: "Senior Elodie" | '
+        '"self-reference: em; second-person pronoun: chị; '
+        'vocative/address form: chị Elodie" | respectful, first-year student '
+        "to upper-year student\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Dier Aigar ↔ Aster Evans: Ally.\n"
+        "- Dier Aigar ↔ Elodie de Inies Rishae: Ally."
+    )
+
+    merged = merge_dynamic_state("", proposed, target_language="Vietnamese")
+
+    assert "Dier Aigar → Aster Evans" not in merged
+    assert "Dier Aigar → Elodie de Inies Rishae" in merged
+    assert "second-person pronoun: chị" in merged
+
+
 def test_non_vietnamese_dynamic_state_keeps_legacy_addressing_delta():
     proposed = (
         "## CURRENT ADDRESSING FORMS\n"

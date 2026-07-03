@@ -4110,11 +4110,67 @@ def _has_complete_vietnamese_addressing_details(details: str) -> bool:
     )
 
 
+def _vietnamese_addressing_field(details: str, field_name: str) -> str:
+    match = re.search(
+        rf"{re.escape(field_name)}\s*:\s*(?P<value>[^;|\"\n]+)",
+        str(details or ""),
+        flags=re.IGNORECASE,
+    )
+    return _clean_inline_text(match.group("value")).strip(" \"'") if match else ""
+
+
+def _has_vietnamese_hierarchy_addressing_mismatch(details: str) -> bool:
+    clean = _clean_inline_text(details).casefold()
+    if not clean:
+        return False
+
+    self_reference = _vietnamese_addressing_field(details, "self-reference").casefold()
+    second_person = _vietnamese_addressing_field(
+        details,
+        "second-person pronoun",
+    ).casefold()
+    vocative = _vietnamese_addressing_field(
+        details,
+        "vocative/address form",
+    ).casefold()
+
+    casual_self = self_reference in {"tớ", "mình"}
+    casual_second = second_person in {"cậu", "bạn"}
+    hierarchy_cues = (
+        "senior",
+        "tiền bối",
+        "hậu bối",
+        "năm trên",
+        "năm dưới",
+        "năm nhất",
+        "upper-year",
+        "underclass",
+        "junior to senior",
+        "student to senior",
+        "student to mentor",
+        "younger to older",
+        "older student",
+        "older sibling",
+        "older sister",
+        "older brother",
+        "lớn tuổi",
+        "hơn tuổi",
+    )
+    has_hierarchy_cue = any(cue in clean for cue in hierarchy_cues)
+    vocative_marks_seniority = any(
+        cue in vocative
+        for cue in ("senior", "tiền bối", "anh ", "chị ", "thầy", "cô")
+    )
+    return (has_hierarchy_cue or vocative_marks_seniority) and (
+        casual_self or casual_second
+    )
+
+
 def _filter_vietnamese_addressing_delta(
     proposed_addressing: str,
     alias_map: Dict[str, str],
 ) -> str:
-    """Drop new Vietnamese addressing rows that do not carry full pair data."""
+    """Drop Vietnamese addressing rows with incomplete or self-conflicting data."""
     output: List[str] = []
     for raw_line in proposed_addressing.splitlines():
         parsed = _parse_dynamic_relation(raw_line, alias_map)
@@ -4125,7 +4181,13 @@ def _filter_vietnamese_addressing_delta(
         is_delete = details.strip().rstrip(" .;:").casefold() in (
             _DYNAMIC_DELETE_VALUES
         )
-        if is_delete or _has_complete_vietnamese_addressing_details(details):
+        if is_delete:
+            output.append(raw_line)
+            continue
+        if (
+            _has_complete_vietnamese_addressing_details(details)
+            and not _has_vietnamese_hierarchy_addressing_mismatch(details)
+        ):
             output.append(raw_line)
     return "\n".join(output).strip()
 
@@ -5846,7 +5908,7 @@ Your output must follow this strict format:
 - Speaker → Addressee: source form "..." | target-language form "..." | register, social basis, scope, and reason
 ## RELATIONSHIP EVOLUTION
 - Character A ↔ Character B: concise current relationship
-(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. For Vietnamese, every addressing entry must make the target-language form a complete paired-address record with all applicable parts: `self-reference: ...; second-person pronoun: ...; vocative/address form: ...`. Use `none` only for a part that truly does not apply. Do not store only the addressee nickname if the speaker's self-reference should also change. In the final reason field, record the social basis when known: direct address vs indirect reference scope, age/school-year/seniority, family relation, rank/status, setting, intimacy, hostility, deference, or exception to normal age hierarchy. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Do not duplicate these headings.)
+(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. For Vietnamese, every addressing entry must make the target-language form a complete paired-address record with all applicable parts: `self-reference: ...; second-person pronoun: ...; vocative/address form: ...`. Use `none` only for a part that truly does not apply. Do not store only the addressee nickname if the speaker's self-reference should also change. If age, school-year, seniority, family, rank, or teacher/student hierarchy is known, choose Vietnamese pronouns that reflect that hierarchy; do not use peer `tớ/cậu` for senior/junior or older/younger relationships. For Vietnamese, the final reason field must explicitly state any known age, school-year, seniority, family, rank, or teacher/student hierarchy; do not summarize a hierarchical pair merely as peers/classmates. In the final reason field, record the social basis when known: direct address vs indirect reference scope, age/school-year/seniority, family relation, rank/status, setting, intimacy, hostility, deference, or exception to normal age hierarchy. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Do not duplicate these headings.)
 
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
@@ -5911,7 +5973,7 @@ Your output must follow this strict format:
 - Speaker → Addressee: source form "..." | recommended target-language form "..." | register, social basis, scope, and reason
 ## RELATIONSHIP EVOLUTION
 - Character A ↔ Character B: concise current relationship
-(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. For Vietnamese, every addressing entry must make the recommended target-language form a complete paired-address record with all applicable parts: `self-reference: ...; second-person pronoun: ...; vocative/address form: ...`. Use `none` only for a part that truly does not apply. Do not store only the addressee nickname if the speaker's self-reference should also change. In the final reason field, record the social basis when known: direct address vs indirect reference scope, age/school-year/seniority, family relation, rank/status, setting, intimacy, hostility, deference, or exception to normal age hierarchy. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Keep it concise and do not duplicate headings.)
+(Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. For Vietnamese, every addressing entry must make the recommended target-language form a complete paired-address record with all applicable parts: `self-reference: ...; second-person pronoun: ...; vocative/address form: ...`. Use `none` only for a part that truly does not apply. Do not store only the addressee nickname if the speaker's self-reference should also change. If age, school-year, seniority, family, rank, or teacher/student hierarchy is known, choose Vietnamese pronouns that reflect that hierarchy; do not use peer `tớ/cậu` for senior/junior or older/younger relationships. For Vietnamese, the final reason field must explicitly state any known age, school-year, seniority, family, rank, or teacher/student hierarchy; do not summarize a hierarchical pair merely as peers/classmates. In the final reason field, record the social basis when known: direct address vs indirect reference scope, age/school-year/seniority, family relation, rank/status, setting, intimacy, hostility, deference, or exception to normal age hierarchy. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Keep it concise and do not duplicate headings.)
 
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
