@@ -241,6 +241,7 @@ class GenericTranslator:
                 and self.adapter.format_name == "txt"
             )
             novel_context_file = prompt_options.get('novel_context_file')
+            novel_context_path = None
             auto_update_context = prompt_options.get('auto_update_context', False)
 
             from src.config import NOVEL_CONTEXTS_DIR
@@ -483,6 +484,18 @@ class GenericTranslator:
                     and unit.metadata.get('context_snapshot')
                 ):
                     reused_context_data_by_index[i] = dict(unit.metadata)
+
+                if novel_context_path and novel_context_path.is_file():
+                    try:
+                        disk_content = load_novel_context(novel_context_path.name, novel_context_path.parent)
+                        disk_global_lore = extract_global_lore(disk_content)
+                        if disk_global_lore:
+                            prompt_options['novel_context'] = build_novel_context(
+                                disk_global_lore,
+                                context_session.dynamic_state if context_session else (current_dynamic_state or ""),
+                            )
+                    except Exception:
+                        pass
 
                 for attempt in range(max_validation_attempts):
                     same_previous_chapter = (
