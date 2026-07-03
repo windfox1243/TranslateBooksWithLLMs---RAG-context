@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.48 - 2026-07-03
+
+### Fixed
+
+- **Context-driven Vietnamese addressing guardrails:** Refined prompt style guardrails for Vietnamese translation targets to enforce strict adherence to actual relationship context, intimacy, and character dynamics rather than defaulting to generic fantasy/archaic address pairs (`ta-nàng`, `ta-ngươi`). Separated Korean vs Japanese honorific suffix rules (converting raw Korean `-ssi`/`-nim` into natural Vietnamese while allowing Japanese light novel suffixes like `-sama`/`-senpai`).
+- **Addressing line auto-formatting & persistence:** Enhanced novel context parsing (`_repair_vietnamese_addressing_line` and `_has_complete_vietnamese_addressing_details`) to auto-format simple 2-part addressing lines (such as `tớ - cậu`) into canonical 3-part format, preventing the `## CURRENT ADDRESSING FORMS` section from being cleared during context updates.
+
 ## 1.14.46 - 2026-07-03
 
 ### Added
