@@ -2538,6 +2538,27 @@ def test_vietnamese_dynamic_state_rejects_peer_pronouns_for_hierarchy_delta():
     assert "second-person pronoun: chị" in merged
 
 
+def test_vietnamese_dynamic_state_sanitizes_existing_hierarchy_mismatch():
+    current = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Dier Aigar → Aster Evans: "Senior Aster" | "self-reference: tớ; '
+        'second-person pronoun: cậu; vocative/address form: Senior Aster" | '
+        "respectful, first-year student to upper-year student\n"
+        '- Dier Aigar → Elodie de Inies Rishae: "Senior Elodie" | '
+        '"self-reference: em; second-person pronoun: chị; '
+        'vocative/address form: chị Elodie" | respectful, first-year student '
+        "to upper-year student\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Dier Aigar ↔ Aster Evans: Ally."
+    )
+
+    merged = merge_dynamic_state(current, "", target_language="Vietnamese")
+
+    assert "Dier Aigar → Aster Evans" not in merged
+    assert "Dier Aigar → Elodie de Inies Rishae" in merged
+    assert "- Dier Aigar ↔ Aster Evans: Ally." in merged
+
+
 def test_non_vietnamese_dynamic_state_keeps_legacy_addressing_delta():
     proposed = (
         "## CURRENT ADDRESSING FORMS\n"
@@ -2682,6 +2703,55 @@ def test_new_file_context_session_reuses_lore_without_importing_resume_state(tmp
     assert session.dialogue_state == {}
     assert session.dialogue_scene_key is None
     assert "dialogue_attribution" not in prompt_options
+
+
+def test_resume_context_session_sanitizes_vietnamese_snapshot_mismatch(tmp_path):
+    from src.utils.novel_context import extract_global_lore, open_novel_context_session
+
+    saved_context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Dier Aigar: Male, first-year Constel Academy student.\n"
+            "- Aster Evans: Male, upper-year Constel Academy student.\n"
+            "- Elodie de Inies Rishae: Female, upper-year Constel Academy student.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        "## CURRENT ADDRESSING FORMS\n\n## RELATIONSHIP EVOLUTION",
+    )
+    save_novel_context("resume_context.txt", tmp_path, saved_context)
+    snapshot = build_novel_context(
+        extract_global_lore(saved_context),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Dier Aigar → Aster Evans: "Senior Aster" | "self-reference: tớ; '
+            'second-person pronoun: cậu; vocative/address form: Senior Aster" | '
+            "respectful, first-year student to upper-year student\n"
+            '- Dier Aigar → Elodie de Inies Rishae: "Senior Elodie" | '
+            '"self-reference: em; second-person pronoun: chị; '
+            'vocative/address form: chị Elodie" | respectful, first-year student '
+            "to upper-year student\n\n"
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Dier Aigar ↔ Aster Evans: Ally."
+        ),
+    )
+    prompt_options = {
+        "novel_context_file": "resume_context.txt",
+        "target_language": "Vietnamese",
+    }
+
+    session = open_novel_context_session(
+        prompt_options=prompt_options,
+        novel_contexts_dir=tmp_path,
+        input_filename="book.txt",
+        resume_snapshot=compress_dynamic_state(snapshot),
+    )
+
+    assert session is not None
+    assert "Dier Aigar → Aster Evans" not in session.dynamic_state
+    assert "Dier Aigar → Aster Evans" not in prompt_options["novel_context"]
+    assert "Dier Aigar → Elodie de Inies Rishae" in session.dynamic_state
+    assert "- Dier Aigar ↔ Aster Evans: Ally." in session.dynamic_state
 
 
 def test_dynamic_state_delta_updates_one_relationship_without_erasing_others():
