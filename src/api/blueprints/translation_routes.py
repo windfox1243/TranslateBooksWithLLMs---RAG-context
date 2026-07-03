@@ -1206,6 +1206,17 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             was_active = True
             logger.info(f"Translation {translation_id} is running. Interrupting for context resync...")
             state_manager.set_interrupted(translation_id, True)
+            emit_update(
+                socketio,
+                translation_id,
+                {
+                    "log": (
+                        "⏸️ Context re-sync requested: waiting for active "
+                        "chunk to finish before pausing translation..."
+                    ),
+                },
+                state_manager,
+            )
 
             current_phase = (job_status.get("stats") or {}).get(
                 "current_phase"

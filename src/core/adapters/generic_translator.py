@@ -1036,7 +1036,13 @@ async def _resync_context_snapshots_async(
     
     if was_active:
         msg_pause = "Waiting for active translation to pause before resyncing..."
-        append_and_emit(f"⏸️ {msg_pause}")
+        append_and_emit(
+            f"⏸️ {msg_pause}",
+            _save_resync_state({
+                "status": "pause_requested",
+                "last_processed_chunk": start_chunk_index,
+            }),
+        )
         
         import asyncio
         paused = False
