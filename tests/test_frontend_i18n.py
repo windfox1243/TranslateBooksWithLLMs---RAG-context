@@ -340,7 +340,8 @@ def test_saved_card_context_resync_sets_last_job_for_socket_logs() -> None:
     assert "new CustomEvent('contextResyncResumed'" in resume_manager
     assert "function scheduleResumableJobsPoll(jobs, refresh)" in resume_manager
     assert "['running', 'pause_requested'].includes(state.status)" in resume_manager
-    assert "scheduleResumableJobsPoll(jobs, () => this.loadResumableJobs())" in resume_manager
+    assert "scheduleResumableJobsPoll(jobs, () => this.loadResumableJobs(true))" in resume_manager
+
 
 
 # ---------------------------------------------------------------------------
