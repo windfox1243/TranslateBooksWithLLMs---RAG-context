@@ -5766,6 +5766,16 @@ def extract_dynamic_state_from_text(context_content: str) -> Optional[str]:
         return "\n".join(cleaned_lines).strip()
     return None
 
+
+def _dynamic_state_has_entries(dynamic_state: str) -> bool:
+    addressing, relationships, has_sections = _split_dynamic_sections(
+        dynamic_state
+    )
+    if not has_sections:
+        return bool(str(dynamic_state or "").strip())
+    return bool(addressing.strip() or relationships.strip())
+
+
 def compress_dynamic_state(dynamic_text: str) -> str:
     compressed = zlib.compress(dynamic_text.encode('utf-8'))
     return base64.b64encode(compressed).decode('ascii')
@@ -6946,22 +6956,34 @@ def open_novel_context_session(
         return None
 
     path = resolve_novel_context_path(novel_context_file, novel_contexts_dir)
+    current_content = load_novel_context(path.name, path.parent)
+    file_global_lore = extract_global_lore(current_content)
+    file_dynamic_state = extract_dynamic_state_from_text(current_content) or ""
+    global_lore = file_global_lore
+    dynamic_state = file_dynamic_state
+
     if resume_snapshot:
-        current_content, global_lore, dynamic_state = decode_context_snapshot(
-            resume_snapshot,
-            "",
-            canonicalize_full_snapshot=False,
-        )
-        if not global_lore.strip():
-            current_content = load_novel_context(path.name, path.parent)
-            current_content, global_lore, dynamic_state = decode_context_snapshot(
+        snapshot_content, snapshot_global_lore, snapshot_dynamic_state = (
+            decode_context_snapshot(
                 resume_snapshot,
                 current_content,
+                canonicalize_full_snapshot=False,
             )
-    else:
-        current_content = load_novel_context(path.name, path.parent)
-        global_lore = extract_global_lore(current_content)
-        dynamic_state = extract_dynamic_state_from_text(current_content) or ""
+        )
+        prefer_resume_snapshot = bool(
+            prompt_options.get("prefer_resume_snapshot")
+        )
+        if prefer_resume_snapshot or not _dynamic_state_has_entries(
+            file_dynamic_state
+        ):
+            current_content = snapshot_content
+            global_lore = snapshot_global_lore or file_global_lore
+            dynamic_state = snapshot_dynamic_state
+        elif log_callback and _dynamic_state_has_entries(snapshot_dynamic_state):
+            log_callback(
+                "novel_context_file_preferred",
+                "Using the current context file instead of an older resume snapshot.",
+            )
 
     character_aliases = (
         _normalized_character_alias_map(global_lore)
