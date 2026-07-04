@@ -5217,6 +5217,7 @@ def test_vietnamese_relationship_only_state_seeds_addressing_forms():
     assert "Tomio Momozawa → Apollo Rainbow" in merged
     assert "second-person pronoun: em" in merged
     assert "Apollo Rainbow → Green Teatan" in merged
+    assert "self-reference: tớ" in merged
     assert "second-person pronoun: cậu" in merged
 
 
