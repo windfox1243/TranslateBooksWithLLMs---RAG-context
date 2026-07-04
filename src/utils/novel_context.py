@@ -4456,7 +4456,7 @@ def _vietnamese_addressing_from_relationship(
         "training partner",
     )
     if _relationship_has_any(clean, peer_cues):
-        return ("mình", "cậu", addressee_short, "peer-level relationship")
+        return ("tớ", "cậu", addressee_short, "peer-level relationship")
 
     staff_cues = (
         "academy staff",
