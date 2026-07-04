@@ -7,13 +7,15 @@
 - **POV-aware novel context selection:** Canonicalized dialogue speaker aliases before selecting POV context and stopped first-person POV filtering from hiding explicit character-pair or quoted-address matches.
 - **Vietnamese addressing cleanup:** Narrowed possessive `second-person pronoun` cleanup so only known title heads such as `huấn luyện viên của Apollo Rainbow` are shortened, while uncertain possessive phrases remain unchanged. Vietnamese prompts now state that proven kinship, age, seniority, family, rank, and teacher/student hierarchy override name/title fallback.
 - **Vietnamese second-person addressing:** Repaired source names, nicknames, and honorific calls that leaked into `second-person pronoun` fields by converting them to Vietnamese address-pair terms when supported by relationship/gender evidence, while preserving the source call in `vocative/address form`.
+- **Vietnamese addressing persistence:** Added a relationship-driven fallback that seeds Vietnamese addressing forms from stored relationship/profile evidence when the addressing section is empty, preventing relationship-only context saves from leaving `## CURRENT ADDRESSING FORMS` blank.
+- **External context files:** Preserved existing absolute `.txt` context paths so contexts kept outside the default `Novel_Contexts` directory are not silently redirected to a same-named managed file.
 - **Glossary compound handling:** Added glossary prompt guidance for compound source phrases, preserving required glossary translations exactly while translating surrounding meaningful words naturally unless a longer glossary entry overrides them.
 - **NER glossary suggestions:** NER term suggestions now receive a small related subset of the existing glossary, selected by exact source matches or shared meaningful keywords, so new compound terms can reuse established translations without injecting the full glossary. Obvious untranslated fragments in suggested compound targets are repaired only when the raw source component is still present.
 - **Save & Re-sync feedback:** The context editor Save & Re-sync button now remains clickable while editing and reports when there are no context changes to save, instead of becoming a silent disabled button.
 
 ### Tests
 
-- Added regression coverage for canonical dialogue speaker aliases, first-person context selection, explicit relationship matches, conservative Vietnamese possessive addressing cleanup, Vietnamese second-person source-name repair, compound glossary guidance, related-glossary NER hints and repair, and Save & Re-sync no-change feedback.
+- Added regression coverage for canonical dialogue speaker aliases, first-person context selection, explicit relationship matches, conservative Vietnamese possessive addressing cleanup, Vietnamese second-person source-name repair, relationship-seeded Vietnamese addressing, external context path preservation, compound glossary guidance, related-glossary NER hints and repair, and Save & Re-sync no-change feedback.
 
 ## 1.14.48 - 2026-07-03
 
