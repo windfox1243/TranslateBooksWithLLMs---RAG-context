@@ -4624,6 +4624,39 @@ def _sanitize_vietnamese_second_person_pronoun(second_p: str) -> str:
     return second_p
 
 
+def _has_vietnamese_non_peer_formality_cue(details: str) -> bool:
+    clean = _clean_inline_text(details).casefold()
+    if not clean:
+        return False
+    non_peer_cues = (
+        "academy staff",
+        "age hierarchy",
+        "boss",
+        "coach",
+        "colleague",
+        "formal",
+        "mentor",
+        "professional",
+        "respectful",
+        "senior",
+        "seniority",
+        "staff",
+        "strained",
+        "student-trainer",
+        "student to mentor",
+        "student to senior",
+        "teacher",
+        "trainer",
+        "trainer-trainee",
+        "trainee",
+        "workplace",
+        "hậu bối",
+        "huấn luyện viên",
+        "tiền bối",
+    )
+    return any(cue in clean for cue in non_peer_cues)
+
+
 def _repair_vietnamese_addressing_details(
     details: str,
     addressee: str = "",
@@ -4661,6 +4694,17 @@ def _repair_vietnamese_addressing_details(
                 "second-person pronoun",
                 replacement,
             )
+
+    self_reference_raw = _vietnamese_addressing_field(details, "self-reference")
+    if (
+        _plain_key(self_reference_raw) in {"mình", "tớ"}
+        and _has_vietnamese_non_peer_formality_cue(details)
+    ):
+        details = _replace_vietnamese_addressing_field(
+            details,
+            "self-reference",
+            "tôi",
+        )
 
     self_reference = _vietnamese_addressing_field(
         details,

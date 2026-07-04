@@ -5172,6 +5172,66 @@ def test_vietnamese_second_person_uses_title_fallback_for_source_titles():
     ) in merged
 
 
+def test_vietnamese_trainer_trainee_intimacy_does_not_use_peer_self_reference():
+    from src.utils.novel_context import merge_dynamic_state
+
+    proposed = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Apollo Rainbow → Tomio Momozawa: "Tomio" | '
+        '"self-reference: mình; second-person pronoun: anh; '
+        'vocative/address form: Tomio" | professional, '
+        "trainer-trainee relationship, high intimacy.\n"
+        "---DYNAMIC_STATE_END---"
+    )
+
+    merged = merge_dynamic_state(
+        "",
+        proposed,
+        target_language="Vietnamese",
+    )
+
+    assert "self-reference: tôi; second-person pronoun: anh" in merged
+    assert "self-reference: mình" not in merged
+
+
+def test_vietnamese_reverse_pair_does_not_force_symmetric_addressing():
+    from src.utils.novel_context import merge_dynamic_state
+
+    current = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Tomio Momozawa → Apollo Rainbow: "Apollo" | '
+        '"self-reference: anh; second-person pronoun: em; '
+        'vocative/address form: Apollo" | professional trainer-trainee, '
+        "senior-junior, affectionate.\n"
+        "---DYNAMIC_STATE_END---"
+    )
+    proposed = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Apollo Rainbow → Tomio Momozawa: "Tomio" | '
+        '"self-reference: mình; second-person pronoun: anh; '
+        'vocative/address form: Tomio" | professional, trainer-trainee '
+        "relationship, high intimacy.\n"
+        "---DYNAMIC_STATE_END---"
+    )
+
+    merged = merge_dynamic_state(
+        current,
+        proposed,
+        target_language="Vietnamese",
+    )
+
+    assert "Apollo Rainbow → Tomio Momozawa" in merged
+    assert "self-reference: tôi; second-person pronoun: anh" in merged
+    assert "self-reference: em; second-person pronoun: anh" not in merged
+    assert "self-reference: mình" not in merged
+
+
 def test_vietnamese_relationship_only_state_seeds_addressing_forms():
     from src.utils.novel_context import merge_dynamic_state
 
