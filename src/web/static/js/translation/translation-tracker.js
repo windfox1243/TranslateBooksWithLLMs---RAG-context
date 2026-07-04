@@ -1428,6 +1428,20 @@ function logContextResyncFailure(errorKey, params = {}) {
     );
 }
 
+function hasContextResyncEditorChanges() {
+    if (window.NovelContextUI?.editSections) {
+        return window.NovelContextUI.editSections.some(sec => {
+            const textarea = document.getElementById(sec.id);
+            return textarea && textarea.value !== sec.rawContent;
+        });
+    }
+    const textarea = document.getElementById('contextResyncEditor');
+    return Boolean(
+        textarea
+        && textarea.value !== (window.NovelContextUI?.displayedContent || '')
+    );
+}
+
 function currentTranslationIdForContext() {
     const currentJob = StateManager.getState('translation.currentJob');
     if (currentJob && currentJob.translationId) {
@@ -1803,14 +1817,11 @@ window.enableContextEdit = function() {
     window.NovelContextUI.activeTabIndex = activeIdx;
     
     function checkForChanges() {
-        let isChanged = false;
-        groupedSections.forEach(sec => {
-            const textarea = document.getElementById(sec.id);
-            if (textarea && textarea.value !== sec.rawContent) {
-                isChanged = true;
-            }
-        });
-        if (btnSave) btnSave.disabled = !isChanged;
+        const isChanged = hasContextResyncEditorChanges();
+        if (btnSave) {
+            btnSave.disabled = false;
+            btnSave.setAttribute('aria-disabled', isChanged ? 'false' : 'true');
+        }
     }
     
     groupedSections.forEach((sec, idx) => {
@@ -1884,7 +1895,8 @@ window.enableContextEdit = function() {
     if (btnEdit) btnEdit.style.display = 'none';
     if (btnSave) {
         btnSave.style.display = 'inline-flex';
-        btnSave.disabled = true; // disabled until changed
+        btnSave.disabled = false;
+        btnSave.setAttribute('aria-disabled', 'true');
     }
     if (btnCancel) btnCancel.style.display = 'inline-flex';
 };
@@ -1955,6 +1967,18 @@ window.saveContextResync = async function() {
         return;
     }
 
+    const btnSave = document.getElementById('btnSaveResync');
+    const btnCancel = document.getElementById('btnCancelResync');
+
+    if (!hasContextResyncEditorChanges()) {
+        MessageLogger.addLog(t('translation:context_resync_no_changes'));
+        if (btnSave) {
+            btnSave.disabled = false;
+            btnSave.setAttribute('aria-disabled', 'true');
+        }
+        return;
+    }
+
     let submittedContent = newContent;
     if (isGlobal) {
         let anchorContent = window.NovelContextUI.globalAnchorFullContent || '';
@@ -1985,9 +2009,7 @@ window.saveContextResync = async function() {
             `${newContent.trim()}\n\n${anchorContent.substring(dynamicMarker)}`
         );
     }
-    
-    const btnSave = document.getElementById('btnSaveResync');
-    const btnCancel = document.getElementById('btnCancelResync');
+
     try {
         if (btnSave) {
             btnSave.disabled = true;

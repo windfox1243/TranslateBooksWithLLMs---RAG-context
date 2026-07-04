@@ -29,6 +29,13 @@ class TestBuildGlossaryBlock:
         assert "GLOSSARY" in result
         assert "MANDATORY" in result
 
+    def test_compound_terms_keep_required_translation(self):
+        """Compound phrases preserve matched glossary translations unless a longer entry exists."""
+        result = build_glossary_block({"zone": "zone"})
+        assert "compound source phrases" in result
+        assert "keep the required glossary translation exact" in result
+        assert "unless a longer glossary entry gives a specific translation" in result
+
     def test_non_empty_contains_source_target_lines(self):
         """Each glossary entry appears as a 'source -> target' line."""
         terms = {"hello": "bonjour", "world": "monde"}

@@ -899,6 +899,7 @@ def create_glossary_blueprint(store: Optional[GlossaryStore] = None):
                         target_language=target_lang,
                         llm_provider=provider,
                         max_chars=max_chars,
+                        existing_glossary_terms=glossary.terms_dict,
                     )
                 finally:
                     try:

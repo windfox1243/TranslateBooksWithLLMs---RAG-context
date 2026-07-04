@@ -328,6 +328,9 @@ def test_context_preview_dynamic_strings_are_locale_reactive() -> None:
     assert "if (this.localizedView && !this.isEditing)" in tracker
     assert "activeTabIndex" in tracker
     assert "activeTabTitle" not in tracker
+    assert "hasContextResyncEditorChanges()" in tracker
+    assert "t('translation:context_resync_no_changes')" in tracker
+    assert "btnSave.disabled = true; // disabled until changed" not in tracker
 
 
 def test_saved_card_context_resync_sets_last_job_for_socket_logs() -> None:

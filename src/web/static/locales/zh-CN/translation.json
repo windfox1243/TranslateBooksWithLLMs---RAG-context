@@ -247,6 +247,7 @@
   "context_save_global_btn": "保存并重新同步",
   "context_global_anchor_missing": "第一个历史上下文快照不可用。",
   "context_resync_unavailable": "未选择可编辑的上下文快照。",
+  "context_resync_no_changes": "[系统] 没有要保存的上下文更改。",
   "context_global_resync_started_log": "[系统] 全局上下文已保存。上下文时间线将从第一个可用快照开始重新同步。",
   "context_latest_state": "最新状态",
   "context_open_folder_btn": "打开文件夹",
