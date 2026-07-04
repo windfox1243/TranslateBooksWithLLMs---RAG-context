@@ -4395,6 +4395,18 @@ def _relationship_has_any(text: str, cues: Tuple[str, ...]) -> bool:
     return any(cue in clean for cue in cues)
 
 
+def _looks_like_trainer_role(name: str) -> bool:
+    clean = _clean_inline_text(name).casefold()
+    return any(
+        cue in clean
+        for cue in (
+            "coach",
+            "trainer",
+            "huấn luyện viên",
+        )
+    )
+
+
 def _vietnamese_addressing_from_relationship(
     speaker: str,
     addressee: str,
@@ -4657,9 +4669,68 @@ def _has_vietnamese_non_peer_formality_cue(details: str) -> bool:
     return any(cue in clean for cue in non_peer_cues)
 
 
+def _has_vietnamese_peer_context_cue(details: str) -> bool:
+    clean = _clean_inline_text(details).casefold()
+    return any(
+        cue in clean
+        for cue in (
+            "best friend",
+            "classmate",
+            "close friend",
+            "fellow student",
+            "friend",
+            "peer",
+            "peer-level",
+            "rival",
+            "roommate",
+            "school-year peers",
+            "teammate",
+            "training partner",
+        )
+    )
+
+
+def _has_vietnamese_soft_minh_voice_cue(details: str) -> bool:
+    clean = _clean_inline_text(details).casefold()
+    return any(
+        cue in clean
+        for cue in (
+            "established character voice",
+            "gentle voice",
+            "introspective",
+            "mình-cậu",
+            "self-reflective",
+            "soft voice",
+            "stored context",
+        )
+    )
+
+
+def _has_vietnamese_trainer_to_trainee_cue(
+    speaker: str,
+    addressee: str,
+    details: str,
+) -> bool:
+    clean = _clean_inline_text(details).casefold()
+    if not _looks_like_trainer_role(speaker):
+        return False
+    if _looks_like_trainer_role(addressee):
+        return False
+    return any(
+        cue in clean
+        for cue in (
+            "junior",
+            "senior-junior",
+            "trainer-trainee",
+            "trainee",
+        )
+    )
+
+
 def _repair_vietnamese_addressing_details(
     details: str,
     addressee: str = "",
+    speaker: str = "",
     character_genders: Optional[Dict[str, str]] = None,
 ) -> str:
     """Normalize obvious Vietnamese paired-address fields before merge."""
@@ -4706,6 +4777,42 @@ def _repair_vietnamese_addressing_details(
             "tôi",
         )
 
+    self_reference_raw = _vietnamese_addressing_field(details, "self-reference")
+    raw_second_p = _vietnamese_addressing_field(details, "second-person pronoun")
+    if (
+        _plain_key(self_reference_raw) == "mình"
+        and _plain_key(raw_second_p) in {"cậu", "bạn"}
+        and _has_vietnamese_peer_context_cue(details)
+        and not _has_vietnamese_soft_minh_voice_cue(details)
+    ):
+        details = _replace_vietnamese_addressing_field(
+            details,
+            "self-reference",
+            "tớ",
+        )
+
+    self_reference_raw = _vietnamese_addressing_field(details, "self-reference")
+    raw_second_p = _vietnamese_addressing_field(details, "second-person pronoun")
+    if (
+        _plain_key(raw_second_p) in {"anh", "chị", "cô", "ông", "bà"}
+        and _has_vietnamese_trainer_to_trainee_cue(speaker, addressee, details)
+    ):
+        if _plain_key(self_reference_raw) == "tôi":
+            speaker_gender = ""
+            if character_genders:
+                speaker_gender = character_genders.get(_plain_key(speaker), "")
+            if _canonical_gender(speaker_gender).casefold() == "male":
+                details = _replace_vietnamese_addressing_field(
+                    details,
+                    "self-reference",
+                    "anh",
+                )
+        details = _replace_vietnamese_addressing_field(
+            details,
+            "second-person pronoun",
+            "em",
+        )
+
     self_reference = _vietnamese_addressing_field(
         details,
         "self-reference",
@@ -4743,7 +4850,7 @@ def _repair_vietnamese_addressing_line(
     if not parsed:
         return line
     relation_key, rendered, details = parsed
-    _, _, right_party = relation_key
+    left_party, _, right_party = relation_key
 
     # Auto-format simple 2-part pairs (e.g. "tớ - cậu", "tôi - cậu (bạn học)") into 3-part canonical format
     clean_details = _clean_inline_text(details).strip('" ')
@@ -4762,6 +4869,7 @@ def _repair_vietnamese_addressing_line(
     repaired_details = _repair_vietnamese_addressing_details(
         details,
         right_party,
+        left_party,
         character_genders,
     )
     left_part = rendered[:-len(parsed[2])] if parsed[2] else f"{rendered}: "

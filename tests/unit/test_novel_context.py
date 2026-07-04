@@ -5196,6 +5196,54 @@ def test_vietnamese_trainer_trainee_intimacy_does_not_use_peer_self_reference():
     assert "self-reference: mình" not in merged
 
 
+def test_vietnamese_peer_addressing_defaults_minh_cau_to_to_cau():
+    from src.utils.novel_context import merge_dynamic_state
+
+    proposed = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Apollo Rainbow → Green Titan: "Guriko" | '
+        '"self-reference: mình; second-person pronoun: cậu; '
+        'vocative/address form: Guriko" | peer-level, friends.\n'
+        "---DYNAMIC_STATE_END---"
+    )
+
+    merged = merge_dynamic_state(
+        "",
+        proposed,
+        target_language="Vietnamese",
+    )
+
+    assert "self-reference: tớ; second-person pronoun: cậu" in merged
+    assert "self-reference: mình; second-person pronoun: cậu" not in merged
+
+
+def test_vietnamese_trainer_to_trainee_does_not_address_trainee_as_senior():
+    from src.utils.novel_context import merge_dynamic_state
+
+    proposed = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Okino Trainer → Silence Suzuka: "Silence Suzuka" | '
+        '"self-reference: tôi; second-person pronoun: chị; '
+        'vocative/address form: Suzuka" | senior-junior, trainer-trainee, '
+        "professional trust.\n"
+        "---DYNAMIC_STATE_END---"
+    )
+
+    merged = merge_dynamic_state(
+        "",
+        proposed,
+        target_language="Vietnamese",
+        character_genders={"okino trainer": "Male", "silence suzuka": "Female"},
+    )
+
+    assert "self-reference: anh; second-person pronoun: em" in merged
+    assert "second-person pronoun: chị" not in merged
+
+
 def test_vietnamese_reverse_pair_does_not_force_symmetric_addressing():
     from src.utils.novel_context import merge_dynamic_state
 
