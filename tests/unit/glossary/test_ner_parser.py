@@ -12,7 +12,22 @@ from pathlib import Path
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from src.core.glossary.ner import parse_ner_response, related_existing_glossary_terms
+from src.core.glossary.ner import (
+    apply_related_glossary_to_candidates,
+    parse_ner_response,
+    related_existing_glossary_terms,
+    suggest_terms,
+)
+
+
+class _StaticProvider:
+    """Minimal LLM provider returning a fixed NER payload."""
+
+    def __init__(self, content):
+        self.content = content
+
+    async def generate(self, user_prompt, system_prompt=None):
+        return self.content
 
 
 class TestRelatedExistingGlossaryTerms:
@@ -49,6 +64,82 @@ class TestRelatedExistingGlossaryTerms:
         )
 
         assert len(related) == 2
+
+
+class TestApplyRelatedGlossaryToCandidates:
+    """Related glossary rows repair obvious untranslated fragments only."""
+
+    def test_repairs_untranslated_component_in_compound_target(self):
+        candidates = [
+            {
+                "source": "Domain Zone",
+                "target": "Domain zone",
+                "category": "location",
+            }
+        ]
+
+        repaired = apply_related_glossary_to_candidates(
+            candidates,
+            {"Domain": "lanh dia", "zone": "zone"},
+        )
+
+        assert repaired[0]["target"] == "lanh dia zone"
+
+    def test_leaves_already_translated_compound_target_unchanged(self):
+        candidates = [
+            {
+                "source": "Domain Zone",
+                "target": "lanh dia zone",
+                "category": "location",
+            }
+        ]
+
+        repaired = apply_related_glossary_to_candidates(
+            candidates,
+            {"Domain": "lanh dia", "zone": "zone"},
+        )
+
+        assert repaired[0]["target"] == "lanh dia zone"
+
+    def test_does_not_rewrite_idiomatic_target_without_raw_source_fragment(self):
+        candidates = [
+            {
+                "source": "Domain Zone",
+                "target": "territorial field",
+                "category": "location",
+            }
+        ]
+
+        repaired = apply_related_glossary_to_candidates(
+            candidates,
+            {"Domain": "lanh dia", "zone": "zone"},
+        )
+
+        assert repaired[0]["target"] == "territorial field"
+
+    @pytest.mark.asyncio
+    async def test_suggest_terms_repairs_ignored_related_glossary_component(self):
+        provider = _StaticProvider(
+            '<NER_JSON>[{"source":"Domain Zone","target":"Domain zone",'
+            '"category":"location"}]</NER_JSON>'
+        )
+
+        candidates, warnings = await suggest_terms(
+            "The Domain Zone opened.",
+            "English",
+            "Vietnamese",
+            provider,
+            existing_glossary_terms={"Domain": "lanh dia", "zone": "zone"},
+        )
+
+        assert warnings == []
+        assert candidates == [
+            {
+                "source": "Domain Zone",
+                "target": "lanh dia zone",
+                "category": "location",
+            }
+        ]
 
 
 class TestParseNerResponseBasic:

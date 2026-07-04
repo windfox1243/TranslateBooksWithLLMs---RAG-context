@@ -123,6 +123,11 @@ async def suggest_terms(
 
     raw = getattr(response, "content", None) or str(response)
     candidates, warnings = parse_ner_response(raw)
+    if related_terms:
+        candidates = apply_related_glossary_to_candidates(
+            candidates,
+            related_terms,
+        )
 
     if not candidates:
         snippet = (raw or '').strip().replace('\n', ' ')[:400]
@@ -134,6 +139,55 @@ async def suggest_terms(
             warnings.append("LLM returned a valid empty list — no recurring entities detected")
 
     return candidates, warnings
+
+
+def apply_related_glossary_to_candidates(
+    candidates: List[Dict[str, str]],
+    related_terms: Dict[str, str],
+) -> List[Dict[str, str]]:
+    """Repair candidate targets that ignored a related existing glossary term."""
+    if not candidates or not related_terms:
+        return candidates
+
+    replacements = _candidate_replacements(related_terms)
+    if not replacements:
+        return candidates
+
+    repaired: List[Dict[str, str]] = []
+    for candidate in candidates:
+        source_text = str(candidate.get("source") or "")
+        target_text = str(candidate.get("target") or "")
+        if not source_text or not target_text:
+            repaired.append(candidate)
+            continue
+
+        new_target = target_text
+        for source_form, target_form in replacements:
+            if not target_form or source_form.casefold() == target_form.casefold():
+                continue
+            if not _contains_source_form(
+                source_text.casefold(),
+                source_form.casefold(),
+                source_form,
+            ):
+                continue
+            if _contains_source_form(
+                new_target.casefold(),
+                target_form.casefold(),
+                target_form,
+            ):
+                continue
+            new_target = _replace_source_form_in_text(
+                new_target,
+                source_form,
+                target_form,
+            )
+
+        if new_target != target_text:
+            candidate = dict(candidate)
+            candidate["target"] = new_target
+        repaired.append(candidate)
+    return repaired
 
 
 def related_existing_glossary_terms(
@@ -182,6 +236,33 @@ def related_existing_glossary_terms(
 
     scored.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
     return {source: target for *_score, source, target in scored[:max_entries]}
+
+
+def _candidate_replacements(related_terms: Dict[str, str]) -> List[Tuple[str, str]]:
+    replacements: List[Tuple[str, str]] = []
+    for source, target in related_terms.items():
+        for alt in str(source or "").split("|"):
+            alt = alt.strip()
+            if alt and target:
+                replacements.append((alt, str(target).strip()))
+    replacements.sort(key=lambda item: len(item[0]), reverse=True)
+    return replacements
+
+
+def _replace_source_form_in_text(text: str, source_form: str, target_form: str) -> str:
+    if _CJK_RE.search(source_form) or not _has_word_edge(source_form):
+        return re.sub(
+            re.escape(source_form),
+            target_form,
+            text,
+            flags=re.IGNORECASE,
+        )
+    return re.sub(
+        r"\b" + re.escape(source_form) + r"\b",
+        target_form,
+        text,
+        flags=re.IGNORECASE,
+    )
 
 
 def _contains_source_form(text_fold: str, alt_fold: str, original_alt: str) -> bool:
