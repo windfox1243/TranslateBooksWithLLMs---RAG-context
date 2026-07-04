@@ -12,7 +12,43 @@ from pathlib import Path
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from src.core.glossary.ner import parse_ner_response
+from src.core.glossary.ner import parse_ner_response, related_existing_glossary_terms
+
+
+class TestRelatedExistingGlossaryTerms:
+    """Relevant old glossary entries are selected as hints for NER."""
+
+    def test_exact_term_match_is_selected_for_compound_context(self):
+        related = related_existing_glossary_terms(
+            "The Zone Gate opened above the city.",
+            {
+                "Zone": "Zone",
+                "Unrelated Kingdom": "Vuong quoc khong lien quan",
+            },
+        )
+
+        assert related == {"Zone": "Zone"}
+
+    def test_shared_meaningful_keyword_can_select_longer_old_entry(self):
+        related = related_existing_glossary_terms(
+            "A new Academy Zone appeared.",
+            {
+                "Summoner Academy": "Hoc vien Trieu hoi",
+                "of": "cua",
+            },
+        )
+
+        assert related == {"Summoner Academy": "Hoc vien Trieu hoi"}
+
+    def test_caps_related_terms(self):
+        glossary = {f"Zone {index}": f"Zone {index}" for index in range(5)}
+        related = related_existing_glossary_terms(
+            "Zone 0 Zone 1 Zone 2 Zone 3 Zone 4",
+            glossary,
+            max_entries=2,
+        )
+
+        assert len(related) == 2
 
 
 class TestParseNerResponseBasic:

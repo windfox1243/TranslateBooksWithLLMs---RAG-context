@@ -247,6 +247,7 @@
   "context_save_global_btn": "저장 및 다시 동기화",
   "context_global_anchor_missing": "첫 번째 과거 컨텍스트 스냅샷을 사용할 수 없습니다.",
   "context_resync_unavailable": "편집 가능한 컨텍스트 스냅샷이 선택되지 않았습니다.",
+  "context_resync_no_changes": "[시스템] 저장할 컨텍스트 변경 사항이 없습니다.",
   "context_global_resync_started_log": "[시스템] 전역 컨텍스트를 저장했습니다. 사용 가능한 첫 번째 스냅샷부터 컨텍스트 타임라인을 다시 동기화합니다.",
   "context_latest_state": "최신 상태",
   "context_open_folder_btn": "폴더 열기",

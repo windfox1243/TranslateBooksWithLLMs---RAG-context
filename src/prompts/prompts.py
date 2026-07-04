@@ -1,4 +1,4 @@
-from typing import List, NamedTuple, Tuple, Optional
+from typing import Dict, List, NamedTuple, Tuple, Optional
 
 from src.prompts.examples import (build_placeholder_section,
                               get_output_format_example, get_subtitle_example,
@@ -515,6 +515,7 @@ def generate_ner_extraction_prompt(
     text: str,
     source_language: str = "Chinese",
     target_language: str = "English",
+    related_glossary_terms: Optional[Dict[str, str]] = None,
 ) -> PromptPair:
     """
     Build a prompt that asks the LLM to extract recurring proper-noun entities
@@ -532,7 +533,7 @@ def generate_ner_extraction_prompt(
         "vi",
     }:
         vietnamese_skill_guidance = """
-7. For English named skills, abilities, techniques, spells, combat moves, weapons, artifacts, and equipment, prefer concise Sino-Vietnamese literary target renderings when natural for Vietnamese fantasy or game prose. Preserve English only for brands, code labels, UI/system keys, or terms that clearly should remain untranslated."""
+8. For English named skills, abilities, techniques, spells, combat moves, weapons, artifacts, and equipment, prefer concise Sino-Vietnamese literary target renderings when natural for Vietnamese fantasy or game prose. Preserve English only for brands, code labels, UI/system keys, or terms that clearly should remain untranslated."""
 
     system_prompt = f"""You are a literary entity extractor. Your job is to read a passage written in {source_language} and identify recurring proper nouns that a translator would want to keep consistent across an entire book.
 
@@ -553,6 +554,7 @@ def generate_ner_extraction_prompt(
 4. Deduplicate: if the same entity appears multiple times in the passage, list it once.
 5. If you are unsure about an entry, omit it rather than guessing.
 6. Preserve the original {source_language} form exactly as it appears in the text (no extra spaces, no normalization).
+7. If the related existing glossary contains part of a longer candidate, reuse the established target for that part when it is semantically the same. Prefer a longer existing glossary entry over composing a new one from shorter parts.
 {vietnamese_skill_guidance}
 
 # OUTPUT FORMAT
@@ -576,8 +578,21 @@ If no entities are found, return an empty array: {NER_TAG_IN}[]{NER_TAG_OUT}.
 
 Do NOT wrap the JSON in markdown code fences. Do NOT add commentary before or after the tags."""
 
+    related_glossary_block = ""
+    if related_glossary_terms:
+        related_lines = [
+            "# RELATED EXISTING GLOSSARY",
+            "",
+            "Use these existing translations as consistency hints for overlapping names or compound terms. Do not repeat an entry that is already complete; suggest only genuinely new longer terms or missing related entities.",
+            "",
+        ]
+        for source, target in related_glossary_terms.items():
+            related_lines.append(f"  - {source} -> {target}")
+        related_glossary_block = "\n".join(related_lines) + "\n\n"
+
     user_prompt = f"""# SOURCE TEXT ({source_language})
 
+{related_glossary_block}
 {INPUT_TAG_IN}
 {text}
 {INPUT_TAG_OUT}

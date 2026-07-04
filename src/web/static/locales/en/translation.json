@@ -247,6 +247,7 @@
   "context_save_global_btn": "Save & Re-sync",
   "context_global_anchor_missing": "The first historical context snapshot is unavailable.",
   "context_resync_unavailable": "No editable context snapshot is selected.",
+  "context_resync_no_changes": "[System] No context changes to save.",
   "context_global_resync_started_log": "[System] Global context saved. The context timeline will be re-synchronized from its first available snapshot.",
   "context_latest_state": "Latest State",
   "context_open_folder_btn": "Open Folder",

@@ -56,6 +56,18 @@ class TestGenerateNerExtractionPrompt:
         assert start < end
         assert text in prompt.user[start:end]
 
+    def test_user_prompt_can_include_related_existing_glossary(self):
+        """Related existing glossary entries are rendered as consistency hints."""
+        prompt = generate_ner_extraction_prompt(
+            "The Zone Gate opened.",
+            "English",
+            "Vietnamese",
+            related_glossary_terms={"Zone": "Zone"},
+        )
+        assert "# RELATED EXISTING GLOSSARY" in prompt.user
+        assert "Zone -> Zone" in prompt.user
+        assert "part of a longer candidate" in prompt.system
+
     def test_long_input_text_is_preserved_fully(self):
         """The prompt builder does not truncate long input text (truncation is upstream)."""
         long_text = "A" * 50000

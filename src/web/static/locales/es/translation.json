@@ -247,6 +247,7 @@
   "context_save_global_btn": "Guardar y resincronizar",
   "context_global_anchor_missing": "La primera instantánea histórica de contexto no está disponible.",
   "context_resync_unavailable": "No se ha seleccionado ninguna instantánea de contexto editable.",
+  "context_resync_no_changes": "[Sistema] No hay cambios de contexto para guardar.",
   "context_global_resync_started_log": "[Sistema] Contexto global guardado. La cronología del contexto se resincronizará desde su primera instantánea disponible.",
   "context_latest_state": "Último estado",
   "context_open_folder_btn": "Abrir carpeta",

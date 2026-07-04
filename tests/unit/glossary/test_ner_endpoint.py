@@ -17,6 +17,7 @@ from flask import Flask
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from src.api.blueprints.glossary_routes import create_glossary_blueprint
+from src.core.glossary.models import GlossaryTerm
 from src.core.glossary.store import GlossaryStore
 from src.core.llm.exceptions import RateLimitError
 
@@ -174,6 +175,31 @@ class TestSuggestTermsApiKeyResolution:
 
         assert response.status_code == 200, response.get_json()
         assert captured.get("api_key") == "real-env-key"
+
+    def test_existing_glossary_terms_are_forwarded_to_ner(self, client, store):
+        glossary = self._create_glossary(store)
+        store.add_term(glossary.id, GlossaryTerm("Zone", "Zone"))
+
+        captured = {}
+
+        async def _fake_suggest(*args, **kwargs):
+            captured.update(kwargs)
+            return [], []
+
+        with patch(
+            "src.core.llm.factory.create_llm_provider",
+            return_value=_CapturingProvider(),
+        ), patch(
+            "src.api.blueprints.glossary_routes.ner_suggest_terms",
+            side_effect=_fake_suggest,
+        ):
+            response = client.post(
+                f"/api/glossaries/{glossary.id}/suggest-terms",
+                json={"text": "The Zone Gate opened."},
+            )
+
+        assert response.status_code == 200, response.get_json()
+        assert captured["existing_glossary_terms"] == {"Zone": "Zone"}
 
 
 if __name__ == "__main__":

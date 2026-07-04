@@ -40,6 +40,7 @@ def build_glossary_block(
         "Do NOT paraphrase, transliterate differently, or invent alternatives.",
         "Apply each rule consistently every time the term occurs.",
         "When several source forms are listed before the arrow (comma-separated), they are inflected variants of the same entity — translate any of them with the single target on the right.",
+        "For compound source phrases that contain a required glossary term plus extra meaningful words, keep the required glossary translation exact and translate the remaining words naturally, unless a longer glossary entry gives a specific translation.",
         "Bracketed hints after the arrow (e.g. [character]) describe the entity type — use them only to disambiguate, not as part of the translation.",
         "",
     ]

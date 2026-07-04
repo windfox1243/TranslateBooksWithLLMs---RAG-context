@@ -17,6 +17,12 @@ ALLOWED_CATEGORIES = {"character", "location", "organization", "item", "title", 
 
 NER_TAG_IN = "<NER_JSON>"
 NER_TAG_OUT = "</NER_JSON>"
+_TOKEN_RE = re.compile(r"[\w]+", re.UNICODE)
+_CJK_RE = re.compile(r"[぀-ゟ゠-ヿ一-鿿가-힯㐀-䶿]")
+_RELATION_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "by", "for", "from", "in", "into",
+    "is", "of", "on", "or", "the", "to", "with",
+}
 
 
 def parse_ner_response(raw: str) -> Tuple[List[Dict[str, str]], List[str]]:
@@ -89,6 +95,8 @@ async def suggest_terms(
     target_language: str,
     llm_provider,
     max_chars: int = 6000,
+    existing_glossary_terms: Optional[Dict[str, str]] = None,
+    max_related_terms: int = 20,
 ) -> Tuple[List[Dict[str, str]], List[str]]:
     """
     Run the NER prompt against `text` (truncated to `max_chars`) using the
@@ -97,7 +105,17 @@ async def suggest_terms(
     from src.prompts.prompts import generate_ner_extraction_prompt
 
     sample = text[:max_chars] if max_chars and len(text) > max_chars else text
-    prompt = generate_ner_extraction_prompt(sample, source_language, target_language)
+    related_terms = related_existing_glossary_terms(
+        sample,
+        existing_glossary_terms or {},
+        max_entries=max_related_terms,
+    )
+    prompt = generate_ner_extraction_prompt(
+        sample,
+        source_language,
+        target_language,
+        related_glossary_terms=related_terms,
+    )
 
     response = await llm_provider.generate(prompt.user, system_prompt=prompt.system)
     if response is None:
@@ -116,6 +134,77 @@ async def suggest_terms(
             warnings.append("LLM returned a valid empty list — no recurring entities detected")
 
     return candidates, warnings
+
+
+def related_existing_glossary_terms(
+    text: str,
+    glossary_terms: Dict[str, str],
+    max_entries: int = 20,
+) -> Dict[str, str]:
+    """Return existing glossary entries that are useful hints for this sample.
+
+    Exact source-term occurrences rank highest. For Latin-like terms, a shared
+    meaningful token can also include a row, which helps compounds such as
+    "zone X" reuse the established "zone" translation without injecting an
+    entire large glossary into the NER prompt.
+    """
+    if not text or not glossary_terms or max_entries <= 0:
+        return {}
+
+    text_fold = text.casefold()
+    text_tokens = set(_meaningful_tokens(text))
+    scored: List[Tuple[int, int, int, str, str]] = []
+
+    for source, target in glossary_terms.items():
+        source = str(source or "").strip()
+        target = str(target or "").strip()
+        if not source or not target:
+            continue
+
+        alternatives = [alt.strip() for alt in source.split("|") if alt.strip()]
+        if not alternatives:
+            continue
+
+        best_exact = 0
+        best_overlap = 0
+        best_length = 0
+        for alt in alternatives:
+            alt_fold = alt.casefold()
+            if _contains_source_form(text_fold, alt_fold, alt):
+                best_exact = 1
+            alt_tokens = set(_meaningful_tokens(alt))
+            overlap = len(alt_tokens & text_tokens)
+            best_overlap = max(best_overlap, overlap)
+            best_length = max(best_length, len(alt))
+
+        if best_exact or best_overlap:
+            scored.append((best_exact, best_overlap, best_length, source, target))
+
+    scored.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+    return {source: target for *_score, source, target in scored[:max_entries]}
+
+
+def _contains_source_form(text_fold: str, alt_fold: str, original_alt: str) -> bool:
+    if not alt_fold:
+        return False
+    if _CJK_RE.search(original_alt):
+        return alt_fold in text_fold
+    if _has_word_edge(original_alt):
+        return re.search(r"\b" + re.escape(alt_fold) + r"\b", text_fold) is not None
+    return alt_fold in text_fold
+
+
+def _has_word_edge(text: str) -> bool:
+    return bool(text and (re.match(r"\w", text[0]) or re.match(r"\w", text[-1])))
+
+
+def _meaningful_tokens(text: str) -> List[str]:
+    tokens = []
+    for token in _TOKEN_RE.findall(str(text or "").casefold()):
+        if len(token) <= 2 or token in _RELATION_STOPWORDS:
+            continue
+        tokens.append(token)
+    return tokens
 
 
 def _strip_thinking_blocks(text: str) -> str:
