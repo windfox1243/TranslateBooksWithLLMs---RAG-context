@@ -3148,6 +3148,104 @@ def test_resume_context_session_sanitizes_vietnamese_snapshot_mismatch(tmp_path)
     assert "- Dier Aigar ↔ Aster Evans: Ally." in session.dynamic_state
 
 
+def test_resume_context_session_prefers_edited_file_over_stale_snapshot(tmp_path):
+    from src.utils.novel_context import extract_global_lore, open_novel_context_session
+
+    saved_context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Apollo Rainbow: Female, horse girl.\n"
+            "- Tomio Momozawa: Male, trainer.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Apollo Rainbow → Tomio Momozawa: "Tomio" | '
+            '"self-reference: em; second-person pronoun: anh; '
+            'vocative/address form: Tomio" | trainer-trainee, high intimacy.\n\n'
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Apollo Rainbow ↔ Tomio Momozawa: trainer and trainee."
+        ),
+    )
+    save_novel_context("edited_context.txt", tmp_path, saved_context)
+    stale_snapshot = build_novel_context(
+        extract_global_lore(saved_context),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Apollo Rainbow → Tomio Momozawa: "Tomio" | '
+            '"self-reference: tôi; second-person pronoun: anh; '
+            'vocative/address form: Tomio" | professional, trainer-trainee.\n\n'
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Apollo Rainbow ↔ Tomio Momozawa: trainer and trainee."
+        ),
+    )
+
+    prompt_options = {
+        "novel_context_file": "edited_context.txt",
+        "target_language": "Vietnamese",
+    }
+    session = open_novel_context_session(
+        prompt_options=prompt_options,
+        novel_contexts_dir=tmp_path,
+        input_filename="book.txt",
+        resume_snapshot=compress_dynamic_state(stale_snapshot),
+    )
+
+    assert session is not None
+    assert "self-reference: em; second-person pronoun: anh" in session.dynamic_state
+    assert "self-reference: tôi; second-person pronoun: anh" not in session.dynamic_state
+
+
+def test_resume_context_session_can_explicitly_prefer_snapshot(tmp_path):
+    from src.utils.novel_context import extract_global_lore, open_novel_context_session
+
+    saved_context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Alice: Female.\n"
+            "- Bob: Male.\n\n"
+            "## GLOSSARY & TERMINOLOGY\n"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Alice → Bob: "Bob" | "self-reference: em; '
+            'second-person pronoun: anh; vocative/address form: Bob" | close.\n\n'
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Alice ↔ Bob: Close."
+        ),
+    )
+    save_novel_context("snapshot_context.txt", tmp_path, saved_context)
+    snapshot = build_novel_context(
+        extract_global_lore(saved_context),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Alice → Bob: "Bob" | "self-reference: tôi; '
+            'second-person pronoun: anh; vocative/address form: Bob" | '
+            "đổi thái độ, thù địch.\n\n"
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Alice ↔ Bob: Hostile."
+        ),
+    )
+
+    prompt_options = {
+        "novel_context_file": "snapshot_context.txt",
+        "target_language": "Vietnamese",
+        "prefer_resume_snapshot": True,
+    }
+    session = open_novel_context_session(
+        prompt_options=prompt_options,
+        novel_contexts_dir=tmp_path,
+        input_filename="book.txt",
+        resume_snapshot=compress_dynamic_state(snapshot),
+    )
+
+    assert session is not None
+    assert "đổi thái độ, thù địch" in session.dynamic_state
+    assert "self-reference: tôi; second-person pronoun: anh" in session.dynamic_state
+
+
 def test_dynamic_state_delta_updates_one_relationship_without_erasing_others():
     current = (
         "- Valentine → Eric: Cautious trust.\n"
