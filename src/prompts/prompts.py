@@ -229,6 +229,34 @@ def _build_dialogue_attribution_section(prompt_options: dict) -> str:
     )
 
 
+def _canonicalized_dialogue_attribution(prompt_options: dict) -> dict:
+    """Return dialogue attribution resolved against current novel-context aliases."""
+    if not prompt_options:
+        return {}
+    from src.utils.dialogue_attribution import (
+        canonicalize_dialogue_attribution,
+        canonicalize_dialogue_state,
+    )
+    from src.utils.novel_context import character_alias_map
+
+    attribution = prompt_options.get("dialogue_attribution") or {}
+    aliases = character_alias_map(
+        prompt_options.get("novel_context", "")
+    )
+    if aliases:
+        canonical = canonicalize_dialogue_attribution(
+            attribution,
+            aliases,
+        )
+        if not canonical.get("state_after") and attribution.get("state_after"):
+            canonical["state_after"] = canonicalize_dialogue_state(
+                attribution.get("state_after"),
+                aliases,
+            )
+        return canonical
+    return attribution
+
+
 def _build_novel_context_section(
     prompt_options: dict,
     reference_text: str = "",
@@ -247,6 +275,10 @@ def _build_novel_context_section(
     if not novel_context or not str(novel_context).strip():
         return ""
 
+    attribution = _canonicalized_dialogue_attribution(prompt_options)
+    state_after = attribution.get("state_after") or {}
+    active_speaker = state_after.get("speaker")
+
     from src.utils.novel_context import render_novel_context_for_prompt
 
     rendered_context = render_novel_context_for_prompt(
@@ -254,6 +286,7 @@ def _build_novel_context_section(
         reference_text=reference_text,
         max_tokens=prompt_options.get('novel_context_prompt_max_tokens'),
         selective=prompt_options.get('novel_context_selective_injection', True),
+        active_speaker=active_speaker,
     )
     if not rendered_context.strip():
         return ""
