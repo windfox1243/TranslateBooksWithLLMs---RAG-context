@@ -4400,7 +4400,7 @@ def test_full_snapshot_decode_can_skip_recanonicalization_for_runtime_resume():
     assert ADDRESSING_SECTION in dynamic_state
 
 
-def test_make_novel_context_filename_is_safe_for_every_input_name():
+def test_make_novel_context_filename_is_safe_for_every_input_name(tmp_path):
     assert make_novel_context_filename("Book Name.epub") == "Book_Name_context.txt"
     assert (
         make_novel_context_filename("\u65e5\u672c\u8a9e.docx")
@@ -4415,6 +4415,11 @@ def test_make_novel_context_filename_is_safe_for_every_input_name():
     assert normalize_novel_context_filename(
         r"C:\old\Novel_Contexts\novel_context.txt"
     ) == "novel_context.txt"
+    external_context = tmp_path / "external_context.txt"
+    external_context.write_text("context", encoding="utf-8")
+    assert normalize_novel_context_filename(str(external_context)) == str(
+        external_context.resolve()
+    )
     with pytest.raises(ValueError):
         normalize_novel_context_filename("../outside.json")
 
@@ -5165,6 +5170,54 @@ def test_vietnamese_second_person_uses_title_fallback_for_source_titles():
         "second-person pronoun: huấn luyện viên; "
         "vocative/address form: Trainer Serizawa"
     ) in merged
+
+
+def test_vietnamese_relationship_only_state_seeds_addressing_forms():
+    from src.utils.novel_context import merge_dynamic_state
+
+    dynamic = (
+        "## CURRENT ADDRESSING FORMS\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+        "- Apollo Rainbow ↔ Tomio Momozawa: trainer and trainee, "
+        "formed a contract, growing rapport.\n"
+        "- Apollo Rainbow ↔ Green Teatan: roommates and classmates at school.\n"
+    )
+    profiles = {
+        "apollo rainbow": {
+            "name": "Apollo Rainbow",
+            "gender": "Female",
+            "details": "horse girl student",
+        },
+        "tomio momozawa": {
+            "name": "Tomio Momozawa",
+            "gender": "Male",
+            "details": "rookie trainer",
+        },
+        "green teatan": {
+            "name": "Green Teatan",
+            "gender": "Female",
+            "details": "roommate and classmate",
+        },
+    }
+
+    merged = merge_dynamic_state(
+        dynamic,
+        "",
+        target_language="Vietnamese",
+        character_genders={
+            "apollo rainbow": "Female",
+            "tomio momozawa": "Male",
+            "green teatan": "Female",
+        },
+        character_profiles=profiles,
+    )
+
+    assert "Apollo Rainbow → Tomio Momozawa" in merged
+    assert "second-person pronoun: anh" in merged
+    assert "Tomio Momozawa → Apollo Rainbow" in merged
+    assert "second-person pronoun: em" in merged
+    assert "Apollo Rainbow → Green Teatan" in merged
+    assert "second-person pronoun: cậu" in merged
 
 
 def test_vietnamese_addressing_exempts_formal_workplace_titles():

@@ -2518,19 +2518,31 @@ def _parse_bullet_entries(text: str) -> List[Tuple[str, str]]:
 
 
 def _character_gender_map(global_lore: str) -> Dict[str, str]:
+    return {
+        key: str(profile["gender"])
+        for key, profile in _character_profile_map(global_lore).items()
+        if str(profile.get("gender", "")).casefold() in _SPECIFIC_GENDER_LABELS
+    }
+
+
+def _character_profile_map(global_lore: str) -> Dict[str, Dict[str, str]]:
     bounds = _find_lore_section(global_lore, CHARACTERS_SECTION)
     if not bounds:
         return {}
     _, body_start, body_end = bounds
-    genders: Dict[str, str] = {}
+    profiles: Dict[str, Dict[str, str]] = {}
     for name, value in _parse_bullet_entries(global_lore[body_start:body_end]):
         gender, _ = _split_gender_and_details(
             _normalize_character_value_for_name(name, value)
         )
+        _raw_gender, details = _split_gender_and_details(value)
         gender = _canonical_gender(gender)
-        if gender.casefold() in _SPECIFIC_GENDER_LABELS:
-            genders[_plain_key(name)] = gender
-    return genders
+        profiles[_plain_key(name)] = {
+            "name": _canonical_display_name(name),
+            "gender": gender if gender.casefold() in _SPECIFIC_GENDER_LABELS else "",
+            "details": _clean_inline_text(details),
+        }
+    return profiles
 
 
 def _find_lore_section(lore: str, section_name: str) -> Optional[Tuple[int, int, int]]:
@@ -4350,6 +4362,181 @@ def _gendered_vietnamese_second_person(
     return ""
 
 
+def _first_name_for_vocative(name: str) -> str:
+    parts = _canonical_display_name(name).split()
+    return parts[0] if parts else _canonical_display_name(name)
+
+
+def _profile_text(name: str, profiles: Optional[Dict[str, Dict[str, str]]]) -> str:
+    profile = (profiles or {}).get(_plain_key(name), {})
+    return _clean_inline_text(
+        f"{profile.get('name', name)} {profile.get('details', '')}"
+    ).casefold()
+
+
+def _profile_gender(
+    name: str,
+    profiles: Optional[Dict[str, Dict[str, str]]],
+) -> str:
+    return str((profiles or {}).get(_plain_key(name), {}).get("gender", ""))
+
+
+def _profile_has_role(
+    name: str,
+    profiles: Optional[Dict[str, Dict[str, str]]],
+    *roles: str,
+) -> bool:
+    text = _profile_text(name, profiles)
+    return any(role in text for role in roles)
+
+
+def _relationship_has_any(text: str, cues: Tuple[str, ...]) -> bool:
+    clean = _clean_inline_text(text).casefold()
+    return any(cue in clean for cue in cues)
+
+
+def _vietnamese_addressing_from_relationship(
+    speaker: str,
+    addressee: str,
+    relationship_details: str,
+    character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
+) -> Optional[Tuple[str, str, str, str]]:
+    clean = _clean_inline_text(relationship_details).casefold()
+    speaker_is_trainer = _profile_has_role(
+        speaker,
+        character_profiles,
+        "trainer",
+        "coach",
+        "huấn luyện viên",
+    )
+    addressee_is_trainer = _profile_has_role(
+        addressee,
+        character_profiles,
+        "trainer",
+        "coach",
+        "huấn luyện viên",
+    )
+    speaker_gender = _profile_gender(speaker, character_profiles)
+    addressee_gender = _profile_gender(addressee, character_profiles)
+    addressee_short = _first_name_for_vocative(addressee)
+
+    if (
+        "trainer" in clean
+        or "trainee" in clean
+        or "coach" in clean
+        or speaker_is_trainer
+        or addressee_is_trainer
+    ):
+        if speaker_is_trainer and not addressee_is_trainer:
+            self_ref = "anh" if _canonical_gender(speaker_gender).casefold() == "male" else "tôi"
+            return (
+                self_ref,
+                "em",
+                addressee_short,
+                "trainer-trainee relationship",
+            )
+        if addressee_is_trainer and not speaker_is_trainer:
+            second = _gendered_vietnamese_second_person(addressee_gender)
+            if not second:
+                second = "huấn luyện viên"
+            return (
+                "tôi",
+                second,
+                addressee_short,
+                "student-trainer relationship",
+            )
+
+    peer_cues = (
+        "classmate",
+        "close friend",
+        "friend",
+        "peer",
+        "rival",
+        "roommate",
+        "training partner",
+    )
+    if _relationship_has_any(clean, peer_cues):
+        return ("mình", "cậu", addressee_short, "peer-level relationship")
+
+    staff_cues = (
+        "academy staff",
+        "chairwoman",
+        "librarian",
+        "staff member",
+        "student and",
+    )
+    if _relationship_has_any(clean, staff_cues):
+        second = _gendered_vietnamese_second_person(
+            addressee_gender,
+            formal_female="cô",
+        ) or "bạn"
+        return ("tôi", second, addressee_short, "professional school setting")
+
+    professional_cues = (
+        "professional",
+        "competition",
+        "competitor",
+        "contract",
+    )
+    if _relationship_has_any(clean, professional_cues):
+        second = _gendered_vietnamese_second_person(
+            addressee_gender,
+            formal_female="cô",
+        ) or "bạn"
+        return ("tôi", second, addressee_short, "professional relationship")
+
+    return None
+
+
+def _seed_vietnamese_addressing_from_relationships(
+    addressing: str,
+    relationships: str,
+    alias_map: Dict[str, str],
+    character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
+) -> str:
+    if addressing.strip() or not relationships.strip():
+        return addressing.strip()
+
+    seeded: List[str] = []
+    seen: set[Tuple[str, str]] = set()
+    for raw_line in relationships.splitlines():
+        match = _DYNAMIC_RELATION_PATTERN.match(raw_line)
+        if not match:
+            continue
+        left = _canonical_relationship_party(match.group("left"), alias_map)
+        right = _canonical_relationship_party(match.group("right"), alias_map)
+        details = _clean_inline_text(match.group("details"))
+        if _is_invalid_context_key(left) or _is_invalid_context_key(right):
+            continue
+        directions = [(left, right)]
+        if match.group("arrow") == "↔":
+            directions.append((right, left))
+        for speaker, addressee in directions:
+            key = (_plain_key(speaker), _plain_key(addressee))
+            if key in seen or key[0] == key[1]:
+                continue
+            inferred = _vietnamese_addressing_from_relationship(
+                speaker,
+                addressee,
+                details,
+                character_profiles,
+            )
+            if not inferred:
+                continue
+            self_ref, second, vocative, reason = inferred
+            if not self_ref or not second or not vocative:
+                continue
+            seen.add(key)
+            seeded.append(
+                f'- {speaker} → {addressee}: "{vocative}" | '
+                f'"self-reference: {self_ref}; second-person pronoun: {second}; '
+                f'vocative/address form: {vocative}" | '
+                f"seeded from relationship evolution: {reason}."
+            )
+
+    return "\n".join(seeded).strip()
+
+
 def _infer_replacement_pronoun(
     self_ref: str,
     second_person: str,
@@ -4941,6 +5128,7 @@ def _sanitize_vietnamese_dynamic_state(
     alias_map: Dict[str, str],
     discarded_character_aliases: Optional[set[str]] = None,
     character_genders: Optional[Dict[str, str]] = None,
+    character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> str:
     """Remove stored Vietnamese addressing rows whose paired-address data conflicts."""
     normalized = normalize_dynamic_state(
@@ -4949,15 +5137,24 @@ def _sanitize_vietnamese_dynamic_state(
         discarded_character_aliases,
     )
     addressing, relationships, _ = _split_dynamic_sections(normalized)
+    addressing = _seed_vietnamese_addressing_from_relationships(
+        addressing,
+        relationships,
+        alias_map,
+        character_profiles,
+    )
     addressing = _repair_vietnamese_addressing_block(
         addressing,
         alias_map,
         character_genders,
     )
-    return _format_dynamic_sections(
-        _remove_vietnamese_addressing_mismatches(addressing, alias_map),
-        relationships,
+    filtered_addressing = _remove_vietnamese_addressing_mismatches(
+        addressing,
+        alias_map,
     )
+    if addressing.strip() and not filtered_addressing.strip():
+        filtered_addressing = addressing
+    return _format_dynamic_sections(filtered_addressing, relationships)
 
 
 def normalize_dynamic_state(
@@ -4981,6 +5178,7 @@ def merge_dynamic_state(
     character_aliases: Optional[Dict[str, str]] = None,
     target_language: Optional[str] = None,
     character_genders: Optional[Dict[str, str]] = None,
+    character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> str:
     """Merge durable addressing and relationship deltas by participant key.
 
@@ -4995,6 +5193,7 @@ def merge_dynamic_state(
             current,
             aliases,
             character_genders=character_genders,
+            character_profiles=character_profiles,
         )
     if not str(proposed_dynamic_state or "").strip():
         return current
@@ -5036,6 +5235,25 @@ def merge_dynamic_state(
             proposed_relationships,
             aliases,
         )
+
+    if _is_vietnamese_target_language(target_language):
+        addressing = _seed_vietnamese_addressing_from_relationships(
+            addressing,
+            relationships,
+            aliases,
+            character_profiles,
+        )
+        addressing = _repair_vietnamese_addressing_block(
+            addressing,
+            aliases,
+            character_genders,
+        )
+        filtered_addressing = _remove_vietnamese_addressing_mismatches(
+            addressing,
+            aliases,
+        )
+        if filtered_addressing.strip() or not addressing.strip():
+            addressing = filtered_addressing
 
     return _format_dynamic_sections(addressing, relationships)
 
@@ -5930,10 +6148,18 @@ def make_novel_context_filename(input_filename: str, fallback: str = "translatio
 
 
 def normalize_novel_context_filename(filename: str) -> str:
-    """Return a safe basename for web/API-managed context files."""
-    basename = str(filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    """Return a safe context file reference.
+
+    Web-managed contexts normally use a basename from ``Novel_Contexts``.
+    Explicit absolute ``.txt`` paths are preserved so advanced users can keep
+    context files on another drive.
+    """
+    raw = str(filename or "").strip()
+    basename = raw.replace("\\", "/").rsplit("/", 1)[-1]
     if not is_safe_filename(basename):
         raise ValueError("Invalid novel context filename")
+    if os.path.isabs(raw) and Path(raw).is_file():
+        return str(Path(raw).resolve())
     return basename
 
 
@@ -6220,6 +6446,7 @@ class RefinementContextTracker:
                 _character_alias_map(self.global_lore),
                 target_language=target_language,
                 character_genders=_character_gender_map(self.global_lore),
+                character_profiles=_character_profile_map(self.global_lore),
             )
             full_context = build_novel_context(
                 self.global_lore,
@@ -6528,6 +6755,7 @@ def open_novel_context_session(
             dynamic_state,
             character_aliases,
             character_genders=_character_gender_map(global_lore),
+            character_profiles=_character_profile_map(global_lore),
         )
         if sanitized_dynamic_state != str(dynamic_state or "").strip():
             dynamic_state = sanitized_dynamic_state
@@ -8130,6 +8358,7 @@ async def update_novel_context_chunk(
             _character_alias_map(updated_global_lore),
             target_language=target_language,
             character_genders=_character_gender_map(updated_global_lore),
+            character_profiles=_character_profile_map(updated_global_lore),
         )
 
         # LLM consolidation pass: periodically deduplicate character descriptions
