@@ -5108,6 +5108,65 @@ def test_vietnamese_second_person_possessive_cleanup_is_conservative():
     assert _repair_vietnamese_addressing_details(possessive_pronoun) == possessive_pronoun
 
 
+def test_vietnamese_second_person_source_names_are_repaired_to_address_pairs():
+    from src.utils.novel_context import merge_dynamic_state
+
+    proposed = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Apollo Rainbow → Happy Meek: "Meek-chan" | "self-reference: mình; '
+        'second-person pronoun: Meek-chan; vocative/address form: Meek-chan" | '
+        "friendly, peer-level, training partners.\n"
+        '- Kiryuuin Aoi → Tomio Momozawa: "Momozawa-san" | "self-reference: tôi; '
+        'second-person pronoun: Momozawa-san; vocative/address form: Momozawa-san" | '
+        "professional, respectful, colleague.\n"
+        "---DYNAMIC_STATE_END---"
+    )
+
+    merged = merge_dynamic_state(
+        "",
+        proposed,
+        target_language="Vietnamese",
+        character_genders={
+            "happy meek": "Female",
+            "tomio momozawa": "Male",
+        },
+    )
+
+    assert "second-person pronoun: cậu; vocative/address form: Meek-chan" in merged
+    assert "second-person pronoun: anh; vocative/address form: Momozawa-san" in merged
+    assert "second-person pronoun: Meek-chan" not in merged
+    assert "second-person pronoun: Momozawa-san" not in merged
+
+
+def test_vietnamese_second_person_uses_title_fallback_for_source_titles():
+    from src.utils.novel_context import merge_dynamic_state
+
+    proposed = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Apollo Rainbow → Yuya Serizawa: "Trainer Serizawa" | '
+        '"self-reference: tôi; second-person pronoun: Trainer Serizawa; '
+        'vocative/address form: Trainer Serizawa" | professional, '
+        "student-trainer hierarchy.\n"
+        "---DYNAMIC_STATE_END---"
+    )
+
+    merged = merge_dynamic_state(
+        "",
+        proposed,
+        target_language="Vietnamese",
+        character_genders={"yuya serizawa": "Male"},
+    )
+
+    assert (
+        "second-person pronoun: huấn luyện viên; "
+        "vocative/address form: Trainer Serizawa"
+    ) in merged
+
+
 def test_vietnamese_addressing_exempts_formal_workplace_titles():
     from src.utils.novel_context import merge_dynamic_state
     current = (
