@@ -5232,6 +5232,41 @@ def test_vietnamese_reverse_pair_does_not_force_symmetric_addressing():
     assert "self-reference: mình" not in merged
 
 
+def test_vietnamese_directional_kinship_pair_rejects_neutralized_update():
+    from src.utils.novel_context import merge_dynamic_state
+
+    current = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Apollo Rainbow → Tomio Momozawa: "Tomio" | '
+        '"self-reference: em; second-person pronoun: anh; '
+        'vocative/address form: Tomio" | professional, trainer-trainee '
+        "relationship, increased intimacy.\n"
+        "---DYNAMIC_STATE_END---"
+    )
+    proposed = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Apollo Rainbow → Tomio Momozawa: "Tomio" | '
+        '"self-reference: mình; second-person pronoun: anh; '
+        'vocative/address form: Tomio" | professional, trainer-trainee '
+        "relationship, high intimacy.\n"
+        "---DYNAMIC_STATE_END---"
+    )
+
+    merged = merge_dynamic_state(
+        current,
+        proposed,
+        target_language="Vietnamese",
+    )
+
+    assert "self-reference: em; second-person pronoun: anh" in merged
+    assert "self-reference: tôi; second-person pronoun: anh" not in merged
+    assert "self-reference: mình" not in merged
+
+
 def test_vietnamese_relationship_only_state_seeds_addressing_forms():
     from src.utils.novel_context import merge_dynamic_state
 
