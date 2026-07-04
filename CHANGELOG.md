@@ -11,6 +11,7 @@
 - **Vietnamese peer register default:** Adjusted peer/classmate/roommate/friendly-rival addressing fallback and prompt guidance to prefer `tớ/cậu` by default, while preserving `mình/cậu` when established character voice or stored context supports it.
 - **Vietnamese non-peer intimacy repair:** Prevented high-intimacy trainer, mentor, senior, and professional relationships from using peer self-references such as `mình` or `tớ`; these are repaired to `tôi` while preserving the appropriate second-person form and vocative, without forcing reciprocal addressing from the reverse direction alone.
 - **Vietnamese kinship addressing stability:** Prevented established directional kinship/hierarchy pairs such as `em/anh` from being overwritten by weaker neutralized updates such as `tôi/anh` when no attitude-shift evidence is present.
+- **Vietnamese peer and trainer addressing:** Repaired default peer-level `mình/cậu` updates to `tớ/cậu` unless an established soft/self-reflective voice is explicit, and prevented trainer-to-trainee entries from addressing the junior trainee as a senior form such as `chị`.
 - **External context files:** Preserved existing absolute `.txt` context paths so contexts kept outside the default `Novel_Contexts` directory are not silently redirected to a same-named managed file.
 - **Glossary compound handling:** Added glossary prompt guidance for compound source phrases, preserving required glossary translations exactly while translating surrounding meaningful words naturally unless a longer glossary entry overrides them.
 - **NER glossary suggestions:** NER term suggestions now receive a small related subset of the existing glossary, selected by exact source matches or shared meaningful keywords, so new compound terms can reuse established translations without injecting the full glossary. Obvious untranslated fragments in suggested compound targets are repaired only when the raw source component is still present.
@@ -18,7 +19,7 @@
 
 ### Tests
 
-- Added regression coverage for canonical dialogue speaker aliases, first-person context selection, explicit relationship matches, conservative Vietnamese possessive addressing cleanup, Vietnamese second-person source-name repair, non-peer intimacy repair, directional kinship-pair stability, relationship-seeded Vietnamese addressing with the default `tớ/cậu` peer register, external context path preservation, compound glossary guidance, related-glossary NER hints and repair, and Save & Re-sync no-change feedback.
+- Added regression coverage for canonical dialogue speaker aliases, first-person context selection, explicit relationship matches, conservative Vietnamese possessive addressing cleanup, Vietnamese second-person source-name repair, non-peer intimacy repair, directional kinship-pair stability, peer `tớ/cậu` default repair, trainer-to-trainee hierarchy repair, relationship-seeded Vietnamese addressing with the default `tớ/cậu` peer register, external context path preservation, compound glossary guidance, related-glossary NER hints and repair, and Save & Re-sync no-change feedback.
 
 ## 1.14.48 - 2026-07-03
 
