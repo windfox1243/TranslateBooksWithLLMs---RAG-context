@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.14.49 - 2026-07-04
+
+### Fixed
+
+- **POV-aware novel context selection:** Canonicalized dialogue speaker aliases before selecting POV context and stopped first-person POV filtering from hiding explicit character-pair or quoted-address matches.
+- **Vietnamese addressing cleanup:** Narrowed possessive `second-person pronoun` cleanup so only known title heads such as `huấn luyện viên của Apollo Rainbow` are shortened, while uncertain possessive phrases remain unchanged. Vietnamese prompts now state that proven kinship, age, seniority, family, rank, and teacher/student hierarchy override name/title fallback.
+
+### Tests
+
+- Added regression coverage for canonical dialogue speaker aliases, first-person context selection, explicit relationship matches, and conservative Vietnamese possessive addressing cleanup.
+
 ## 1.14.48 - 2026-07-03
 
 ### Fixed

@@ -269,6 +269,130 @@ def test_prompt_context_selector_selects_addressing_by_source_form():
     assert 'source form "Sis"' in selected
 
 
+def test_prompt_context_selector_keeps_explicit_match_when_pov_differs():
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Eric: Male, lieutenant colonel.\n"
+            "- Valentine: Female, protagonist.\n"
+            "- Aster Evans: Male, student."
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Eric → Valentine: source form "Valentine" | '
+            'target-language form "self-reference: tôi; second-person pronoun: cô; '
+            'vocative/address form: Valentine" | formal\n\n'
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Eric ↔ Valentine: allies."
+        ),
+    )
+
+    selected = render_novel_context_for_prompt(
+        context,
+        reference_text='Eric looked at Valentine. "I need your report."',
+        active_speaker="Aster Evans",
+    )
+
+    assert "Eric → Valentine" in selected
+    assert "Eric ↔ Valentine" in selected
+
+
+def test_translation_prompt_canonicalizes_active_speaker_for_pov_context():
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Eric: Male, lieutenant colonel.\n"
+            "- Valentine: Female, protagonist.\n\n"
+            "## CHARACTER ALIASES\n"
+            "- Lieutenant Colonel: Eric"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Eric → Valentine: source form "Valentine" | '
+            'target-language form "self-reference: tôi; second-person pronoun: cô; '
+            'vocative/address form: Valentine" | formal\n\n'
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Eric ↔ Valentine: allies."
+        ),
+    )
+
+    prompt_pair = generate_translation_prompt(
+        main_content='"I need you."',
+        context_before="",
+        context_after="",
+        previous_translation_context="",
+        source_language="English",
+        target_language="Vietnamese",
+        prompt_options={
+            "novel_context": context,
+            "dialogue_attribution": {
+                "version": 1,
+                "turns": [
+                    {
+                        "id": "q0",
+                        "cue": '"I need you."',
+                        "speaker": "Lieutenant Colonel",
+                        "addressee": "Unknown",
+                        "confidence": 0.95,
+                    }
+                ],
+                "state_after": {
+                    "speaker": "Lieutenant Colonel",
+                    "addressee": "Unknown",
+                },
+            },
+        },
+    )
+
+    assert "Eric → Valentine" in prompt_pair.user
+    assert "Eric ↔ Valentine" in prompt_pair.user
+
+
+def test_translation_prompt_preserves_canonicalized_scene_state_without_turns():
+    context = build_novel_context(
+        (
+            "# GLOBAL LORE\n\n"
+            "## CHARACTERS & GENDERS\n"
+            "- Eric: Male, lieutenant colonel.\n"
+            "- Valentine: Female, protagonist.\n\n"
+            "## CHARACTER ALIASES\n"
+            "- Lieutenant Colonel: Eric"
+        ),
+        (
+            "## CURRENT ADDRESSING FORMS\n"
+            '- Eric → Valentine: source form "Valentine" | '
+            'target-language form "self-reference: tôi; second-person pronoun: cô; '
+            'vocative/address form: Valentine" | formal\n\n'
+            "## RELATIONSHIP EVOLUTION\n"
+            "- Eric ↔ Valentine: allies."
+        ),
+    )
+
+    prompt_pair = generate_translation_prompt(
+        main_content='"I will handle it."',
+        context_before="",
+        context_after="",
+        previous_translation_context="",
+        source_language="English",
+        target_language="Vietnamese",
+        prompt_options={
+            "novel_context": context,
+            "dialogue_attribution": {
+                "version": 1,
+                "turns": [],
+                "state_after": {
+                    "speaker": "Lieutenant Colonel",
+                },
+            },
+        },
+    )
+
+    assert "Eric → Valentine" in prompt_pair.user
+    assert "Eric ↔ Valentine" in prompt_pair.user
+
+
 def test_prompt_context_selector_filters_small_unrelated_context_by_default():
     context = build_novel_context(
         (
@@ -4966,6 +5090,24 @@ def test_vietnamese_addressing_respects_attitude_shift():
     assert _repair_vietnamese_addressing_details(kinship_details) == kinship_details
 
 
+def test_vietnamese_second_person_possessive_cleanup_is_conservative():
+    from src.utils.novel_context import _repair_vietnamese_addressing_details
+
+    long_role = (
+        "self-reference: tôi; second-person pronoun: huấn luyện viên của Apollo Rainbow; "
+        "vocative/address form: huấn luyện viên của Apollo Rainbow | team role"
+    )
+    repaired = _repair_vietnamese_addressing_details(long_role)
+    assert "second-person pronoun: huấn luyện viên;" in repaired
+    assert "vocative/address form: huấn luyện viên của Apollo Rainbow" in repaired
+
+    possessive_pronoun = (
+        "self-reference: tôi; second-person pronoun: người của tôi; "
+        "vocative/address form: người của tôi | possessive phrase"
+    )
+    assert _repair_vietnamese_addressing_details(possessive_pronoun) == possessive_pronoun
+
+
 def test_vietnamese_addressing_exempts_formal_workplace_titles():
     from src.utils.novel_context import merge_dynamic_state
     current = (
@@ -4984,4 +5126,3 @@ def test_vietnamese_addressing_exempts_formal_workplace_titles():
     )
     merged = merge_dynamic_state(current, proposed, target_language="Vietnamese")
     assert "second-person pronoun: giám đốc" in merged
-
