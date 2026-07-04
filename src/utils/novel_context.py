@@ -4887,6 +4887,33 @@ _VIETNAMESE_GENERIC_NEUTRAL_SECOND_PERSON = {
     "cô",
     "ông",
 }
+_VIETNAMESE_ANCHORED_KINSHIP_SELF_REFERENCES = {
+    "anh",
+    "bà",
+    "bác",
+    "cháu",
+    "chị",
+    "con",
+    "cô",
+    "em",
+    "ông",
+    "thầy",
+}
+_VIETNAMESE_ANCHORED_KINSHIP_SECOND_PERSON = {
+    "anh",
+    "bà",
+    "bác",
+    "cháu",
+    "chị",
+    "chú",
+    "cô",
+    "dì",
+    "dượng",
+    "em",
+    "ông",
+    "thầy",
+    "thím",
+}
 _VIETNAMESE_KINSHIP_ADDRESSING_CUES = (
     "anh em",
     "biological sibling",
@@ -5015,6 +5042,21 @@ _VIETNAMESE_INCOMPATIBLE_ADDRESSING_REPAIRS = (
 )
 
 
+def _is_anchored_vietnamese_kinship_pair(details: str) -> bool:
+    self_reference = _vietnamese_addressing_field(
+        details,
+        "self-reference",
+    ).casefold()
+    second_person = _vietnamese_addressing_field(
+        details,
+        "second-person pronoun",
+    ).casefold()
+    return (
+        self_reference in _VIETNAMESE_ANCHORED_KINSHIP_SELF_REFERENCES
+        and second_person in _VIETNAMESE_ANCHORED_KINSHIP_SECOND_PERSON
+    )
+
+
 def _vietnamese_addressing_anchor_score(details: str) -> int:
     clean = _clean_inline_text(details).casefold()
     if not clean:
@@ -5024,6 +5066,8 @@ def _vietnamese_addressing_anchor_score(details: str) -> int:
     if any(cue in clean for cue in _VIETNAMESE_KINSHIP_ADDRESSING_CUES):
         score += 3
     if any(cue in clean for cue in _VIETNAMESE_STATUS_ADDRESSING_CUES):
+        score += 3
+    if _is_anchored_vietnamese_kinship_pair(details):
         score += 3
     hierarchy_cues = (
         "age",
@@ -5085,6 +5129,28 @@ def _is_generic_vietnamese_neutral_pair(details: str) -> bool:
     )
 
 
+def _is_vietnamese_neutralization_of_kinship_pair(
+    current_details: str,
+    proposed_details: str,
+) -> bool:
+    if _is_vietnamese_attitude_shift(proposed_details):
+        return False
+    if not _is_anchored_vietnamese_kinship_pair(current_details):
+        return False
+    proposed_self_reference = _vietnamese_addressing_field(
+        proposed_details,
+        "self-reference",
+    ).casefold()
+    proposed_second_person = _vietnamese_addressing_field(
+        proposed_details,
+        "second-person pronoun",
+    ).casefold()
+    return (
+        proposed_self_reference in _VIETNAMESE_GENERIC_NEUTRAL_SELF_REFERENCES
+        and proposed_second_person in _VIETNAMESE_GENERIC_NEUTRAL_SECOND_PERSON
+    )
+
+
 def _is_vietnamese_social_downgrade(
     current_details: str,
     proposed_details: str,
@@ -5098,6 +5164,11 @@ def _is_vietnamese_social_downgrade(
     if current_anchor_score <= 0:
         return False
     proposed_anchor_score = _vietnamese_addressing_anchor_score(proposed_details)
+    if _is_vietnamese_neutralization_of_kinship_pair(
+        current_details,
+        proposed_details,
+    ):
+        return True
     return (
         _is_generic_vietnamese_neutral_pair(proposed_details)
         and proposed_anchor_score < current_anchor_score
