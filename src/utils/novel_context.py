@@ -5405,6 +5405,65 @@ def _is_vietnamese_social_downgrade(
     )
 
 
+_VIETNAMESE_VOLATILE_PRONOUNS = {"ta", "ngươi", "tao", "mày", "hắn"}
+_VIETNAMESE_STABLE_SELF_REFERENCES = {
+    "anh",
+    "chị",
+    "em",
+    "thầy",
+    "cô",
+    "tớ",
+    "tôi",
+    "sếp",
+    "cháu",
+    "con",
+}
+
+
+def _is_vietnamese_unstable_register_jump(
+    current_details: str,
+    proposed_details: str,
+) -> bool:
+    """Reject unprompted jumps from stable anchored pronouns to volatile pronouns without an explicit attitude shift."""
+    if _is_vietnamese_attitude_shift(proposed_details):
+        return False
+
+    current_self = _vietnamese_addressing_field(
+        current_details,
+        "self-reference",
+    ).casefold()
+    current_second = _vietnamese_addressing_field(
+        current_details,
+        "second-person pronoun",
+    ).casefold()
+
+    proposed_self = _vietnamese_addressing_field(
+        proposed_details,
+        "self-reference",
+    ).casefold()
+    proposed_second = _vietnamese_addressing_field(
+        proposed_details,
+        "second-person pronoun",
+    ).casefold()
+
+    if (
+        current_self in _VIETNAMESE_STABLE_SELF_REFERENCES
+        and proposed_self in _VIETNAMESE_VOLATILE_PRONOUNS
+        and proposed_self != current_self
+    ):
+        return True
+
+    if (
+        current_second
+        and current_second not in _VIETNAMESE_VOLATILE_PRONOUNS
+        and proposed_second in _VIETNAMESE_VOLATILE_PRONOUNS
+        and proposed_second != current_second
+    ):
+        return True
+
+    return False
+
+
 def _filter_vietnamese_addressing_delta(
     proposed_addressing: str,
     alias_map: Dict[str, str],
@@ -5438,9 +5497,9 @@ def _filter_vietnamese_addressing_delta(
             output.append(raw_line)
             continue
         current_details = current_details_by_key.get(relation_key, "")
-        if current_details and _is_vietnamese_social_downgrade(
-            current_details,
-            details,
+        if current_details and (
+            _is_vietnamese_social_downgrade(current_details, details)
+            or _is_vietnamese_unstable_register_jump(current_details, details)
         ):
             continue
         if (

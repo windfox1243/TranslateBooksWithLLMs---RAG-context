@@ -5567,5 +5567,31 @@ def test_generic_npc_roles_are_filtered_from_durable_dynamic_state():
     assert "Apollo Rainbow → Double Trigger" in cleaned
 
 
+def test_vietnamese_addressing_blocks_unstable_volatile_pronoun_jump():
+    from src.utils.novel_context import merge_dynamic_state
+    current = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Tomio Momozawa → Apollo Rainbow: "Apollo" | "self-reference: anh; second-person pronoun: em; vocative/address form: Apollo" | intimate, trainer/trainee.\n'
+        '- Alice → Bob: "Bob" | "self-reference: tớ; second-person pronoun: cậu; vocative/address form: Bob" | classmates.\n'
+    )
+    # Proposed chunk delta attempts to jump from 'anh' -> 'ta' and 'tớ' -> 'tao' without an explicit attitude shift
+    proposed = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Tomio Momozawa → Apollo Rainbow: "Apollo" | "self-reference: ta; second-person pronoun: em; vocative/address form: Apollo" | intimate, trainer/trainee.\n'
+        '- Alice → Bob: "Bob" | "self-reference: tao; second-person pronoun: mày; vocative/address form: Bob" | classmates.\n'
+    )
+    merged = merge_dynamic_state(
+        current,
+        proposed,
+        target_language="Vietnamese",
+    )
+    # Volatile register jumps are rejected; stable 'anh' and 'tớ' are preserved
+    assert "self-reference: anh" in merged
+    assert "self-reference: ta" not in merged
+    assert "self-reference: tớ" in merged
+    assert "self-reference: tao" not in merged
+
+
+
 
 
