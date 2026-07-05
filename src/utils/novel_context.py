@@ -5529,7 +5529,7 @@ def normalize_dynamic_state(
     )
 
 
-def sanitize_addressing_with_llm(
+async def sanitize_addressing_with_llm_async(
     addressing: str,
     character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
     target_language: str = "Vietnamese",
@@ -5567,8 +5567,26 @@ Normalize and repair the addressing rules into clean canonical format:
 
 Return ONLY the cleaned addressing lines for recurring characters."""
 
-        res = llm_client.generate(prompt) if hasattr(llm_client, "generate") else None
-        if res and res.strip() and not ("error" in res.lower() and len(res) < 50):
+        import inspect
+        res_call = None
+        if hasattr(llm_client, "translate_text"):
+            res_call = llm_client.translate_text(prompt)
+        elif hasattr(llm_client, "make_request"):
+            res_call = llm_client.make_request(prompt)
+        elif hasattr(llm_client, "generate"):
+            res_call = llm_client.generate(prompt)
+
+        if inspect.isawaitable(res_call):
+            res_raw = await res_call
+        else:
+            res_raw = res_call
+
+        if hasattr(res_raw, "content"):
+            res = res_raw.content
+        else:
+            res = res_raw
+
+        if res and isinstance(res, str) and res.strip() and not ("error" in res.lower() and len(res) < 50):
             clean_res = res.strip().replace("```markdown", "").replace("```json", "").replace("```", "").strip()
             if len(clean_res) > 20 and ":" in clean_res:
                 return clean_res
@@ -5577,6 +5595,41 @@ Return ONLY the cleaned addressing lines for recurring characters."""
         get_logger().warning(f"LLM Context Sanitizer failed: {e}. Falling back to Python sanitizer.", log_type=LogType.GENERAL)
 
     return addressing
+
+
+def sanitize_addressing_with_llm(
+    addressing: str,
+    character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
+    target_language: str = "Vietnamese",
+    llm_client: Optional[Any] = None,
+) -> str:
+    """Synchronous wrapper for sanitize_addressing_with_llm_async."""
+    if not addressing.strip() or not llm_client:
+        return addressing
+
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(lambda: asyncio.run(sanitize_addressing_with_llm_async(
+                addressing=addressing,
+                character_profiles=character_profiles,
+                target_language=target_language,
+                llm_client=llm_client,
+            )))
+            return future.result(timeout=60)
+    else:
+        return asyncio.run(sanitize_addressing_with_llm_async(
+            addressing=addressing,
+            character_profiles=character_profiles,
+            target_language=target_language,
+            llm_client=llm_client,
+        ))
 
 
 def merge_dynamic_state(
