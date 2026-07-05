@@ -13,7 +13,7 @@ _PRONOUN_FORMALITY_MAP: Dict[str, Dict[str, int]] = {
         # Honorific / Extremely Formal (+2)
         "ngài": 2, "quý khách": 2, "bệ hạ": 2, "điện hạ": 2, "quý vị": 2, "tiền bối": 2,
         # Polite / Neutral Formal (+1)
-        "tôi": 1, "anh": 1, "chị": 1, "ông": 1, "bà": 1, "bác": 1, "chú": 1, "cô": 1,
+        "tôi": 1, "anh": 1, "chị": 1, "ông": 1, "bà": 1, "bác": 1, "chú": 1, "cô": 1, "huấn luyện viên": 1, "giám đốc": 1, "bác sĩ": 1,
         # Youthful / Friendly Peer / Intimate (0)
         "tớ": 0, "cậu": 0, "mình": 0, "bạn": 0, "em": 0, "cháu": 0, "con": 0,
         # Vulgar / Hostile / Contemptuous (-2)
@@ -42,13 +42,13 @@ _PRONOUN_FORMALITY_MAP: Dict[str, Dict[str, int]] = {
 
 # Seniority Role Classification
 _SENIOR_PRONOUN_SETS: Dict[str, Set[str]] = {
-    "vi": {"anh", "chị", "thầy", "cô", "sếp", "bác", "chú", "ông", "bà", "tiền bối", "ngài", "huấn luyện viên", "trainer"},
+    "vi": {"anh", "chị", "thầy", "cô", "sếp", "bác", "chú", "ông", "bà", "tiền bối", "ngài", "huấn luyện viên", "giám đốc", "bác sĩ"},
     "ja": {"senpai", "sensei", "sama", "kantoku"},
     "ko": {"sunbae-nim", "sunbae", "teacher", "boss"},
 }
 
 _JUNIOR_PRONOUN_SETS: Dict[str, Set[str]] = {
-    "vi": {"em", "cháu", "con", "học sinh", "hậu bối", "trainee"},
+    "vi": {"em", "cháu", "con", "học sinh", "hậu bối"},
     "ja": {"kohai", "pupil"},
     "ko": {"hobae", "student"},
 }
@@ -57,6 +57,13 @@ _PEER_PRONOUN_SETS: Dict[str, Set[str]] = {
     "vi": {"cậu", "bạn", "tớ", "mình", "mày"},
     "ja": {"omae", "kimi", "anta"},
     "ko": {"neo", "inoma"},
+}
+
+# Raw Title Strings in English/Foreign text normalized to Vietnamese workplace titles
+_TITLE_PRONOUN_CONFLATIONS: Dict[str, str] = {
+    "trainer": "huấn luyện viên",
+    "manager": "giám đốc",
+    "doctor": "bác sĩ",
 }
 
 # Fast Harmonious Alignment Maps
@@ -163,6 +170,12 @@ class UniversalAddressingEngine:
 
         s_key = s_clean.casefold()
         t_key = t_clean.casefold()
+        c_clean = (details_context or "").casefold()
+
+        # Normalize raw English title conflations in target_pronoun (e.g. 'trainer' -> 'huấn luyện viên')
+        if t_key in _TITLE_PRONOUN_CONFLATIONS:
+            t_clean = _TITLE_PRONOUN_CONFLATIONS[t_key]
+            t_key = t_clean.casefold()
 
         # 1. Resolve 2D Seniority Hierarchy (JUNIOR_TO_SENIOR, SENIOR_TO_JUNIOR, PEER)
         hierarchy = self.resolve_seniority_hierarchy(speaker, addressee, details_context)
@@ -175,7 +188,7 @@ class UniversalAddressingEngine:
         if hierarchy == "JUNIOR_TO_SENIOR":
             # Junior calling Senior cannot use peer pronoun 'cậu', 'mày', 'omae', 'neo'
             if t_key in peer_set:
-                t_clean = v_clean or ("Trainer" if "trainer" in (details_context or "").casefold() else ("thầy" if "teacher" in (details_context or "").casefold() else "anh"))
+                t_clean = "huấn luyện viên" if "trainer" in c_clean else ("thầy" if "teacher" in c_clean else ("chị" if "female" in c_clean else "anh"))
                 t_key = t_clean.casefold()
 
         elif hierarchy == "SENIOR_TO_JUNIOR":
@@ -207,7 +220,7 @@ class UniversalAddressingEngine:
         # 5. Self-Consistency Guard: Prevent identical self & target pronouns (e.g., em - em, chị - chị)
         if s_key and s_key == t_key:
             if s_key == "em":
-                t_clean = "anh" if "male" in (details_context or "").casefold() else "chị"
+                t_clean = "anh" if "male" in c_clean else "chị"
             elif s_key in {"chị", "anh"}:
                 t_clean = "em"
             else:

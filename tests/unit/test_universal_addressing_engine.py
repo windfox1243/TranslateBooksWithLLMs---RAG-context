@@ -21,7 +21,7 @@ def test_formality_score_calculation():
 def test_vietnamese_2d_seniority_hierarchy_repairs():
     engine = UniversalAddressingEngine(language="vi")
 
-    # 1. Trainee calling Trainer with peer 'cậu' -> Repaired to 'Trainer'
+    # 1. Trainee calling Trainer with peer 'cậu' -> Repaired to workplace title 'huấn luyện viên'
     s, t, v = engine.validate_and_repair_pair(
         self_pronoun="tôi",
         target_pronoun="cậu",
@@ -31,10 +31,20 @@ def test_vietnamese_2d_seniority_hierarchy_repairs():
         details_context="trainer/student hierarchy, trainee",
     )
     assert s == "tôi"
-    assert t == "Trainer"
+    assert t == "huấn luyện viên"
     assert v == "Trainer"
 
-    # 2. Student calling Teacher with peer 'cậu' -> Repaired to 'thầy'
+    # 2. Raw English title 'Trainer' in target_pronoun normalized to 'huấn luyện viên'
+    s, t, v = engine.validate_and_repair_pair(
+        self_pronoun="tôi",
+        target_pronoun="Trainer",
+        speaker="Apollo Rainbow",
+        addressee="Tomio Momozawa",
+        vocative="",
+    )
+    assert t == "huấn luyện viên"
+
+    # 3. Student calling Teacher with peer 'cậu' -> Repaired to 'thầy'
     s, t, v = engine.validate_and_repair_pair(
         self_pronoun="tôi",
         target_pronoun="cậu",
@@ -44,7 +54,7 @@ def test_vietnamese_2d_seniority_hierarchy_repairs():
     )
     assert t == "thầy"
 
-    # 3. Senior (Trainer) calling Junior (Trainee) with Senior pronoun 'anh' -> Repaired to 'em'
+    # 4. Senior (Trainer) calling Junior (Trainee) with Senior pronoun 'anh' -> Repaired to 'em'
     s, t, v = engine.validate_and_repair_pair(
         self_pronoun="tôi",
         target_pronoun="anh",
