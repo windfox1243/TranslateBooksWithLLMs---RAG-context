@@ -132,6 +132,8 @@ export const SettingsManager = {
             { id: 'bilingualMode', event: 'change' },
             { id: 'plainTextMode', event: 'change' },
             { id: 'chapterMode', event: 'change' },
+            { id: 'enableReflection', event: 'change' },
+            { id: 'useLlmSanitizer', event: 'change' },
             { id: 'customInstructionSelect', event: 'change' },
             { id: 'novelContextSelect', event: 'change' },
             { id: 'autoUpdateContext', event: 'change' }
@@ -161,6 +163,8 @@ export const SettingsManager = {
             { id: 'nimApiKey', event: 'input' },
             { id: 'disableAutoPause', event: 'change' },
             { id: 'bypassContextGating', event: 'change' },
+            { id: 'enableReflection', event: 'change' },
+            { id: 'useLlmSanitizer', event: 'change' },
             { id: 'parallelWorkers', event: 'input' }
         ];
 
@@ -366,6 +370,18 @@ export const SettingsManager = {
                 chapterModeCheckbox.checked = prefs.chapterMode;
             }
         }
+        if (prefs.enableReflection !== undefined) {
+            const enableReflectionCheckbox = DomHelpers.getElement('enableReflection');
+            if (enableReflectionCheckbox) {
+                enableReflectionCheckbox.checked = prefs.enableReflection;
+            }
+        }
+        if (prefs.useLlmSanitizer !== undefined) {
+            const useLlmSanitizerCheckbox = DomHelpers.getElement('useLlmSanitizer');
+            if (useLlmSanitizerCheckbox) {
+                useLlmSanitizerCheckbox.checked = prefs.useLlmSanitizer;
+            }
+        }
         // Note: disableAutoPause is now loaded from .env via /api/config in FormManager,
         // not from localStorage.
 
@@ -387,7 +403,7 @@ export const SettingsManager = {
 
         // Keep Prompt Options section open if any option is active.
         // Note: disableAutoPause now lives in the Provider & Defaults section, not here.
-        const hasAnyPromptOption = prefs.textCleanup || prefs.bilingualMode || prefs.plainTextMode || prefs.chapterMode || prefs.customInstructionFile || prefs.novelContextFile || prefs.autoUpdateContext;
+        const hasAnyPromptOption = prefs.textCleanup || prefs.bilingualMode || prefs.plainTextMode || prefs.chapterMode || prefs.enableReflection || prefs.useLlmSanitizer || prefs.customInstructionFile || prefs.novelContextFile || prefs.autoUpdateContext;
         if (hasAnyPromptOption) {
             const promptOptionsSection = DomHelpers.getElement('promptOptionsSection');
             const promptOptionsIcon = DomHelpers.getElement('promptOptionsIcon');
@@ -443,6 +459,8 @@ export const SettingsManager = {
         const bilingualModeCheckbox = DomHelpers.getElement('bilingualMode');
         const plainTextModeCheckbox = DomHelpers.getElement('plainTextMode');
         const chapterModeCheckbox = DomHelpers.getElement('chapterMode');
+        const enableReflectionCheckbox = DomHelpers.getElement('enableReflection');
+        const useLlmSanitizerCheckbox = DomHelpers.getElement('useLlmSanitizer');
 
         const prefs = {
             lastProvider: DomHelpers.getValue('llmProvider'),
@@ -457,6 +475,8 @@ export const SettingsManager = {
             bilingualMode: bilingualModeCheckbox ? bilingualModeCheckbox.checked : false,
             plainTextMode: plainTextModeCheckbox ? plainTextModeCheckbox.checked : false,
             chapterMode: chapterModeCheckbox ? chapterModeCheckbox.checked : false,
+            enableReflection: enableReflectionCheckbox ? enableReflectionCheckbox.checked : false,
+            useLlmSanitizer: useLlmSanitizerCheckbox ? useLlmSanitizerCheckbox.checked : false,
             customInstructionFile: DomHelpers.getValue('customInstructionSelect') || '',
             novelContextFile: DomHelpers.getValue('novelContextSelect') || '',
             autoUpdateContext: DomHelpers.getElement('autoUpdateContext')?.checked || false
@@ -537,6 +557,14 @@ export const SettingsManager = {
             // Save bypass context gating flag (runtime behavior default)
             const bypassContextGatingCheckbox = DomHelpers.getElement('bypassContextGating');
             envSettings['BYPASS_CONTEXT_GATING'] = (bypassContextGatingCheckbox && bypassContextGatingCheckbox.checked) ? 'true' : 'false';
+
+            // Save chunk reflection flag (runtime behavior default)
+            const enableReflectionCheckbox = DomHelpers.getElement('enableReflection');
+            envSettings['ENABLE_CHUNK_REFLECTION'] = (enableReflectionCheckbox && enableReflectionCheckbox.checked) ? 'true' : 'false';
+
+            // Save LLM context sanitizer flag (runtime behavior default)
+            const useLlmSanitizerCheckbox = DomHelpers.getElement('useLlmSanitizer');
+            envSettings['USE_LLM_SANITIZER'] = (useLlmSanitizerCheckbox && useLlmSanitizerCheckbox.checked) ? 'true' : 'false';
 
             // Save parallel-requests default (the per-job request still overrides
             // this; it only seeds the input on next load). Backend clamps it.
