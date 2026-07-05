@@ -4813,6 +4813,23 @@ def _repair_vietnamese_addressing_details(
             "em",
         )
 
+    self_reference_raw = _vietnamese_addressing_field(details, "self-reference")
+    raw_second_p = _vietnamese_addressing_field(details, "second-person pronoun")
+    if (
+        _plain_key(raw_second_p) in {"cậu", "tớ", "bạn"}
+        and not _looks_like_trainer_role(speaker)
+        and (
+            _looks_like_trainer_role(addressee)
+            or any(k in _clean_inline_text(details).casefold() for k in ("trainer", "mentor", "huấn luyện viên", "thầy"))
+        )
+    ):
+        vocative_target = _vietnamese_addressing_field(details, "vocative/address form") or addressee or "Trainer"
+        details = _replace_vietnamese_addressing_field(
+            details,
+            "second-person pronoun",
+            vocative_target,
+        )
+
     self_reference = _vietnamese_addressing_field(
         details,
         "self-reference",
