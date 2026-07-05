@@ -68,3 +68,72 @@ def render_addressing_markdown(translation_id: str, db: Optional[Database] = Non
 
     lines.append("")
     return "\n".join(lines)
+
+
+def convert_addressing_text_to_markdown_table(text: str) -> str:
+    """
+    Convert raw/legacy pipe-delimited addressing text entries into a clean Markdown table.
+    """
+    if not text or not text.strip():
+        return ""
+
+    table_lines = [
+        "| Speaker | Addressee | Tự xưng (Self) | Gọi đối phương (Target) | Danh xưng (Vocative) | Sắc thái / Ghi chú |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- |",
+    ]
+
+    has_entries = False
+    for line in text.strip().splitlines():
+        line = line.strip()
+        if not line or not line.startswith("-"):
+            continue
+        # Extract "- Speaker → Addressee: details"
+        parts = line.lstrip("- ").split(":", 1)
+        if len(parts) < 2:
+            continue
+        pair_part = parts[0].strip()
+        details_part = parts[1].strip()
+
+        if "→" in pair_part:
+            pair = [p.strip() for p in pair_part.split("→", 1)]
+        elif "->" in pair_part:
+            pair = [p.strip() for p in pair_part.split("->", 1)]
+        else:
+            continue
+
+        speaker, addressee = pair[0], pair[1]
+
+        # Extract fields from details_part
+        self_p = "-"
+        target_p = "-"
+        vocative = "-"
+        notes = "-"
+
+        # Parse pipe separated parts if present
+        pipe_chunks = [c.strip() for c in details_part.split("|")]
+        if len(pipe_chunks) >= 1 and pipe_chunks[0].startswith('"') and pipe_chunks[0].endswith('"'):
+            vocative = pipe_chunks[0].strip('" ')
+
+        for chunk in pipe_chunks:
+            chunk_clean = chunk.strip('" ')
+            if "self-reference:" in chunk:
+                # Extract self reference
+                for sub in chunk.split(";"):
+                    sub_clean = sub.strip('" ')
+                    if "self-reference:" in sub_clean:
+                        self_p = sub_clean.split(":", 1)[1].strip('" ')
+                    elif "second-person pronoun:" in sub_clean:
+                        target_p = sub_clean.split(":", 1)[1].strip('" ')
+                    elif "vocative/address form:" in sub_clean:
+                        vocative = sub_clean.split(":", 1)[1].strip('" ')
+            elif chunk_clean != vocative and not chunk_clean.startswith("self-reference"):
+                notes = chunk_clean
+
+        table_lines.append(f"| {speaker} | {addressee} | {self_p} | {target_p} | {vocative} | {notes} |")
+        has_entries = True
+
+    if not has_entries:
+        return text
+
+    return "\n".join(table_lines)
+

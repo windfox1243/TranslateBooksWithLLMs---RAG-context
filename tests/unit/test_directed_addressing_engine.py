@@ -185,3 +185,16 @@ def test_context_projection():
         finally:
             db.close()
 
+
+def test_convert_addressing_text_to_markdown_table():
+    from src.utils.context_projection import convert_addressing_text_to_markdown_table
+    raw_text = """
+    - Apollo Rainbow → Tomio Momozawa: "Trainer" | "self-reference: tôi; second-person pronoun: Trainer; vocative/address form: Trainer" | professional mentor/trainee relationship
+    - Tomio Momozawa → Apollo Rainbow: "Apollo" | "self-reference: tôi; second-person pronoun: em; vocative/address form: Apollo" | professional mentor/trainee relationship
+    """
+    table = convert_addressing_text_to_markdown_table(raw_text)
+    assert "| Speaker | Addressee | Tự xưng (Self) | Gọi đối phương (Target) | Danh xưng (Vocative) |" in table
+    assert "| Apollo Rainbow | Tomio Momozawa | tôi | Trainer | Trainer |" in table
+    assert "| Tomio Momozawa | Apollo Rainbow | tôi | em | Apollo |" in table
+
+

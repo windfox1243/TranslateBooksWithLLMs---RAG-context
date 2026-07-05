@@ -7,7 +7,8 @@
 - **Directed Addressing Context Architecture**: Re-architected Vietnamese addressing context tracking into a DB-backed **Directed Addressing State Machine** with SQLite relational tables (`context_entities`, `context_addressing_rules`, `context_audit_logs`).
 - **Structured LLM Addressing Extraction**: Added `extract_addressing_deltas_from_text` to parse structured JSON deltas directly from LLM output while filtering out group/crowd dialogue.
 - **Deterministic Merge Policy Engine**: Implemented `ContextMergeEngine` enforcing User Lock overrides, configurable confidence thresholding (`ADDRESSING_MERGE_CONFIDENCE_THRESHOLD`, default `0.80`), register stability rules, and real-time SocketIO log events (`addressing_merged`, `addressing_rejected`).
-- **Read-Only Context Projection**: Created `context_projection.py` to render active DB rules into clean, non-mutable system prompt guidelines.
+- **Read-Only Context Projection & Markdown Tables**: Created `context_projection.py` to render active DB rules into clean, non-mutable system prompt guidelines and formatted Markdown table views (`convert_addressing_text_to_markdown_table`).
+- **Trainee-to-Trainer Hierarchy Repair**: Added automatic repair in `_repair_vietnamese_addressing_details` to catch and correct peer pronoun mismatches when a trainee addresses a senior trainer (replacing invalid `cậu` with senior title/vocative).
 - **Addressing Audit Trail & REST APIs**: Exposed `/api/translations/<id>/addressing-rules`, `/api/translations/<id>/addressing-audit-log`, and `/api/translations/<id>/addressing-rules/lock` endpoints for UI integration.
 
 ### Tests
