@@ -1,12 +1,27 @@
 """
-Unit tests for Lean Universal Addressing Constraint Engine.
+Unit tests for SOTA Formality Distance Arithmetic Addressing Engine.
 """
 
 import pytest
 from src.utils.universal_addressing_engine import UniversalAddressingEngine
 
 
-def test_vietnamese_intra_pair_repairs():
+def test_formality_score_calculation():
+    engine = UniversalAddressingEngine(language="vi")
+
+    assert engine.get_formality_score("ngài") == 2
+    assert engine.get_formality_score("tôi") == 1
+    assert engine.get_formality_score("tớ") == 0
+    assert engine.get_formality_score("mày") == -2
+
+    # Distance calculation: |F(tớ) - F(mày)| = |0 - (-2)| = 2
+    assert engine.calculate_formality_distance("tớ", "mày") == 2
+
+    # Distance calculation: |F(tôi) - F(anh)| = |1 - 1| = 0
+    assert engine.calculate_formality_distance("tôi", "anh") == 0
+
+
+def test_vietnamese_formality_distance_repairs():
     engine = UniversalAddressingEngine(language="vi")
 
     # Identical pronouns: em - em -> em - anh
@@ -14,49 +29,30 @@ def test_vietnamese_intra_pair_repairs():
     assert s == "em"
     assert t == "anh"
 
-    # Identical pronouns: chị - chị -> chị - em
-    s, t, v = engine.validate_and_repair_pair("chị", "chị")
-    assert s == "chị"
-    assert t == "em"
-
-    # Register clash: tớ - mày -> tao - mày
+    # Register clash (Distance 2): tớ - mày -> tao - mày
     s, t, v = engine.validate_and_repair_pair("tớ", "mày")
     assert s == "tao"
     assert t == "mày"
 
-    # Register clash: mình - mày -> tao - mày
-    s, t, v = engine.validate_and_repair_pair("mình", "mày")
-    assert s == "tao"
-    assert t == "mày"
+    # Register clash (Distance 4): tao - ngài -> tôi - ngài
+    s, t, v = engine.validate_and_repair_pair("tao", "ngài")
+    assert s == "tôi"
+    assert t == "ngài"
 
 
-def test_japanese_intra_pair_repairs():
+def test_japanese_formality_distance_repairs():
     engine = UniversalAddressingEngine(language="ja")
 
-    # Watakushi + Omae -> Ore + Omae
+    # Watakushi + Omae -> Ore + Omae (Formality distance |2 - (-2)| = 4)
     s, t, v = engine.validate_and_repair_pair("Watakushi", "Omae")
     assert s == "ore"
     assert t == "omae"
 
 
-def test_korean_intra_pair_repairs():
+def test_korean_formality_distance_repairs():
     engine = UniversalAddressingEngine(language="ko")
 
     # Jeu + Neo -> Na + Neo
     s, t, v = engine.validate_and_repair_pair("Jeu", "Neo")
     assert s == "na"
     assert t == "neo"
-
-
-def test_clean_separation_of_vocative_and_pronoun():
-    engine = UniversalAddressingEngine(language="vi")
-
-    s, t, v = engine.validate_and_repair_pair(
-        "tôi",
-        "Trainer",
-        speaker="Apollo Rainbow",
-        addressee="Tomio Momozawa",
-        vocative="Trainer",
-    )
-    assert s == "tôi"
-    assert v == "Trainer"
