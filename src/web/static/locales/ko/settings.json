@@ -52,6 +52,10 @@
 
   "translation_options": "번역 옵션",
   "post_processing": "후처리",
+  "enable_chunk_reflection_label": "2패스 청크 리플렉션 (자체 교정) 활성화",
+  "enable_chunk_reflection_help": "각 청크 번역 후 수석 에디터 검토를 거쳐 누락 및 대명사 불일치를 교정합니다.",
+  "enable_llm_context_sanitizer_label": "LLM 컨텍스트 새니타이저 활성화",
+  "enable_llm_context_sanitizer_help": "LLM을 사용하여 캐릭터 호칭 및 관계 구도를 정규화합니다.",
   "system_prompts": "시스템 프롬프트",
   "ocr_cleanup": "OCR 정리",
   "literary_refinement": "문학적 다듬기",

@@ -50,8 +50,11 @@
   "parallel_workers_input_title": "Number of chunks translated at the same time",
   "parallel_workers_help": "Translate several chunks at once on cloud providers that allow concurrent requests. 1 keeps the original sequential behavior. Higher values are faster but may hit rate limits, and disable cross-chunk context for consistency. Ignored for local providers (Ollama).",
 
-  "translation_options": "Translation Options",
   "post_processing": "Post-Processing",
+  "enable_chunk_reflection_label": "Enable 2-Pass Chunk Reflection (Self-Correction)",
+  "enable_chunk_reflection_help": "Runs a 2-pass Senior Translation Editor reflection pass after each chunk to fix line omissions, dialogue pronoun leaks, and register mismatches before saving.",
+  "enable_llm_context_sanitizer_label": "Enable LLM Context Sanitizer",
+  "enable_llm_context_sanitizer_help": "Uses LLMs to normalize character addressing forms and social hierarchies against character profiles.",
   "system_prompts": "System Prompts",
   "ocr_cleanup": "OCR Cleanup",
   "literary_refinement": "Literary Refinement",

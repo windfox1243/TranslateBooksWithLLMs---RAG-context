@@ -52,7 +52,11 @@
 
   "translation_options": "Options de traduction",
   "post_processing": "Post-traitement",
-  "system_prompts": "Prompts système",
+  "enable_chunk_reflection_label": "Activer la réflexion à 2 passes (Auto-correction)",
+  "enable_chunk_reflection_help": "Exécute une passe de réflexion après chaque tronçon pour corriger les omissions, les fuites de pronoms et les désalignements de registre.",
+  "enable_llm_context_sanitizer_label": "Activer le désinfecteur de contexte LLM",
+  "enable_llm_context_sanitizer_help": "Utilise les LLM pour normaliser les formes d'adressage des personnages et les hiérarchies sociales.",
+  "system_prompts": "Invites système",
   "ocr_cleanup": "Nettoyage OCR",
   "literary_refinement": "Raffinement littéraire",
   "save_settings": "Enregistrer les réglages dans .env",

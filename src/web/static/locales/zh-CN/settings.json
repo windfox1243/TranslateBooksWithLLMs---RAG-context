@@ -52,6 +52,10 @@
 
   "translation_options": "翻译选项",
   "post_processing": "后处理",
+  "enable_chunk_reflection_label": "启用双趟分块反思（自我纠错）",
+  "enable_chunk_reflection_help": "在每个文本块翻译后运行资深编辑反思环节，在保存前修正漏译、代词漂移与称谓不匹配。",
+  "enable_llm_context_sanitizer_label": "启用大模型上下文净化器",
+  "enable_llm_context_sanitizer_help": "使用大模型根据角色档案规范化人称称谓与社会关系层级。",
   "system_prompts": "系统提示词",
   "ocr_cleanup": "OCR 清理",
   "literary_refinement": "文学润色",

@@ -52,6 +52,10 @@
 
   "translation_options": "翻訳オプション",
   "post_processing": "後処理",
+  "enable_chunk_reflection_label": "2パスチャンクリフレクション（自己修正）を有効化",
+  "enable_chunk_reflection_help": "各チャンク翻訳後にシニアエディターのリフレクションを実行し、脱落や人称の不一致を自動修正します。",
+  "enable_llm_context_sanitizer_label": "LLMコンテキストサニタイザーを有効化",
+  "enable_llm_context_sanitizer_help": "LLMを使用してキャラクターの呼称形式と関係性を正規化します。",
   "system_prompts": "システムプロンプト",
   "ocr_cleanup": "OCR クリーンアップ",
   "literary_refinement": "文学的推敲",
