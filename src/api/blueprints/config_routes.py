@@ -986,7 +986,9 @@ def create_config_blueprint(server_session_id=None):
             'NOTIFY_ON_SUCCESS',
             'NOTIFY_ON_FAILURE',
             'NOTIFY_ON_INTERRUPTION',
-            'NOTIFY_TIMEOUT_SECONDS'
+            'NOTIFY_TIMEOUT_SECONDS',
+            'ENABLE_CHUNK_REFLECTION',
+            'USE_LLM_SANITIZER'
         }
 
         try:
@@ -1124,7 +1126,9 @@ def create_config_blueprint(server_session_id=None):
             "llm_provider": _config.LLM_PROVIDER,
             "api_endpoint": _config.API_ENDPOINT or "",
             "ollama_api_endpoint": _config.OLLAMA_API_ENDPOINT or "",
-            "openai_api_endpoint": _config.OPENAI_API_ENDPOINT or ""
+            "openai_api_endpoint": _config.OPENAI_API_ENDPOINT or "",
+            "enable_chunk_reflection": str(_config.ENABLE_CHUNK_REFLECTION).lower() == 'true',
+            "use_llm_sanitizer": str(_config.USE_LLM_SANITIZER).lower() == 'true'
         })
 
     return bp
