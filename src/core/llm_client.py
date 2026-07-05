@@ -46,30 +46,10 @@ class LLMClient:
             self._provider.context_window = value
         self.provider_kwargs['context_window'] = value
 
-    async def generate(self, prompt: str, system_prompt: Optional[str] = None,
-                      timeout: int = None) -> Optional[LLMResponse]:
-        """
-        Generate a response from the LLM (alias for make_request for backward compatibility)
-
-        Args:
-            prompt: The user prompt to send
-            system_prompt: Optional system prompt (role/instructions)
-            timeout: Request timeout in seconds
-
-        Returns:
-            LLMResponse with content and token usage info, or None if failed
-        """
-        provider = self._get_provider()
-
-        if timeout:
-            return await provider.generate(prompt, timeout, system_prompt=system_prompt)
-        else:
-            return await provider.generate(prompt, system_prompt=system_prompt)
-
     async def make_request(self, prompt: str, model: Optional[str] = None,
-                    timeout: int = None, system_prompt: Optional[str] = None) -> Optional[LLMResponse]:
+                          timeout: Optional[int] = None, system_prompt: Optional[str] = None) -> Optional[LLMResponse]:
         """
-        Make a request to the LLM API with error handling and retries
+        Make a request to the LLM API with error handling and retries.
 
         Args:
             prompt: The user prompt to send (content to process)
@@ -91,11 +71,13 @@ class LLMClient:
         else:
             return await provider.generate(prompt, system_prompt=system_prompt)
 
-    async def generate_async(self, prompt: str, system_prompt: Optional[str] = None,
-                             model: Optional[str] = None, timeout: Optional[int] = None,
-                             temperature: Optional[float] = None) -> Optional[LLMResponse]:
-        """Async generation alias compatible with LLMClient interface."""
+    async def generate(self, prompt: str, system_prompt: Optional[str] = None,
+                       timeout: Optional[int] = None, model: Optional[str] = None,
+                       temperature: Optional[float] = None) -> Optional[LLMResponse]:
+        """Generate a response from the LLM (alias for make_request)."""
         return await self.make_request(prompt, model=model, timeout=timeout, system_prompt=system_prompt)
+
+    generate_async = generate
     
     def extract_translation(self, response: str) -> Optional[str]:
         """
