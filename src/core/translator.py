@@ -998,7 +998,7 @@ async def run_chunk_reflection_pass(
             model=model_name,
             temperature=0.2,
         )
-        critique = (response.content or "").strip()
+        critique = (response.content or "").strip() if response and getattr(response, "content", None) else ""
     except Exception as e:
         if log_callback:
             log_callback("reflection_failed", f"Senior Editor reflection failed: {e}")
@@ -1026,7 +1026,7 @@ async def run_chunk_reflection_pass(
             model=model_name,
             temperature=0.3,
         )
-        raw_content = repair_response.content or ""
+        raw_content = repair_response.content if repair_response and getattr(repair_response, "content", None) else ""
         repaired_text = llm_client.extract_translation(raw_content) if hasattr(llm_client, "extract_translation") else None
         if not repaired_text:
             extractor = TranslationExtractor("<TRANSLATION>", "</TRANSLATION>")
