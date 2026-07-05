@@ -541,6 +541,8 @@ class GenericTranslator:
                             model_name=model_name,
                             llm_client=llm_client,
                             novel_context=(prompt_options or {}).get("novel_context", ""),
+                            custom_instructions=(prompt_options or {}).get("custom_instructions", ""),
+                            glossary_block=(prompt_options or {}).get("glossary_block", ""),
                             log_callback=log_callback,
                         )
 

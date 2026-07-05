@@ -972,6 +972,8 @@ async def run_chunk_reflection_pass(
     model_name: str,
     llm_client: Optional[Any] = None,
     novel_context: str = "",
+    custom_instructions: str = "",
+    glossary_block: str = "",
     log_callback: Optional[Callable] = None,
 ) -> str:
     """Run a 2-pass Senior Translation Editor reflection & repair evaluation on a draft chunk."""
@@ -989,6 +991,8 @@ async def run_chunk_reflection_pass(
         draft_translation=draft_translation,
         target_language=target_language,
         novel_context=novel_context,
+        custom_instructions=custom_instructions,
+        glossary_block=glossary_block,
     )
 
     try:
@@ -1023,6 +1027,8 @@ async def run_chunk_reflection_pass(
         draft_translation=draft_translation,
         critique_feedback=critique,
         target_language=target_language,
+        custom_instructions=custom_instructions,
+        glossary_block=glossary_block,
     )
 
     try:
