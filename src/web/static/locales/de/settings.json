@@ -52,6 +52,10 @@
 
   "translation_options": "Übersetzungsoptionen",
   "post_processing": "Nachbearbeitung",
+  "enable_chunk_reflection_label": "2-Pass-Chunk-Reflexion aktivieren (Selbstkorrektur)",
+  "enable_chunk_reflection_help": "Führt nach jedem Chunk einen Reflexionsschritt aus, um Auslassungen und Pronomenfehler zu korrigieren.",
+  "enable_llm_context_sanitizer_label": "LLM-Kontext-Sanitizer aktivieren",
+  "enable_llm_context_sanitizer_help": "Verwendet LLMs zur Normalisierung von Anredeformen und sozialen Hierarchien.",
   "system_prompts": "System-Prompts",
   "ocr_cleanup": "OCR-Bereinigung",
   "literary_refinement": "Literarische Verfeinerung",
