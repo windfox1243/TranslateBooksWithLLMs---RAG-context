@@ -341,6 +341,7 @@ function wireModuleEvents() {
         ResumeManager.loadResumableJobs();
         FileManager.refreshFileList();
         TranslationTracker.updateActiveTranslationsState();
+        TranslationTracker.reconcileStateWithServer();
     });
 
     WebSocketManager.on('translation_update', (data) => {

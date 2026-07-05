@@ -197,16 +197,58 @@ export const TranslationTracker = {
                     const serverState = await ApiClient.getTranslationStatus(currentJob.translationId);
 
                     if (serverState.status === 'completed' ||
+                        serverState.status === 'partial' ||
                         serverState.status === 'error' ||
                         serverState.status === 'interrupted' ||
                         serverState.status === 'rate_limited') {
 
                         MessageLogger.addLog(t('translation:session_sync_log', { status: serverState.status }));
-                        this.resetUIToIdle();
+                        MessageLogger.resetProgressTracking();
+
+                        const currentFile = currentJob.fileRef || {};
+                        const completionKey = currentFile.operation === 'refine'
+                            ? 'translation:refinement_completed_msg'
+                            : 'translation:translation_completed_msg';
+
+                        let msg = t(completionKey, { name: currentFile.name || 'File' });
+                        let msgType = 'success';
+                        if (serverState.status === 'partial') {
+                            msg = t('translation:translation_partial_msg', { name: currentFile.name || 'File' });
+                            msgType = 'info';
+                        } else if (serverState.status === 'interrupted') {
+                            msg = t('translation:translation_interrupted_msg', { name: currentFile.name || 'File' });
+                            msgType = 'info';
+                        } else if (serverState.status === 'rate_limited') {
+                            msg = t('translation:translation_rate_limited_msg', { name: currentFile.name || 'File' });
+                            msgType = 'info';
+                        } else if (serverState.status === 'error') {
+                            msg = t('translation:translation_error_msg', {
+                                name: currentFile.name || 'File',
+                                error: serverState.error || t('translation:translation_unknown_error')
+                            });
+                            msgType = 'error';
+                        }
+
+                        this.finishCurrentFileTranslation(msg, msgType, serverState);
+                        this.updateActiveTranslationsState();
                     } else if (serverState.status === 'running' || serverState.status === 'queued') {
-                        // Calculate progress from stats if available
-                        if (serverState.stats) {
+                        // Resync UI state for running job
+                        StateManager.setState('translation.isBatchActive', true);
+                        DomHelpers.show('progressSection');
+                        DomHelpers.show('interruptBtn');
+
+                        const translateBtn = DomHelpers.getElement('translateBtn');
+                        if (translateBtn) {
+                            translateBtn.disabled = true;
+                            translateBtn.innerHTML = t('translation:batch_in_progress');
+                        }
+
+                        if (serverState.stats && currentJob.fileRef) {
                             this.updateStats(currentJob.fileRef.fileType, serverState.stats);
+                        }
+
+                        if (serverState.last_translation) {
+                            MessageLogger.updateTranslationPreview(serverState.last_translation);
                         }
                     }
                 } catch (error) {
