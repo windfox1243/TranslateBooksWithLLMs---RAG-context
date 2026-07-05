@@ -246,8 +246,9 @@ async def reflect_and_repair_chunk_async(
 
         repaired = await llm_client.translate_text(repair_prompt.user, model=model_name)
         if repaired and repaired.strip():
-            from src.core.post_processor import extract_translation_from_tags
-            cleaned = extract_translation_from_tags(repaired)
+            from src.core.llm import TranslationExtractor
+            extractor = TranslationExtractor("<TRANSLATION>", "</TRANSLATION>")
+            cleaned = extractor.extract(repaired) or repaired.strip()
             return cleaned if cleaned else draft_translation
 
     except Exception as e:

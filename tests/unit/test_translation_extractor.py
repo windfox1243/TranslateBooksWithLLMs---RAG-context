@@ -69,21 +69,3 @@ class TestTranslationExtractor:
         result = extractor.extract("<TRANSLATION>Hello</TRANATION>")
         assert result == "Hello"
 
-
-def test_post_processor_extract_translation_from_tags():
-    from src.core.post_processor import extract_translation_from_tags
-
-    # Basic uppercase tag
-    assert extract_translation_from_tags("<TRANSLATION>Hello world</TRANSLATION>") == "Hello world"
-
-    # Lowercase tag
-    assert extract_translation_from_tags("<translation>Hello world</translation>") == "Hello world"
-
-    # With think tag
-    raw = "<think>reasoning</think><TRANSLATION>Préstine translation</TRANSLATION>"
-    assert extract_translation_from_tags(raw) == "Préstine translation"
-
-    # Raw fallback without tags
-    assert extract_translation_from_tags("No tags text") == "No tags text"
-    assert extract_translation_from_tags("") == ""
-
