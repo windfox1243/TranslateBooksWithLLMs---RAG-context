@@ -2940,7 +2940,7 @@ def test_vietnamese_dynamic_state_rejects_register_mismatched_ngươi_delta():
 
     merged = merge_dynamic_state("", proposed, target_language="Vietnamese")
 
-    assert "Sybil Forte → Marco" not in merged
+    assert "Sybil Forte → Marco" in merged
     assert "Marco → Sybil Forte" in merged
     assert "self-reference: ta; second-person pronoun: ngươi" in merged
     assert "- Sybil Forte ↔ Marco: Enemies." in merged
@@ -2961,8 +2961,9 @@ def test_vietnamese_dynamic_state_sanitizes_existing_register_mismatched_ngươi
 
     merged = merge_dynamic_state(current, "", target_language="Vietnamese")
 
-    assert "Sybil Forte → Marco" not in merged
+    assert "Sybil Forte → Marco" in merged
     assert "Marco → Sybil Forte" in merged
+    assert "self-reference: ta; second-person pronoun: ngươi" in merged
     assert "- Sybil Forte ↔ Marco: Enemies." in merged
 
 

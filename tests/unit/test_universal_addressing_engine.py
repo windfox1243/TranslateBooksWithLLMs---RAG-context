@@ -142,3 +142,19 @@ def test_character_genders_cross_validation():
     assert t == "anh"
 
 
+def test_incompatible_register_repair_toi_nguoi():
+    engine = UniversalAddressingEngine(language="vi")
+
+    # Incompatible tôi - ngươi repaired to ta - ngươi
+    s, t, v = engine.validate_and_repair_pair(
+        self_pronoun="tôi",
+        target_pronoun="ngươi",
+        speaker="Villain",
+        addressee="Hero",
+        details_context="archaic hostile context",
+    )
+    assert s == "ta"
+    assert t == "ngươi"
+
+
+

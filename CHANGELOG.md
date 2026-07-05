@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.15.0-beta.1 - 2026-07-05
+
+### Added
+
+- **2-Pass Chunk Reflection & Repair Engine**: Added optional LLM Senior Translation Editor reflection pass (`generate_chunk_reflection_prompt` and `generate_chunk_repair_prompt`), evaluating draft chunks for line-by-line fidelity, narrative vs. dialogue pronoun isolation, gender alignment, and register harmony before updating context memory.
+- **LLM Context Sanitizer Agent**: Added `sanitize_addressing_with_llm()` in `novel_context.py` to normalize relationship addressing forms with safe Python fallback ("Do No Harm" architecture).
+- **Dialogue Pronoun Isolation Guardrail**: Added explicit prompt instructions preventing dialogue self-references (`em`, `chú`, `con`) from leaking into general non-dialogue story narration (`tôi`).
+- **Incompatible Register Alignment Repairs**: Expanded `_HARMONIOUS_ALIGNMENT_MAP` in `UniversalAddressingEngine` to automatically repair hybrid register pairs like `tôi - ngươi` $\rightarrow$ `ta - ngươi`, `tớ - ngươi` $\rightarrow$ `ta - ngươi`, and `tớ - mày` $\rightarrow$ `tao - mày`.
+
 ## 1.14.54 - 2026-07-05
 
 ### Fixed
