@@ -90,6 +90,12 @@ class LLMClient:
             return await provider.generate(prompt, timeout, system_prompt=system_prompt)
         else:
             return await provider.generate(prompt, system_prompt=system_prompt)
+
+    async def generate_async(self, prompt: str, system_prompt: Optional[str] = None,
+                             model: Optional[str] = None, timeout: Optional[int] = None,
+                             temperature: Optional[float] = None) -> Optional[LLMResponse]:
+        """Async generation alias compatible with LLMClient interface."""
+        return await self.make_request(prompt, model=model, timeout=timeout, system_prompt=system_prompt)
     
     def extract_translation(self, response: str) -> Optional[str]:
         """
