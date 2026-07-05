@@ -1009,8 +1009,14 @@ async def run_chunk_reflection_pass(
             log_callback("reflection_complete", "Senior Editor reflection complete: No issues found.")
         return draft_translation
 
+    from src.utils.unified_logger import get_logger, LogType
+    get_logger().info(f"Senior Editor critique:\n{critique.strip()}", log_type=LogType.GENERAL)
+
     if log_callback:
-        log_callback("reflection_critique", f"Senior Editor critique:\n{critique.strip()}")
+        critique_text = critique.strip()
+        preview_limit = 400
+        preview = critique_text[:preview_limit] + "..." if len(critique_text) > preview_limit else critique_text
+        log_callback("reflection_critique", f"Senior Editor critique: {preview}")
 
     repair_pair = generate_chunk_repair_prompt(
         source_chunk=source_chunk,
