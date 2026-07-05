@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.53 - 2026-07-05
+
+### Fixed
+
+- **Senior/Junior Academy Addressing Repairs**: Added `senior`, `senpai`, `tiền bối`, and `senior/junior` hierarchy context cues to `_VIETNAMESE_INCOMPATIBLE_ADDRESSING_REPAIRS` in `novel_context.py`, repairing incompatible `tôi/tớ` self-references into `em` when a junior student addresses older female/male seniors (`chị`/`anh`).
+- **Context File Data Cleanup**: Cleaned up addressing entries in `F:/TranslateBook_Data/Novel_Contexts/I_Want_to_Be_a_Fluffy__Airheaded_Gray_Umamusume_and_Trick_My_Trainer___Vietnamese__context.txt` (Apollo Rainbow addressing senior girls Maruzensky, Silence Suzuka, Symboli Rudolf now correctly uses `em` - `chị` and Tomio Momozawa uses `em` - `anh`).
+
 ## 1.14.52 - 2026-07-05
 
 ### Added
