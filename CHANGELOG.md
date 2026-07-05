@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.15.0-beta.4 - 2026-07-05
+
+### Added
+
+- **Explicit Source Text Primacy Rule**: Added Rule 0 to Senior Editor reflection and lore verification prompts (`generate_chunk_reflection_prompt()` and `verify_addressing_delta_with_llm()`), strictly forbidding the Senior Editor and Context Sanitizer from overwriting explicit spoken names or terms present in the source text dialogue with background lore defaults.
+
+### Fixed
+
+- **Chunk 95 SQLite Database Repair**: Fixed translated text for Chunk 95 in `F:\TranslateBook_Data\data\jobs.db` (`checkpoint_chunks` table), restoring `"Tomio, anh không ở lại sao?"` to match the explicit source text (`"Tomio, you’re not staying?"`).
+
 ## 1.15.0-beta.3 - 2026-07-05
 
 ### Added

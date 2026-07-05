@@ -5509,7 +5509,7 @@ SOURCE SCENE EXCERPT:
 {source_chunk[:1500]}
 
 QUESTION:
-Does the source scene excerpt show an EXPLICIT story event (such as a disguise, role-play, severe argument, hostility, or magical transformation) that justifies changing the established addressing form? Or is the proposed new rule an extraction hallucination/mistake?
+Does the source scene excerpt explicitly use this proposed addressing form in dialogue, or show an EXPLICIT story event (such as a disguise, role-play, severe argument, intimacy shift, hostility, or magical transformation) that justifies changing the established addressing form? (Note: If the source text dialogue explicitly uses the term, it is genuine and MUST be approved.) Or is the proposed new rule an extraction hallucination/mistake?
 
 Respond with a JSON object ONLY:
 {{"is_genuine_narrative_shift": true/false, "reason": "concise rationale"}}"""
