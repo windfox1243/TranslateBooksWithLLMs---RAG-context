@@ -1305,6 +1305,8 @@ def generate_chunk_reflection_prompt(
     draft_translation: str,
     target_language: str = "Vietnamese",
     novel_context: str = "",
+    custom_instructions: str = "",
+    glossary_block: str = "",
 ) -> PromptPair:
     """
     Generate a chunk reflection prompt acting as a Senior Translation Editor / Critic.
@@ -1322,7 +1324,7 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
    - Check whether dialogue-specific self-references or intimate pronouns (e.g. 'em', 'chú', 'con', 'tới', 'tớ') have improperly leaked into third-person non-dialogue story narration outside quotes.
 
 3. GENDER & CHARACTER LORE ALIGNMENT:
-   - Cross-check pronouns against the ACTIVE NOVEL LORE.
+   - Cross-check pronouns against the ACTIVE NOVEL LORE and custom instructions.
    - Flag gender mismatches (e.g., using male pronouns 'anh' for a female character, or incorrect seniority/kinship terms).
 
 4. REGISTER HARMONY & NATURALNESS:
@@ -1332,18 +1334,16 @@ STRICT OUTPUT CONTRACT:
 - Output NO_ISSUES ONLY if the draft is 100% flawless across all 4 audit steps.
 - If ANY flaw, line drop, pronoun bleed, gender error, or register inconsistency exists, list concise, actionable bullet points explaining what MUST be repaired. Do NOT output NO_ISSUES if there is any defect."""
 
-    user_prompt = f"""# RAW SOURCE CHUNK:
-{source_chunk.strip()}
+    user_sections = [f"# RAW SOURCE CHUNK:\n{source_chunk.strip()}"]
+    if custom_instructions and custom_instructions.strip():
+        user_sections.append(f"# CUSTOM INSTRUCTIONS & STYLE GUIDELINES:\n{custom_instructions.strip()}")
+    if glossary_block and glossary_block.strip():
+        user_sections.append(f"# GLOSSARY & TERM MAPPING:\n{glossary_block.strip()}")
+    user_sections.append(f"# ACTIVE NOVEL LORE & ADDRESSING RULES:\n{novel_context.strip() if novel_context.strip() else 'None'}")
+    user_sections.append(f"# DRAFT TRANSLATION TO AUDIT:\n{draft_translation.strip()}")
+    user_sections.append("Perform your rigorous Senior Editor audit now:")
 
-# ACTIVE NOVEL LORE & ADDRESSING RULES:
-{novel_context.strip() if novel_context.strip() else "None"}
-
-# DRAFT TRANSLATION TO AUDIT:
-{draft_translation.strip()}
-
-Perform your rigorous Senior Editor audit now:"""
-
-    return PromptPair(system=system_prompt.strip(), user=user_prompt.strip())
+    return PromptPair(system=system_prompt.strip(), user="\n\n".join(user_sections))
 
 
 def generate_chunk_repair_prompt(
@@ -1353,6 +1353,8 @@ def generate_chunk_repair_prompt(
     target_language: str = "Vietnamese",
     translate_tag_in: str = TRANSLATE_TAG_IN,
     translate_tag_out: str = TRANSLATE_TAG_OUT,
+    custom_instructions: str = "",
+    glossary_block: str = "",
 ) -> PromptPair:
     """
     Generate a chunk repair prompt applying critique feedback to produce the final pristine chunk.
@@ -1362,16 +1364,16 @@ Apply the Senior Editor's critique feedback to repair the draft translation.
 Fix all flagged pronoun leaks, missing lines, gender mismatches, and register flaws.
 Output ONLY the final repaired translation text inside {translate_tag_in} and {translate_tag_out} tags."""
 
-    user_prompt = f"""# ORIGINAL SOURCE CHUNK:
-{source_chunk.strip()}
+    user_sections = [
+        f"# ORIGINAL SOURCE CHUNK:\n{source_chunk.strip()}",
+        f"# DRAFT TRANSLATION:\n{draft_translation.strip()}",
+    ]
+    if custom_instructions and custom_instructions.strip():
+        user_sections.append(f"# CUSTOM INSTRUCTIONS & STYLE GUIDELINES:\n{custom_instructions.strip()}")
+    if glossary_block and glossary_block.strip():
+        user_sections.append(f"# GLOSSARY & TERM MAPPING:\n{glossary_block.strip()}")
+    user_sections.append(f"# SENIOR EDITOR CRITIQUE & REQUIRED FIXES:\n{critique_feedback.strip()}")
+    user_sections.append(f"Output your pristine repaired translation in {translate_tag_in}...{translate_tag_out} now:")
 
-# DRAFT TRANSLATION:
-{draft_translation.strip()}
-
-# SENIOR EDITOR CRITIQUE & REQUIRED FIXES:
-{critique_feedback.strip()}
-
-Output your pristine repaired translation in {translate_tag_in}...{translate_tag_out} now:"""
-
-    return PromptPair(system=system_prompt.strip(), user=user_prompt.strip())
+    return PromptPair(system=system_prompt.strip(), user="\n\n".join(user_sections))
 
