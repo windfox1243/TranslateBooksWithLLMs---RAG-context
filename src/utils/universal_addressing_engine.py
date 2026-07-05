@@ -53,7 +53,7 @@ _VI_INTRA_INCOMPATIBLE_PAIRS: Dict[Tuple[str, str], Tuple[str, str]] = {
 # JAPANESE INTRA-PAIR INCOMPATIBILITY TABLE
 _JA_INTRA_INCOMPATIBLE_PAIRS: Dict[Tuple[str, str], Tuple[str, str]] = {
     ("watakushi", "omae"): ("ore", "omae"),
-    ("watakushi", "kisotama"): ("ore", "kisama"),
+    ("watakushi", "kisama"): ("ore", "kisama"),
     ("boku", "kisama"): ("ore", "kisama"),
     ("ore", "anata"): ("boku", "anata"),
 }
@@ -65,18 +65,19 @@ _KO_INTRA_INCOMPATIBLE_PAIRS: Dict[Tuple[str, str], Tuple[str, str]] = {
     ("na", "dang-sin"): ("jeu", "dang-sin"),
 }
 
-# TRAINER / MENTOR KEYWORDS ACROSS LANGUAGES
-_TRAINER_ROLE_KEYWORDS: Set[str] = {
-    "trainer",
-    "coach",
-    "mentor",
-    "huấn luyện viên",
-    "thầy",
-    "thầy giáo",
-    "giáo viên",
-    "sensei",
-    "kantoku",
-    "gwang-su",
+# SENIORITY HIERARCHY CUES (Parsed from relationship details / role names)
+_SENIOR_ROLE_KEYWORDS: Set[str] = {
+    # Academic / Mentorship
+    "trainer", "coach", "mentor", "huấn luyện viên", "thầy", "thầy giáo", "cô giáo", "giáo viên", "sensei", "kantoku", "gwang-su", "professeur",
+    # Work / Rank / Hierarchy
+    "sếp", "giám đốc", "trưởng phòng", "tiền bối", "senior", "boss", "manager", "master", "chủ nhân", "senpai", "sunbae", "chủ gia tộc",
+    # Family / Senior Kinship
+    "bố", "cha", "mẹ", "ông", "bà", "bác", "chú", "cô", "dì", "anh", "chị", "older brother", "older sister", "father", "mother"
+}
+
+_JUNIOR_ROLE_KEYWORDS: Set[str] = {
+    "trainee", "student", "học sinh", "sinh viên", "hậu bối", "junior", "kohai", "ho-bae", "người hầu", "servant", "slave",
+    "con", "cháu", "em", "em gái", "em trai", "younger brother", "younger sister", "son", "daughter"
 }
 
 
@@ -124,10 +125,39 @@ class UniversalAddressingEngine:
         elif self.lang_code == "ko":
             return self._repair_korean(s_clean, t_clean, speaker, addressee, v_clean, register, details_context)
         else:
-            # Generic fallback
             if s_clean.casefold() == t_clean.casefold() and s_clean:
                 t_clean = v_clean or addressee or t_clean
             return s_clean, t_clean, v_clean
+
+    def _resolve_seniority(self, speaker: str, addressee: str, context: str) -> str:
+        """
+        Determine relative seniority: 'JUNIOR_TO_SENIOR', 'SENIOR_TO_JUNIOR', or 'PEER'.
+        """
+        spk = speaker.casefold()
+        adr = addressee.casefold()
+        ctx = context.casefold()
+
+        # Specific trainer/mentor/senior cues in addressee or context
+        senior_cues = ("trainer", "coach", "mentor", "huấn luyện viên", "teacher", "thầy", "sensei", "sunbae", "sếp", "giám đốc", "senpai")
+        if any(k in adr or k in ctx for k in senior_cues):
+            if not any(k in spk for k in senior_cues):
+                return "JUNIOR_TO_SENIOR"
+
+        spk_senior = any(k in spk for k in _SENIOR_ROLE_KEYWORDS)
+        adr_senior = any(k in adr for k in _SENIOR_ROLE_KEYWORDS)
+        spk_junior = any(k in spk for k in _JUNIOR_ROLE_KEYWORDS)
+        adr_junior = any(k in adr for k in _JUNIOR_ROLE_KEYWORDS)
+
+        if adr_senior and not spk_senior:
+            return "JUNIOR_TO_SENIOR"
+        if spk_senior and not adr_senior:
+            return "SENIOR_TO_JUNIOR"
+        if spk_junior and adr_senior:
+            return "JUNIOR_TO_SENIOR"
+        if spk_senior and adr_junior:
+            return "SENIOR_TO_JUNIOR"
+
+        return "PEER"
 
     def _repair_vietnamese(
         self,
@@ -160,20 +190,25 @@ class UniversalAddressingEngine:
                 target_p = vocative or addressee or target_p
             t_key = target_p.casefold()
 
-        # 3. Check Trainee/Junior addressing Trainer/Senior
-        is_addressee_trainer = (
-            any(k in addressee.casefold() for k in _TRAINER_ROLE_KEYWORDS)
-            or any(k in c_clean for k in ("trainer", "mentor", "huấn luyện viên", "thầy"))
-        )
-        is_speaker_trainer = any(k in speaker.casefold() for k in _TRAINER_ROLE_KEYWORDS)
+        # 4. Comprehensive Hierarchy Solver (Junior -> Senior and Senior -> Junior)
+        seniority = self._resolve_seniority(speaker, addressee, context)
 
-        if t_key in {"cậu", "tớ", "bạn"} and is_addressee_trainer and not is_speaker_trainer:
-            target_p = vocative or addressee or "Trainer"
-
-        # 4. Check Trainer/Senior addressing Trainee/Junior
-        if is_speaker_trainer and not is_addressee_trainer:
-            if t_key in {"anh", "chị", "cô", "ông", "bà"}:
-                target_p = "em"
+        if seniority == "JUNIOR_TO_SENIOR":
+            # Junior calling Senior cannot use peer/junior pronouns ('cậu', 'tớ', 'bạn', 'mày')
+            if t_key in {"cậu", "tớ", "bạn", "mày"}:
+                # Infer appropriate senior target pronoun based on role/vocative
+                if any(k in addressee.casefold() or k in c_clean for k in ("trainer", "coach", "mentor", "huấn luyện viên")):
+                    target_p = vocative or "Trainer"
+                elif any(k in addressee.casefold() or k in c_clean for k in ("thầy", "giáo viên", "teacher", "professor", "sensei")):
+                    target_p = "thầy" if "female" not in c_clean else "cô"
+                elif any(k in addressee.casefold() or k in c_clean for k in ("sếp", "giám đốc", "boss", "manager")):
+                    target_p = "sếp"
+                else:
+                    target_p = vocative or "anh" if "male" in c_clean else "chị"
+        elif seniority == "SENIOR_TO_JUNIOR":
+            # Senior calling Junior cannot use senior pronouns ('anh', 'chị', 'bác', 'chú', 'ông', 'bà')
+            if t_key in {"anh", "chị", "bác", "chú", "ông", "bà"}:
+                target_p = "em" if "child" not in c_clean else "con"
 
         return self_p, target_p, v_res
 
@@ -191,8 +226,13 @@ class UniversalAddressingEngine:
         t_key = target_p.casefold()
 
         if (s_key, t_key) in _JA_INTRA_INCOMPATIBLE_PAIRS:
-            repaired_s, repaired_t = _JA_INTRA_INCOMPATIBLE_PAIRS[(s_key, t_key)]
-            return repaired_s, repaired_t, vocative
+            self_p, target_p = _JA_INTRA_INCOMPATIBLE_PAIRS[(s_key, t_key)]
+            s_key, t_key = self_p.casefold(), target_p.casefold()
+
+        # Hierarchy repair for Japanese (Junior calling Senior cannot use 'Omae' or 'Kimi')
+        seniority = self._resolve_seniority(speaker, addressee, context)
+        if seniority == "JUNIOR_TO_SENIOR" and t_key in {"omae", "kimi", "anta"}:
+            target_p = vocative or ("Senpai" if "senpai" in context.casefold() else "Sensei")
 
         return self_p, target_p, vocative
 
@@ -210,7 +250,12 @@ class UniversalAddressingEngine:
         t_key = target_p.casefold()
 
         if (s_key, t_key) in _KO_INTRA_INCOMPATIBLE_PAIRS:
-            repaired_s, repaired_t = _KO_INTRA_INCOMPATIBLE_PAIRS[(s_key, t_key)]
-            return repaired_s, repaired_t, vocative
+            self_p, target_p = _KO_INTRA_INCOMPATIBLE_PAIRS[(s_key, t_key)]
+            s_key, t_key = self_p.casefold(), target_p.casefold()
+
+        # Hierarchy repair for Korean (Junior calling Senior cannot use 'Neo')
+        seniority = self._resolve_seniority(speaker, addressee, context)
+        if seniority == "JUNIOR_TO_SENIOR" and t_key in {"neo", "inoma"}:
+            target_p = vocative or "Sunbae-nim"
 
         return self_p, target_p, vocative
