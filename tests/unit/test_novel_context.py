@@ -5201,7 +5201,7 @@ def test_vietnamese_second_person_possessive_cleanup_is_conservative():
         "vocative/address form: huấn luyện viên của Apollo Rainbow | team role"
     )
     repaired = _repair_vietnamese_addressing_details(long_role)
-    assert "second-person pronoun: huấn luyện viên;" in repaired
+    assert "second-person pronoun: anh;" in repaired
     assert "vocative/address form: huấn luyện viên của Apollo Rainbow" in repaired
 
     possessive_pronoun = (
@@ -5265,7 +5265,7 @@ def test_vietnamese_second_person_uses_title_fallback_for_source_titles():
     )
 
     assert (
-        "second-person pronoun: huấn luyện viên; "
+        "second-person pronoun: anh; "
         "vocative/address form: Trainer Serizawa"
     ) in merged
 
@@ -5479,4 +5479,4 @@ def test_vietnamese_addressing_exempts_formal_workplace_titles():
         "---DYNAMIC_STATE_END---"
     )
     merged = merge_dynamic_state(current, proposed, target_language="Vietnamese")
-    assert "second-person pronoun: giám đốc" in merged
+    assert "second-person pronoun: sếp" in merged
