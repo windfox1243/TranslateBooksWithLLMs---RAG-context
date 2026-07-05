@@ -1,6 +1,21 @@
 # Changelog
 
+## 1.14.51 - 2026-07-05
+
+### Added
+
+- **Directed Addressing Context Architecture**: Re-architected Vietnamese addressing context tracking into a DB-backed **Directed Addressing State Machine** with SQLite relational tables (`context_entities`, `context_addressing_rules`, `context_audit_logs`).
+- **Structured LLM Addressing Extraction**: Added `extract_addressing_deltas_from_text` to parse structured JSON deltas directly from LLM output while filtering out group/crowd dialogue.
+- **Deterministic Merge Policy Engine**: Implemented `ContextMergeEngine` enforcing User Lock overrides, configurable confidence thresholding (`ADDRESSING_MERGE_CONFIDENCE_THRESHOLD`, default `0.80`), register stability rules, and real-time SocketIO log events (`addressing_merged`, `addressing_rejected`).
+- **Read-Only Context Projection**: Created `context_projection.py` to render active DB rules into clean, non-mutable system prompt guidelines.
+- **Addressing Audit Trail & REST APIs**: Exposed `/api/translations/<id>/addressing-rules`, `/api/translations/<id>/addressing-audit-log`, and `/api/translations/<id>/addressing-rules/lock` endpoints for UI integration.
+
+### Tests
+
+- Added comprehensive unit test coverage (`test_directed_addressing_engine.py`) and novel integration test (`test_novel_addressing_integration.py`).
+
 ## 1.14.50 - 2026-07-04
+
 
 ### Fixed
 
