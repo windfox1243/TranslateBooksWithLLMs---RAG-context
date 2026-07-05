@@ -109,3 +109,36 @@ def test_forbidden_pronouns_and_auditing():
     assert violations[0]["speaker"] == "Aster"
     assert violations[0]["forbidden_found"] in ("cậu", "tôi")
 
+
+def test_character_genders_cross_validation():
+    engine = UniversalAddressingEngine(language="vi")
+    genders = {
+        "apollo rainbow": "Female",
+        "double trigger": "Female",
+        "tomio momozawa": "Male",
+    }
+
+    # Female addressee with peer/senior fallback must NOT default to male 'anh'
+    s, t, v = engine.validate_and_repair_pair(
+        self_pronoun="em",
+        target_pronoun="anh",  # Mismatched male pronoun for female addressee
+        speaker="Apollo Rainbow",
+        addressee="Double Trigger",
+        vocative="Double Trigger-san",
+        details_context="senior/junior, mentor/mentee",
+        character_genders=genders,
+    )
+    assert t == "chị"
+
+    # Male addressee with female pronoun must be repaired to 'anh'
+    s, t, v = engine.validate_and_repair_pair(
+        self_pronoun="em",
+        target_pronoun="chị",
+        speaker="Apollo Rainbow",
+        addressee="Tomio Momozawa",
+        details_context="mentor/mentee",
+        character_genders=genders,
+    )
+    assert t == "anh"
+
+

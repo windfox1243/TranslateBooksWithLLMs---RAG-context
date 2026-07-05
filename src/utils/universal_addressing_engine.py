@@ -158,10 +158,12 @@ class UniversalAddressingEngine:
         vocative: str = "",
         register: str = "",
         details_context: str = "",
+        character_genders: Optional[Dict[str, str]] = None,
     ) -> Tuple[str, str, str]:
         """
         Validate and repair a directional addressing pair (self_pronoun, target_pronoun, vocative).
         Ensures target_pronoun is strictly a GENUINE PRONOUN (never a job title or noun).
+        Cross-validates target pronoun against character_genders metadata.
         Returns (repaired_self, repaired_target, repaired_vocative).
         """
         s_clean = (self_pronoun or "").strip()
@@ -175,6 +177,19 @@ class UniversalAddressingEngine:
         t_key = t_clean.casefold()
         c_clean = (details_context or "").casefold()
 
+        genders = character_genders or {}
+        addressee_g_raw = genders.get(addressee, "") or genders.get((addressee or "").casefold(), "")
+        is_addressee_female = (
+            "female" in addressee_g_raw.casefold()
+            or "nữ" in addressee_g_raw.casefold()
+            or "female" in c_clean
+            or "nữ" in c_clean
+        )
+        is_addressee_male = (
+            ("male" in addressee_g_raw.casefold() and "female" not in addressee_g_raw.casefold())
+            or ("nam" in addressee_g_raw.casefold() and "nữ" not in addressee_g_raw.casefold())
+        )
+
         # Strict Rule: Job titles/nouns in target_pronoun MUST be moved to vocative & converted to genuine pronouns
         if t_key in _JOB_TITLE_NOUNA or any(t_key.startswith(job) for job in _JOB_TITLE_NOUNA):
             if not v_clean:
@@ -182,12 +197,14 @@ class UniversalAddressingEngine:
             # Determine genuine pronoun replacement
             if "teacher" in c_clean or "giáo viên" in c_clean:
                 t_clean = "thầy"
-            elif "female" in c_clean or "nữ" in c_clean:
+            elif is_addressee_female:
                 t_clean = "chị"
             elif "giám đốc" in t_key or "manager" in c_clean or "boss" in c_clean:
                 t_clean = "sếp"
-            else:
+            elif is_addressee_male:
                 t_clean = "anh"
+            else:
+                t_clean = "chị" if is_addressee_female else "anh"
             t_key = t_clean.casefold()
 
         # 1. Resolve 2D Seniority Hierarchy (JUNIOR_TO_SENIOR, SENIOR_TO_JUNIOR, PEER)
@@ -201,7 +218,12 @@ class UniversalAddressingEngine:
         if hierarchy == "JUNIOR_TO_SENIOR":
             # Junior calling Senior cannot use peer pronoun 'cậu', 'mày', 'omae', 'neo'
             if t_key in peer_set:
-                t_clean = "thầy" if "teacher" in c_clean else ("chị" if "female" in c_clean else "anh")
+                if "teacher" in c_clean or "giáo viên" in c_clean:
+                    t_clean = "thầy"
+                elif is_addressee_female:
+                    t_clean = "chị"
+                else:
+                    t_clean = "anh"
                 t_key = t_clean.casefold()
 
         elif hierarchy == "SENIOR_TO_JUNIOR":
@@ -213,6 +235,14 @@ class UniversalAddressingEngine:
             if s_key in junior_set:
                 s_clean = "tôi"
                 s_key = s_clean.casefold()
+
+        # Cross-validation: enforce gender alignment of target_pronoun with character_genders
+        if is_addressee_female and t_key == "anh" and "teacher" not in c_clean and "giáo viên" not in c_clean and "thầy" not in c_clean:
+            t_clean = "chị"
+            t_key = "chị"
+        elif is_addressee_male and t_key in {"chị", "cô", "bà"}:
+            t_clean = "anh"
+            t_key = "anh"
 
         # 3. Check Fast Harmonious Alignment Table
         if (s_key, t_key) in _HARMONIOUS_ALIGNMENT_MAP:
@@ -233,7 +263,7 @@ class UniversalAddressingEngine:
         # 5. Self-Consistency Guard: Prevent identical self & target pronouns (e.g., em - em, chị - chị)
         if s_key and s_key == t_key:
             if s_key == "em":
-                t_clean = "anh" if "male" in c_clean else "chị"
+                t_clean = "chị" if is_addressee_female else ("anh" if is_addressee_male or "male" in c_clean else "chị")
             elif s_key in {"chị", "anh"}:
                 t_clean = "em"
             else:

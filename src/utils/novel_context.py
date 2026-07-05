@@ -4826,6 +4826,7 @@ def _repair_vietnamese_addressing_details(
         addressee=addressee,
         vocative=vocative_raw,
         details_context=details,
+        character_genders=character_genders,
     )
     if rep_s != self_reference_raw:
         details = _replace_vietnamese_addressing_field(details, "self-reference", rep_s)
@@ -4867,11 +4868,24 @@ def _repair_vietnamese_addressing_line(
     alias_map: Dict[str, str],
     character_genders: Optional[Dict[str, str]] = None,
 ) -> str:
+    if "`" in line:
+        line = line.replace("`", "")
     parsed = _parse_dynamic_relation(line, alias_map)
     if not parsed:
         return line
     relation_key, rendered, details = parsed
-    left_party, _, right_party = relation_key
+    left_party, arrow, right_party = relation_key
+
+    # Convert invalid bidirectional ↔ to directional → if pronouns are asymmetric
+    if arrow == "↔":
+        self_ref = _vietnamese_addressing_field(details, "self-reference").casefold()
+        second_p = _vietnamese_addressing_field(details, "second-person pronoun").casefold()
+        if (self_ref in {"em", "ta", "tôi", "anh", "chị"} and second_p in {"chị", "anh", "em", "thầy", "cô"}) and (self_ref != second_p):
+            line = line.replace("↔", "→")
+            parsed = _parse_dynamic_relation(line, alias_map)
+            if parsed:
+                relation_key, rendered, details = parsed
+                left_party, arrow, right_party = relation_key
 
     # Auto-format simple 2-part pairs (e.g. "tớ - cậu", "tôi - cậu (bạn học)") into 3-part canonical format
     clean_details = _clean_inline_text(details).strip('" ')
@@ -4939,7 +4953,10 @@ def _repair_vietnamese_addressing_block(
                     k in enriched_details.lower()
                     for k in ("senior", "trainer", "thầy", "sếp", "giám đốc")
                 ):
-                    enriched_details = f"{enriched_details} | junior to senior, trainer/student hierarchy"
+                    if any(k in rev_details_lower for k in ("trainer", "teacher", "thầy", "sếp", "giám đốc")):
+                        enriched_details = f"{enriched_details} | junior to senior, trainer/student hierarchy"
+                    else:
+                        enriched_details = f"{enriched_details} | junior to senior, senior/junior hierarchy"
 
         line_to_repair = raw_line
         if enriched_details != details and ":" in raw_line:

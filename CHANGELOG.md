@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.14.54 - 2026-07-05
+
+### Fixed
+
+- **Character Gender Cross-Validation**: `UniversalAddressingEngine.validate_and_repair_pair()` now cross-validates target pronouns against character profile gender metadata (`character_genders`), preventing false male pronoun defaults (`anh`) for female addressees and repairing gender pronoun mismatches across all gender pairings (Female-Female, Male-Male, Female-Male, Male-Female).
+- **Addressing Operator & Hierarchy Guardrails**: Enhanced `_repair_vietnamese_addressing_line` and `_repair_vietnamese_addressing_block` in `novel_context.py` to convert invalid bidirectional (`↔`) asymmetric pronoun rules into directional (`→`) entries, clean stray markdown formatting, and prevent generic senior/junior relationships from falsely triggering trainer-trainee hierarchy logic.
+
 ## 1.14.53 - 2026-07-05
 
 ### Fixed

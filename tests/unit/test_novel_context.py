@@ -5493,3 +5493,37 @@ def test_vietnamese_addressing_exempts_formal_workplace_titles():
     )
     merged = merge_dynamic_state(current, proposed, target_language="Vietnamese")
     assert "second-person pronoun: sếp" in merged
+
+
+def test_vietnamese_addressing_gender_cross_validation():
+    from src.utils.novel_context import merge_dynamic_state
+    current = (
+        "---DYNAMIC_STATE_START---\n"
+        "# DYNAMIC RELATIONSHIP STATE\n"
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Apollo Rainbow → Double Trigger: "Double Trigger-san" | "self-reference: em; second-person pronoun: chị; vocative/address form: Double Trigger-san" | senior/junior, mentor/mentee\n'
+        '- Apollo Rainbow ↔ Double Trigger: "Double Trigger" | "`self-reference: em; second-person pronoun: anh; vocative/address form: Double Trigger`" | peer-level relationship, rivals\n'
+        '- Male Junior → Male Senior: "Senior" | "self-reference: em; second-person pronoun: chị; vocative/address form: Senior" | senior/junior\n'
+        "---DYNAMIC_STATE_END---"
+    )
+    genders = {
+        "apollo rainbow": "Female",
+        "double trigger": "Female",
+        "male junior": "Male",
+        "male senior": "Male",
+    }
+    merged = merge_dynamic_state(
+        current,
+        "",
+        target_language="Vietnamese",
+        character_genders=genders,
+    )
+    # Female-Female: Mismatched 'anh' is repaired to 'chị'
+    assert "Apollo Rainbow → Double Trigger" in merged
+    assert "second-person pronoun: chị" in merged
+
+    # Male-Male: Mismatched 'chị' is repaired to 'anh'
+    assert "Male Junior → Male Senior" in merged
+    assert "second-person pronoun: anh" in merged
+
+
