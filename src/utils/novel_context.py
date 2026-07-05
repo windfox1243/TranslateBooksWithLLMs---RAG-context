@@ -5569,9 +5569,13 @@ def sanitize_addressing_with_llm(
 And these addressing rules for target language {target_language}:
 {addressing}
 
-Normalize and repair the addressing rules into clean canonical format.
-Ensure gender alignment, social status hierarchy, and operator directions (→ vs ↔) are strictly valid.
-Return ONLY the cleaned addressing lines."""
+Normalize and repair the addressing rules into clean canonical format:
+1. CONTEXTUAL PERMANENCE: Omit or filter out any 1-scene transient background NPCs, commentators, mobs, side merchants, or temporary background speakers who have no lasting narrative significance to the story. Keep ONLY recurring main and major supporting characters.
+2. GENDER ALIGNMENT: Ensure single exact pronouns aligned with the addressee's gender and seniority (never use slash options like 'anh/chị').
+3. OPERATOR SANITY: Fix invalid ↔ operators into directional → rules when pronouns are asymmetric.
+4. PLACEHOLDER CLEANUP: Remove placeholder values like 'none', 'N/A', '...', or 'null'.
+
+Return ONLY the cleaned addressing lines for recurring characters."""
 
         res = llm_client.generate(prompt) if hasattr(llm_client, "generate") else None
         if res and res.strip() and not ("error" in res.lower() and len(res) < 50):
