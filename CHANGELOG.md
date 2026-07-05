@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.15.0-beta.3 - 2026-07-05
+
+### Added
+
+- **Selective Character Profile Gating**: Added `_select_relevant_character_profiles()` in `novel_context.py` to filter character profiles down to ONLY active characters present in the current scene/chunk text before feeding them into prompt summaries or LLM agent requests, preventing prompt context bloat.
+- **LLM Lore-Verification Agent**: Added `verify_addressing_delta_with_llm()` to evaluate proposed addressing deltas when they conflict with established rules using a targeted micro-LLM prompt, distinguishing genuine story shifts (disguises, arguments) from extraction hallucinations.
+- **Dialogue Self-Consistency Check with High-Confidence Safety Gate**: Added `cross_check_addressing_with_dialogue()` to cross-check extracted addressing rules against actual spoken dialogue in translated text, auto-correcting extracted rules only when speaker attribution confidence is high ($\ge 0.8$) and the spoken quote contains an explicit pronoun.
+
+### Fixed
+
+- **Volatile Register Jump Protection**: Added `_is_vietnamese_unstable_register_jump()` to prevent dynamic context extractions from unprompted jumping from stable anchored pronouns (`anh`, `chị`, `em`, `thầy`, `cô`, `tớ`, `tôi`, `sếp`) to volatile/archaic pronouns (`ta`, `ngươi`, `tao`, `mày`, `hắn`) unless accompanied by an explicit narrative attitude shift.
+
+
 ## 1.15.0-beta.2 - 2026-07-05
 
 ### Added
