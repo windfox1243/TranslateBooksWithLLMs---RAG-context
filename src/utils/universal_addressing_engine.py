@@ -7,7 +7,7 @@ Enforces strict linguistic separation:
 3. Nouns, job roles, and titles (Trainer, huấn luyện viên, giám đốc, bác sĩ, sensei, sunbae) MUST reside in vocative ONLY.
 """
 
-from typing import Dict, Tuple, Optional, Set
+from typing import Dict, Tuple, Optional, Set, List, Any
 
 # Formality Index Mapping F(p) in [-2, +2] across languages
 _PRONOUN_FORMALITY_MAP: Dict[str, Dict[str, int]] = {
@@ -241,3 +241,89 @@ class UniversalAddressingEngine:
             t_key = t_clean.casefold()
 
         return s_clean, t_clean, v_clean
+
+    def get_forbidden_pronouns(self, self_pronoun: str, target_pronoun: str) -> Tuple[Set[str], Set[str]]:
+        """
+        Derive forbidden self and target pronouns based on active pair rules to enforce negative constraints.
+        Returns tuple of (forbidden_self_set, forbidden_target_set).
+        """
+        s_clean = (self_pronoun or "").strip().casefold()
+        t_clean = (target_pronoun or "").strip().casefold()
+
+        forbidden_self: Set[str] = set()
+        forbidden_target: Set[str] = set()
+
+        if self.lang_code == "vi":
+            junior_set = _JUNIOR_PRONOUN_SETS["vi"]
+            senior_set = _SENIOR_PRONOUN_SETS["vi"]
+
+            if s_clean in junior_set and t_clean in senior_set:
+                forbidden_self = {"tôi", "tao", "tớ", "mình", "ta"}
+                forbidden_target = {"cậu", "mày", "bạn", "ngươi", "em"}
+            elif s_clean in senior_set and t_clean in junior_set:
+                forbidden_self = {"em", "tớ", "mình", "cháu"}
+                forbidden_target = {"anh", "chị", "thầy", "cô", "sếp", "bác", "chú", "ông", "bà", "tiền bối", "ngài"}
+            elif s_clean in {"tớ", "mình"} and t_clean == "cậu":
+                forbidden_self = {"em", "anh", "chị", "tôi", "tao"}
+                forbidden_target = {"mày", "anh", "chị", "em", "ngươi"}
+            elif s_clean == "tao" and t_clean == "mày":
+                forbidden_self = {"tôi", "tớ", "em", "mình", "cháu"}
+                forbidden_target = {"cậu", "anh", "chị", "bạn", "em"}
+            elif s_clean == "tôi" and t_clean in senior_set:
+                forbidden_self = {"tao", "tớ", "mày"}
+                forbidden_target = {"cậu", "mày", "ngươi"}
+
+        return forbidden_self, forbidden_target
+
+    def audit_addressing_violations(
+        self,
+        text: str,
+        rules: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """
+        Audit translated text against active addressing rules for negative constraint violations.
+        Returns a list of violation descriptors.
+        """
+        import re
+        if not text or not rules:
+            return []
+
+        try:
+            from src.utils.dialogue_attribution import detect_dialogue_turns
+            turns = detect_dialogue_turns(text)
+        except ImportError:
+            turns = []
+
+        violations: List[Dict[str, Any]] = []
+
+        for r in rules:
+            speaker = r.get("speaker_name", "")
+            addressee = r.get("addressee_name", "")
+            self_p = r.get("self_pronoun", "")
+            target_p = r.get("target_pronoun", "")
+
+            if not self_p or not target_p:
+                continue
+
+            f_self, f_target = self.get_forbidden_pronouns(self_p, target_p)
+            if not f_self and not f_target:
+                continue
+
+            for turn in turns:
+                cue = turn.get("cue", "")
+                cue_lower = cue.lower()
+
+                for forbidden_p in f_self | f_target:
+                    pattern = r'\b' + re.escape(forbidden_p) + r'\b'
+                    if re.search(pattern, cue_lower):
+                        violations.append({
+                            "speaker": speaker,
+                            "addressee": addressee,
+                            "expected": f"self='{self_p}', target='{target_p}'",
+                            "forbidden_found": forbidden_p,
+                            "cue": cue,
+                        })
+                        break
+
+        return violations
+

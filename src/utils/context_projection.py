@@ -23,6 +23,9 @@ def render_addressing_projection(translation_id: str, db: Optional[Database] = N
         "Chú ý tuân thủ tuyệt đối cách xưng hô và xưng xưng/gọi ngôi của từng nhân vật dưới đây:",
     ]
 
+    from src.utils.universal_addressing_engine import UniversalAddressingEngine
+    engine = UniversalAddressingEngine(language="vi")
+
     for r in rules:
         speaker = r.get("speaker_name")
         addressee = r.get("addressee_name")
@@ -31,10 +34,19 @@ def render_addressing_projection(translation_id: str, db: Optional[Database] = N
         vocative = r.get("vocative")
         register = r.get("register", "polite")
 
+        f_self, f_target = engine.get_forbidden_pronouns(self_p or "", target_p or "")
+        forbidden_list = sorted(list(f_self | f_target))
+        forbidden_str = (
+            f" [CẤM DÙNG: {', '.join(repr(t) for t in forbidden_list)}]"
+            if forbidden_list
+            else ""
+        )
+
         vocative_str = f" (gọi là '{vocative}')" if vocative else ""
         lines.append(
             f"- **{speaker}** khi nói với **{addressee}**: "
-            f"Tự xưng là '{self_p}', gọi đối phương là '{target_p}'{vocative_str} [Sắc thái: {register}]."
+            f"Tự xưng là '{self_p}', gọi đối phương là '{target_p}'{vocative_str} "
+            f"[Sắc thái: {register}]{forbidden_str}."
         )
 
     return "\n".join(lines)
