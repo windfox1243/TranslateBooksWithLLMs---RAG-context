@@ -5405,24 +5405,6 @@ def _is_vietnamese_social_downgrade(
     )
 
 
-_GENERIC_NPC_ROLE_PATTERN = re.compile(
-    r"^(commentator|mob|passerby|passer-by|villager|student|extra|audience\s*member|customer|guard|soldier|knight|thug|bandit|reporter|announcer|demon|monster|goblin|orc|civilian|bystander)\s*([a-z0-9]+)?$",
-    re.IGNORECASE,
-)
-
-
-def is_generic_npc_label(name: str) -> bool:
-    clean = (name or "").strip()
-    if not clean:
-        return True
-    return bool(_GENERIC_NPC_ROLE_PATTERN.match(clean))
-
-
-def _has_generic_npc_participant(relation_key: Tuple[str, str, str]) -> bool:
-    speaker, addressee, _ = relation_key
-    return is_generic_npc_label(speaker) or is_generic_npc_label(addressee)
-
-
 def _filter_vietnamese_addressing_delta(
     proposed_addressing: str,
     alias_map: Dict[str, str],
@@ -5449,8 +5431,6 @@ def _filter_vietnamese_addressing_delta(
             output.append(raw_line)
             continue
         relation_key, _, details = parsed
-        if _has_generic_npc_participant(relation_key):
-            continue
         is_delete = details.strip().rstrip(" .;:").casefold() in (
             _DYNAMIC_DELETE_VALUES
         )
@@ -5483,8 +5463,6 @@ def _remove_vietnamese_addressing_mismatches(
             output.append(raw_line)
             continue
         relation_key, _, details = parsed
-        if _has_generic_npc_participant(relation_key):
-            continue
         if not _has_vietnamese_addressing_mismatch(details):
             output.append(raw_line)
     return "\n".join(output).strip()
@@ -5554,7 +5532,7 @@ def sanitize_addressing_with_llm(
     try:
         from src.utils.unified_logger import get_logger, LogType
         logger = get_logger()
-        logger.info("Running LLM Context Sanitizer on addressing forms...", log_type=LogType.NOVEL_CONTEXT)
+        logger.info("Running LLM Context Sanitizer on addressing forms...", log_type=LogType.GENERAL)
 
         profiles_summary = ""
         if character_profiles:
@@ -5584,7 +5562,7 @@ Return ONLY the cleaned addressing lines for recurring characters."""
                 return clean_res
     except Exception as e:
         from src.utils.unified_logger import get_logger, LogType
-        get_logger().warning(f"LLM Context Sanitizer failed: {e}. Falling back to Python sanitizer.", log_type=LogType.NOVEL_CONTEXT)
+        get_logger().warning(f"LLM Context Sanitizer failed: {e}. Falling back to Python sanitizer.", log_type=LogType.GENERAL)
 
     return addressing
 
