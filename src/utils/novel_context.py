@@ -5491,6 +5491,52 @@ def normalize_dynamic_state(
     )
 
 
+def sanitize_addressing_with_llm(
+    addressing: str,
+    character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
+    target_language: str = "Vietnamese",
+    llm_client: Optional[Any] = None,
+) -> str:
+    """
+    Sanitize and normalize addressing forms using LLM Context Sanitizer Agent with safe fallback.
+    """
+    if not addressing.strip() or not llm_client:
+        return addressing
+
+    try:
+        from src.utils.unified_logger import get_logger, LogType
+        logger = get_logger()
+        logger.info("Running LLM Context Sanitizer on addressing forms...", log_type=LogType.NOVEL_CONTEXT)
+
+        profiles_summary = ""
+        if character_profiles:
+            profiles_summary = "\n".join([
+                f"- {name}: {info.get('details', '')} (Gender: {info.get('gender', 'Unknown')})"
+                for name, info in character_profiles.items()
+            ])
+
+        prompt = f"""Given these character profiles:
+{profiles_summary}
+
+And these addressing rules for target language {target_language}:
+{addressing}
+
+Normalize and repair the addressing rules into clean canonical format.
+Ensure gender alignment, social status hierarchy, and operator directions (→ vs ↔) are strictly valid.
+Return ONLY the cleaned addressing lines."""
+
+        res = llm_client.generate(prompt) if hasattr(llm_client, "generate") else None
+        if res and res.strip() and not ("error" in res.lower() and len(res) < 50):
+            clean_res = res.strip().replace("```markdown", "").replace("```json", "").replace("```", "").strip()
+            if len(clean_res) > 20 and ":" in clean_res:
+                return clean_res
+    except Exception as e:
+        from src.utils.unified_logger import get_logger, LogType
+        get_logger().warning(f"LLM Context Sanitizer failed: {e}. Falling back to Python sanitizer.", log_type=LogType.NOVEL_CONTEXT)
+
+    return addressing
+
+
 def merge_dynamic_state(
     current_dynamic_state: str,
     proposed_dynamic_state: str,

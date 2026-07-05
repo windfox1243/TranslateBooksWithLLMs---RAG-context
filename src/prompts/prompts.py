@@ -201,6 +201,7 @@ def _build_relationship_addressing_section() -> str:
 # RELATIONSHIP AND ADDRESSING GUARDRAILS
 
 - Treat `## CURRENT ADDRESSING FORMS` as authoritative for direct address when a matching speaker/addressee pair is present.
+- DIALOGUE PRONOUN ISOLATION (CRITICAL): Paired addressing rules (`Speaker → Addressee: self-reference; second-person pronoun`) apply ONLY when speaking to or directly addressing that specific person in dialogue or direct thoughts. Do NOT bleed dialogue self-references (e.g. `em`, `chú`, `con`) into general non-dialogue story narration.
 - For languages with pronouns, kinship terms, honorifics, particles, titles, or speech levels, choose them from proven relationship facts: age, family relationship, school year, rank, social status, intimacy, and seniority.
 - Apply those relationship facts to both direct address and indirect references in dialogue, thoughts, and narration.
 - Do not invent kinship, seniority, or respect markers from gender, affection, politeness, or genre expectation alone. If relationship facts are insufficient, prefer the stored name/title or a neutral form natural for the target language."""
@@ -1297,3 +1298,73 @@ def generate_post_processing_prompt(
         additional_instructions=additional_instructions,
         glossary_block=glossary_block,
     )
+
+
+def generate_chunk_reflection_prompt(
+    source_chunk: str,
+    draft_translation: str,
+    target_language: str = "Vietnamese",
+    novel_context: str = "",
+) -> PromptPair:
+    """
+    Generate a chunk reflection prompt acting as a Senior Translation Editor / Critic.
+    Evaluates line-by-line fidelity, narrative vs. dialogue pronoun isolation, and term accuracy.
+    """
+    system_prompt = f"""You are a Master Translation Editor specializing in {target_language} literary translation.
+Your task is to evaluate a draft translation against its original source text and active novel lore.
+
+CRITIQUE CHECKLIST:
+1. ACCURACY & OMISSIONS: Were any sentences, dialogue lines, or paragraphs skipped or mistranslated?
+2. DIALOGUE VS NARRATION PRONOUN ISOLATION: Did dialogue-specific self-references (e.g. 'em', 'chú', 'con') bleed into general non-dialogue story narration?
+3. GENDER & ADDRESSING ALIGNMENT: Are pronouns aligned with established character genders and social status (e.g., preventing male 'anh' for female addressees)?
+4. REGISTER HARMONY: Are formality registers harmonious (preventing unnatural mixes like 'tôi-ngươi')?
+
+OUTPUT FORMAT:
+- If the draft is completely accurate and free of errors, output EXACTLY:
+NO_ISSUES
+
+- If errors or quality issues exist, list concise, actionable bullet points explaining what needs to be fixed. Do not re-translate the entire text in the critique."""
+
+    user_prompt = f"""# RAW SOURCE CHUNK:
+{source_chunk.strip()}
+
+# ACTIVE NOVEL LORE & ADDRESSING RULES:
+{novel_context.strip() if novel_context.strip() else "None"}
+
+# DRAFT TRANSLATION TO CRITIQUE:
+{draft_translation.strip()}
+
+Perform your critique evaluation now:"""
+
+    return PromptPair(system=system_prompt.strip(), user=user_prompt.strip())
+
+
+def generate_chunk_repair_prompt(
+    source_chunk: str,
+    draft_translation: str,
+    critique_feedback: str,
+    target_language: str = "Vietnamese",
+    translate_tag_in: str = TRANSLATE_TAG_IN,
+    translate_tag_out: str = TRANSLATE_TAG_OUT,
+) -> PromptPair:
+    """
+    Generate a chunk repair prompt applying critique feedback to produce the final pristine chunk.
+    """
+    system_prompt = f"""You are an Expert Translation Refiner for {target_language}.
+Apply the Senior Editor's critique feedback to repair the draft translation.
+Fix all flagged pronoun leaks, missing lines, gender mismatches, and register flaws.
+Output ONLY the final repaired translation text inside {translate_tag_in} and {translate_tag_out} tags."""
+
+    user_prompt = f"""# ORIGINAL SOURCE CHUNK:
+{source_chunk.strip()}
+
+# DRAFT TRANSLATION:
+{draft_translation.strip()}
+
+# SENIOR EDITOR CRITIQUE & REQUIRED FIXES:
+{critique_feedback.strip()}
+
+Output your pristine repaired translation in {translate_tag_in}...{translate_tag_out} now:"""
+
+    return PromptPair(system=system_prompt.strip(), user=user_prompt.strip())
+
