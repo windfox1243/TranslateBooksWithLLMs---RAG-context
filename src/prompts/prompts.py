@@ -1310,20 +1310,27 @@ def generate_chunk_reflection_prompt(
     Generate a chunk reflection prompt acting as a Senior Translation Editor / Critic.
     Evaluates line-by-line fidelity, narrative vs. dialogue pronoun isolation, and term accuracy.
     """
-    system_prompt = f"""You are a Master Translation Editor specializing in {target_language} literary translation.
-Your task is to evaluate a draft translation against its original source text and active novel lore.
+    system_prompt = f"""You are an uncompromising, ultra-rigorous Senior Literary Translation Editor specializing in {target_language}.
+Your task is to perform an adversarial quality review of a draft translation against its original source text and active novel lore.
 
-CRITIQUE CHECKLIST:
-1. ACCURACY & OMISSIONS: Were any sentences, dialogue lines, or paragraphs skipped or mistranslated?
-2. DIALOGUE VS NARRATION PRONOUN ISOLATION: Did dialogue-specific self-references (e.g. 'em', 'chú', 'con') bleed into general non-dialogue story narration?
-3. GENDER & ADDRESSING ALIGNMENT: Are pronouns aligned with established character genders and social status (e.g., preventing male 'anh' for female addressees)?
-4. REGISTER HARMONY: Are formality registers harmonious (preventing unnatural mixes like 'tôi-ngươi')?
+RIGOROUS 4-STEP AUDIT PROCEDURE:
+1. LINE & CLAUSE COMPLETENESS AUDIT:
+   - Compare every sentence, clause, dialogue tag, and narrative detail in the source chunk against the draft translation.
+   - Flag ANY omitted sentence, dropped phrase, or summarized paragraph.
 
-OUTPUT FORMAT:
-- If the draft is completely accurate and free of errors, output EXACTLY:
-NO_ISSUES
+2. DIALOGUE VS NARRATION PRONOUN ISOLATION:
+   - Check whether dialogue-specific self-references or intimate pronouns (e.g. 'em', 'chú', 'con', 'tới', 'tớ') have improperly leaked into third-person non-dialogue story narration outside quotes.
 
-- If errors or quality issues exist, list concise, actionable bullet points explaining what needs to be fixed. Do not re-translate the entire text in the critique."""
+3. GENDER & CHARACTER LORE ALIGNMENT:
+   - Cross-check pronouns against the ACTIVE NOVEL LORE.
+   - Flag gender mismatches (e.g., using male pronouns 'anh' for a female character, or incorrect seniority/kinship terms).
+
+4. REGISTER HARMONY & NATURALNESS:
+   - Check for unnatural register shifts (e.g. mixing formal 'tôi-ngươi' with intimate 'cậu-tớ' in the same conversation without reason) or robotic literal phrasing.
+
+STRICT OUTPUT CONTRACT:
+- Output NO_ISSUES ONLY if the draft is 100% flawless across all 4 audit steps.
+- If ANY flaw, line drop, pronoun bleed, gender error, or register inconsistency exists, list concise, actionable bullet points explaining what MUST be repaired. Do NOT output NO_ISSUES if there is any defect."""
 
     user_prompt = f"""# RAW SOURCE CHUNK:
 {source_chunk.strip()}
@@ -1331,10 +1338,10 @@ NO_ISSUES
 # ACTIVE NOVEL LORE & ADDRESSING RULES:
 {novel_context.strip() if novel_context.strip() else "None"}
 
-# DRAFT TRANSLATION TO CRITIQUE:
+# DRAFT TRANSLATION TO AUDIT:
 {draft_translation.strip()}
 
-Perform your critique evaluation now:"""
+Perform your rigorous Senior Editor audit now:"""
 
     return PromptPair(system=system_prompt.strip(), user=user_prompt.strip())
 
