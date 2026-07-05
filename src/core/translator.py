@@ -976,7 +976,7 @@ async def run_chunk_reflection_pass(
 ) -> str:
     """Run a 2-pass Senior Translation Editor reflection & repair evaluation on a draft chunk."""
     from src.prompts.prompts import generate_chunk_reflection_prompt, generate_chunk_repair_prompt
-    from src.core.post_processor import extract_translation_from_tags
+    from src.core.llm import TranslationExtractor
 
     if not draft_translation or not draft_translation.strip() or not llm_client:
         return draft_translation
@@ -1029,7 +1029,8 @@ async def run_chunk_reflection_pass(
         raw_content = repair_response.content or ""
         repaired_text = llm_client.extract_translation(raw_content) if hasattr(llm_client, "extract_translation") else None
         if not repaired_text:
-            repaired_text = extract_translation_from_tags(raw_content)
+            extractor = TranslationExtractor("<TRANSLATION>", "</TRANSLATION>")
+            repaired_text = extractor.extract(raw_content)
         if repaired_text and repaired_text.strip():
             if log_callback:
                 log_callback("repair_applied", "Applied Senior Editor repair fixes.")
