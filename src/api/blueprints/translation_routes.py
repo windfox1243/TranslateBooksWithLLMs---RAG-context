@@ -1453,4 +1453,50 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "resync_state": config['_context_resync'],
         }), 200
 
+    @bp.route('/<translation_id>/addressing-rules', methods=['GET'])
+    def get_addressing_rules_route(translation_id):
+        """Get directed character addressing rules for a translation job."""
+        rules = state_manager.checkpoint_manager.db.get_addressing_rules(translation_id)
+        return jsonify({
+            "translation_id": translation_id,
+            "rules": rules,
+            "count": len(rules)
+        }), 200
+
+    @bp.route('/<translation_id>/addressing-audit-log', methods=['GET'])
+    def get_addressing_audit_log_route(translation_id):
+        """Get audit log of character addressing updates for a translation job."""
+        limit = request.args.get('limit', 100, type=int)
+        logs = state_manager.checkpoint_manager.db.get_context_audit_logs(translation_id, limit=limit)
+        return jsonify({
+            "translation_id": translation_id,
+            "audit_logs": logs,
+            "count": len(logs)
+        }), 200
+
+    @bp.route('/<translation_id>/addressing-rules/lock', methods=['POST'])
+    def set_addressing_rule_lock_route(translation_id):
+        """Lock or unlock an addressing rule from being overwritten by LLM deltas."""
+        data = request.get_json() or {}
+        speaker_name = data.get('speaker_name')
+        addressee_name = data.get('addressee_name')
+        is_locked = bool(data.get('is_locked', True))
+
+        if not speaker_name or not addressee_name:
+            return jsonify({"error": "speaker_name and addressee_name are required"}), 400
+
+        success = state_manager.checkpoint_manager.db.set_addressing_rule_lock(
+            translation_id, speaker_name, addressee_name, is_locked
+        )
+        if success:
+            return jsonify({
+                "message": "Addressing rule lock updated successfully",
+                "translation_id": translation_id,
+                "speaker_name": speaker_name,
+                "addressee_name": addressee_name,
+                "is_locked": is_locked
+            }), 200
+        return jsonify({"error": "Failed to update addressing rule lock"}), 500
+
     return bp
+

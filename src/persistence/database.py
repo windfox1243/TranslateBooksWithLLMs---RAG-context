@@ -113,6 +113,56 @@ class Database:
                 )
             """)
 
+            # Context Entities Table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_entities (
+                    translation_id TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    aliases JSON,
+                    gender TEXT,
+                    traits TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (translation_id, entity_id)
+                )
+            """)
+
+            # Context Addressing Rules Table (Directed graph: speaker -> addressee)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_addressing_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    translation_id TEXT NOT NULL,
+                    speaker_name TEXT NOT NULL,
+                    addressee_name TEXT NOT NULL,
+                    self_pronoun TEXT NOT NULL,
+                    target_pronoun TEXT NOT NULL,
+                    vocative TEXT,
+                    register TEXT,
+                    confidence REAL DEFAULT 1.0,
+                    is_locked INTEGER DEFAULT 0,
+                    last_chunk_index INTEGER DEFAULT 0,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(translation_id, speaker_name, addressee_name)
+                )
+            """)
+
+            # Context Audit Logs Table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_audit_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    translation_id TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    speaker_name TEXT NOT NULL,
+                    addressee_name TEXT NOT NULL,
+                    old_state_json JSON,
+                    new_state_json JSON,
+                    trigger_source TEXT NOT NULL,
+                    evidence_quote TEXT,
+                    confidence REAL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # Create indexes for performance
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_jobs_status
@@ -122,6 +172,16 @@ class Database:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_chunks_translation
                 ON checkpoint_chunks(translation_id)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_addressing_translation
+                ON context_addressing_rules(translation_id)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_audit_translation
+                ON context_audit_logs(translation_id, chunk_index)
             """)
 
             conn.commit()
@@ -644,8 +704,168 @@ class Database:
                 print(f"Error deleting job: {e}")
                 return False
 
+    def upsert_addressing_rule(
+        self,
+        translation_id: str,
+        speaker_name: str,
+        addressee_name: str,
+        self_pronoun: str,
+        target_pronoun: str,
+        vocative: Optional[str] = None,
+        register: Optional[str] = None,
+        confidence: float = 1.0,
+        is_locked: int = 0,
+        chunk_index: int = 0
+    ) -> bool:
+        """Upsert a directed addressing rule for a speaker-addressee pair."""
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO context_addressing_rules (
+                        translation_id, speaker_name, addressee_name,
+                        self_pronoun, target_pronoun, vocative, register,
+                        confidence, is_locked, last_chunk_index, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(translation_id, speaker_name, addressee_name) DO UPDATE SET
+                        self_pronoun = excluded.self_pronoun,
+                        target_pronoun = excluded.target_pronoun,
+                        vocative = excluded.vocative,
+                        register = excluded.register,
+                        confidence = excluded.confidence,
+                        is_locked = CASE WHEN context_addressing_rules.is_locked = 1 THEN 1 ELSE excluded.is_locked END,
+                        last_chunk_index = excluded.last_chunk_index,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (
+                    translation_id, speaker_name, addressee_name,
+                    self_pronoun, target_pronoun, vocative or "", register or "polite",
+                    confidence, is_locked, chunk_index
+                ))
+                conn.commit()
+                return True
+            except Exception as e:
+                print(f"Error upserting addressing rule: {e}")
+                return False
+
+    def get_addressing_rules(self, translation_id: str) -> List[Dict[str, Any]]:
+        """Fetch all addressing rules for a given translation job."""
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT speaker_name, addressee_name, self_pronoun, target_pronoun,
+                           vocative, register, confidence, is_locked, last_chunk_index, updated_at
+                    FROM context_addressing_rules
+                    WHERE translation_id = ?
+                    ORDER BY speaker_name, addressee_name
+                """, (translation_id,))
+                rows = cursor.fetchall()
+                return [dict(r) for r in rows]
+            except Exception as e:
+                print(f"Error getting addressing rules: {e}")
+                return []
+
+    def set_addressing_rule_lock(
+        self,
+        translation_id: str,
+        speaker_name: str,
+        addressee_name: str,
+        is_locked: bool
+    ) -> bool:
+        """Lock or unlock an addressing rule from being overwritten by LLM deltas."""
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE context_addressing_rules
+                    SET is_locked = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE translation_id = ? AND speaker_name = ? AND addressee_name = ?
+                """, (1 if is_locked else 0, translation_id, speaker_name, addressee_name))
+                conn.commit()
+                return True
+            except Exception as e:
+                print(f"Error setting addressing rule lock: {e}")
+                return False
+
+    def add_context_audit_log(
+        self,
+        translation_id: str,
+        chunk_index: int,
+        speaker_name: str,
+        addressee_name: str,
+        old_state: Optional[Dict[str, Any]],
+        new_state: Dict[str, Any],
+        trigger_source: str,
+        evidence_quote: Optional[str] = None,
+        confidence: Optional[float] = None
+    ) -> bool:
+        """Add an audit log entry for context addressing updates."""
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO context_audit_logs (
+                        translation_id, chunk_index, speaker_name, addressee_name,
+                        old_state_json, new_state_json, trigger_source, evidence_quote, confidence
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    translation_id, chunk_index, speaker_name, addressee_name,
+                    json.dumps(old_state) if old_state else None,
+                    json.dumps(new_state),
+                    trigger_source, evidence_quote or "", confidence or 1.0
+                ))
+                conn.commit()
+                return True
+            except Exception as e:
+                print(f"Error adding context audit log: {e}")
+                return False
+
+    def get_context_audit_logs(self, translation_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """Fetch audit log entries for a given translation job."""
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, chunk_index, speaker_name, addressee_name,
+                           old_state_json, new_state_json, trigger_source,
+                           evidence_quote, confidence, timestamp
+                    FROM context_audit_logs
+                    WHERE translation_id = ?
+                    ORDER BY id DESC
+                    LIMIT ?
+                """, (translation_id, limit))
+                rows = cursor.fetchall()
+                result = []
+                for r in rows:
+                    item = dict(r)
+                    if item.get('old_state_json'):
+                        try:
+                            item['old_state'] = json.loads(item['old_state_json'])
+                        except Exception:
+                            item['old_state'] = None
+                    else:
+                        item['old_state'] = None
+                    if item.get('new_state_json'):
+                        try:
+                            item['new_state'] = json.loads(item['new_state_json'])
+                        except Exception:
+                            item['new_state'] = None
+                    else:
+                        item['new_state'] = None
+                    result.append(item)
+                return result
+            except Exception as e:
+                print(f"Error fetching context audit logs: {e}")
+                return []
+
     def close(self):
         """Close database connection."""
         if hasattr(self._local, 'connection') and self._local.connection:
             self._local.connection.close()
             self._local.connection = None
+
