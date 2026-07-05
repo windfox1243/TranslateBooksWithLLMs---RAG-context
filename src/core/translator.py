@@ -1026,7 +1026,10 @@ async def run_chunk_reflection_pass(
             model=model_name,
             temperature=0.3,
         )
-        repaired_text = extract_translation_from_tags(repair_response.content or "")
+        raw_content = repair_response.content or ""
+        repaired_text = llm_client.extract_translation(raw_content) if hasattr(llm_client, "extract_translation") else None
+        if not repaired_text:
+            repaired_text = extract_translation_from_tags(raw_content)
         if repaired_text and repaired_text.strip():
             if log_callback:
                 log_callback("repair_applied", "Applied Senior Editor repair fixes.")
