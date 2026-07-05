@@ -1,5 +1,5 @@
 """
-Unit tests for SOTA Formality Distance Arithmetic Addressing Engine.
+Unit tests for 2D Formality + Seniority Hierarchy Matrix Addressing Engine.
 """
 
 import pytest
@@ -17,39 +17,55 @@ def test_formality_score_calculation():
     # Distance calculation: |F(tớ) - F(mày)| = |0 - (-2)| = 2
     assert engine.calculate_formality_distance("tớ", "mày") == 2
 
-    # Distance calculation: |F(tôi) - F(anh)| = |1 - 1| = 0
-    assert engine.calculate_formality_distance("tôi", "anh") == 0
 
-
-def test_vietnamese_formality_distance_repairs():
+def test_vietnamese_2d_seniority_hierarchy_repairs():
     engine = UniversalAddressingEngine(language="vi")
 
-    # Identical pronouns: em - em -> em - anh
-    s, t, v = engine.validate_and_repair_pair("em", "em", details_context="male speaker")
-    assert s == "em"
-    assert t == "anh"
-
-    # Register clash (Distance 2): tớ - mày -> tao - mày
-    s, t, v = engine.validate_and_repair_pair("tớ", "mày")
-    assert s == "tao"
-    assert t == "mày"
-
-    # Register clash (Distance 4): tao - ngài -> tôi - ngài
-    s, t, v = engine.validate_and_repair_pair("tao", "ngài")
+    # 1. Trainee calling Trainer with peer 'cậu' -> Repaired to 'Trainer'
+    s, t, v = engine.validate_and_repair_pair(
+        self_pronoun="tôi",
+        target_pronoun="cậu",
+        speaker="Apollo Rainbow",
+        addressee="Tomio Momozawa",
+        vocative="Trainer",
+        details_context="trainer/student hierarchy, trainee",
+    )
     assert s == "tôi"
-    assert t == "ngài"
+    assert t == "Trainer"
+    assert v == "Trainer"
+
+    # 2. Student calling Teacher with peer 'cậu' -> Repaired to 'thầy'
+    s, t, v = engine.validate_and_repair_pair(
+        self_pronoun="tôi",
+        target_pronoun="cậu",
+        speaker="Student A",
+        addressee="Teacher B",
+        details_context="teacher-student relationship",
+    )
+    assert t == "thầy"
+
+    # 3. Senior (Trainer) calling Junior (Trainee) with Senior pronoun 'anh' -> Repaired to 'em'
+    s, t, v = engine.validate_and_repair_pair(
+        self_pronoun="tôi",
+        target_pronoun="anh",
+        speaker="Tomio Momozawa",
+        addressee="Apollo Rainbow",
+        details_context="trainer to trainee relationship",
+    )
+    assert s == "tôi"
+    assert t == "em"
 
 
-def test_japanese_formality_distance_repairs():
+def test_japanese_2d_seniority_hierarchy_repairs():
     engine = UniversalAddressingEngine(language="ja")
 
-    # Watakushi + Omae -> Ore + Omae (Formality distance |2 - (-2)| = 4)
+    # Watakushi + Omae -> Ore + Omae
     s, t, v = engine.validate_and_repair_pair("Watakushi", "Omae")
     assert s == "ore"
     assert t == "omae"
 
 
-def test_korean_formality_distance_repairs():
+def test_korean_2d_seniority_hierarchy_repairs():
     engine = UniversalAddressingEngine(language="ko")
 
     # Jeu + Neo -> Na + Neo
