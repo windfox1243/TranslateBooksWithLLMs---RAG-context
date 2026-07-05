@@ -8,6 +8,7 @@
 - **Structured LLM Addressing Extraction**: Added `extract_addressing_deltas_from_text` to parse structured JSON deltas directly from LLM output while filtering out group/crowd dialogue.
 - **Deterministic Merge Policy Engine**: Implemented `ContextMergeEngine` enforcing User Lock overrides, configurable confidence thresholding (`ADDRESSING_MERGE_CONFIDENCE_THRESHOLD`, default `0.80`), register stability rules, and real-time SocketIO log events (`addressing_merged`, `addressing_rejected`).
 - **Read-Only Context Projection & Markdown Tables**: Created `context_projection.py` to render active DB rules into clean, non-mutable system prompt guidelines and formatted Markdown table views (`convert_addressing_text_to_markdown_table`).
+- **Universal Multi-Language Addressing Constraint Engine**: Introduced `UniversalAddressingEngine` (`src/utils/universal_addressing_engine.py`) providing high-performance O(1) table-driven intra-pair incompatibility filtering, register alignment, and social hierarchy constraint solving across Vietnamese, Japanese, Korean, Chinese, French, and English.
 - **Trainee-to-Trainer Hierarchy Repair**: Added automatic repair in `_repair_vietnamese_addressing_details` to catch and correct peer pronoun mismatches when a trainee addresses a senior trainer (replacing invalid `cậu` with senior title/vocative).
 - **Addressing Audit Trail & REST APIs**: Exposed `/api/translations/<id>/addressing-rules`, `/api/translations/<id>/addressing-audit-log`, and `/api/translations/<id>/addressing-rules/lock` endpoints for UI integration.
 
