@@ -5474,6 +5474,8 @@ def _sanitize_vietnamese_dynamic_state(
     discarded_character_aliases: Optional[set[str]] = None,
     character_genders: Optional[Dict[str, str]] = None,
     character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
+    llm_client: Optional[Any] = None,
+    use_llm_sanitizer: bool = False,
 ) -> str:
     """Remove stored Vietnamese addressing rows whose paired-address data conflicts."""
     normalized = normalize_dynamic_state(
@@ -5488,6 +5490,16 @@ def _sanitize_vietnamese_dynamic_state(
         alias_map,
         character_profiles,
     )
+    if use_llm_sanitizer and llm_client and addressing.strip():
+        try:
+            addressing = sanitize_addressing_with_llm(
+                addressing=addressing,
+                character_profiles=character_profiles,
+                target_language="Vietnamese",
+                llm_client=llm_client,
+            )
+        except Exception:
+            pass
     addressing = _repair_vietnamese_addressing_block(
         addressing,
         alias_map,

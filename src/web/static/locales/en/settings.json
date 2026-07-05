@@ -230,5 +230,7 @@
   "novel_context_label": "Novel Context (Genders, Relationships & Glossary)",
   "auto_update_context_label": "Auto-update context file after translating each chunk",
   "bypass_context_gating_label": "Bypass context validation (directly trust LLM gender & corrections)",
+  "enable_reflection_label": "Enable 2-pass Reflection & Repair Engine (Senior Editor Quality Review)",
+  "use_llm_sanitizer_label": "Use LLM Context Sanitizer Agent (filters out 1-scene transient NPCs)",
   "novel_context_help": "Keep character genders, forms of address (relationships), and glossaries persistent in a <code>.txt</code> file to improve translation consistency. Note: Auto-update forces sequential translation (1 worker)."
 }
