@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.15.0-beta.2 - 2026-07-05
+
+### Added
+
+- **Web UI & Configuration for Reflection Mode**: Added `enableReflection` checkbox under Prompt Options in the Web Interface, `ENABLE_CHUNK_REFLECTION=false` setting in `.env.example`, and `ENABLE_CHUNK_REFLECTION` reloadable export in `src/config.py`. Hooked `run_chunk_reflection_pass()` into `generic_translator.py`'s unit translation loop to execute the 2-pass Senior Editor quality review when enabled.
+- **Web UI & Configuration for LLM Context Sanitizer Agent**: Added `useLlmSanitizer` checkbox under Prompt Options in the Web Interface, `USE_LLM_SANITIZER=false` setting in `.env.example`, and `USE_LLM_SANITIZER` reloadable export in `src/config.py`. Hooked `sanitize_addressing_with_llm()` into dynamic state sanitization in `novel_context.py`.
+- **7-Language i18n Localization**: Added `enable_reflection_label` and `use_llm_sanitizer_label` across all 7 supported UI locales (`en`, `fr`, `es`, `de`, `zh-CN`, `ja`, `ko`).
+
+### Fixed
+
+- **Execution & Log Visibility**: Fixed backend integration so reflection review logs (`reflection_start`, `reflection_critique`, `repair_applied`) and sanitizer logs (`novel_context_sanitized`) are emitted live to the Web UI log console and terminal stdout.
+
+
 ## 1.15.0-beta.1 - 2026-07-05
 
 ### Added
