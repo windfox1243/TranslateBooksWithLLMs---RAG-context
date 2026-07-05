@@ -362,7 +362,7 @@ export const ApiClient = {
      * remaining chunks. With no overrides the body is empty and the server
      * keeps the original config (backward compatible).
      * @param {string} translationId - Translation ID to resume
-     * @param {Object} [overrides] - Optional {model, llm_provider, llm_api_endpoint, api_key, context_window}
+     * @param {Object} [overrides] - Optional {model, llm_provider, llm_api_endpoint, api_key, context_window, prompt_options}
      * @returns {Promise<Object>} Resume result
      */
     async resumeJob(translationId, overrides = null) {

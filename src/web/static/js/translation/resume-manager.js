@@ -452,7 +452,19 @@ export const ResumeManager = {
             MessageLogger.addLog(t('translation:resuming_log', { id: translationId }));
             MessageLogger.showMessage(t('translation:resuming_msg'), 'info');
 
-            const data = await ApiClient.resumeJob(translationId, overrides);
+            // Inject current UI toggle state for newly introduced settings so
+            // that legacy jobs (whose checkpoint lacks these keys) adopt them.
+            const promptOverrides = {
+                reflection_mode: !!(DomHelpers.getElement('enableReflection')?.checked),
+                use_llm_sanitizer: !!(DomHelpers.getElement('useLlmSanitizer')?.checked),
+            };
+            const merged = overrides ? { ...overrides } : {};
+            merged.prompt_options = {
+                ...(merged.prompt_options || {}),
+                ...promptOverrides,
+            };
+
+            const data = await ApiClient.resumeJob(translationId, merged);
 
             MessageLogger.showMessage(
                 t('translation:resume_success', { chunk: data.resume_from_chunk }),

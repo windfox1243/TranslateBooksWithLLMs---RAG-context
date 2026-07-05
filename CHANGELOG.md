@@ -7,6 +7,9 @@
 - **Web UI & Configuration for Reflection Mode**: Added `enableReflection` checkbox under Prompt Options in the Web Interface, `ENABLE_CHUNK_REFLECTION=false` setting in `.env.example`, and `ENABLE_CHUNK_REFLECTION` reloadable export in `src/config.py`. Hooked `run_chunk_reflection_pass()` into `generic_translator.py`'s unit translation loop to execute the 2-pass Senior Editor quality review when enabled.
 - **Web UI & Configuration for LLM Context Sanitizer Agent**: Added `useLlmSanitizer` checkbox under Prompt Options in the Web Interface, `USE_LLM_SANITIZER=false` setting in `.env.example`, and `USE_LLM_SANITIZER` reloadable export in `src/config.py`. Hooked `sanitize_addressing_with_llm()` into dynamic state sanitization in `novel_context.py`.
 - **7-Language i18n Localization**: Added `enable_reflection_label` and `use_llm_sanitizer_label` across all 7 supported UI locales (`en`, `fr`, `es`, `de`, `zh-CN`, `ja`, `ko`).
+- **Auto-Update `.env.example` on Upgrade**: `launcher.py` now always refreshes `TranslateBook_Data/.env.example` from the bundled template on every launch, ensuring the reference documentation is always up to date.
+- **Auto-Populate Missing `.env` Settings**: Added `ensure_env_defaults()` in `env_helper.py` — on startup, any newly introduced configuration keys (e.g. `ENABLE_CHUNK_REFLECTION`, `USE_LLM_SANITIZER`) are automatically appended to the user's existing `.env` file with safe defaults, without overwriting existing values or API keys.
+- **Resume Inherits Current UI Settings**: The resume endpoint (`/api/resume`) and frontend now merge `prompt_options` overrides (reflection mode, LLM sanitizer) from the current UI state into resumed jobs. Legacy checkpoints that lack these settings automatically adopt whatever is toggled in the UI at resume time.
 
 ### Fixed
 
