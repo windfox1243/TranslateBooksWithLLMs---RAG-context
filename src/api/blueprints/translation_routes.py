@@ -211,6 +211,10 @@ def _apply_resume_overrides(config, overrides):
     through `_resolve_api_key` exactly like the start endpoint, and a multi-key
     string is passed through unchanged so the key-rotation pool still works.
 
+    Also merges prompt_options overrides (e.g. reflection_mode, use_llm_sanitizer)
+    so that resumed legacy jobs can adopt newly introduced settings from the
+    current UI state.
+
     Credentials are validated even with an empty body: checkpoints no longer
     persist API keys (issue #213), so every resume must find its key in .env
     or in the request.
@@ -230,6 +234,14 @@ def _apply_resume_overrides(config, overrides):
                 config['context_window'] = int(overrides['context_window'])
             except (TypeError, ValueError):
                 return jsonify({"error": "context_window must be an integer"}), 400
+
+        # Merge prompt_options overrides so newly introduced settings
+        # (reflection_mode, use_llm_sanitizer, etc.) apply to resumed jobs.
+        prompt_options_overrides = overrides.get('prompt_options')
+        if isinstance(prompt_options_overrides, dict) and prompt_options_overrides:
+            existing_opts = config.get('prompt_options') or {}
+            existing_opts.update(prompt_options_overrides)
+            config['prompt_options'] = existing_opts
 
     _rehydrate_resume_credentials(config, overrides)
 
