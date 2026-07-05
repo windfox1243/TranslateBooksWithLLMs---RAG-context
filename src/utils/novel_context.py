@@ -5476,6 +5476,7 @@ def _sanitize_vietnamese_dynamic_state(
     character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
     llm_client: Optional[Any] = None,
     use_llm_sanitizer: bool = False,
+    log_callback: Optional[Callable] = None,
 ) -> str:
     """Remove stored Vietnamese addressing rows whose paired-address data conflicts."""
     normalized = normalize_dynamic_state(
@@ -5492,14 +5493,18 @@ def _sanitize_vietnamese_dynamic_state(
     )
     if use_llm_sanitizer and llm_client and addressing.strip():
         try:
+            if log_callback:
+                log_callback("sanitizer_start", "Running LLM Context Sanitizer Agent on addressing forms...")
             addressing = sanitize_addressing_with_llm(
                 addressing=addressing,
                 character_profiles=character_profiles,
                 target_language="Vietnamese",
                 llm_client=llm_client,
+                log_callback=log_callback,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            if log_callback:
+                log_callback("sanitizer_failed", f"LLM Context Sanitizer failed: {e}")
     addressing = _repair_vietnamese_addressing_block(
         addressing,
         alias_map,
@@ -5534,6 +5539,7 @@ async def sanitize_addressing_with_llm_async(
     character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
     target_language: str = "Vietnamese",
     llm_client: Optional[Any] = None,
+    log_callback: Optional[Callable] = None,
 ) -> str:
     """
     Sanitize and normalize addressing forms using LLM Context Sanitizer Agent with safe fallback.
@@ -5545,6 +5551,8 @@ async def sanitize_addressing_with_llm_async(
         from src.utils.unified_logger import get_logger, LogType
         logger = get_logger()
         logger.info("Running LLM Context Sanitizer on addressing forms...", log_type=LogType.GENERAL)
+        if log_callback:
+            log_callback("sanitizer_start", "Running LLM Context Sanitizer Agent on addressing forms...")
 
         profiles_summary = ""
         if character_profiles:
@@ -5589,10 +5597,14 @@ Return ONLY the cleaned addressing lines for recurring characters."""
         if res and isinstance(res, str) and res.strip() and not ("error" in res.lower() and len(res) < 50):
             clean_res = res.strip().replace("```markdown", "").replace("```json", "").replace("```", "").strip()
             if len(clean_res) > 20 and ":" in clean_res:
+                if log_callback:
+                    log_callback("sanitizer_complete", "LLM Context Sanitizer Agent completed successfully.")
                 return clean_res
     except Exception as e:
         from src.utils.unified_logger import get_logger, LogType
         get_logger().warning(f"LLM Context Sanitizer failed: {e}. Falling back to Python sanitizer.", log_type=LogType.GENERAL)
+        if log_callback:
+            log_callback("sanitizer_failed", f"LLM Context Sanitizer warning: {e}")
 
     return addressing
 
@@ -5602,6 +5614,7 @@ def sanitize_addressing_with_llm(
     character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
     target_language: str = "Vietnamese",
     llm_client: Optional[Any] = None,
+    log_callback: Optional[Callable] = None,
 ) -> str:
     """Synchronous wrapper for sanitize_addressing_with_llm_async."""
     if not addressing.strip() or not llm_client:
@@ -7238,6 +7251,9 @@ def open_novel_context_session(
             character_aliases,
             character_genders=_character_gender_map(global_lore),
             character_profiles=_character_profile_map(global_lore),
+            llm_client=prompt_options.get("llm_client"),
+            use_llm_sanitizer=bool((prompt_options or {}).get("use_llm_sanitizer")),
+            log_callback=log_callback,
         )
         if sanitized_dynamic_state != str(dynamic_state or "").strip():
             dynamic_state = sanitized_dynamic_state
