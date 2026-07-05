@@ -201,63 +201,6 @@ def _reassemble(
     ]
 
 
-async def reflect_and_repair_chunk_async(
-    source_chunk: str,
-    draft_translation: str,
-    target_language: str,
-    llm_client: Any,
-    model_name: str,
-    novel_context: str = "",
-) -> str:
-    """
-    Optional LLM Chunk Reflection & Self-Correction pass.
-    1. Generates Senior Editor Critique.
-    2. If NO_ISSUES, returns draft directly.
-    3. If issues flagged, applies repair pass and returns pristine chunk.
-    """
-    if not source_chunk.strip() or not draft_translation.strip() or not llm_client:
-        return draft_translation
-
-    try:
-        from src.prompts.prompts import generate_chunk_reflection_prompt, generate_chunk_repair_prompt
-        from src.utils.unified_logger import get_logger, LogType
-        logger = get_logger()
-
-        ref_prompt = generate_chunk_reflection_prompt(
-            source_chunk=source_chunk,
-            draft_translation=draft_translation,
-            target_language=target_language,
-            novel_context=novel_context,
-        )
-
-        critique = await llm_client.translate_text(ref_prompt.user, model=model_name)
-        if not critique or "NO_ISSUES" in critique.strip():
-            logger.info("Chunk Reflection Pass: NO_ISSUES found. Using draft translation.", log_type=LogType.TRANSLATION)
-            return draft_translation
-
-        logger.info("Chunk Reflection Pass: Flagged issues. Applying repair pass...", log_type=LogType.TRANSLATION, data={"critique": critique.strip()[:200]})
-
-        repair_prompt = generate_chunk_repair_prompt(
-            source_chunk=source_chunk,
-            draft_translation=draft_translation,
-            critique_feedback=critique,
-            target_language=target_language,
-        )
-
-        repaired = await llm_client.translate_text(repair_prompt.user, model=model_name)
-        if repaired and repaired.strip():
-            from src.core.llm import TranslationExtractor
-            extractor = TranslationExtractor("<TRANSLATION>", "</TRANSLATION>")
-            cleaned = extractor.extract(repaired) or repaired.strip()
-            return cleaned if cleaned else draft_translation
-
-    except Exception as e:
-        from src.utils.unified_logger import get_logger, LogType
-        get_logger().warning(f"Chunk Reflection Pass failed: {e}. Using draft translation.", log_type=LogType.TRANSLATION)
-
-    return draft_translation
-
-
 async def translate_paragraphs_plain(
     paragraphs: List[str],
     source_language: str,
