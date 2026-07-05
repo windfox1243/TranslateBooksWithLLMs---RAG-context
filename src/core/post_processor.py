@@ -172,6 +172,40 @@ def clean_residual_tag_placeholders(text: str) -> str:
     return cleaner.apply(text)
 
 
+def extract_translation_from_tags(text: str) -> str:
+    """
+    Extract translation text from <TRANSLATION>...</TRANSLATION> tags (or lowercase variants),
+    removing any <think>...</think> reasoning blocks.
+    
+    Args:
+        text: The raw LLM output to extract from
+        
+    Returns:
+        The extracted translation string, or the cleaned raw text if no tags found.
+    """
+    if not text:
+        return ""
+
+    from src.core.llm.utils.extraction import TranslationExtractor
+    
+    # Try with primary uppercase tags first
+    extractor = TranslationExtractor("<TRANSLATION>", "</TRANSLATION>")
+    extracted = extractor.extract(text)
+    if extracted:
+        return extracted
+
+    # Try lowercase tags if uppercase failed
+    extractor_lower = TranslationExtractor("<translation>", "</translation>")
+    extracted_lower = extractor_lower.extract(text)
+    if extracted_lower:
+        return extracted_lower
+
+    # Fallback: remove <think> blocks and strip stray tags
+    cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE).strip()
+    cleaned = re.sub(r'</?TRANSLATION>', '', cleaned, flags=re.IGNORECASE).strip()
+    return cleaned
+
+
 # Example of how to create a custom rule:
 class CustomPunctuationRule(PostProcessingRule):
     """Example custom rule for specific punctuation cleaning"""
