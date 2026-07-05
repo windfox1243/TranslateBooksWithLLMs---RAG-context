@@ -19,7 +19,7 @@ from .context_optimizer import (
 )
 from .progress_tracker import TokenProgressTracker
 from .chunking.token_chunker import TokenChunker
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any, Callable
 
 
 # Configuration for context overflow recovery
@@ -963,3 +963,77 @@ async def refine_chunks(
 
 
 # Subtitle translation functions moved to subtitle_translator.py
+
+
+async def run_chunk_reflection_pass(
+    source_chunk: str,
+    draft_translation: str,
+    target_language: str,
+    model_name: str,
+    llm_client: Optional[Any] = None,
+    novel_context: str = "",
+    log_callback: Optional[Callable] = None,
+) -> str:
+    """Run a 2-pass Senior Translation Editor reflection & repair evaluation on a draft chunk."""
+    from src.prompts.prompts import generate_chunk_reflection_prompt, generate_chunk_repair_prompt
+    from src.core.post_processor import extract_translation_from_tags
+
+    if not draft_translation or not draft_translation.strip() or not llm_client:
+        return draft_translation
+
+    if log_callback:
+        log_callback("reflection_start", "Running 2-pass Senior Editor reflection pass...")
+
+    reflection_pair = generate_chunk_reflection_prompt(
+        source_chunk=source_chunk,
+        draft_translation=draft_translation,
+        target_language=target_language,
+        novel_context=novel_context,
+    )
+
+    try:
+        response = await llm_client.generate_async(
+            prompt=reflection_pair.user,
+            system_prompt=reflection_pair.system,
+            model=model_name,
+            temperature=0.2,
+        )
+        critique = (response.content or "").strip()
+    except Exception as e:
+        if log_callback:
+            log_callback("reflection_failed", f"Senior Editor reflection failed: {e}")
+        return draft_translation
+
+    if not critique or "NO_ISSUES" in critique.upper():
+        if log_callback:
+            log_callback("reflection_complete", "Senior Editor reflection complete: No issues found.")
+        return draft_translation
+
+    if log_callback:
+        log_callback("reflection_critique", f"Senior Editor critique: {critique[:300]}")
+
+    repair_pair = generate_chunk_repair_prompt(
+        source_chunk=source_chunk,
+        draft_translation=draft_translation,
+        critique_feedback=critique,
+        target_language=target_language,
+    )
+
+    try:
+        repair_response = await llm_client.generate_async(
+            prompt=repair_pair.user,
+            system_prompt=repair_pair.system,
+            model=model_name,
+            temperature=0.3,
+        )
+        repaired_text = extract_translation_from_tags(repair_response.content or "")
+        if repaired_text and repaired_text.strip():
+            if log_callback:
+                log_callback("repair_applied", "Applied Senior Editor repair fixes.")
+            return repaired_text.strip()
+    except Exception as e:
+        if log_callback:
+            log_callback("repair_failed", f"Senior Editor repair failed: {e}")
+
+    return draft_translation
+

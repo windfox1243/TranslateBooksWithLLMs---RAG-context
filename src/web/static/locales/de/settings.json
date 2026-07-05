@@ -230,5 +230,7 @@
   "novel_context_label": "Roman-Kontext (Geschlechter, Beziehungen & Glossar)",
   "auto_update_context_label": "Kontextdatei nach der Übersetzung jedes Segments automatisch aktualisieren",
   "bypass_context_gating_label": "Kontextvalidierung umgehen (LLM-Geschlechter und Korrekturen direkt vertrauen)",
+  "enable_reflection_label": "2-Pass Reflexions- & Reparatur-Engine aktivieren (Qualitätsprüfung)",
+  "use_llm_sanitizer_label": "LLM-Kontext-Sanitizer-Agent verwenden (filtert vorübergehende NPCs)",
   "novel_context_help": "Halten Sie Charaktergeschlechter, Anredeformen (Beziehungen) und Glossare in einer <code>.txt</code>-Datei konsistent, um die Übersetzungsqualität zu steigern. Hinweis: Automatische Aktualisierung erzwingt sequenzielle Übersetzung (1 Worker)."
 }

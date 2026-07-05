@@ -531,6 +531,19 @@ class GenericTranslator:
                     if not result:
                         return result
 
+                    # Optional 2-pass Senior Translation Editor reflection & repair pass
+                    if result and (prompt_options or {}).get("reflection_mode"):
+                        from src.core.translator import run_chunk_reflection_pass
+                        result = await run_chunk_reflection_pass(
+                            source_chunk=unit.content,
+                            draft_translation=result,
+                            target_language=target_language,
+                            model_name=model_name,
+                            llm_client=llm_client,
+                            novel_context=(prompt_options or {}).get("novel_context", ""),
+                            log_callback=log_callback,
+                        )
+
                     feedback = self.adapter.validate_unit_translation(
                         unit.unit_id, result
                     )

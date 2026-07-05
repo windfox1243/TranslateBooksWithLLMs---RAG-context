@@ -80,6 +80,8 @@ function readPromptOptions() {
         text_cleanup: !!($('textCleanup')?.checked),
         chapter_mode: !!($('chapterMode')?.checked),
         novel_context_file: (DomHelpers.getValue('novelContextSelect') || '').trim(),
+        reflection_mode: !!($('enableReflection')?.checked),
+        use_llm_sanitizer: !!($('useLlmSanitizer')?.checked),
     };
 }
 

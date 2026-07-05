@@ -230,5 +230,7 @@
   "novel_context_label": "小説のコンテキスト（性別、関係性、用語集）",
   "auto_update_context_label": "各チャンクの翻訳後にコンテキストファイルを自動更新する",
   "bypass_context_gating_label": "コンテキスト検証をバイパスする（LLMが識別した性別と修正を直接信頼する）",
+  "enable_reflection_label": "2パスリフレクション＆修正エンジンを有効化（シニアエディターの品質レビュー）",
+  "use_llm_sanitizer_label": "LLMコンテキストサニタイザーエージェントを使用（一時的なNPCを除外）",
   "novel_context_help": "キャラクターの性別、呼称（関係性）、用語集を <code>.txt</code> ファイルに保存し、翻訳の一貫性を向上させます。注意：自動更新を有効にすると、順次翻訳（スレッド数1）が強制されます。"
 }

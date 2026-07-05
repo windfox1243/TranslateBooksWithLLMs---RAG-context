@@ -230,5 +230,7 @@
   "novel_context_label": "小说上下文（性别、人物关系及术语表）",
   "auto_update_context_label": "翻译每个片段后自动更新上下文文件",
   "bypass_context_gating_label": "绕过上下文验证（直接信任 LLM 识别的性别及修正）",
+  "enable_reflection_label": "启用双路反思与修复引擎（高级编辑质量审查）",
+  "use_llm_sanitizer_label": "使用 LLM 上下文净化 Agent（过滤单场景路人角色）",
   "novel_context_help": "将角色性别、称呼方式（人物关系）和术语表保存在 <code>.txt</code> 文件中，以提高翻译的一致性。注意：自动更新会强制进行顺序翻译（单线程）。"
 }

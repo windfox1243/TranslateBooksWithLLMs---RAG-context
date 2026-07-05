@@ -98,6 +98,8 @@ _RELOADABLE_ENV_SETTINGS = (
     ('DISABLE_AUTO_PAUSE',   'DISABLE_AUTO_PAUSE',   'false'),
     ('ENABLE_STRUCTURED_ADDRESSING', 'ENABLE_STRUCTURED_ADDRESSING', 'true'),
     ('ADDRESSING_MERGE_CONFIDENCE_THRESHOLD', 'ADDRESSING_MERGE_CONFIDENCE_THRESHOLD', '0.80'),
+    ('ENABLE_CHUNK_REFLECTION', 'ENABLE_CHUNK_REFLECTION', 'false'),
+    ('USE_LLM_SANITIZER',       'USE_LLM_SANITIZER',       'false'),
     # Webhook notifications — kept here so the web UI can change them at runtime
     # via /api/settings without a server restart. notifier.py reads these via
     # `import src.config as cfg; cfg.NOTIFY_*` so reload_config() takes effect.

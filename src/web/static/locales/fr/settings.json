@@ -230,5 +230,7 @@
   "novel_context_label": "Contexte du roman (genres, relations & glossaire)",
   "auto_update_context_label": "Mettre à jour automatiquement le fichier de contexte après chaque segment traduit",
   "bypass_context_gating_label": "Ignorer la validation du contexte (faire confiance directement au genre et aux corrections du LLM)",
+  "enable_reflection_label": "Activer le moteur de réflexion & réparation 2-pass (Revue de qualité)",
+  "use_llm_sanitizer_label": "Utiliser l'agent de nettoyage de contexte LLM (filtre les PNJ éphémères)",
   "novel_context_help": "Conservez les genres des personnages, les formes d'adresse (relations) et les glossaires persistants dans un fichier <code>.txt</code> pour améliorer la cohérence de la traduction. Note : la mise à jour automatique impose une traduction séquentielle (1 thread)."
 }
