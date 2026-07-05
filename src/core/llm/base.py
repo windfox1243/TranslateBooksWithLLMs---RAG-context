@@ -88,6 +88,19 @@ class LLMProvider(ABC):
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create a persistent HTTP client with connection pooling"""
+        if self._client is not None:
+            if getattr(self._client, "is_closed", False):
+                self._client = None
+            else:
+                try:
+                    current_loop = asyncio.get_running_loop()
+                    transport = getattr(self._client, "_transport", None)
+                    transport_loop = getattr(transport, "_loop", None) if transport else None
+                    if transport_loop and (transport_loop.is_closed() or transport_loop is not current_loop):
+                        self._client = None
+                except Exception:
+                    self._client = None
+
         if self._client is None:
             # Add client identification headers to all requests
             telemetry_headers = get_telemetry_headers()
