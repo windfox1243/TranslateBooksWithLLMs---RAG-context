@@ -145,12 +145,23 @@ def _extract_text_from_srt(filepath: str) -> str:
     return ' '.join(text_parts)
 
 
+def _extract_text_from_docx(filepath: str) -> str:
+    """Extract readable text from a DOCX file."""
+    try:
+        import docx
+        doc = docx.Document(filepath)
+        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text and p.text.strip()]
+        return '\n\n'.join(paragraphs)
+    except Exception:
+        return ""
+
+
 def extract_text_from_file(filepath: str) -> str:
     """
     Extract readable text from a translated file.
 
-    Supports txt, epub, and srt files. Used for TTS generation
-    after translation is complete.
+    Supports txt, epub, srt, docx, and text-based files with any extension.
+    Used for TTS generation after translation is complete.
 
     Args:
         filepath: Path to the translated file
@@ -159,22 +170,25 @@ def extract_text_from_file(filepath: str) -> str:
         Extracted text content
 
     Raises:
-        ValueError: If file type is not supported
         FileNotFoundError: If file doesn't exist
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"File not found: {filepath}")
 
-    _, ext = os.path.splitext(filepath.lower())
+    from src.utils.file_detector import detect_file_type
+    try:
+        file_type = detect_file_type(filepath)
+    except Exception:
+        file_type = 'txt'
 
-    if ext == '.txt':
-        return _extract_text_from_txt(filepath)
-    elif ext == '.epub':
+    if file_type == 'epub':
         return _extract_text_from_epub(filepath)
-    elif ext == '.srt':
+    elif file_type == 'srt':
         return _extract_text_from_srt(filepath)
+    elif file_type == 'docx':
+        return _extract_text_from_docx(filepath)
     else:
-        raise ValueError(f"Unsupported file type for TTS: {ext}")
+        return _extract_text_from_txt(filepath)
 
 
 async def generate_tts_for_translation(
