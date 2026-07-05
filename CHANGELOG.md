@@ -9,6 +9,11 @@
 - **Dialogue Pronoun Isolation Guardrail**: Added explicit prompt instructions preventing dialogue self-references (`em`, `chú`, `con`) from leaking into general non-dialogue story narration (`tôi`).
 - **Incompatible Register Alignment Repairs**: Expanded `_HARMONIOUS_ALIGNMENT_MAP` in `UniversalAddressingEngine` to automatically repair hybrid register pairs like `tôi - ngươi` $\rightarrow$ `ta - ngươi`, `tớ - ngươi` $\rightarrow$ `ta - ngươi`, and `tớ - mày` $\rightarrow$ `tao - mày`.
 
+### Fixed
+
+- **WebSocket Reconnection & Auto-Resume**: Fixed WebSocket state synchronization on reconnect by invoking `reconcileStateWithServer()` when the socket re-establishes connection. Ongoing translations resume progress tracking immediately, and jobs completed or failed while offline properly render completion cards and trigger queue progression.
+
+
 ## 1.14.54 - 2026-07-05
 
 ### Fixed
