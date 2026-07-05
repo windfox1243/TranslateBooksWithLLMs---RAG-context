@@ -26,13 +26,12 @@ def setup_working_directory():
         (app_data_dir / 'translated_files').mkdir(exist_ok=True)
         (app_data_dir / 'checkpoints').mkdir(exist_ok=True)
 
-        # Copy .env.example if it doesn't exist and is bundled
+        # Always update .env.example from bundled template so reference guide is up to date
         bundle_dir = Path(sys._MEIPASS)
         env_example_path = app_data_dir / '.env.example'
-        if not env_example_path.exists():
-            bundled_env_example = bundle_dir / '.env.example'
-            if bundled_env_example.exists():
-                shutil.copy(bundled_env_example, env_example_path)
+        bundled_env_example = bundle_dir / '.env.example'
+        if bundled_env_example.exists():
+            shutil.copy(bundled_env_example, env_example_path)
 
         # Seed Custom_Instructions folder with bundled examples on first run.
         # Skip if user already has the folder (preserves their custom files).
@@ -51,8 +50,9 @@ def setup_working_directory():
             else:
                 novel_contexts_path.mkdir(exist_ok=True)
 
-        # Create default .env if it doesn't exist
+        # Create default .env if it doesn't exist, or auto-populate missing new settings
         env_path = app_data_dir / '.env'
+        from src.utils.env_helper import ensure_env_defaults, write_compact_env
         if not env_path.exists():
             print("\n" + "="*70)
             print("FIRST RUN DETECTED")
@@ -61,12 +61,15 @@ def setup_working_directory():
 
             # Keep .env short and practical. The bundled .env.example remains
             # available next to it as the full commented reference.
-            from src.utils.env_helper import write_compact_env
             write_compact_env(env_path)
             print(f"[OK] Configuration file created at: {env_path}")
             print("\n[INFO] You can edit this file later to customize settings")
             print("="*70)
             print()
+        else:
+            added = ensure_env_defaults(env_path)
+            if added:
+                print(f"[INFO] Auto-populated {len(added)} new configuration setting(s) in .env: {', '.join(added)}")
 
         print(f"[INFO] Working directory: {app_data_dir}")
         print(f"[INFO] Translated files will be saved to: {app_data_dir / 'translated_files'}")

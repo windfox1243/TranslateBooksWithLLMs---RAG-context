@@ -26,6 +26,8 @@ _DEFAULT_COMPACT_ENV_VALUES = {
     "OLLAMA_NUM_CTX": "4096",
     "AUTO_ADJUST_CONTEXT": "true",
     "PARALLEL_TRANSLATIONS": "1",
+    "ENABLE_CHUNK_REFLECTION": "false",
+    "USE_LLM_SANITIZER": "false",
     "NOVEL_CONTEXT_PROMPT_MAX_TOKENS": "1800",
     "NOVEL_CONTEXT_UPDATE_INTERVAL": "1",
     "NOVEL_CONTEXT_SOURCE_MEMORY_CHARS": "6000",
@@ -59,6 +61,8 @@ _COMPACT_ENV_LAYOUT = [
     "OLLAMA_NUM_CTX",
     "AUTO_ADJUST_CONTEXT",
     "PARALLEL_TRANSLATIONS",
+    "ENABLE_CHUNK_REFLECTION",
+    "USE_LLM_SANITIZER",
     "NOVEL_CONTEXT_PROMPT_MAX_TOKENS",
     "NOVEL_CONTEXT_UPDATE_INTERVAL",
     "NOVEL_CONTEXT_SOURCE_MEMORY_CHARS",
@@ -70,6 +74,39 @@ _COMPACT_ENV_LAYOUT = [
     "POE_API_KEY",
     "NIM_API_KEY",
 ]
+
+
+def ensure_env_defaults(env_file: Path) -> list[str]:
+    """Ensure newly introduced default configuration keys exist in an existing .env file.
+
+    Preserves all existing keys, comments, and values. Only appends keys that are
+    missing from the file.
+    """
+    if not env_file.exists():
+        return []
+
+    content = env_file.read_text(encoding="utf-8")
+    existing_keys = set()
+    for line in content.splitlines():
+        line_str = line.strip()
+        if line_str and not line_str.startswith("#") and "=" in line_str:
+            key = line_str.split("=", 1)[0].strip()
+            existing_keys.add(key)
+
+    added_keys = []
+    lines_to_append = []
+
+    for key in _COMPACT_ENV_LAYOUT:
+        if key and not key.startswith("#") and key not in existing_keys:
+            added_keys.append(key)
+            lines_to_append.append(f"{key}={_DEFAULT_COMPACT_ENV_VALUES.get(key, '')}")
+
+    if lines_to_append:
+        prefix = "\n" if not content.endswith("\n") else ""
+        append_block = prefix + "# Auto-added settings from software upgrade\n" + "\n".join(lines_to_append) + "\n"
+        env_file.write_text(content + append_block, encoding="utf-8")
+
+    return added_keys
 
 
 def render_compact_env(overrides: dict | None = None) -> str:
