@@ -7,9 +7,13 @@
 - **Addressing Negative Constraints Directive**: Added `get_forbidden_pronouns` in `UniversalAddressingEngine` and updated `context_projection.py` to inject explicit negative constraints (`[CẤM DÙNG: ...]`) into translation system prompts.
 - **Post-Translation Addressing Auditor**: Added `audit_addressing_violations` in `UniversalAddressingEngine` to detect dialogue turns violating active pair pronoun rules without extra LLM API overhead.
 
+### Fixed
+
+- **Cross-Directional Pair Hierarchy Repair**: Enhanced `_repair_vietnamese_addressing_block` in `novel_context.py` to cross-reference reverse addressing pairs (e.g. Trainee addressing Trainer as peer `cậu` while Trainer addresses Trainee as `em`), automatically repairing hierarchy mismatches across context blocks.
+
 ### Tests
 
-- Added unit test coverage `test_forbidden_pronouns_and_auditing` in `test_universal_addressing_engine.py`.
+- Added unit test coverage `test_forbidden_pronouns_and_auditing` in `test_universal_addressing_engine.py` and `test_cross_directional_addressing_block_repair` in `test_novel_context.py`.
 
 ## 1.14.51 - 2026-07-05
 

@@ -574,6 +574,19 @@ def test_translation_prompt_can_disable_selective_context_injection():
     assert "Alice: Female" in prompt_pair.user
 
 
+def test_cross_directional_addressing_block_repair():
+    from src.utils.novel_context import _repair_vietnamese_addressing_block
+
+    block = (
+        '- Apollo Rainbow → Tomio Momozawa: "Tomio" | "self-reference: tôi; second-person pronoun: cậu; vocative/address form: Tomio" | professional yet casual, peer-level age/previous life experience.\n'
+        '- Tomio Momozawa → Apollo Rainbow: "Apollo" | "self-reference: tôi; second-person pronoun: em; vocative/address form: Apollo" | trainer/student hierarchy.'
+    )
+
+    repaired = _repair_vietnamese_addressing_block(block, alias_map={})
+    assert "second-person pronoun: anh" in repaired or "second-person pronoun: thầy" in repaired
+
+
+
 def test_context_update_view_uses_selective_lore_without_mutating_source():
     global_lore = (
         "# GLOBAL LORE\n\n"

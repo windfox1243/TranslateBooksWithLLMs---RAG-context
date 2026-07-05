@@ -4902,14 +4902,60 @@ def _repair_vietnamese_addressing_block(
     alias_map: Dict[str, str],
     character_genders: Optional[Dict[str, str]] = None,
 ) -> str:
-    return "\n".join(
-        _repair_vietnamese_addressing_line(
-            raw_line,
-            alias_map,
-            character_genders,
+    lines = addressing.splitlines()
+    parsed_entries = []
+    pair_map = {}
+
+    for raw_line in lines:
+        parsed = _parse_dynamic_relation(raw_line, alias_map)
+        if parsed:
+            relation_key, _, details = parsed
+            spk, _, adr = relation_key
+            pair_map[(spk.casefold(), adr.casefold())] = (spk, adr, details)
+            parsed_entries.append((raw_line, spk, adr, details))
+        else:
+            parsed_entries.append((raw_line, None, None, None))
+
+    repaired_lines = []
+    for raw_line, spk, adr, details in parsed_entries:
+        if not spk or not adr:
+            repaired_lines.append(raw_line)
+            continue
+
+        rev_key = (adr.casefold(), spk.casefold())
+        rev_entry = pair_map.get(rev_key)
+
+        enriched_details = details
+        if rev_entry:
+            _, _, rev_details = rev_entry
+            rev_details_lower = rev_details.lower()
+            rev_target = _vietnamese_addressing_field(rev_details, "second-person pronoun").casefold()
+
+            if rev_target in {"em", "cháu", "con"} or any(
+                k in rev_details_lower
+                for k in ("trainer", "teacher", "thầy", "sếp", "giám đốc", "senpai", "sunbae")
+            ):
+                if not any(
+                    k in enriched_details.lower()
+                    for k in ("senior", "trainer", "thầy", "sếp", "giám đốc")
+                ):
+                    enriched_details = f"{enriched_details} | junior to senior, trainer/student hierarchy"
+
+        line_to_repair = raw_line
+        if enriched_details != details and ":" in raw_line:
+            parts = raw_line.split(":", 1)
+            line_to_repair = f"{parts[0]}: {enriched_details}"
+
+        repaired_lines.append(
+            _repair_vietnamese_addressing_line(
+                line_to_repair,
+                alias_map,
+                character_genders,
+            )
         )
-        for raw_line in addressing.splitlines()
-    ).strip()
+
+    return "\n".join(repaired_lines).strip()
+
 
 
 def _has_vietnamese_hierarchy_addressing_mismatch(details: str) -> bool:
