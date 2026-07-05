@@ -5528,3 +5528,25 @@ def test_vietnamese_addressing_gender_cross_validation():
     assert "second-person pronoun: anh" in merged
 
 
+def test_vietnamese_addressing_slash_pronoun_and_none_vocative_cleanup():
+    from src.utils.novel_context import merge_dynamic_state
+    current = (
+        "## CURRENT ADDRESSING FORMS\n"
+        '- Commentator A → Commentator B: "..." | "self-reference: tôi; second-person pronoun: anh/chị; vocative/address form: none" | professional colleagues\n'
+    )
+    genders = {
+        "commentator a": "Male",
+        "commentator b": "Female",
+    }
+    merged = merge_dynamic_state(
+        current,
+        "",
+        target_language="Vietnamese",
+        character_genders=genders,
+    )
+    # slash pronoun 'anh/chị' resolved to female addressee 'chị', vocative 'none' cleaned out
+    assert "second-person pronoun: chị" in merged
+    assert "vocative/address form: none" not in merged
+
+
+

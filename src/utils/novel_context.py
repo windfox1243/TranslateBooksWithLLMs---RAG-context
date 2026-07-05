@@ -4817,6 +4817,32 @@ def _repair_vietnamese_addressing_details(
     raw_second_p = _vietnamese_addressing_field(details, "second-person pronoun")
     vocative_raw = _vietnamese_addressing_field(details, "vocative/address form")
 
+    # Clean up ambiguous slash pronouns (e.g. "anh/chị")
+    if "/" in raw_second_p:
+        addressee_g = character_genders.get(_plain_key(addressee), "") if character_genders else ""
+        if _canonical_gender(addressee_g).casefold() == "female":
+            raw_second_p = "chị"
+        elif _canonical_gender(addressee_g).casefold() == "male":
+            raw_second_p = "anh"
+        else:
+            raw_second_p = raw_second_p.split("/")[0].strip()
+        details = _replace_vietnamese_addressing_field(details, "second-person pronoun", raw_second_p)
+
+    if "/" in self_reference_raw:
+        speaker_g = character_genders.get(_plain_key(speaker), "") if character_genders else ""
+        if _canonical_gender(speaker_g).casefold() == "female":
+            self_reference_raw = "chị" if "chị" in self_reference_raw else self_reference_raw.split("/")[0].strip()
+        elif _canonical_gender(speaker_g).casefold() == "male":
+            self_reference_raw = "anh" if "anh" in self_reference_raw else self_reference_raw.split("/")[0].strip()
+        else:
+            self_reference_raw = self_reference_raw.split("/")[0].strip()
+        details = _replace_vietnamese_addressing_field(details, "self-reference", self_reference_raw)
+
+    # Clean up placeholder vocative strings ("none", "N/A", "...", "null")
+    if _plain_key(vocative_raw) in {"none", "n/a", "...", "null", "none."}:
+        vocative_raw = ""
+        details = _replace_vietnamese_addressing_field(details, "vocative/address form", "")
+
     from src.utils.universal_addressing_engine import UniversalAddressingEngine
     engine = UniversalAddressingEngine(language="vi")
     rep_s, rep_t, rep_v = engine.validate_and_repair_pair(
