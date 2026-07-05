@@ -1,8 +1,10 @@
 """
 Universal Multi-Language Addressing Constraint Engine using 2D Formality + Seniority Matrix.
 
-Combines Arithmetic Formality Distance |F(self) - F(target)| with Relative Seniority Hierarchy H_rel
-to enforce 100% accurate social hierarchy alignment and register harmony across languages.
+Enforces strict linguistic separation:
+1. self_pronoun MUST be a genuine first-person pronoun (tôi, em, tớ, tao, ta, Watashi, Ore, Boku, Na).
+2. target_pronoun MUST be a genuine second-person pronoun (anh, chị, em, thầy, cô, cậu, mày, ngươi, Anata, Omae, Neo).
+3. Nouns, job roles, and titles (Trainer, huấn luyện viên, giám đốc, bác sĩ, sensei, sunbae) MUST reside in vocative ONLY.
 """
 
 from typing import Dict, Tuple, Optional, Set
@@ -13,7 +15,7 @@ _PRONOUN_FORMALITY_MAP: Dict[str, Dict[str, int]] = {
         # Honorific / Extremely Formal (+2)
         "ngài": 2, "quý khách": 2, "bệ hạ": 2, "điện hạ": 2, "quý vị": 2, "tiền bối": 2,
         # Polite / Neutral Formal (+1)
-        "tôi": 1, "anh": 1, "chị": 1, "ông": 1, "bà": 1, "bác": 1, "chú": 1, "cô": 1, "huấn luyện viên": 1, "giám đốc": 1, "bác sĩ": 1,
+        "tôi": 1, "anh": 1, "chị": 1, "ông": 1, "bà": 1, "bác": 1, "chú": 1, "cô": 1, "thầy": 1, "sếp": 1,
         # Youthful / Friendly Peer / Intimate (0)
         "tớ": 0, "cậu": 0, "mình": 0, "bạn": 0, "em": 0, "cháu": 0, "con": 0,
         # Vulgar / Hostile / Contemptuous (-2)
@@ -40,17 +42,17 @@ _PRONOUN_FORMALITY_MAP: Dict[str, Dict[str, int]] = {
     },
 }
 
-# Seniority Role Classification
+# Genuine Seniority Pronoun Sets (Strictly exclude Job Titles / Nouns)
 _SENIOR_PRONOUN_SETS: Dict[str, Set[str]] = {
-    "vi": {"anh", "chị", "thầy", "cô", "sếp", "bác", "chú", "ông", "bà", "tiền bối", "ngài", "huấn luyện viên", "giám đốc", "bác sĩ"},
-    "ja": {"senpai", "sensei", "sama", "kantoku"},
-    "ko": {"sunbae-nim", "sunbae", "teacher", "boss"},
+    "vi": {"anh", "chị", "thầy", "cô", "sếp", "bác", "chú", "ông", "bà", "tiền bối", "ngài"},
+    "ja": {"senpai", "sensei", "sama"},
+    "ko": {"sunbae-nim", "sunbae"},
 }
 
 _JUNIOR_PRONOUN_SETS: Dict[str, Set[str]] = {
-    "vi": {"em", "cháu", "con", "học sinh", "hậu bối"},
-    "ja": {"kohai", "pupil"},
-    "ko": {"hobae", "student"},
+    "vi": {"em", "cháu", "con", "hậu bối"},
+    "ja": {"kohai"},
+    "ko": {"hobae"},
 }
 
 _PEER_PRONOUN_SETS: Dict[str, Set[str]] = {
@@ -59,11 +61,10 @@ _PEER_PRONOUN_SETS: Dict[str, Set[str]] = {
     "ko": {"neo", "inoma"},
 }
 
-# Raw Title Strings in English/Foreign text normalized to Vietnamese workplace titles
-_TITLE_PRONOUN_CONFLATIONS: Dict[str, str] = {
-    "trainer": "huấn luyện viên",
-    "manager": "giám đốc",
-    "doctor": "bác sĩ",
+# Non-pronoun job titles / nouns that MUST be converted to genuine pronouns
+_JOB_TITLE_NOUNA: Set[str] = {
+    "trainer", "huấn luyện viên", "giám đốc", "bác sĩ", "luật sư", "manager", "doctor",
+    "giam doc", "huan luyen vien", "bac si", "luat su", "chủ tịch", "chu tich",
 }
 
 # Fast Harmonious Alignment Maps
@@ -92,6 +93,7 @@ _HARMONIOUS_ALIGNMENT_MAP: Dict[Tuple[str, str], Tuple[str, str]] = {
 class UniversalAddressingEngine:
     """
     2D Formality + Seniority Matrix Engine to validate and repair addressing rules.
+    Enforces strict separation between pronouns and job titles/vocatives.
     """
 
     def __init__(self, language: str = "vi"):
@@ -159,6 +161,7 @@ class UniversalAddressingEngine:
     ) -> Tuple[str, str, str]:
         """
         Validate and repair a directional addressing pair (self_pronoun, target_pronoun, vocative).
+        Ensures target_pronoun is strictly a GENUINE PRONOUN (never a job title or noun).
         Returns (repaired_self, repaired_target, repaired_vocative).
         """
         s_clean = (self_pronoun or "").strip()
@@ -172,9 +175,19 @@ class UniversalAddressingEngine:
         t_key = t_clean.casefold()
         c_clean = (details_context or "").casefold()
 
-        # Normalize raw English title conflations in target_pronoun (e.g. 'trainer' -> 'huấn luyện viên')
-        if t_key in _TITLE_PRONOUN_CONFLATIONS:
-            t_clean = _TITLE_PRONOUN_CONFLATIONS[t_key]
+        # Strict Rule: Job titles/nouns in target_pronoun MUST be moved to vocative & converted to genuine pronouns
+        if t_key in _JOB_TITLE_NOUNA or any(t_key.startswith(job) for job in _JOB_TITLE_NOUNA):
+            if not v_clean:
+                v_clean = t_clean
+            # Determine genuine pronoun replacement
+            if "teacher" in c_clean or "giáo viên" in c_clean:
+                t_clean = "thầy"
+            elif "female" in c_clean or "nữ" in c_clean:
+                t_clean = "chị"
+            elif "giám đốc" in t_key or "manager" in c_clean or "boss" in c_clean:
+                t_clean = "sếp"
+            else:
+                t_clean = "anh"
             t_key = t_clean.casefold()
 
         # 1. Resolve 2D Seniority Hierarchy (JUNIOR_TO_SENIOR, SENIOR_TO_JUNIOR, PEER)
@@ -188,7 +201,7 @@ class UniversalAddressingEngine:
         if hierarchy == "JUNIOR_TO_SENIOR":
             # Junior calling Senior cannot use peer pronoun 'cậu', 'mày', 'omae', 'neo'
             if t_key in peer_set:
-                t_clean = "huấn luyện viên" if "trainer" in c_clean else ("thầy" if "teacher" in c_clean else ("chị" if "female" in c_clean else "anh"))
+                t_clean = "thầy" if "teacher" in c_clean else ("chị" if "female" in c_clean else "anh")
                 t_key = t_clean.casefold()
 
         elif hierarchy == "SENIOR_TO_JUNIOR":
@@ -205,7 +218,7 @@ class UniversalAddressingEngine:
         if (s_key, t_key) in _HARMONIOUS_ALIGNMENT_MAP:
             repaired_s, repaired_t = _HARMONIOUS_ALIGNMENT_MAP[(s_key, t_key)]
             s_clean, t_clean = repaired_s, repaired_t
-            s_key, t_key = s_clean.casefold(), t_clean.casefold()
+            s_key, t_key = s_clean.casefold(), t_key.casefold()
 
         # 4. Check Arithmetic Formality Distance |F(self) - F(target)|
         else:
