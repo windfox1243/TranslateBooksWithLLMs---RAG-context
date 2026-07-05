@@ -1010,7 +1010,7 @@ async def run_chunk_reflection_pass(
         return draft_translation
 
     if log_callback:
-        log_callback("reflection_critique", f"Senior Editor critique: {critique[:300]}")
+        log_callback("reflection_critique", f"Senior Editor critique:\n{critique.strip()}")
 
     repair_pair = generate_chunk_repair_prompt(
         source_chunk=source_chunk,
