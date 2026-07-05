@@ -5405,65 +5405,6 @@ def _is_vietnamese_social_downgrade(
     )
 
 
-_VIETNAMESE_VOLATILE_PRONOUNS = {"ta", "ngươi", "tao", "mày", "hắn"}
-_VIETNAMESE_STABLE_SELF_REFERENCES = {
-    "anh",
-    "chị",
-    "em",
-    "thầy",
-    "cô",
-    "tớ",
-    "tôi",
-    "sếp",
-    "cháu",
-    "con",
-}
-
-
-def _is_vietnamese_unstable_register_jump(
-    current_details: str,
-    proposed_details: str,
-) -> bool:
-    """Reject unprompted jumps from stable anchored pronouns to volatile pronouns without an explicit attitude shift."""
-    if _is_vietnamese_attitude_shift(proposed_details):
-        return False
-
-    current_self = _vietnamese_addressing_field(
-        current_details,
-        "self-reference",
-    ).casefold()
-    current_second = _vietnamese_addressing_field(
-        current_details,
-        "second-person pronoun",
-    ).casefold()
-
-    proposed_self = _vietnamese_addressing_field(
-        proposed_details,
-        "self-reference",
-    ).casefold()
-    proposed_second = _vietnamese_addressing_field(
-        proposed_details,
-        "second-person pronoun",
-    ).casefold()
-
-    if (
-        current_self in _VIETNAMESE_STABLE_SELF_REFERENCES
-        and proposed_self in _VIETNAMESE_VOLATILE_PRONOUNS
-        and proposed_self != current_self
-    ):
-        return True
-
-    if (
-        current_second
-        and current_second not in _VIETNAMESE_VOLATILE_PRONOUNS
-        and proposed_second in _VIETNAMESE_VOLATILE_PRONOUNS
-        and proposed_second != current_second
-    ):
-        return True
-
-    return False
-
-
 def _filter_vietnamese_addressing_delta(
     proposed_addressing: str,
     alias_map: Dict[str, str],
@@ -5497,9 +5438,9 @@ def _filter_vietnamese_addressing_delta(
             output.append(raw_line)
             continue
         current_details = current_details_by_key.get(relation_key, "")
-        if current_details and (
-            _is_vietnamese_social_downgrade(current_details, details)
-            or _is_vietnamese_unstable_register_jump(current_details, details)
+        if current_details and _is_vietnamese_social_downgrade(
+            current_details,
+            details,
         ):
             continue
         if (
@@ -5527,6 +5468,127 @@ def _remove_vietnamese_addressing_mismatches(
     return "\n".join(output).strip()
 
 
+async def verify_addressing_delta_with_llm_async(
+    source_chunk: str,
+    relation_key: Tuple[str, str, str],
+    current_details: str,
+    proposed_details: str,
+    character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
+    llm_client: Optional[Any] = None,
+    log_callback: Optional[Callable] = None,
+) -> bool:
+    """
+    Use LLM Lore Verification Agent to evaluate if a proposed addressing delta
+    is a genuine narrative event (disguise, argument, roleplay) or an extraction hallucination.
+    """
+    if not llm_client or not source_chunk:
+        return False
+
+    speaker, addressee, _ = relation_key
+    relevant_profiles = _select_relevant_character_profiles(
+        source_chunk,
+        character_profiles,
+    )
+    profiles_summary = "\n".join(
+        f"- {p.get('name', 'Name')}: {p.get('details', '')} (Gender: {p.get('gender', 'Unknown')})"
+        for p in relevant_profiles.values()
+    ) or "None"
+
+    prompt = f"""You are a Literary Lore Verification Expert.
+An automated context extractor proposed changing a character's addressing rule in a novel.
+
+CHARACTER PROFILES:
+{profiles_summary}
+
+RELATIONSHIP:
+Speaker: {speaker} -> Addressee: {addressee}
+Established Active Rule: {current_details}
+Proposed New Rule: {proposed_details}
+
+SOURCE SCENE EXCERPT:
+{source_chunk[:1500]}
+
+QUESTION:
+Does the source scene excerpt show an EXPLICIT story event (such as a disguise, role-play, severe argument, hostility, or magical transformation) that justifies changing the established addressing form? Or is the proposed new rule an extraction hallucination/mistake?
+
+Respond with a JSON object ONLY:
+{{"is_genuine_narrative_shift": true/false, "reason": "concise rationale"}}"""
+
+    try:
+        if log_callback:
+            log_callback("lore_verification_start", f"Verifying addressing shift for {speaker} -> {addressee} with LLM...")
+
+        import inspect
+        res_call = None
+        if hasattr(llm_client, "generate_async"):
+            res_call = llm_client.generate_async(prompt=prompt)
+        elif hasattr(llm_client, "generate"):
+            res_call = llm_client.generate(prompt)
+
+        if inspect.isawaitable(res_call):
+            res_raw = await res_call
+        else:
+            res_raw = res_call
+
+        res_text = res_raw.content if hasattr(res_raw, "content") else str(res_raw)
+        if res_text:
+            clean_json = res_text.strip().replace("```json", "").replace("```", "").strip()
+            import json
+            data = json.loads(clean_json)
+            is_genuine = bool(data.get("is_genuine_narrative_shift", False))
+            if log_callback:
+                status = "Verified narrative shift" if is_genuine else "Rejected extraction hallucination"
+                log_callback("lore_verification_result", f"Lore verification for {speaker} -> {addressee}: {status}")
+            return is_genuine
+    except Exception as e:
+        if log_callback:
+            log_callback("lore_verification_error", f"Lore verification warning: {e}")
+
+    return False
+
+
+def verify_addressing_delta_with_llm(
+    source_chunk: str,
+    relation_key: Tuple[str, str, str],
+    current_details: str,
+    proposed_details: str,
+    character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
+    llm_client: Optional[Any] = None,
+    log_callback: Optional[Callable] = None,
+) -> bool:
+    """Synchronous wrapper for verify_addressing_delta_with_llm_async."""
+    if not llm_client or not source_chunk:
+        return False
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(lambda: asyncio.run(verify_addressing_delta_with_llm_async(
+                source_chunk=source_chunk,
+                relation_key=relation_key,
+                current_details=current_details,
+                proposed_details=proposed_details,
+                character_profiles=character_profiles,
+                llm_client=llm_client,
+                log_callback=log_callback,
+            )))
+            return future.result(timeout=30)
+    else:
+        return asyncio.run(verify_addressing_delta_with_llm_async(
+            source_chunk=source_chunk,
+            relation_key=relation_key,
+            current_details=current_details,
+            proposed_details=proposed_details,
+            character_profiles=character_profiles,
+            llm_client=llm_client,
+            log_callback=log_callback,
+        ))
+
+
 def _sanitize_vietnamese_dynamic_state(
     dynamic_state: str,
     alias_map: Dict[str, str],
@@ -5536,6 +5598,8 @@ def _sanitize_vietnamese_dynamic_state(
     llm_client: Optional[Any] = None,
     use_llm_sanitizer: bool = False,
     log_callback: Optional[Callable] = None,
+    translated_chunk: Optional[str] = None,
+    dialogue_attribution: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Remove stored Vietnamese addressing rows whose paired-address data conflicts."""
     normalized = normalize_dynamic_state(
@@ -5550,6 +5614,14 @@ def _sanitize_vietnamese_dynamic_state(
         alias_map,
         character_profiles,
     )
+    if translated_chunk:
+        addressing = cross_check_addressing_with_dialogue(
+            addressing_block=addressing,
+            translated_chunk=translated_chunk,
+            alias_map=alias_map,
+            dialogue_attribution=dialogue_attribution,
+            character_genders=character_genders,
+        )
     if use_llm_sanitizer and llm_client and addressing.strip():
         try:
             if log_callback:
@@ -5593,6 +5665,97 @@ def normalize_dynamic_state(
     )
 
 
+def _select_relevant_character_profiles(
+    reference_text: str,
+    character_profiles: Optional[Dict[str, Dict[str, str]]],
+    max_profiles: int = 15,
+) -> Dict[str, Dict[str, str]]:
+    """Select ONLY character profiles that appear in the reference text to prevent context bloat."""
+    if not character_profiles or not reference_text:
+        return {}
+
+    text_lower = reference_text.casefold()
+    relevant: Dict[str, Dict[str, str]] = {}
+
+    for key, info in character_profiles.items():
+        char_name = info.get("name", "")
+        name_parts = [p.casefold() for p in char_name.split() if len(p) >= 3]
+        if key in text_lower or char_name.casefold() in text_lower or any(p in text_lower for p in name_parts):
+            relevant[key] = info
+            if len(relevant) >= max_profiles:
+                break
+
+    return relevant
+
+
+def cross_check_addressing_with_dialogue(
+    addressing_block: str,
+    translated_chunk: str,
+    alias_map: Optional[Dict[str, str]] = None,
+    dialogue_attribution: Optional[Dict[str, Any]] = None,
+    character_genders: Optional[Dict[str, str]] = None,
+) -> str:
+    """
+    Cross-checks extracted addressing rules against actual spoken dialogue in translated text.
+    High-Confidence Safety Gate: ONLY auto-corrects if speaker attribution confidence is high (>= 0.8)
+    AND the spoken quote contains an explicit, unambiguous pronoun.
+    """
+    if not addressing_block or not translated_chunk:
+        return addressing_block
+
+    aliases = alias_map or {}
+    from src.utils.dialogue_attribution import detect_dialogue_turns
+    turns = detect_dialogue_turns(translated_chunk)
+    if not turns:
+        return addressing_block
+
+    attributed_turns = (dialogue_attribution or {}).get("turns", [])
+    turn_speaker_map: Dict[str, Tuple[str, str, float]] = {}
+    for turn in attributed_turns:
+        turn_id = turn.get("id")
+        spk = turn.get("speaker", "")
+        adr = turn.get("addressee", "")
+        conf = float(turn.get("confidence", 0.0))
+        if turn_id and spk and conf >= 0.8:
+            turn_speaker_map[turn_id] = (spk, adr, conf)
+
+    lines = addressing_block.splitlines()
+    repaired_lines = []
+
+    for raw_line in lines:
+        parsed = _parse_dynamic_relation(raw_line, aliases)
+        if not parsed:
+            repaired_lines.append(raw_line)
+            continue
+
+        relation_key, _, details = parsed
+        spk, adr, _ = relation_key
+        spk_key, adr_key = _plain_key(spk), _plain_key(adr)
+
+        self_ref = _vietnamese_addressing_field(details, "self-reference")
+
+        matched_quote = ""
+        for t in turns:
+            t_id = t.get("id", "")
+            if t_id in turn_speaker_map:
+                turn_spk, turn_adr, conf = turn_speaker_map[t_id]
+                if _plain_key(turn_spk) == spk_key and (not turn_adr or _plain_key(turn_adr) == adr_key):
+                    matched_quote = t.get("cue", "")
+                    break
+
+        if matched_quote:
+            cue_lower = matched_quote.lower()
+            if self_ref in {"ta", "tao"} and re.search(r"\b(anh|chị|tớ|tôi|em)\b", cue_lower):
+                found_self = re.search(r"\b(anh|chị|tớ|tôi|em)\b", cue_lower).group(1)
+                details = _replace_vietnamese_addressing_field(details, "self-reference", found_self)
+                vocative = _vietnamese_addressing_field(details, "vocative/address form") or adr
+                raw_line = f"- {spk} → {adr}: \"{vocative}\" | \"{details}\""
+
+        repaired_lines.append(raw_line)
+
+    return "\n".join(repaired_lines)
+
+
 async def sanitize_addressing_with_llm_async(
     addressing: str,
     character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
@@ -5615,9 +5778,10 @@ async def sanitize_addressing_with_llm_async(
 
         profiles_summary = ""
         if character_profiles:
+            relevant_profiles = _select_relevant_character_profiles(addressing, character_profiles)
             profiles_summary = "\n".join([
-                f"- {name}: {info.get('details', '')} (Gender: {info.get('gender', 'Unknown')})"
-                for name, info in character_profiles.items()
+                f"- {info.get('name', name)}: {info.get('details', '')} (Gender: {info.get('gender', 'Unknown')})"
+                for name, info in (relevant_profiles or character_profiles).items()
             ])
 
         prompt = f"""Given these character profiles:
