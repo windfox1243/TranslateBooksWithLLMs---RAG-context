@@ -5652,6 +5652,9 @@ def merge_dynamic_state(
     target_language: Optional[str] = None,
     character_genders: Optional[Dict[str, str]] = None,
     character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
+    llm_client: Optional[Any] = None,
+    use_llm_sanitizer: bool = False,
+    log_callback: Optional[Callable] = None,
 ) -> str:
     """Merge durable addressing and relationship deltas by participant key.
 
@@ -5667,6 +5670,9 @@ def merge_dynamic_state(
             aliases,
             character_genders=character_genders,
             character_profiles=character_profiles,
+            llm_client=llm_client,
+            use_llm_sanitizer=use_llm_sanitizer,
+            log_callback=log_callback,
         )
     if not str(proposed_dynamic_state or "").strip():
         return current
@@ -7129,6 +7135,8 @@ class NovelContextSession:
             context_view_max_tokens=self.prompt_options.get(
                 "novel_context_update_prompt_max_tokens",
             ),
+            use_llm_sanitizer=bool(self.prompt_options.get("use_llm_sanitizer")),
+            log_callback=self.log_callback,
         )
         self.remember_source(source_chunk)
         dialogue_state_after = dialogue_sink.get("state_after") or {}
@@ -8672,6 +8680,8 @@ async def update_novel_context_chunk(
     dialogue_attribution_sink: Optional[Dict[str, Any]] = None,
     selective_context_view: bool = True,
     context_view_max_tokens: Optional[int] = None,
+    use_llm_sanitizer: bool = False,
+    log_callback: Optional[Callable] = None,
 ) -> Tuple[str, str, List[str]]:
     """Calls the LLM to update global lore and dynamic state incrementally.
     
@@ -8857,6 +8867,9 @@ async def update_novel_context_chunk(
             target_language=target_language,
             character_genders=_character_gender_map(updated_global_lore),
             character_profiles=_character_profile_map(updated_global_lore),
+            llm_client=llm_client,
+            use_llm_sanitizer=use_llm_sanitizer,
+            log_callback=log_callback,
         )
 
         # LLM consolidation pass: periodically deduplicate character descriptions
