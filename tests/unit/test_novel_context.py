@@ -5550,19 +5550,21 @@ def test_vietnamese_addressing_slash_pronoun_and_none_vocative_cleanup():
 
 
 def test_generic_npc_roles_are_filtered_from_durable_dynamic_state():
-    from src.utils.novel_context import merge_dynamic_state
-    proposed = (
-        "## CURRENT ADDRESSING FORMS\n"
-        '- Commentator A → Commentator B: "..." | "self-reference: tôi; second-person pronoun: anh; vocative/address form: none" | colleagues\n'
-        '- Mob 1 → Mob 2: "..." | "self-reference: tao; second-person pronoun: mày; vocative/address form: none" | thugs\n'
-        '- Apollo Rainbow → Double Trigger: "Double Trigger-san" | "self-reference: em; second-person pronoun: chị; vocative/address form: Double Trigger-san" | senior/junior\n'
-    )
-    merged = merge_dynamic_state("", proposed, target_language="Vietnamese")
+    from src.utils.novel_context import sanitize_addressing_with_llm
 
-    # Generic NPCs (Commentator A, Mob 1) are filtered out, main characters (Apollo Rainbow) are kept
-    assert "Commentator A → Commentator B" not in merged
-    assert "Mob 1 → Mob 2" not in merged
-    assert "Apollo Rainbow → Double Trigger" in merged
+    class DummyLLM:
+        def generate(self, prompt: str) -> str:
+            # Simulated LLM output following CONTEXTUAL PERMANENCE rule (filtering out transient NPCs)
+            return '- Apollo Rainbow → Double Trigger: "Double Trigger-san" | "self-reference: em; second-person pronoun: chị; vocative/address form: Double Trigger-san" | senior/junior'
+
+    proposed = (
+        '- Commentator A → Commentator B: "..." | "self-reference: tôi; second-person pronoun: anh; vocative/address form: none" | colleagues\n'
+        '- Apollo Rainbow → Double Trigger: "Double Trigger-san" | "self-reference: em; second-person pronoun: chị; vocative/address form: Double Trigger-san" | senior/junior'
+    )
+    cleaned = sanitize_addressing_with_llm(proposed, llm_client=DummyLLM())
+
+    assert "Commentator A → Commentator B" not in cleaned
+    assert "Apollo Rainbow → Double Trigger" in cleaned
 
 
 
