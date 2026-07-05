@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.14.52 - 2026-07-05
+
+### Added
+
+- **Addressing Negative Constraints Directive**: Added `get_forbidden_pronouns` in `UniversalAddressingEngine` and updated `context_projection.py` to inject explicit negative constraints (`[CẤM DÙNG: ...]`) into translation system prompts.
+- **Post-Translation Addressing Auditor**: Added `audit_addressing_violations` in `UniversalAddressingEngine` to detect dialogue turns violating active pair pronoun rules without extra LLM API overhead.
+
+### Tests
+
+- Added unit test coverage `test_forbidden_pronouns_and_auditing` in `test_universal_addressing_engine.py`.
+
 ## 1.14.51 - 2026-07-05
 
 ### Added

@@ -83,3 +83,29 @@ def test_korean_2d_seniority_hierarchy_repairs():
     s, t, v = engine.validate_and_repair_pair("Jeu", "Neo")
     assert s == "na"
     assert t == "neo"
+
+
+def test_forbidden_pronouns_and_auditing():
+    engine = UniversalAddressingEngine(language="vi")
+
+    # Junior -> Senior (em -> anh) forbidden self includes 'tôi', 'tao'; target forbidden includes 'cậu', 'mày'
+    f_self, f_target = engine.get_forbidden_pronouns("em", "anh")
+    assert "tôi" in f_self
+    assert "mày" in f_target
+
+    rules = [
+        {
+            "speaker_name": "Aster",
+            "addressee_name": "Apollo",
+            "self_pronoun": "em",
+            "target_pronoun": "anh",
+        }
+    ]
+
+    sample_text = 'Aster cười nói: “Này cậu, tôi không biết việc này đâu.”'
+    violations = engine.audit_addressing_violations(sample_text, rules)
+
+    assert len(violations) > 0
+    assert violations[0]["speaker"] == "Aster"
+    assert violations[0]["forbidden_found"] in ("cậu", "tôi")
+
