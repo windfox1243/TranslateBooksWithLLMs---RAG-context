@@ -1165,6 +1165,9 @@
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                             </button>
                         </div>
+                        <p data-i18n-html="settings:novel_context_help" style="margin: 5px 0 0 0; font-size: 0.8125rem; color: var(--text-muted-light);">
+                            Keep character genders, forms of address (relationships), and glossaries persistent in a <code>.txt</code> file to improve translation consistency. Note: Auto-update forces sequential translation (1 worker).
+                        </p>
                         <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
                             <input type="checkbox" id="autoUpdateContext" style="width: 16px; height: 16px; margin: 0; cursor: pointer;">
                             <label for="autoUpdateContext" data-i18n="settings:auto_update_context_label" style="font-size: 0.8125rem; color: var(--text-dark); cursor: pointer; margin-bottom: 0;">
@@ -1177,14 +1180,14 @@
                                 Bypass context validation (directly trust LLM gender & corrections)
                             </label>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 12px;">
                             <input type="checkbox" id="enableReflection" style="width: 16px; height: 16px; margin: 0; cursor: pointer;">
                             <label for="enableReflection" data-i18n="settings:enable_reflection_label" style="font-size: 0.8125rem; color: var(--text-dark); cursor: pointer; margin-bottom: 0;">
                                 Enable 2-pass Reflection & Repair Engine (Senior Editor Quality Review)
                             </label>
                         </div>
-                        <p data-i18n-html="settings:novel_context_help" style="margin: 5px 0 0 0; font-size: 0.8125rem; color: var(--text-muted-light);">
-                            Keep character genders, forms of address (relationships), and glossaries persistent in a <code>.txt</code> file to improve translation consistency. Note: Auto-update forces sequential translation (1 worker).
+                        <p data-i18n-html="settings:enable_chunk_reflection_help" style="margin: 5px 0 0 0; font-size: 0.8125rem; color: var(--text-muted-light);">
+                            Runs a 2-pass Senior Translation Editor reflection pass after each chunk to fix line omissions, dialogue pronoun leaks, and register mismatches before saving.
                         </p>
                     </div>
                 </div>
