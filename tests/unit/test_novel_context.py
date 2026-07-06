@@ -5569,12 +5569,22 @@ def test_generic_npc_roles_are_filtered_from_durable_dynamic_state():
 def test_senior_editor_reflection_prompt_includes_explicit_source_text_primacy():
     from src.prompts.prompts import generate_chunk_reflection_prompt
 
-    prompt_pair = generate_chunk_reflection_prompt(
-        source_chunk="\"Tomio, you're not staying?\"",
-        draft_translation="\"Tomio, anh không ở lại sao?\"",
+    prompt_pair_vi = generate_chunk_reflection_prompt(
+        source_chunk="\"Momozawa Trainer, are you staying?\"",
+        draft_translation="\"Huấn luyện viên Momozawa, anh có ở lại không?\"",
         target_language="Vietnamese",
-        novel_context="- Apollo Rainbow → Tomio Momozawa: \"Huấn luyện viên\" | \"self-reference: em; second-person pronoun: anh; vocative/address form: Huấn luyện viên\"",
+        novel_context="- Meek-chan → Tomio Momozawa: \"Huấn luyện viên Momozawa\"",
     )
 
-    assert "EXPLICIT SOURCE TEXT PRIMACY" in prompt_pair.system
-    assert "NEVER flag or force background lore defaults" in prompt_pair.system
+    assert "EXPLICIT SOURCE INTENT & TARGET LOCALIZATION" in prompt_pair_vi.system
+    assert "ALWAYS localize terms using natural Vietnamese syntax" in prompt_pair_vi.system
+
+    prompt_pair_ja = generate_chunk_reflection_prompt(
+        source_chunk="\"Momozawa Trainer, are you staying?\"",
+        draft_translation="\"桃沢トレーナー、残りますか？\"",
+        target_language="Japanese",
+        novel_context="- Meek-chan → Tomio Momozawa: \"桃沢トレーナー\"",
+    )
+
+    assert "EXPLICIT SOURCE INTENT & TARGET LOCALIZATION" in prompt_pair_ja.system
+    assert "ALWAYS localize terms using natural Japanese syntax" in prompt_pair_ja.system

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.15.0-beta.5 - 2026-07-06
+
+### Added
+
+- **Refined Multi-Language Rule 0 (Target Language Localization)**: Updated Rule 0 in `generate_chunk_reflection_prompt()` to enforce natural target language syntax and word order across all 8 supported target languages (e.g. in Vietnamese: translate English `"Momozawa Trainer"` -> `"Huấn luyện viên Momozawa"`, in Japanese `"桃沢トレーナー"`), ensuring explicit character names are preserved without forcing literal unlocalized English word order.
+
+### Changed
+
+- **Streamlined Context Pipeline**: Removed redundant micro-LLM verification calls (`verify_addressing_delta_with_llm()`) to eliminate extra API latency and token spend per chunk, relying on Selective Character Profile Gating and the 2-Pass Senior Editor for high-performance quality review.
+
 ## 1.15.0-beta.4 - 2026-07-05
 
 ### Added
