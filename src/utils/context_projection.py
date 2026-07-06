@@ -26,6 +26,13 @@ def render_addressing_projection(translation_id: str, db: Optional[Database] = N
     from src.utils.universal_addressing_engine import UniversalAddressingEngine
     engine = UniversalAddressingEngine(language="vi")
 
+    SITUATIONAL_KEYWORDS = (
+        "roleplay", "café", "cafe", "maid", "butler", "disguise", "cosplay",
+        "acting", "stage play", "theatrical", "mock", "undercover", "pretending",
+        "masquerade", "fake identity", "temporary", "situational", "scenario-bound",
+        "transient", "sarcastic", "one-off", "performance", "costume", "game role"
+    )
+
     for r in rules:
         speaker = r.get("speaker_name")
         addressee = r.get("addressee_name")
@@ -43,10 +50,13 @@ def render_addressing_projection(translation_id: str, db: Optional[Database] = N
         )
 
         vocative_str = f" (gọi là '{vocative}')" if vocative else ""
+        is_situational = any(kw in str(register or "").lower() or kw in str(vocative or "").lower() for kw in SITUATIONAL_KEYWORDS)
+        situational_note = " [BỐI CẢNH TÌNH HUỐNG: Chỉ áp dụng trong phân cảnh này]" if is_situational else ""
+
         lines.append(
             f"- **{speaker}** khi nói với **{addressee}**: "
             f"Tự xưng là '{self_p}', gọi đối phương là '{target_p}'{vocative_str} "
-            f"[Sắc thái: {register}]{forbidden_str}."
+            f"[Sắc thái: {register}]{situational_note}{forbidden_str}."
         )
 
     return "\n".join(lines)

@@ -5392,6 +5392,19 @@ def _is_vietnamese_neutralization_of_kinship_pair(
     )
 
 
+_SITUATIONAL_CONTEXT_KEYWORDS = (
+    "roleplay", "café", "cafe", "maid", "butler", "disguise", "cosplay",
+    "acting", "stage play", "theatrical", "mock", "undercover", "pretending",
+    "masquerade", "fake identity", "temporary", "situational", "scenario-bound",
+    "transient", "sarcastic", "one-off", "performance", "costume", "game role"
+)
+
+
+def _is_situational_context_details(details: str) -> bool:
+    text = str(details or "").casefold()
+    return any(kw in text for kw in _SITUATIONAL_CONTEXT_KEYWORDS)
+
+
 def _is_vietnamese_social_downgrade(
     current_details: str,
     proposed_details: str,
@@ -5401,6 +5414,8 @@ def _is_vietnamese_social_downgrade(
         and _has_complete_vietnamese_addressing_details(proposed_details)
     ):
         return False
+    if _is_situational_context_details(proposed_details) and not _is_situational_context_details(current_details):
+        return True
     current_anchor_score = _vietnamese_addressing_anchor_score(current_details)
     if current_anchor_score <= 0:
         return False
