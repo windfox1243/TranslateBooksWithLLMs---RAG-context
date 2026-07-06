@@ -107,6 +107,29 @@ class ContextMergeEngine:
                     log_callback("addressing_rejected", msg)
                 return False
 
+        # Rule 4: Roleplay / Temporary Situational Protection
+        roleplay_keywords = (
+            "roleplay", "café", "cafe", "maid", "butler", "disguise", "cosplay",
+            "acting", "stage play", "theatrical", "mock", "undercover", "pretending", "masquerade"
+        )
+        update_text_check = f"{delta.vocative} {delta.evidence_quote} {delta.register}".lower()
+        is_incoming_roleplay = any(kw in update_text_check for kw in roleplay_keywords)
+
+        if existing:
+            existing_desc = f"{existing.get('vocative', '')} {existing.get('register', '')}".lower()
+            existing_is_roleplay = any(kw in existing_desc for kw in roleplay_keywords)
+
+            if is_incoming_roleplay and not existing_is_roleplay:
+                msg = (
+                    f"Rejected addressing update for {delta.speaker} -> {delta.addressee}: "
+                    f"Identified as temporary situational/roleplay context ('{delta.vocative}'). "
+                    f"Preserving baseline relationship rule."
+                )
+                logger.info(f"[Merge Engine] {msg}")
+                if log_callback:
+                    log_callback("addressing_rejected", msg)
+                return False
+
         old_state_dict = existing if existing else None
         new_state_dict = {
             "speaker_name": delta.speaker,
