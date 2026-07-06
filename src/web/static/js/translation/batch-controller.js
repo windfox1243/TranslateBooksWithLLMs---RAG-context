@@ -76,7 +76,6 @@ function getTranslationConfig(file) {
         auto_update_context: DomHelpers.getElement('autoUpdateContext')?.checked || false,
         bypass_context_gating: DomHelpers.getElement('bypassContextGating')?.checked || false,
         reflection_mode: DomHelpers.getElement('enableReflection')?.checked || false,
-        use_llm_sanitizer: DomHelpers.getElement('useLlmSanitizer')?.checked || false,
         input_filename: file.name
     };
 

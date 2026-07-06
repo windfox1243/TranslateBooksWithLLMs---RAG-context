@@ -1,7 +1,6 @@
 {
   "ui_language_label": "インターフェース言語",
   "ui_language_help": "言語名は翻訳されません。最も読みやすい言語を選んでください。",
-
   "provider_and_defaults": "プロバイダーとデフォルト設定",
   "ai_provider": "AI プロバイダー",
   "api_endpoint": "API エンドポイント",
@@ -22,7 +21,6 @@
   "key_using_env_multi_with_masked": ".env のキー {{count}} 個を使用中 (最新: {{masked}})",
   "key_rotation_count": "{{count}} 個のキーをローテーションしました",
   "key_rotation_count_other": "{{count}} 個のキーをローテーションしました",
-
   "api_key_rotation_tip": "ヒント: 複数のキーをカンマ区切りで入力すると、レート制限 (HTTP 429) 発生時に自動的にローテーションされます。無料枠のアカウントを連結するのに便利です。",
   "api_key_placeholder_gemini": "Gemini API キーを入力",
   "api_key_placeholder_openai": "OpenAI API キーを入力",
@@ -31,38 +29,29 @@
   "api_key_placeholder_deepseek": "DeepSeek API キーを入力",
   "api_key_placeholder_poe": "poe.com/api_key でキーを取得",
   "api_key_placeholder_nim": "build.nvidia.com でキーを取得",
-
   "refresh_models_title": "モデルリストを更新",
   "refresh_list_title": "リストを更新",
   "open_folder_title": "フォルダを開く",
   "select_none": "なし",
-
   "openai_local_servers_hint": "ローカルサーバー: llama.cpp (8080)、LM Studio (1234)、vLLM など",
-
   "naming_convention_label": "命名規則",
   "naming_convention_input_title": "プレースホルダーとして {originalName}、{targetLang}、{sourceLang}、{model}、{date}、{datetime}、{ext} を使用できます",
   "naming_convention_help": "プレースホルダー: {originalName}、{targetLang}、{sourceLang}、{model}、{date}、{datetime}、{ext}<br>例: {originalName} ({targetLang}) ({model})_{date}.{ext}",
-
   "disable_auto_pause_title": "レート制限 (HTTP 429) で自動的に一時停止しない",
   "disable_auto_pause_description": "デフォルトでは、プロバイダーがレート制限を行った後、翻訳が一時停止し、手動で再開するよう求められます。これを有効にすると翻訳を継続したまま <code>Retry-After</code> 秒 (またはデフォルトで 60 秒) 待機し、最後のチェックポイントから自動的に再開します。無料枠 API で長編小説を翻訳する際に便利です。自動再開をキャンセルするには、いつでも「中断」をクリックしてください。",
-
   "parallel_workers_label": "並列リクエスト",
   "parallel_workers_input_title": "同時に翻訳するチャンク数",
   "parallel_workers_help": "並行リクエストに対応したクラウドプロバイダーで複数のチャンクを同時に翻訳します。1 にすると元の逐次処理の動作を維持します。値を大きくすると高速になりますが、レート制限に達する可能性があり、一貫性のためのチャンク間コンテキストが無効になります。ローカルプロバイダー（Ollama）では無視されます。",
-
   "translation_options": "翻訳オプション",
   "post_processing": "後処理",
   "enable_chunk_reflection_label": "2パスチャンクリフレクション（自己修正）を有効化",
   "enable_chunk_reflection_help": "各チャンク翻訳後にシニアエディターのリフレクションを実行し、脱落や人称の不一致を自動修正します。",
-  "enable_llm_context_sanitizer_label": "LLMコンテキストサニタイザーを有効化",
-  "enable_llm_context_sanitizer_help": "LLMを使用してキャラクターの呼称形式と関係性を正規化します。",
   "system_prompts": "システムプロンプト",
   "ocr_cleanup": "OCR クリーンアップ",
   "literary_refinement": "文学的推敲",
   "save_settings": ".env に設定を保存",
   "save_settings_help": "API キー、エンドポイント、命名規則、現在のモデルをデフォルト値として <code>.env</code> ファイルに保存します。このセクションの変更は<strong>自動保存されません</strong>。",
   "settings_summary_placeholder": "—",
-
   "option_bilingual_title": "対訳出力",
   "option_bilingual_description": "翻訳と並べて原文を含めます。各チャンクは原文の後に翻訳が表示されるため、語学学習や対訳比較に最適です。",
   "option_plain_text_title": "プレーンテキストモード (EPUB / DOCX)",
@@ -71,16 +60,13 @@
   "option_chapter_mode_description": "検出した章見出しを安定した翻訳境界として使用します。トークン上限に収まる章は一度のリクエストで全文を送り、長すぎる章はその章の内部だけで分割します。短い章同士は結合しないため、通常の分割よりリクエスト数が増える場合がありますが、翻訳と推敲の分割は揃います。字幕ファイルは従来の字幕ブロック単位を維持します。",
   "option_text_cleanup_title": "テキストクリーンアップ (OCR 補正)",
   "option_text_cleanup_description": "整形が不十分なテキストや OCR でスキャンされたテキスト向けです。改行の崩れ、二重スペース、句読点のエラーを修正し、誤って分割された段落を結合するよう LLM に指示します。",
-
   "glossary_label": "用語集",
   "glossary_manage_title": "用語集を管理",
   "glossary_help": "厳選された原文と訳文の対訳リストを各チャンクのプロンプトに挿入し、固有名詞の翻訳の一貫性を保ちます。<strong>管理</strong>をクリックして用語を作成、編集、または自動抽出してください。",
-
   "custom_instructions_label": "カスタム指示",
   "custom_instructions_help": "<code>Custom_Instructions/</code> フォルダからカスタム指示を選択します。<code>translation:</code> または <code>refinement:</code> キーを持つ <code>.yaml</code> ファイルを使うと、フェーズごとにプリセットを切り分けられます。従来の <code>.txt</code> ファイルもそのまま動作し、両方のフェーズに適用されます。",
   "custom_instructions_load_failed": "Custom_Instructions フォルダを開けませんでした",
   "default_config_load_failed": "デフォルト設定の読み込みに失敗しました",
-
   "notifications": "通知",
   "notifications_enable": "Webhook 通知を有効にする",
   "notifications_url": "Webhook URL",
@@ -94,7 +80,6 @@
   "notifications_test": "テスト通知を送信",
   "notifications_test_sent": "テスト {{event}} 通知を正常に送信しました。",
   "notifications_test_failed": "テストに失敗しました: {{error}}",
-
   "notifications_intro": "翻訳が終了状態に達したときに、スマートフォン、Discord チャンネル、または任意の HTTP エンドポイントに通知を受け取れます。ローカルモデルでの長時間ジョブに便利です。<strong>ntfy</strong>、<strong>gotify</strong>、<strong>Discord</strong>、<strong>Slack</strong>、<strong>Healthchecks.io</strong>、その他カスタム Webhook に対応しています。詳細は <a href=\"https://github.com/hydropix/TranslateBooksWithLLMs/blob/main/docs/NOTIFICATIONS.md\" target=\"_blank\" rel=\"noopener\" style=\"color: var(--primary-light);\">docs/NOTIFICATIONS.md</a> を参照してください。",
   "notifications_presets_label": "クイックプリセット",
   "notifications_presets_help": "サービスを選択して URL とペイロードを事前入力し、お使いのアカウントに合わせて値を編集してください。",
@@ -117,14 +102,12 @@
   "notifications_save_and_test_label": "保存とテスト",
   "notifications_save_and_test_help": "先に<strong>保存</strong>をクリックしてから<strong>テストを送信</strong>してください。テストはディスクに保存された現在の設定を使用します。",
   "notifications_send_test": "テストを送信",
-
   "preset_ntfy_note": "トピックを一意のものに変更してください。ntfy アプリをインストールし、同じトピックを購読することでプッシュ通知を受信できます。",
   "preset_gotify_note": "ホストとトークンをご自身の gotify アプリのトークンに置き換えてください。",
   "preset_discord_note": "サーバー設定 → 連携サービス → ウェブフック → 新しいウェブフック。上記の Webhook URL を貼り付けてください。",
   "preset_slack_note": "Slack ワークスペースで Incoming Webhook を作成し、その URL を上記に貼り付けてください。",
   "preset_healthchecks_note": "Healthchecks は ping だけで動作します。{event} サフィックスにより成功と失敗を区別できます。",
   "preset_clear_note": "通知が無効になっています。URL を空のままにして保存をクリックすると永続化されます。",
-
   "search_providers_placeholder": "プロバイダーを検索...",
   "search_models_placeholder": "モデルを検索...",
   "search_models_loading": "モデルを読み込み中...",
@@ -201,7 +184,6 @@
   "llm_with_provider_count_one": "LLM: {{provider}} ({{count}} モデル)",
   "llm_with_provider_count_other": "LLM: {{provider}} ({{count}} モデル)",
   "llm_not_connected_title": "LLM が未接続です — 設定を確認してください",
-
   "cost_free_local": "無料 (ローカル)",
   "cost_free_local_model": "無料 (ローカルモデル)",
   "cost_estimating": "コストを見積もり中...",
@@ -231,6 +213,5 @@
   "auto_update_context_label": "各チャンクの翻訳後にコンテキストファイルを自動更新する",
   "bypass_context_gating_label": "コンテキスト検証をバイパスする（LLMが識別した性別と修正を直接信頼する）",
   "enable_reflection_label": "2パスリフレクション＆修正エンジンを有効化（シニアエディターの品質レビュー）",
-  "use_llm_sanitizer_label": "LLMコンテキストサニタイザーエージェントを使用（一時的なNPCを除外）",
   "novel_context_help": "キャラクターの性別、呼称（関係性）、用語集を <code>.txt</code> ファイルに保存し、翻訳の一貫性を向上させます。注意：自動更新を有効にすると、順次翻訳（スレッド数1）が強制されます。"
 }

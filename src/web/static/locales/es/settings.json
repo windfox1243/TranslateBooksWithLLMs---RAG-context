@@ -1,7 +1,6 @@
 {
   "ui_language_label": "Idioma de la interfaz",
   "ui_language_help": "Los nombres nativos no se traducen — elige el idioma que leas con más comodidad.",
-
   "provider_and_defaults": "Proveedor y valores por defecto",
   "ai_provider": "Proveedor de IA",
   "api_endpoint": "Endpoint de la API",
@@ -22,7 +21,6 @@
   "key_using_env_multi_with_masked": "Usando {{count}} claves de .env (última: {{masked}})",
   "key_rotation_count": "{{count}} clave rotada",
   "key_rotation_count_other": "{{count}} claves rotadas",
-
   "api_key_rotation_tip": "Consejo: introduce varias claves separadas por comas para activar la rotación automática al alcanzar el límite de tasa (HTTP 429) — útil para encadenar cuentas de nivel gratuito.",
   "api_key_placeholder_gemini": "Introduce la clave de API de Gemini",
   "api_key_placeholder_openai": "Introduce la clave de API de OpenAI",
@@ -31,38 +29,29 @@
   "api_key_placeholder_deepseek": "Introduce la clave de API de DeepSeek",
   "api_key_placeholder_poe": "Obtén la clave en poe.com/api_key",
   "api_key_placeholder_nim": "Obtén la clave en build.nvidia.com",
-
   "refresh_models_title": "Actualizar lista de modelos",
   "refresh_list_title": "Actualizar lista",
   "open_folder_title": "Abrir carpeta",
   "select_none": "Ninguno",
-
   "openai_local_servers_hint": "Servidores locales: llama.cpp (8080), LM Studio (1234), vLLM, etc.",
-
   "naming_convention_label": "Convención de nomenclatura",
   "naming_convention_input_title": "Usa {originalName}, {targetLang}, {sourceLang}, {model}, {date}, {datetime}, {ext} como variables",
   "naming_convention_help": "Variables: {originalName}, {targetLang}, {sourceLang}, {model}, {date}, {datetime}, {ext}<br>Ejemplo: {originalName} ({targetLang}) ({model})_{date}.{ext}",
-
   "disable_auto_pause_title": "No pausar automáticamente al alcanzar el límite de tasa (HTTP 429)",
   "disable_auto_pause_description": "Por defecto, la traducción se pausa cuando el proveedor aplica un límite de tasa y te pide reanudarla manualmente. Activa esta opción para mantener la traducción en marcha: esperará <code>Retry-After</code> segundos (o 60s por defecto) y se reanudará automáticamente desde el último punto de control. Útil para novelas largas con APIs de nivel gratuito. Pulsa «Interrumpir» en cualquier momento para cancelar la reanudación automática.",
-
   "parallel_workers_label": "Solicitudes paralelas",
   "parallel_workers_input_title": "Número de fragmentos traducidos al mismo tiempo",
   "parallel_workers_help": "Traduce varios fragmentos a la vez en proveedores en la nube que permiten solicitudes simultáneas. 1 mantiene el comportamiento secuencial original. Valores más altos son más rápidos pero pueden alcanzar los límites de tasa y desactivan el contexto entre fragmentos para la coherencia. Se ignora para proveedores locales (Ollama).",
-
   "translation_options": "Opciones de traducción",
   "post_processing": "Posprocesamiento",
   "enable_chunk_reflection_label": "Habilitar reflexión de 2 pases (Autocorrección)",
   "enable_chunk_reflection_help": "Ejecuta un pase de reflexión después de cada fragmento para corregir omisiones de líneas y desacuerdos de pronombres.",
-  "enable_llm_context_sanitizer_label": "Habilitar desinfectante de contexto LLM",
-  "enable_llm_context_sanitizer_help": "Utiliza LLM para normalizar las formas de trato de los personajes y las jerarquías sociales.",
   "system_prompts": "Instrucciones del sistema",
   "ocr_cleanup": "Limpieza de OCR",
   "literary_refinement": "Refinamiento literario",
   "save_settings": "Guardar ajustes en .env",
   "save_settings_help": "Guarda las claves de API, los endpoints, la convención de nomenclatura y el modelo actual como valores por defecto en el archivo <code>.env</code>. Los cambios en esta sección <strong>no</strong> se guardan automáticamente.",
   "settings_summary_placeholder": "—",
-
   "option_bilingual_title": "Salida bilingüe",
   "option_bilingual_description": "Incluye el texto original junto a la traducción. Cada fragmento muestra el texto de origen seguido de su traducción, ideal para aprender idiomas o comparar lado a lado.",
   "option_plain_text_title": "Modo texto plano (EPUB / DOCX)",
@@ -71,16 +60,13 @@
   "option_chapter_mode_description": "Usa los títulos de capítulo detectados como límites estables de traducción. Un capítulo completo se envía en una sola solicitud cuando cabe en el límite de tokens; los capítulos demasiado largos se dividen únicamente dentro del mismo capítulo. Los capítulos cortos no se fusionan, por lo que esto puede crear más solicitudes que el troceado normal mientras mantiene alineadas la traducción y la revisión. Los subtítulos conservan su agrupación normal.",
   "option_text_cleanup_title": "Limpieza de texto (corrección de OCR)",
   "option_text_cleanup_description": "Para textos mal formateados o escaneados con OCR. Indica al LLM que corrija: saltos de línea rotos, espacios dobles, errores de puntuación y une párrafos divididos incorrectamente.",
-
   "glossary_label": "Glosario",
   "glossary_manage_title": "Gestionar glosarios",
   "glossary_help": "Inyecta una lista curada de términos origen-destino en el prompt de cada fragmento para mantener consistentes las traducciones de las entidades. Pulsa <strong>Gestionar</strong> para crear, editar o extraer términos automáticamente.",
-
   "custom_instructions_label": "Instrucciones personalizadas",
   "custom_instructions_help": "Selecciona instrucciones personalizadas desde la carpeta <code>Custom_Instructions/</code>. Usa archivos <code>.yaml</code> con las claves <code>translation:</code> y/o <code>refinement:</code> para acotar un preajuste por fase. Los archivos <code>.txt</code> heredados siguen funcionando y se aplican a ambas fases.",
   "custom_instructions_load_failed": "Error al abrir la carpeta Custom_Instructions",
   "default_config_load_failed": "Error al cargar la configuración por defecto",
-
   "notifications": "Notificaciones",
   "notifications_enable": "Activar notificaciones por webhook",
   "notifications_url": "URL del webhook",
@@ -94,7 +80,6 @@
   "notifications_test": "Enviar notificación de prueba",
   "notifications_test_sent": "Notificación de prueba {{event}} enviada correctamente.",
   "notifications_test_failed": "La prueba falló: {{error}}",
-
   "notifications_intro": "Recibe avisos en tu móvil, canal de Discord o cualquier endpoint HTTP cuando una traducción llegue a un estado final. Útil para tareas largas con modelos locales. Compatible con <strong>ntfy</strong>, <strong>gotify</strong>, <strong>Discord</strong>, <strong>Slack</strong>, <strong>Healthchecks.io</strong> o cualquier webhook personalizado. Consulta <a href=\"https://github.com/hydropix/TranslateBooksWithLLMs/blob/main/docs/NOTIFICATIONS.md\" target=\"_blank\" rel=\"noopener\" style=\"color: var(--primary-light);\">docs/NOTIFICATIONS.md</a> para la referencia completa.",
   "notifications_presets_label": "Preajustes rápidos",
   "notifications_presets_help": "Elige un servicio para rellenar la URL y la carga útil; después edita los valores según tu cuenta.",
@@ -117,14 +102,12 @@
   "notifications_save_and_test_label": "Guardar y probar",
   "notifications_save_and_test_help": "Pulsa primero <strong>Guardar</strong> y luego <strong>Enviar prueba</strong>. La prueba usa la configuración actualmente guardada en disco.",
   "notifications_send_test": "Enviar prueba",
-
   "preset_ntfy_note": "Sustituye el tema por uno único. Instala la app de ntfy y suscríbete al mismo tema para recibir notificaciones push.",
   "preset_gotify_note": "Sustituye el host y el token por el token de tu app de gotify.",
   "preset_discord_note": "Ajustes del servidor → Integraciones → Webhooks → Nuevo webhook. Pega arriba la URL del webhook.",
   "preset_slack_note": "Crea un webhook entrante en tu espacio de Slack y pega su URL arriba.",
   "preset_healthchecks_note": "Healthchecks solo necesita un ping. El sufijo {event} le permite diferenciar éxito de fallo.",
   "preset_clear_note": "Notificaciones desactivadas. Deja la URL vacía y pulsa Guardar para conservar el cambio.",
-
   "search_providers_placeholder": "Buscar proveedores...",
   "search_models_placeholder": "Buscar modelos...",
   "search_models_loading": "Cargando modelos...",
@@ -201,7 +184,6 @@
   "llm_with_provider_count_one": "LLM: {{provider}} ({{count}} modelo)",
   "llm_with_provider_count_other": "LLM: {{provider}} ({{count}} modelos)",
   "llm_not_connected_title": "LLM no conectado - revisa los ajustes",
-
   "cost_free_local": "Gratis (local)",
   "cost_free_local_model": "Gratis (modelo local)",
   "cost_estimating": "Estimando coste...",
@@ -231,6 +213,5 @@
   "auto_update_context_label": "Actualizar automáticamente el archivo de contexto tras traducir cada fragmento",
   "bypass_context_gating_label": "Omitir la validación de contexto (confiar directamente en el género y correcciones del LLM)",
   "enable_reflection_label": "Habilitar motor de reflexión y reparación de 2 pasadas (Revisión de calidad)",
-  "use_llm_sanitizer_label": "Usar agente de desinfección de contexto LLM (filtra PNJ efímeros)",
   "novel_context_help": "Mantén los géneros de los personajes, formas de tratamiento (relaciones) y glosarios persistentes en un archivo <code>.txt</code> para mejorar la consistencia de la traducción. Nota: La actualización automática fuerza la traducción secuencial (1 hilo)."
 }

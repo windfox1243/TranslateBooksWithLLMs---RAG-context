@@ -1,7 +1,6 @@
 {
   "ui_language_label": "Sprache der Oberfläche",
   "ui_language_help": "Native Namen werden nie übersetzt — wählen Sie die Sprache, die Sie am bequemsten lesen.",
-
   "provider_and_defaults": "Anbieter & Standardwerte",
   "ai_provider": "KI-Anbieter",
   "api_endpoint": "API-Endpunkt",
@@ -22,7 +21,6 @@
   "key_using_env_multi_with_masked": "Verwendet {{count}} .env-Schlüssel (letzter: {{masked}})",
   "key_rotation_count": "{{count}} Schlüssel rotiert",
   "key_rotation_count_other": "{{count}} Schlüssel rotiert",
-
   "api_key_rotation_tip": "Tipp: Geben Sie mehrere Schlüssel durch Kommas getrennt ein, um die automatische Rotation bei Ratenbegrenzung (HTTP 429) zu aktivieren — nützlich, um Free-Tier-Konten zu verketten.",
   "api_key_placeholder_gemini": "Gemini-API-Schlüssel eingeben",
   "api_key_placeholder_openai": "OpenAI-API-Schlüssel eingeben",
@@ -31,38 +29,29 @@
   "api_key_placeholder_deepseek": "DeepSeek-API-Schlüssel eingeben",
   "api_key_placeholder_poe": "Schlüssel unter poe.com/api_key abrufen",
   "api_key_placeholder_nim": "Schlüssel unter build.nvidia.com abrufen",
-
   "refresh_models_title": "Modellliste aktualisieren",
   "refresh_list_title": "Liste aktualisieren",
   "open_folder_title": "Ordner öffnen",
   "select_none": "Keine",
-
   "openai_local_servers_hint": "Lokale Server: llama.cpp (8080), LM Studio (1234), vLLM usw.",
-
   "naming_convention_label": "Benennungskonvention",
   "naming_convention_input_title": "Verwenden Sie {originalName}, {targetLang}, {sourceLang}, {model}, {date}, {datetime}, {ext} als Platzhalter",
   "naming_convention_help": "Platzhalter: {originalName}, {targetLang}, {sourceLang}, {model}, {date}, {datetime}, {ext}<br>Beispiel: {originalName} ({targetLang}) ({model})_{date}.{ext}",
-
   "disable_auto_pause_title": "Bei Ratenbegrenzung (HTTP 429) nicht automatisch pausieren",
   "disable_auto_pause_description": "Standardmäßig wird die Übersetzung pausiert, sobald der Anbieter eine Ratenbegrenzung anwendet, und Sie werden um manuelles Fortsetzen gebeten. Aktivieren Sie diese Option, damit die Übersetzung weiterläuft: Sie wartet <code>Retry-After</code> Sekunden (oder standardmäßig 60 s) und setzt automatisch ab dem letzten Checkpoint fort. Nützlich für lange Romane mit Free-Tier-APIs. Klicken Sie jederzeit auf „Abbrechen“, um die automatische Fortsetzung zu beenden.",
-
   "parallel_workers_label": "Parallele Anfragen",
   "parallel_workers_input_title": "Anzahl der gleichzeitig übersetzten Abschnitte",
   "parallel_workers_help": "Übersetzen Sie mehrere Abschnitte gleichzeitig bei Cloud-Anbietern, die parallele Anfragen erlauben. 1 behält das ursprüngliche sequenzielle Verhalten bei. Höhere Werte sind schneller, können aber Ratenbegrenzungen erreichen und deaktivieren den abschnittsübergreifenden Kontext für die Konsistenz. Bei lokalen Anbietern (Ollama) wird der Wert ignoriert.",
-
   "translation_options": "Übersetzungsoptionen",
   "post_processing": "Nachbearbeitung",
   "enable_chunk_reflection_label": "2-Pass-Chunk-Reflexion aktivieren (Selbstkorrektur)",
   "enable_chunk_reflection_help": "Führt nach jedem Chunk einen Reflexionsschritt aus, um Auslassungen und Pronomenfehler zu korrigieren.",
-  "enable_llm_context_sanitizer_label": "LLM-Kontext-Sanitizer aktivieren",
-  "enable_llm_context_sanitizer_help": "Verwendet LLMs zur Normalisierung von Anredeformen und sozialen Hierarchien.",
   "system_prompts": "System-Prompts",
   "ocr_cleanup": "OCR-Bereinigung",
   "literary_refinement": "Literarische Verfeinerung",
   "save_settings": "Einstellungen in .env speichern",
   "save_settings_help": "Speichert API-Schlüssel, Endpunkte, Benennungskonvention und aktuelles Modell als Standardwerte in der <code>.env</code>-Datei. Änderungen in diesem Abschnitt werden <strong>nicht</strong> automatisch gespeichert.",
   "settings_summary_placeholder": "—",
-
   "option_bilingual_title": "Zweisprachige Ausgabe",
   "option_bilingual_description": "Originaltext zusammen mit der Übersetzung einfügen. Jedes Segment zeigt den Quelltext gefolgt von seiner Übersetzung, ideal für Sprachenlernen oder direkten Vergleich.",
   "option_plain_text_title": "Reintextmodus (EPUB / DOCX)",
@@ -71,16 +60,13 @@
   "option_chapter_mode_description": "Verwendet erkannte Kapitelüberschriften als stabile Übersetzungsgrenzen. Ein vollständiges Kapitel wird in einer Anfrage gesendet, wenn es in das Token-Limit passt; überlange Kapitel werden nur innerhalb desselben Kapitels geteilt. Kurze Kapitel werden nicht zusammengeführt, daher kann dies mehr Anfragen als normales Chunking erzeugen, hält aber Übersetzung und Überarbeitung synchron. Untertitel behalten ihre normale blockbasierte Gruppierung.",
   "option_text_cleanup_title": "Textbereinigung (OCR-Korrektur)",
   "option_text_cleanup_description": "Für schlecht formatierte oder OCR-gescannte Texte. Weist das LLM an, Folgendes zu beheben: defekte Zeilenumbrüche, doppelte Leerzeichen, Zeichensetzungsfehler und falsch getrennte Absätze zusammenzuführen.",
-
   "glossary_label": "Glossar",
   "glossary_manage_title": "Glossare verwalten",
   "glossary_help": "Eine kuratierte Quell-zu-Ziel-Begriffsliste in den Prompt jedes Segments einfügen, um Konsistenz bei Entitätsübersetzungen zu wahren. Klicken Sie auf <strong>Verwalten</strong>, um Begriffe zu erstellen, zu bearbeiten oder automatisch zu extrahieren.",
-
   "custom_instructions_label": "Benutzerdefinierte Anweisungen",
   "custom_instructions_help": "Wählen Sie benutzerdefinierte Anweisungen aus dem Ordner <code>Custom_Instructions/</code>. Verwenden Sie <code>.yaml</code>-Dateien mit den Schlüsseln <code>translation:</code> und/oder <code>refinement:</code>, um eine Voreinstellung pro Phase zu definieren. Vorhandene <code>.txt</code>-Dateien funktionieren weiterhin und gelten für beide Phasen.",
   "custom_instructions_load_failed": "Ordner Custom_Instructions konnte nicht geöffnet werden",
   "default_config_load_failed": "Standardkonfiguration konnte nicht geladen werden",
-
   "notifications": "Benachrichtigungen",
   "notifications_enable": "Webhook-Benachrichtigungen aktivieren",
   "notifications_url": "Webhook-URL",
@@ -94,7 +80,6 @@
   "notifications_test": "Test-Benachrichtigung senden",
   "notifications_test_sent": "Test-Benachrichtigung {{event}} erfolgreich gesendet.",
   "notifications_test_failed": "Test fehlgeschlagen: {{error}}",
-
   "notifications_intro": "Lassen Sie sich auf Ihrem Smartphone, im Discord-Kanal oder an einem beliebigen HTTP-Endpunkt benachrichtigen, wenn eine Übersetzung einen finalen Status erreicht. Nützlich für lange Aufträge mit lokalen Modellen. Kompatibel mit <strong>ntfy</strong>, <strong>gotify</strong>, <strong>Discord</strong>, <strong>Slack</strong>, <strong>Healthchecks.io</strong> oder jedem benutzerdefinierten Webhook. Siehe <a href=\"https://github.com/hydropix/TranslateBooksWithLLMs/blob/main/docs/NOTIFICATIONS.md\" target=\"_blank\" rel=\"noopener\" style=\"color: var(--primary-light);\">docs/NOTIFICATIONS.md</a> für die vollständige Referenz.",
   "notifications_presets_label": "Schnell-Voreinstellungen",
   "notifications_presets_help": "Wählen Sie einen Dienst, um URL und Nutzlast vorauszufüllen, und passen Sie die Werte dann an Ihr Konto an.",
@@ -117,14 +102,12 @@
   "notifications_save_and_test_label": "Speichern und testen",
   "notifications_save_and_test_help": "Klicken Sie zuerst auf <strong>Speichern</strong>, dann auf <strong>Test senden</strong>. Der Test verwendet die aktuell auf der Festplatte gespeicherte Konfiguration.",
   "notifications_send_test": "Test senden",
-
   "preset_ntfy_note": "Ersetzen Sie das Thema durch etwas Eindeutiges. Installieren Sie die ntfy-App und abonnieren Sie dasselbe Thema, um Push-Benachrichtigungen zu erhalten.",
   "preset_gotify_note": "Ersetzen Sie den Host und das Token durch Ihr gotify-App-Token.",
   "preset_discord_note": "Servereinstellungen → Integrationen → Webhooks → Neuer Webhook. Fügen Sie die Webhook-URL oben ein.",
   "preset_slack_note": "Erstellen Sie einen Incoming Webhook in Ihrem Slack-Workspace und fügen Sie dessen URL oben ein.",
   "preset_healthchecks_note": "Healthchecks benötigt nur einen Ping. Das Suffix {event} ermöglicht es, Erfolg von Fehler zu unterscheiden.",
   "preset_clear_note": "Benachrichtigungen deaktiviert. Lassen Sie die URL leer und klicken Sie auf Speichern, um die Einstellung zu übernehmen.",
-
   "search_providers_placeholder": "Anbieter suchen...",
   "search_models_placeholder": "Modelle suchen...",
   "search_models_loading": "Modelle werden geladen...",
@@ -201,7 +184,6 @@
   "llm_with_provider_count_one": "LLM: {{provider}} ({{count}} Modell)",
   "llm_with_provider_count_other": "LLM: {{provider}} ({{count}} Modelle)",
   "llm_not_connected_title": "LLM nicht verbunden - Einstellungen prüfen",
-
   "cost_free_local": "Kostenlos (lokal)",
   "cost_free_local_model": "Kostenlos (lokales Modell)",
   "cost_estimating": "Kosten werden geschätzt...",
@@ -231,6 +213,5 @@
   "auto_update_context_label": "Kontextdatei nach der Übersetzung jedes Segments automatisch aktualisieren",
   "bypass_context_gating_label": "Kontextvalidierung umgehen (LLM-Geschlechter und Korrekturen direkt vertrauen)",
   "enable_reflection_label": "2-Pass Reflexions- & Reparatur-Engine aktivieren (Qualitätsprüfung)",
-  "use_llm_sanitizer_label": "LLM-Kontext-Sanitizer-Agent verwenden (filtert vorübergehende NPCs)",
   "novel_context_help": "Halten Sie Charaktergeschlechter, Anredeformen (Beziehungen) und Glossare in einer <code>.txt</code>-Datei konsistent, um die Übersetzungsqualität zu steigern. Hinweis: Automatische Aktualisierung erzwingt sequenzielle Übersetzung (1 Worker)."
 }

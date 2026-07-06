@@ -133,7 +133,6 @@ export const SettingsManager = {
             { id: 'plainTextMode', event: 'change' },
             { id: 'chapterMode', event: 'change' },
             { id: 'enableReflection', event: 'change' },
-            { id: 'useLlmSanitizer', event: 'change' },
             { id: 'customInstructionSelect', event: 'change' },
             { id: 'novelContextSelect', event: 'change' },
             { id: 'autoUpdateContext', event: 'change' }
@@ -164,7 +163,6 @@ export const SettingsManager = {
             { id: 'disableAutoPause', event: 'change' },
             { id: 'bypassContextGating', event: 'change' },
             { id: 'enableReflection', event: 'change' },
-            { id: 'useLlmSanitizer', event: 'change' },
             { id: 'parallelWorkers', event: 'input' }
         ];
 
@@ -476,7 +474,6 @@ export const SettingsManager = {
             plainTextMode: plainTextModeCheckbox ? plainTextModeCheckbox.checked : false,
             chapterMode: chapterModeCheckbox ? chapterModeCheckbox.checked : false,
             enableReflection: enableReflectionCheckbox ? enableReflectionCheckbox.checked : false,
-            useLlmSanitizer: useLlmSanitizerCheckbox ? useLlmSanitizerCheckbox.checked : false,
             customInstructionFile: DomHelpers.getValue('customInstructionSelect') || '',
             novelContextFile: DomHelpers.getValue('novelContextSelect') || '',
             autoUpdateContext: DomHelpers.getElement('autoUpdateContext')?.checked || false
@@ -561,10 +558,6 @@ export const SettingsManager = {
             // Save chunk reflection flag (runtime behavior default)
             const enableReflectionCheckbox = DomHelpers.getElement('enableReflection');
             envSettings['ENABLE_CHUNK_REFLECTION'] = (enableReflectionCheckbox && enableReflectionCheckbox.checked) ? 'true' : 'false';
-
-            // Save LLM context sanitizer flag (runtime behavior default)
-            const useLlmSanitizerCheckbox = DomHelpers.getElement('useLlmSanitizer');
-            envSettings['USE_LLM_SANITIZER'] = (useLlmSanitizerCheckbox && useLlmSanitizerCheckbox.checked) ? 'true' : 'false';
 
             // Save parallel-requests default (the per-job request still overrides
             // this; it only seeds the input on next load). Backend clamps it.

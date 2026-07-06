@@ -1,7 +1,6 @@
 {
   "ui_language_label": "인터페이스 언어",
   "ui_language_help": "원어 이름은 절대 번역되지 않습니다 — 가장 편하게 읽을 수 있는 언어를 선택하세요.",
-
   "provider_and_defaults": "제공자 및 기본값",
   "ai_provider": "AI 제공자",
   "api_endpoint": "API 엔드포인트",
@@ -22,7 +21,6 @@
   "key_using_env_multi_with_masked": ".env 키 {{count}}개 사용 중 (마지막: {{masked}})",
   "key_rotation_count": "키 {{count}}개 순환됨",
   "key_rotation_count_other": "키 {{count}}개 순환됨",
-
   "api_key_rotation_tip": "팁: 속도 제한 (HTTP 429) 시 자동 순환을 활성화하려면 여러 키를 쉼표로 구분하여 입력하세요 — 무료 등급 계정을 연결하는 데 유용합니다.",
   "api_key_placeholder_gemini": "Gemini API 키 입력",
   "api_key_placeholder_openai": "OpenAI API 키 입력",
@@ -31,38 +29,29 @@
   "api_key_placeholder_deepseek": "DeepSeek API 키 입력",
   "api_key_placeholder_poe": "poe.com/api_key에서 키 받기",
   "api_key_placeholder_nim": "build.nvidia.com에서 키 받기",
-
   "refresh_models_title": "모델 목록 새로 고침",
   "refresh_list_title": "목록 새로 고침",
   "open_folder_title": "폴더 열기",
   "select_none": "없음",
-
   "openai_local_servers_hint": "로컬 서버: llama.cpp (8080), LM Studio (1234), vLLM 등.",
-
   "naming_convention_label": "파일명 규칙",
   "naming_convention_input_title": "{originalName}, {targetLang}, {sourceLang}, {model}, {date}, {datetime}, {ext}를 플레이스홀더로 사용",
   "naming_convention_help": "플레이스홀더: {originalName}, {targetLang}, {sourceLang}, {model}, {date}, {datetime}, {ext}<br>예: {originalName} ({targetLang}) ({model})_{date}.{ext}",
-
   "disable_auto_pause_title": "속도 제한 (HTTP 429) 시 자동 일시 중지 안 함",
   "disable_auto_pause_description": "기본적으로 제공자가 속도 제한을 가하면 번역이 일시 중지되고 수동으로 재개하도록 요청합니다. 이 옵션을 활성화하면 번역이 계속 실행됩니다: <code>Retry-After</code> 초 (또는 기본 60초) 동안 대기한 다음 마지막 체크포인트에서 자동으로 재개됩니다. 무료 등급 API에서 긴 소설을 번역할 때 유용합니다. 자동 재개를 취소하려면 언제든지 \"중단\"을 클릭하세요.",
-
   "parallel_workers_label": "병렬 요청",
   "parallel_workers_input_title": "동시에 번역하는 청크 수",
   "parallel_workers_help": "동시 요청을 허용하는 클라우드 제공업체에서 여러 청크를 한 번에 번역합니다. 1로 설정하면 원래의 순차 처리 동작을 유지합니다. 값이 높을수록 빠르지만 속도 제한에 걸릴 수 있으며, 일관성을 위한 청크 간 컨텍스트가 비활성화됩니다. 로컬 제공업체(Ollama)에서는 무시됩니다.",
-
   "translation_options": "번역 옵션",
   "post_processing": "후처리",
   "enable_chunk_reflection_label": "2패스 청크 리플렉션 (자체 교정) 활성화",
   "enable_chunk_reflection_help": "각 청크 번역 후 수석 에디터 검토를 거쳐 누락 및 대명사 불일치를 교정합니다.",
-  "enable_llm_context_sanitizer_label": "LLM 컨텍스트 새니타이저 활성화",
-  "enable_llm_context_sanitizer_help": "LLM을 사용하여 캐릭터 호칭 및 관계 구도를 정규화합니다.",
   "system_prompts": "시스템 프롬프트",
   "ocr_cleanup": "OCR 정리",
   "literary_refinement": "문학적 다듬기",
   "save_settings": ".env에 설정 저장",
   "save_settings_help": "API 키, 엔드포인트, 파일명 규칙 및 현재 모델을 <code>.env</code> 파일의 기본값으로 저장합니다. 이 섹션의 변경 사항은 자동으로 저장되지 <strong>않습니다</strong>.",
   "settings_summary_placeholder": "—",
-
   "option_bilingual_title": "이중 언어 출력",
   "option_bilingual_description": "번역과 함께 원문을 포함합니다. 각 청크는 원문 다음에 번역을 표시하므로 언어 학습이나 나란히 비교하기에 이상적입니다.",
   "option_plain_text_title": "일반 텍스트 모드 (EPUB / DOCX)",
@@ -71,16 +60,13 @@
   "option_chapter_mode_description": "감지된 장 제목을 안정적인 번역 경계로 사용합니다. 토큰 한도에 들어가는 장은 전체를 한 번의 요청으로 보내고, 너무 긴 장은 해당 장 내부에서만 분할합니다. 짧은 장끼리는 합치지 않으므로 일반 청킹보다 요청 수가 늘 수 있지만, 번역과 다듬기의 분할은 맞춰 유지합니다. 자막 파일은 기존 자막 블록 단위를 유지합니다.",
   "option_text_cleanup_title": "텍스트 정리 (OCR 수정)",
   "option_text_cleanup_description": "잘못 형식화되었거나 OCR로 스캔된 텍스트용입니다. LLM이 잘린 줄 바꿈, 이중 공백, 구두점 오류를 수정하고 잘못 분할된 단락을 병합하도록 지시합니다.",
-
   "glossary_label": "용어집",
   "glossary_manage_title": "용어집 관리",
   "glossary_help": "엔티티 번역의 일관성을 유지하기 위해 모든 청크의 프롬프트에 큐레이션된 원본-대상 용어 목록을 주입합니다. <strong>관리</strong>를 클릭하여 용어를 만들거나 편집하거나 자동 추출하세요.",
-
   "custom_instructions_label": "사용자 지정 지침",
   "custom_instructions_help": "<code>Custom_Instructions/</code> 폴더에서 사용자 지정 지침을 선택합니다. <code>translation:</code> 와(과)/또는 <code>refinement:</code> 키가 있는 <code>.yaml</code> 파일을 사용하면 단계별로 프리셋을 분리할 수 있습니다. 기존 <code>.txt</code> 파일은 그대로 작동하며 두 단계 모두에 적용됩니다.",
   "custom_instructions_load_failed": "Custom_Instructions 폴더를 열지 못했습니다",
   "default_config_load_failed": "기본 구성을 로드하지 못했습니다",
-
   "notifications": "알림",
   "notifications_enable": "웹훅 알림 활성화",
   "notifications_url": "웹훅 URL",
@@ -94,7 +80,6 @@
   "notifications_test": "테스트 알림 보내기",
   "notifications_test_sent": "{{event}} 테스트 알림이 성공적으로 전송되었습니다.",
   "notifications_test_failed": "테스트 실패: {{error}}",
-
   "notifications_intro": "번역이 종료 상태에 도달하면 휴대폰, Discord 채널 또는 모든 HTTP 엔드포인트로 알림을 받습니다. 로컬 모델로 장시간 실행되는 작업에 유용합니다. <strong>ntfy</strong>, <strong>gotify</strong>, <strong>Discord</strong>, <strong>Slack</strong>, <strong>Healthchecks.io</strong> 또는 사용자 지정 웹훅과 호환됩니다. 전체 참조는 <a href=\"https://github.com/hydropix/TranslateBooksWithLLMs/blob/main/docs/NOTIFICATIONS.md\" target=\"_blank\" rel=\"noopener\" style=\"color: var(--primary-light);\">docs/NOTIFICATIONS.md</a>를 참조하세요.",
   "notifications_presets_label": "빠른 프리셋",
   "notifications_presets_help": "URL과 페이로드를 미리 채울 서비스를 선택한 다음 계정에 맞게 값을 편집하세요.",
@@ -117,14 +102,12 @@
   "notifications_save_and_test_label": "저장 및 테스트",
   "notifications_save_and_test_help": "먼저 <strong>저장</strong>을 클릭한 다음 <strong>테스트 보내기</strong>를 클릭하세요. 테스트는 현재 디스크에 있는 구성을 사용합니다.",
   "notifications_send_test": "테스트 보내기",
-
   "preset_ntfy_note": "토픽을 고유한 것으로 바꾸세요. ntfy 앱을 설치하고 동일한 토픽을 구독하여 푸시 알림을 받으세요.",
   "preset_gotify_note": "호스트와 토큰을 gotify 앱 토큰으로 바꾸세요.",
   "preset_discord_note": "서버 설정 → 연동 → 웹훅 → 새 웹훅. 웹훅 URL을 위에 붙여넣으세요.",
   "preset_slack_note": "Slack 워크스페이스에서 수신 웹훅을 만들고 해당 URL을 위에 붙여넣으세요.",
   "preset_healthchecks_note": "Healthchecks는 핑만 필요합니다. {event} 접미사로 성공과 실패를 구분할 수 있습니다.",
   "preset_clear_note": "알림이 비활성화되었습니다. URL을 비워두고 저장을 클릭하여 유지하세요.",
-
   "search_providers_placeholder": "제공자 검색...",
   "search_models_placeholder": "모델 검색...",
   "search_models_loading": "모델 로딩 중...",
@@ -201,7 +184,6 @@
   "llm_with_provider_count_one": "LLM: {{provider}} (모델 {{count}}개)",
   "llm_with_provider_count_other": "LLM: {{provider}} (모델 {{count}}개)",
   "llm_not_connected_title": "LLM이 연결되지 않았습니다 - 설정을 확인하세요",
-
   "cost_free_local": "무료 (로컬)",
   "cost_free_local_model": "무료 (로컬 모델)",
   "cost_estimating": "비용 추정 중...",
@@ -231,6 +213,5 @@
   "auto_update_context_label": "각 청크 번역 후 컨텍스트 파일 자동 업데이트",
   "bypass_context_gating_label": "컨텍스트 검증 우회 (LLM이 식별한 성별 및 수정을 직접 신뢰)",
   "enable_reflection_label": "2패스 반성 및 복구 엔진 활성화 (수석 편집자 품질 검토)",
-  "use_llm_sanitizer_label": "LLM 컨텍스트 정화 에이전트 사용 (1장면 단역 NPC 필터링)",
   "novel_context_help": "캐릭터 성별, 호칭(관계) 및 용어집을 <code>.txt</code> 파일에 유지하여 번역 일관성을 향상시킵니다. 참고: 자동 업데이트 시 순차 번역(워커 1개)이 강제됩니다."
 }

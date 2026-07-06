@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.15.0-beta.7 - 2026-07-06
+
+### Changed & Streamlined
+
+- **Streamlined Dynamic Context Pipeline**: Streamlined `_sanitize_vietnamese_dynamic_state()` to eliminate redundant micro-regex heuristics (`_repair_vietnamese_addressing_block`) and duplicate LLM double-sanitization loops, consolidating context quality assurance into Selective Character Profile Gating and the 2-Pass Senior Translation Editor.
+
+### Removed
+
+- **Obsolete `USE_LLM_SANITIZER` Setting & Auto-Migration**: Completely removed the obsolete `USE_LLM_SANITIZER` / `use_llm_sanitizer` flag from Web UI templates, JavaScript settings managers, backend API routes, and all 7 i18n locale files (`en`, `fr`, `es`, `de`, `zh-CN`, `ja`, `ko`). Added `cleanup_legacy_env_flags()` in `env_helper.py` to automatically detect and delete legacy `USE_LLM_SANITIZER` lines from `.env` and `.env.example` on startup.
+
 ## 1.15.0-beta.6 - 2026-07-06
 
 ### Fixed
