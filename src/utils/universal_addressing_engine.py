@@ -185,12 +185,14 @@ class UniversalAddressingEngine:
         is_addressee_female = (
             "female" in addressee_g_raw.casefold()
             or "nữ" in addressee_g_raw.casefold()
-            or "female" in c_clean
-            or "nữ" in c_clean
+            or "gender: female" in c_clean
+            or "giới tính: nữ" in c_clean
         )
         is_addressee_male = (
             ("male" in addressee_g_raw.casefold() and "female" not in addressee_g_raw.casefold())
             or ("nam" in addressee_g_raw.casefold() and "nữ" not in addressee_g_raw.casefold())
+            or "gender: male" in c_clean
+            or "giới tính: nam" in c_clean
         )
 
         # Strict Rule: Job titles/nouns in target_pronoun MUST be moved to vocative & converted to genuine pronouns
@@ -228,6 +230,12 @@ class UniversalAddressingEngine:
                 else:
                     t_clean = "anh"
                 t_key = t_clean.casefold()
+
+            # Junior self-reference when addressing senior must be 'em' (not peer 'tớ'/'mình') in Vietnamese kinship/seniority
+            if self.lang_code == "vi" and s_key in {"tớ", "mình"}:
+                if t_key in senior_set or any(k in c_clean for k in ("sister", "brother", "senior", "tiền bối", "sư tỷ", "sư huynh", "kinship")):
+                    s_clean = "em"
+                    s_key = "em"
 
         elif hierarchy == "SENIOR_TO_JUNIOR":
             # Senior calling Junior cannot address Junior as Senior 'anh'/'chị'/'thầy'
