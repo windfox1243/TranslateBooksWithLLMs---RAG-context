@@ -5592,6 +5592,22 @@ def test_senior_editor_reflection_prompt_includes_explicit_source_text_primacy()
     assert "EXPLICIT SOURCE INTENT & TARGET LOCALIZATION" in prompt_pair_ja.system
     assert "ALWAYS localize terms using natural Japanese syntax" in prompt_pair_ja.system
     assert "Spoken source nicknames and honorifics take 100% absolute primacy over background lore defaults" in prompt_pair_ja.system
+    assert "桃沢トレーナー" in prompt_pair_ja.system
+
+    prompt_pair_zh = generate_chunk_reflection_prompt(
+        source_chunk="\"Momozawa Trainer, are you staying?\"",
+        draft_translation="\"桃泽教练，您要留下来吗？\"",
+        target_language="Chinese",
+    )
+    assert "桃泽教练" in prompt_pair_zh.system
+    assert "哥" in prompt_pair_zh.system
+
+    prompt_pair_fr = generate_chunk_reflection_prompt(
+        source_chunk="\"Are you staying?\"",
+        draft_translation="\"Restez-vous ?\"",
+        target_language="French",
+    )
+    assert "tu" in prompt_pair_fr.system and "vous" in prompt_pair_fr.system
 
 
 def test_format_critique_tldr():

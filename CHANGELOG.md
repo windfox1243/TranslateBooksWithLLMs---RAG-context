@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.0-beta.16 - 2026-07-06
+
+### Added
+
+- **Multi-Language Tailored Senior Editor Prompt Guidance**: Added `_get_language_specific_prompt_guidance()` in `src/prompts/prompts.py`. Dynamically provides native prompt examples and audit rules for **Vietnamese**, **Japanese**, **Chinese**, **Korean**, **French**, **Spanish**, and **German**, ensuring every target language receives native linguistic guidance without cross-language prompt bleed.
+
 ## 1.15.0-beta.15 - 2026-07-06
 
 ### Fixed

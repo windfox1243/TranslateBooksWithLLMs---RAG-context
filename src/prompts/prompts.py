@@ -1300,6 +1300,68 @@ def generate_post_processing_prompt(
     )
 
 
+def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
+    """Return language-tailored prompt examples and guidance for the Senior Editor reflection audit."""
+    lang_lower = (target_lang or "").lower().strip()
+
+    if "vietnamese" in lang_lower or lang_lower == "vi":
+        return {
+            "loc_example": ' (e.g. in Vietnamese: translate English "Momozawa Trainer" -> "Huấn luyện viên Momozawa", NOT literal unlocalized "Momozawa Trainer")',
+            "pronoun_examples": " (e.g. 'em', 'chú', 'con', 'tới', 'tớ')",
+            "monologue_guidance": ' (e.g. "Liệu mình/tôi có thắng...", or emotional mental thoughts addressing someone internally like "Em yêu anh..."). In Vietnamese internal monologue, \'mình\'/\'tôi\' are standard for self-reflection, while intimate address pairs (\'em-anh\', \'tớ-cậu\') are completely valid for emotional thoughts directed at a character.',
+            "gender_examples": " (e.g., using male pronouns 'anh' for a female character, or incorrect seniority/kinship terms)",
+        }
+    elif "japanese" in lang_lower or lang_lower == "ja":
+        return {
+            "loc_example": ' (e.g. in Japanese: place titles/honorifics after names like "桃沢トレーナー" or "Sato-senpai", NOT English title-first order)',
+            "pronoun_examples": " (e.g. dialogue first-person 'ore/boku/watashi' or informal address 'omae/kisama')",
+            "monologue_guidance": ' (e.g. internal monologue using natural 1st-person self-thought like jibun/boku/watashi). Do NOT flag internal thoughts as pronoun bleed.',
+            "gender_examples": " (e.g., using male pronouns/honorifics for a female character like '-kun' when lore specifies '-chan' or female register)",
+        }
+    elif "chinese" in lang_lower or lang_lower in ("zh", "zh-cn", "zh-tw"):
+        return {
+            "loc_example": ' (e.g. in Chinese: place titles after names like "桃泽教练" or "张医生", maintaining natural CJK honorific order)',
+            "pronoun_examples": " (e.g. dialogue kinship/honorific terms like '哥', '姐', '少爷', '前辈')",
+            "monologue_guidance": ' (e.g. internal monologue thoughts using natural self-reference like 我/自己). Do NOT flag internal thoughts as pronoun bleed.',
+            "gender_examples": " (e.g., mixing up gendered pronouns 他/她/它 for female/male characters according to lore)",
+        }
+    elif "korean" in lang_lower or lang_lower == "ko":
+        return {
+            "loc_example": ' (e.g. in Korean: place honorifics after names like "모모자와 트레이너님" or "김선배")',
+            "pronoun_examples": " (e.g. dialogue seniority/honorific terms like '오빠', '언니', '형', '누나', '선배님')",
+            "monologue_guidance": ' (e.g. internal monologue thoughts in non-polite self-thought voice). Do NOT flag internal thoughts as pronoun bleed.',
+            "gender_examples": " (e.g., using male sibling terms '형/오빠' for female characters or incorrect honorific levels)",
+        }
+    elif "french" in lang_lower or lang_lower == "fr":
+        return {
+            "loc_example": ' (e.g. in French: respect natural adjective placement, honorific titles, and gender agreement)',
+            "pronoun_examples": " (e.g. informal 'tu' vs formal 'vous' dialogue register)",
+            "monologue_guidance": " or 1st-person POV self-references/internal thoughts.",
+            "gender_examples": " (e.g., incorrect grammatical gender agreement for adjectives/past participles or masculine 'il' for a female character)",
+        }
+    elif "spanish" in lang_lower or lang_lower == "es":
+        return {
+            "loc_example": ' (e.g. in Spanish: respect natural noun-adjective order and title placement like "Entrenador Momozawa")',
+            "pronoun_examples": " (e.g. informal 'tú'/'vos' vs formal 'usted' dialogue register)",
+            "monologue_guidance": " or 1st-person POV self-references/internal thoughts.",
+            "gender_examples": " (e.g., incorrect grammatical gender agreement for adjectives or masculine 'él' for a female character)",
+        }
+    elif "german" in lang_lower or lang_lower == "de":
+        return {
+            "loc_example": ' (e.g. in German: respect natural noun capitalization, title placement, and word order)',
+            "pronoun_examples": " (e.g. informal 'du' vs formal 'Sie' dialogue register)",
+            "monologue_guidance": " or 1st-person POV self-references/internal thoughts.",
+            "gender_examples": " (e.g., using masculine 'er' for a female character or incorrect grammatical gender agreement)",
+        }
+    else:
+        return {
+            "loc_example": f' (e.g. localizing word order, titles, and honorifics according to natural {target_lang} grammar)',
+            "pronoun_examples": " (e.g. dialogue-specific intimate pronouns or informal vocatives)",
+            "monologue_guidance": " or 1st-person POV self-references/emotional mental thoughts.",
+            "gender_examples": " (e.g., using male pronouns/titles for a female character or vice versa)",
+        }
+
+
 def generate_chunk_reflection_prompt(
     source_chunk: str,
     draft_translation: str,
@@ -1313,24 +1375,11 @@ def generate_chunk_reflection_prompt(
     Evaluates line-by-line fidelity, narrative vs. dialogue pronoun isolation, and term accuracy.
     """
     target_lang = target_language or "target language"
-    is_vi = "vietnamese" in target_lang.lower() or target_lang.lower() == "vi"
-
-    loc_example = (
-        ' (e.g. in Vietnamese: translate English "Momozawa Trainer" -> "Huấn luyện viên Momozawa", NOT literal unlocalized "Momozawa Trainer")'
-        if is_vi else f' (e.g. localizing word order, titles, and honorifics according to natural {target_lang} grammar)'
-    )
-    pronoun_examples = (
-        " (e.g. 'em', 'chú', 'con', 'tới', 'tớ')"
-        if is_vi else " (e.g. dialogue-specific intimate pronouns or informal vocatives)"
-    )
-    monologue_guidance = (
-        ' (e.g. "Liệu mình/tôi có thắng...", or emotional mental thoughts addressing someone internally like "Em yêu anh..."). In Vietnamese internal monologue, \'mình\'/\'tôi\' are standard for self-reflection, while intimate address pairs (\'em-anh\', \'tớ-cậu\') are completely valid for emotional thoughts directed at a character.'
-        if is_vi else " or 1st-person POV self-references/emotional mental thoughts."
-    )
-    gender_examples = (
-        " (e.g., using male pronouns 'anh' for a female character, or incorrect seniority/kinship terms)"
-        if is_vi else " (e.g., using male pronouns/titles for a female character or vice versa)"
-    )
+    guidance = _get_language_specific_prompt_guidance(target_lang)
+    loc_example = guidance["loc_example"]
+    pronoun_examples = guidance["pronoun_examples"]
+    monologue_guidance = guidance["monologue_guidance"]
+    gender_examples = guidance["gender_examples"]
 
     system_prompt = f"""You are an uncompromising, ultra-rigorous Senior Literary Translation Editor specializing in {target_lang}.
 Your task is to perform an adversarial quality review of a draft translation against its original source text and active novel lore.
