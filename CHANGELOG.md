@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.0-beta.14 - 2026-07-06
+
+### Fixed
+
+- **Language-Agnostic Senior Editor Prompting**: Parameterized prompt examples in `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) based on `target_language`. When translating to non-Vietnamese targets (e.g. French, Spanish, German, Japanese, Chinese, Korean), prompt rules dynamically render language-agnostic localization and pronoun examples rather than hardcoded Vietnamese terms.
+
 ## 1.15.0-beta.13 - 2026-07-06
 
 ### Fixed
