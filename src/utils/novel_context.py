@@ -4856,39 +4856,37 @@ def _repair_vietnamese_addressing_details(
 
     from src.utils.universal_addressing_engine import UniversalAddressingEngine
     engine = UniversalAddressingEngine(language="vi")
-    rep_s, rep_t, rep_v = engine.validate_and_repair_pair(
-        self_reference_raw,
-        raw_second_p,
-        speaker=speaker,
-        addressee=addressee,
-        vocative=vocative_raw,
-        details_context=details,
-        character_genders=character_genders,
-    )
-    if rep_s != self_reference_raw:
-        details = _replace_vietnamese_addressing_field(details, "self-reference", rep_s)
-    if rep_t != raw_second_p:
-        details = _replace_vietnamese_addressing_field(details, "second-person pronoun", rep_t)
-    if rep_v != vocative_raw:
-        details = _replace_vietnamese_addressing_field(details, "vocative/address form", rep_v)
 
-    self_reference = _vietnamese_addressing_field(
-        details,
-        "self-reference",
-    ).casefold()
-    second_person = _vietnamese_addressing_field(
-        details,
-        "second-person pronoun",
-    ).casefold()
-    vocative = _vietnamese_addressing_field(
-        details,
-        "vocative/address form",
-    ).casefold()
+    self_ref = _vietnamese_addressing_field(details, "self-reference")
+    second_p = _vietnamese_addressing_field(details, "second-person pronoun")
+    vocative = _vietnamese_addressing_field(details, "vocative/address form")
+
+    if self_ref or second_p:
+        rep_self, rep_target, rep_voc = engine.validate_and_repair_pair(
+            self_pronoun=self_ref,
+            target_pronoun=second_p,
+            speaker=speaker,
+            addressee=addressee,
+            vocative=vocative,
+            details_context=details,
+            character_genders=character_genders,
+        )
+        if rep_self != self_ref:
+            details = _replace_vietnamese_addressing_field(details, "self-reference", rep_self)
+        if rep_target != second_p:
+            details = _replace_vietnamese_addressing_field(details, "second-person pronoun", rep_target)
+        if rep_voc and rep_voc != vocative:
+            details = _replace_vietnamese_addressing_field(details, "vocative/address form", rep_voc)
+
+    self_reference = _vietnamese_addressing_field(details, "self-reference").casefold()
+    second_person = _vietnamese_addressing_field(details, "second-person pronoun").casefold()
+    vocative_val = _vietnamese_addressing_field(details, "vocative/address form").casefold()
+
     for rule in _VIETNAMESE_INCOMPATIBLE_ADDRESSING_REPAIRS:
         second_person_terms = set(rule.get("second_person") or ())
         if not (
             self_reference in set(rule.get("self_references") or ())
-            and (second_person in second_person_terms or vocative in second_person_terms)
+            and (second_person in second_person_terms or vocative_val in second_person_terms)
             and _vietnamese_rule_has_required_cue(details, rule)
         ):
             continue
@@ -4897,6 +4895,7 @@ def _repair_vietnamese_addressing_details(
             "self-reference",
             str(rule["replacement_self_reference"]),
         )
+
     return details
 
 
