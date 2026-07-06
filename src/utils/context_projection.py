@@ -63,18 +63,10 @@ def render_addressing_projection(
     if not rules:
         return ""
 
-    is_vietnamese = (target_language or "vi").casefold() == "vi"
-
-    if is_vietnamese:
-        lines = [
-            "### QUY TẮC XƯNG HÔ CÓ HƯỚNG (DIRECTED ADDRESSING RULES):",
-            "Chú ý tuân thủ tuyệt đối cách xưng hô và xưng xưng/gọi ngôi của từng nhân vật dưới đây:",
-        ]
-    else:
-        lines = [
-            "### DIRECTED ADDRESSING RULES:",
-            "Strictly adhere to character-to-character addressing forms below:",
-        ]
+    lines = [
+        "### DIRECTED ADDRESSING RULES:",
+        "Strictly adhere to character-to-character addressing forms below:",
+    ]
 
     from src.utils.universal_addressing_engine import UniversalAddressingEngine
     engine = UniversalAddressingEngine(language=target_language or "vi")
@@ -92,32 +84,18 @@ def render_addressing_projection(
         f_self, f_target = engine.get_forbidden_pronouns(self_p or "", target_p or "")
         forbidden_list = sorted(list(f_self | f_target))
 
-        if is_vietnamese:
-            forbidden_str = (
-                f" [CẤM DÙNG: {', '.join(repr(t) for t in forbidden_list)}]"
-                if forbidden_list
-                else ""
-            )
-            vocative_str = f" (gọi là '{vocative}')" if vocative else ""
-            situational_note = " [BỐI CẢNH TÌNH HUỐNG: Chỉ áp dụng trong phân cảnh này]" if is_situational_context(r) else ""
-            lines.append(
-                f"- **{speaker}** khi nói với **{addressee}**: "
-                f"Tự xưng là '{self_p}', gọi đối phương là '{target_p}'{vocative_str} "
-                f"[Sắc thái: {register}]{situational_note}{forbidden_str}."
-            )
-        else:
-            forbidden_str = (
-                f" [FORBIDDEN: {', '.join(repr(t) for t in forbidden_list)}]"
-                if forbidden_list
-                else ""
-            )
-            vocative_str = f" (vocative '{vocative}')" if vocative else ""
-            situational_note = " [SITUATIONAL CONTEXT: Active in this scene only]" if is_situational_context(r) else ""
-            lines.append(
-                f"- **{speaker}** addressing **{addressee}**: "
-                f"Self-reference as '{self_p}', address target as '{target_p}'{vocative_str} "
-                f"[Tone: {register}]{situational_note}{forbidden_str}."
-            )
+        forbidden_str = (
+            f" [FORBIDDEN: {', '.join(repr(t) for t in forbidden_list)}]"
+            if forbidden_list
+            else ""
+        )
+        vocative_str = f" (vocative '{vocative}')" if vocative else ""
+        situational_note = " [SITUATIONAL CONTEXT: Active in this scene only]" if is_situational_context(r) else ""
+        lines.append(
+            f"- **{speaker}** addressing **{addressee}**: "
+            f"Self-reference as '{self_p}', address target as '{target_p}'{vocative_str} "
+            f"[Tone: {register}]{situational_note}{forbidden_str}."
+        )
 
     return "\n".join(lines)
 
