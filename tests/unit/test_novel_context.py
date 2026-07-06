@@ -2531,6 +2531,20 @@ def test_source_identity_link_proof_status_accepts_title_name_aliases():
     assert "source chunk does not directly prove" in reason4
 
 
+def test_senior_editor_reflection_prompt_includes_addressee_vs_speaker_alignment():
+    from src.prompts.prompts import generate_chunk_reflection_prompt
+
+    prompt_pair = generate_chunk_reflection_prompt(
+        source_chunk="Sample source",
+        draft_translation="Sample draft",
+        target_language="Vietnamese",
+    )
+    assert "ADDRESSEE VS SPEAKER ALIGNMENT" in prompt_pair.system
+    assert "refer to the ADDRESSEE (the person being spoken to), NOT the speaker" in prompt_pair.system
+    assert "DO NOT flag direct address terms or vocatives in dialogue matching the addressee's gender" in prompt_pair.system
+
+
+
 
 def test_explicit_identity_link_merges_rank_entry_and_rewrites_relationships():
     from src.utils.novel_context import build_novel_context
