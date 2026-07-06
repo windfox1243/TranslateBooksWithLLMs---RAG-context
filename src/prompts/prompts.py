@@ -1303,7 +1303,7 @@ def generate_post_processing_prompt(
 def generate_chunk_reflection_prompt(
     source_chunk: str,
     draft_translation: str,
-    target_language: str = "Vietnamese",
+    target_language: Optional[str] = None,
     novel_context: str = "",
     custom_instructions: str = "",
     glossary_block: str = "",
@@ -1312,14 +1312,15 @@ def generate_chunk_reflection_prompt(
     Generate a chunk reflection prompt acting as a Senior Translation Editor / Critic.
     Evaluates line-by-line fidelity, narrative vs. dialogue pronoun isolation, and term accuracy.
     """
-    system_prompt = f"""You are an uncompromising, ultra-rigorous Senior Literary Translation Editor specializing in {target_language}.
+    target_lang = target_language or "target language"
+    system_prompt = f"""You are an uncompromising, ultra-rigorous Senior Literary Translation Editor specializing in {target_lang}.
 Your task is to perform an adversarial quality review of a draft translation against its original source text and active novel lore.
 
 RIGOROUS 4-STEP AUDIT PROCEDURE:
 0. EXPLICIT SOURCE INTENT & TARGET LOCALIZATION (CRITICAL RULE):
    - Respect explicit character names, nicknames, and direct address terms present in the source text dialogue.
-   - ALWAYS localize terms using natural {target_language} syntax, word order, and honorific rules (e.g. in Vietnamese: translate English "Momozawa Trainer" -> "Huấn luyện viên Momozawa", NOT literal unlocalized "Momozawa Trainer").
-   - NEVER let background lore defaults erase an explicit character name, but DO allow natural grammatical localization of names, titles, and honorifics into standard {target_language} phrasing.
+   - ALWAYS localize terms using natural {target_lang} syntax, word order, and honorific rules (e.g. in Vietnamese: translate English "Momozawa Trainer" -> "Huấn luyện viên Momozawa", NOT literal unlocalized "Momozawa Trainer").
+   - NEVER let background lore defaults erase an explicit character name, but DO allow natural grammatical localization of names, titles, and honorifics into standard {target_lang} phrasing.
 
 1. LINE & CLAUSE COMPLETENESS AUDIT:
    - Compare every sentence, clause, dialogue tag, and narrative detail in the source chunk against the draft translation.
@@ -1355,7 +1356,7 @@ def generate_chunk_repair_prompt(
     source_chunk: str,
     draft_translation: str,
     critique_feedback: str,
-    target_language: str = "Vietnamese",
+    target_language: Optional[str] = None,
     translate_tag_in: str = TRANSLATE_TAG_IN,
     translate_tag_out: str = TRANSLATE_TAG_OUT,
     custom_instructions: str = "",
@@ -1364,7 +1365,8 @@ def generate_chunk_repair_prompt(
     """
     Generate a chunk repair prompt applying critique feedback to produce the final pristine chunk.
     """
-    system_prompt = f"""You are an Expert Translation Refiner for {target_language}.
+    target_lang = target_language or "target language"
+    system_prompt = f"""You are an Expert Translation Refiner for {target_lang}.
 Apply the Senior Editor's critique feedback to repair the draft translation.
 Fix all flagged pronoun leaks, missing lines, gender mismatches, and register flaws.
 Output ONLY the final repaired translation text inside {translate_tag_in} and {translate_tag_out} tags."""

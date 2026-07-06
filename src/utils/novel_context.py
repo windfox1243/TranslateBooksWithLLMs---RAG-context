@@ -5667,7 +5667,7 @@ def cross_check_addressing_with_dialogue(
 async def sanitize_addressing_with_llm_async(
     addressing: str,
     character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
-    target_language: str = "Vietnamese",
+    target_language: Optional[str] = None,
     llm_client: Optional[Any] = None,
     log_callback: Optional[Callable] = None,
 ) -> str:
@@ -5676,6 +5676,8 @@ async def sanitize_addressing_with_llm_async(
     """
     if not addressing.strip() or not llm_client:
         return addressing
+
+    lang = target_language or "target language"
 
     try:
         from src.utils.unified_logger import get_logger, LogType
@@ -5695,7 +5697,7 @@ async def sanitize_addressing_with_llm_async(
         prompt = f"""Given these character profiles:
 {profiles_summary}
 
-And these addressing rules for target language {target_language}:
+And these addressing rules for target language {lang}:
 {addressing}
 
 Normalize and repair the addressing rules into clean canonical format:
@@ -5743,7 +5745,7 @@ Return ONLY the cleaned addressing lines for recurring characters."""
 def sanitize_addressing_with_llm(
     addressing: str,
     character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
-    target_language: str = "Vietnamese",
+    target_language: Optional[str] = None,
     llm_client: Optional[Any] = None,
     log_callback: Optional[Callable] = None,
 ) -> str:
