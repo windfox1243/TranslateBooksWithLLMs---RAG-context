@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.15.0-beta.17 - 2026-07-06
+
+### Fixed
+
+- **Senior Editor Positive Commentary Suppression & Actionable Critique Filtering**:
+  - Added `_filter_actionable_critiques()` in `src/core/translator.py` to automatically filter out positive validation notes (e.g. *"this is correct"*, *"well-handled"*, *"is valid"*) from Senior Editor critiques.
+  - Updated `STRICT OUTPUT CONTRACT` in `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) to instruct the LLM to output `NO_ISSUES` cleanly when all audit steps pass and suppress commentary on rules that require no repair.
+  - Updated `run_chunk_reflection_pass()` to skip the Repair LLM pass when no actionable defect bullet points exist, preventing false-positive over-corrections and reducing unnecessary API token usage.
+
 ## 1.15.0-beta.16 - 2026-07-06
 
 ### Added

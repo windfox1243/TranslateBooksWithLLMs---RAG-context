@@ -1412,6 +1412,7 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
 STRICT OUTPUT CONTRACT:
 - Output NO_ISSUES ONLY if the draft is 100% flawless across all 4 audit steps.
 - If ANY flaw, line drop, pronoun bleed, gender error, or register inconsistency exists, list concise, actionable bullet points explaining what MUST be repaired. Do NOT output NO_ISSUES if there is any defect.
+- DO NOT list bullet points or commentary for sections or rules that are correct or passed validation. Only list actual actionable defects that require fixing. If all audit steps pass with no repair needed, output NO_ISSUES.
 - DO NOT flag explicit spoken names or nicknames from source dialogue as lore violations (e.g. replacing "Spe-chan" with "Special" or "Maruzensky-chan" with "Maru-senpai" is strictly prohibited).
 - DO NOT flag internal monologue or 1st-person character thoughts as pronoun bleed."""
 

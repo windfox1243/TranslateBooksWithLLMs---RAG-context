@@ -962,23 +962,38 @@ async def refine_chunks(
     return refined_parts
 
 
-def format_critique_tldr(critique_text: str, max_bullets: int = 3, max_len: int = 120) -> str:
-    """Format a multi-line Senior Editor critique into a concise single-line TL;DR log message."""
+def _filter_actionable_critiques(critique_text: str) -> list[str]:
+    """Extract actionable defect bullet points from critique text, filtering out positive validation commentary."""
     if not critique_text or not critique_text.strip():
-        return ""
-    lines = [line.strip() for line in critique_text.splitlines() if line.strip()]
+        return []
 
-    bullet_items = []
+    positive_indicators = [
+        "this is correct", "is correct", "well-handled", "well handled",
+        "correctly applied", "no error", "no issues", "is valid",
+        "passes validation", "no changes needed", "no repair needed",
+    ]
+
+    lines = [line.strip() for line in critique_text.splitlines() if line.strip()]
+    actionable = []
     for line in lines:
         if line.startswith(('*', '-', '•', '>')) or (len(line) > 2 and line[0].isdigit() and line[1] in ('.', ')')):
             clean = line.lstrip("*•-> 0123456789.)").strip()
-            # Skip section category headers like "1. LINE COMPLETENESS:" or "LINE AUDIT:"
             if clean.endswith(":") and (" " not in clean or clean.isupper() or len(clean.split()) <= 3):
                 continue
             if clean:
-                bullet_items.append(clean)
+                lower_clean = clean.lower()
+                if any(pos in lower_clean for pos in positive_indicators):
+                    continue
+                actionable.append(clean)
+    return actionable
+
+
+def format_critique_tldr(critique_text: str, max_bullets: int = 3, max_len: int = 120) -> str:
+    """Format a multi-line Senior Editor critique into a concise single-line TL;DR log message."""
+    bullet_items = _filter_actionable_critiques(critique_text)
 
     if not bullet_items:
+        lines = [line.strip() for line in (critique_text or "").splitlines() if line.strip()]
         compact = " ".join(lines)
         return compact[:180] + "..." if len(compact) > 180 else compact
 
@@ -1041,6 +1056,12 @@ async def run_chunk_reflection_pass(
     if not critique or "NO_ISSUES" in critique.upper():
         if log_callback:
             log_callback("reflection_complete", "Senior Editor reflection complete: No issues found.")
+        return draft_translation
+
+    actionable_bullets = _filter_actionable_critiques(critique)
+    if not actionable_bullets:
+        if log_callback:
+            log_callback("reflection_complete", "Senior Editor reflection complete: No actionable issues found.")
         return draft_translation
 
     from src.utils.unified_logger import get_logger, LogType
