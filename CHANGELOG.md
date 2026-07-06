@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.0-beta.12 - 2026-07-06
+
+### Fixed
+
+- **Senior Editor Internal Monologue Pronoun Bleed Protection**: Updated Step 2 in `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) to explicitly protect internal monologue, character thoughts (e.g. `"Liệu em có thắng..."`), and 1st-person POV self-references from being falsely flagged as pronoun bleed errors by the Senior Editor critic.
+
 ## 1.15.0-beta.11 - 2026-07-06
 
 ### Fixed

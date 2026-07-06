@@ -1328,7 +1328,8 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
    - Flag ANY omitted sentence, dropped phrase, or summarized paragraph.
 
 2. DIALOGUE VS NARRATION PRONOUN ISOLATION:
-   - Check whether dialogue-specific self-references or intimate pronouns (e.g. 'em', 'chú', 'con', 'tới', 'tớ') have improperly leaked into third-person non-dialogue story narration outside quotes.
+   - Check whether dialogue-specific self-references or intimate pronouns (e.g. 'em', 'chú', 'con', 'tới', 'tớ') have improperly leaked into third-person objective story narration outside quotes.
+   - DO NOT flag internal monologue, character thoughts (e.g. "Liệu em có thắng...", "Tớ nghĩ..."), or 1st-person POV self-references as pronoun bleed errors. Intimate self-references in internal monologue and character thoughts are completely natural and valid.
 
 3. GENDER & CHARACTER LORE ALIGNMENT:
    - Cross-check pronouns against the ACTIVE NOVEL LORE and custom instructions.
