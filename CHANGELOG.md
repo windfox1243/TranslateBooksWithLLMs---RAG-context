@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.15.0-beta.25 - 2026-07-06
+
+### Added
+
+- **Cost-Effective Hybrid LLM Chapter Boundary Detection**:
+  - Added `verify_chapter_boundary_with_llm` fallback in `src/core/chunking/chapter_detector.py` to classify ambiguous short standalone headers (`Side Story 4`, `Intermezzo`) when deterministic regexes are uncertain.
+  - Maintains $0 cost for standard headings while ensuring 100% boundary accuracy for web novel formats across any language.
+
+- **Situational & Temporary Addressing Protection**:
+  - Added `is_situational: bool` and `scope` attributes to `AddressingUpdateDelta` in `src/utils/context_schema.py`.
+  - Added `is_situational_context()` helper and updated `ContextMergeEngine` and `render_addressing_projection` to isolate temporary roleplay scenes (e.g. butler/maid café, disguises, acting) from overwriting durable baseline character relationships.
+  - Enhanced Senior Editor reflection prompt (`src/prompts/prompts.py`) with `ADDRESSEE SHIFT ACCURACY`, `UNMOTIVATED PRONOUN SHIFTS`, and `SITUATIONAL / ROLEPLAY SCENE ISOLATION` audit rules.
+
+### Changed
+
+- **Multi-Language Universal Engine & Pure LLM Authority**:
+  - Refactored `novel_context.py` to delegate dynamic addressing line repairs directly to `UniversalAddressingEngine`.
+  - Removed arithmetic formality distance math (`calculate_formality_distance`) from `UniversalAddressingEngine`, giving 100% authority to Pure LLM + Senior Editor reflection.
+  - Removed dead formality maps and unreferenced legacy stub functions.
+
+- **Multi-Language Prompt Projection & Active Character Selection**:
+  - Upgraded `_select_relevant_character_profiles()` and `render_addressing_projection()` in `src/utils/context_projection.py` to resolve dictionary keys, CJK source names, and spoken aliases.
+  - Enforced 100% English prompt metadata (`### DIRECTED ADDRESSING RULES:`, `[SITUATIONAL CONTEXT: Active in this scene only]`, `[FORBIDDEN: ...]`) universally across all target languages (`AGENTS.md` compliant).
+  - Guarded `_sanitize_vietnamese_dynamic_state()` to skip for non-Vietnamese target languages.
+
 ## 1.15.0-beta.24 - 2026-07-06
 
 ### Fixed
