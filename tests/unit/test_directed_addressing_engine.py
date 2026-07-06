@@ -189,11 +189,17 @@ def test_context_projection():
                 register="intimate",
             )
 
-            prompt_str = render_addressing_projection(tx_id, db=db)
-            assert "DIRECTED ADDRESSING RULES" in prompt_str
-            assert "**Hoàng** khi nói với **Mai**" in prompt_str
-            assert "Tự xưng là 'anh'" in prompt_str
-            assert "gọi đối phương là 'em'" in prompt_str
+            prompt_str_vi = render_addressing_projection(tx_id, db=db, target_language="vi")
+            assert "DIRECTED ADDRESSING RULES" in prompt_str_vi
+            assert "**Hoàng** khi nói với **Mai**" in prompt_str_vi
+            assert "Tự xưng là 'anh'" in prompt_str_vi
+            assert "gọi đối phương là 'em'" in prompt_str_vi
+
+            prompt_str_en = render_addressing_projection(tx_id, db=db, target_language="en")
+            assert "DIRECTED ADDRESSING RULES" in prompt_str_en
+            assert "**Hoàng** addressing **Mai**" in prompt_str_en
+            assert "Self-reference as 'anh'" in prompt_str_en
+            assert "address target as 'em'" in prompt_str_en
 
             markdown_str = render_addressing_markdown(tx_id, db=db)
             assert "| Hoàng | Mai | anh | em |" in markdown_str
