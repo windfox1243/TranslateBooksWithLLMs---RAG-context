@@ -26,21 +26,23 @@ def get_placeholder_example(
     Returns:
         Tuple of (example_dict, actual_source_lang, actual_target_lang).
     """
-    example = get_example_for_pair(source_lang, target_lang)
-    return example, source_lang, target_lang
+    src = source_lang or "english"
+    tgt = target_lang or "english"
+    example = get_example_for_pair(src, tgt)
+    return example, src, tgt
 
 
 def get_subtitle_example(target_lang: str) -> str:
     """Get subtitle format example for a target language."""
     return SUBTITLE_EXAMPLES.get(
-        target_lang.lower(),
+        (target_lang or "").lower(),
         "[1]First translated line\n[2]Second translated line"
     )
 
 
 def get_output_format_example(target_lang: str, has_placeholders: bool = True) -> str:
     """Get output format example for a target language."""
-    lang_key = target_lang.lower()
+    lang_key = (target_lang or "").lower()
     mode_key = "standard" if has_placeholders else "plain"
 
     if lang_key in OUTPUT_FORMAT_EXAMPLES:

@@ -161,11 +161,16 @@ def test_extract_term_replacements_from_critique():
     1. **Global Replace:** Change all instances of "Học viện Đào tạo Mã nương Nhật Bản" to **"Học viện Tracen"** to maintain natural register.
     2. **Consistency:** Replace "Tracen Academy" with "Học viện Tracen".
     3. **Term Fix:** Change "Mã nương" -> "Umamusume".
+    4. **Dialogue Line Fix:** Change "huh!? you're double trigger-san!?" -> "hả!? cậu là double trigger-san sao!?".
+    5. **Dialogue Interjection:** Replace "eh? u-um... is that a compliment?" with "hả? ừ-ừm... đó là một lời khen sao?".
     """
     extracted = extract_term_replacements_from_critique(sample_critique)
     assert ("Học viện Đào tạo Mã nương Nhật Bản", "Học viện Tracen") in extracted
     assert ("Tracen Academy", "Học viện Tracen") in extracted
     assert ("Mã nương", "Umamusume") in extracted
+    # Full dialogue quotes and exclamations with punctuation must be rejected
+    assert ("huh!? you're double trigger-san!?", "hả!? cậu là double trigger-san sao!?") not in extracted
+    assert ("eh? u-um... is that a compliment?", "hả? ừ-ừm... đó là một lời khen sao?") not in extracted
 
 
 @pytest.mark.asyncio

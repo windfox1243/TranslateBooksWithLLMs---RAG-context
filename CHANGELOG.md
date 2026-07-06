@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.15.0-beta.24 - 2026-07-06
+
+### Fixed
+
+- **Senior Editor Glossary Term Validation & Sentence Filtering**:
+  - Added `_is_valid_glossary_term()` validation in `src/core/translator.py` and `src/utils/novel_context.py`.
+  - Filters out full dialogue line replacements, conversational exclamations, and sentences containing dialogue punctuation (`?`, `!`, `!?`, `...`, `…`, `;`, `\n`) from term extraction.
+  - Prevents full dialogue quotes from being registered as global glossary terms in `[GLOSSARY]`.
+  - Fixed `None` handling for `target_language` and `source_language` across prompt generation helpers (`src/prompts/prompts.py`, `src/prompts/examples/helpers.py`, `src/prompts/examples/placeholder_examples.py`).
+
 ## 1.15.0-beta.23 - 2026-07-06
 
 ### Fixed

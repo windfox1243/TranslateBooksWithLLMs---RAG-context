@@ -1011,6 +1011,28 @@ def format_critique_tldr(critique_text: str, max_bullets: int = 3, max_len: int 
     return " | ".join(summaries)
 
 
+def _is_valid_glossary_term(term: str) -> bool:
+    """Check if an extracted string is a valid glossary term candidate and not a full sentence or dialogue quote."""
+    if not term:
+        return False
+    term_str = term.strip()
+    if not (1 <= len(term_str) <= 60):
+        return False
+    # Reject dialogue/sentence punctuation and control characters
+    if any(char in term_str for char in ['?', '!', '…', '\n', '\r', '\t', ';']):
+        return False
+    if '...' in term_str:
+        return False
+    words = term_str.split()
+    # Reject sentences ending with a period/comma if multi-word
+    if (term_str.endswith('.') or term_str.endswith(',')) and len(words) > 2:
+        return False
+    # Reject multi-word text containing sentence punctuation like period or comma
+    if len(words) > 3 and (term_str.count(',') > 0 or term_str.count('.') > 0):
+        return False
+    return True
+
+
 def extract_term_replacements_from_critique(critique: str) -> List[Tuple[str, str]]:
     """
     Extract term replacement pairs ordered by Senior Editor critique text.
@@ -1036,7 +1058,7 @@ def extract_term_replacements_from_critique(critique: str) -> List[Tuple[str, st
             src_term = match.group(1).strip()
             tgt_term = match.group(2).strip()
             if src_term and tgt_term and src_term != tgt_term:
-                if len(src_term) <= 80 and len(tgt_term) <= 80:
+                if _is_valid_glossary_term(src_term) and _is_valid_glossary_term(tgt_term):
                     results.append((src_term, tgt_term))
 
     deduped: List[Tuple[str, str]] = []

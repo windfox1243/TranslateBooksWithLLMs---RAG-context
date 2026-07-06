@@ -7195,7 +7195,14 @@ class NovelContextSession:
         """Register term replacements ordered by Senior Editor critique into global lore & glossary."""
         if not term_pairs:
             return []
-        bullet_lines = [f"- {src}: {tgt}" for src, tgt in term_pairs if src and tgt]
+        from src.core.translator import _is_valid_glossary_term
+        valid_pairs = [
+            (src, tgt) for src, tgt in term_pairs
+            if src and tgt and _is_valid_glossary_term(src) and _is_valid_glossary_term(tgt)
+        ]
+        if not valid_pairs:
+            return []
+        bullet_lines = [f"- {src}: {tgt}" for src, tgt in valid_pairs]
         new_glossary = "\n".join(bullet_lines)
         self.global_lore, change_logs = merge_new_lore(
             global_lore=self.global_lore,
@@ -7205,9 +7212,8 @@ class NovelContextSession:
         )
         if "glossary_terms" not in self.prompt_options or not isinstance(self.prompt_options.get("glossary_terms"), dict):
             self.prompt_options["glossary_terms"] = {}
-        for src, tgt in term_pairs:
-            if src and tgt:
-                self.prompt_options["glossary_terms"][src] = tgt
+        for src, tgt in valid_pairs:
+            self.prompt_options["glossary_terms"][src] = tgt
 
         self.save()
         if self.log_callback and change_logs:
