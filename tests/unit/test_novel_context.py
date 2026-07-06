@@ -5579,7 +5579,7 @@ def test_senior_editor_reflection_prompt_includes_explicit_source_text_primacy()
     assert "Spe-chan" in prompt_pair_vi.system
     assert "replacing \"Spe-chan\" with \"Special\" or \"Maruzensky-chan\" with \"Maru-senpai\" is strictly prohibited" in prompt_pair_vi.system
     assert "Do NOT flag internal monologue, character thoughts" in prompt_pair_vi.system
-    assert "In Vietnamese, 'mình' is often the most natural choice for internal self-thought" in prompt_pair_vi.system
+    assert "In Vietnamese internal monologue, 'mình'/'tôi' are standard for self-reflection, while intimate address pairs" in prompt_pair_vi.system
     assert "Explicit source nicknames like 'Spe-chan' take 100% priority over lore entries like 'Special'" in prompt_pair_vi.user
 
     prompt_pair_ja = generate_chunk_reflection_prompt(

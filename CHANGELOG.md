@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.0-beta.15 - 2026-07-06
+
+### Fixed
+
+- **Internal Monologue & Emotional Mental Thought Guidance**: Refined `monologue_guidance` in `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) to explicitly distinguish standard self-reflection (`mình` / `tôi`) from emotional mental thoughts directed at a character (e.g. `"Em yêu anh..."`, `"Tớ nhớ cậu..."`), ensuring intimate address pairs in emotional thoughts/monologue are never falsely flagged as pronoun bleed.
+
 ## 1.15.0-beta.14 - 2026-07-06
 
 ### Fixed

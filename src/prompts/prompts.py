@@ -1324,8 +1324,8 @@ def generate_chunk_reflection_prompt(
         if is_vi else " (e.g. dialogue-specific intimate pronouns or informal vocatives)"
     )
     monologue_guidance = (
-        ' (e.g. "Liệu mình có thắng...", "Tớ nghĩ..."). In Vietnamese, \'mình\' is often the most natural choice for internal self-thought.'
-        if is_vi else " or 1st-person POV self-references."
+        ' (e.g. "Liệu mình/tôi có thắng...", or emotional mental thoughts addressing someone internally like "Em yêu anh..."). In Vietnamese internal monologue, \'mình\'/\'tôi\' are standard for self-reflection, while intimate address pairs (\'em-anh\', \'tớ-cậu\') are completely valid for emotional thoughts directed at a character.'
+        if is_vi else " or 1st-person POV self-references/emotional mental thoughts."
     )
     gender_examples = (
         " (e.g., using male pronouns 'anh' for a female character, or incorrect seniority/kinship terms)"
