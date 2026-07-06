@@ -2500,6 +2500,38 @@ def test_source_identity_links_direct_addressed_title_to_named_responder():
     )
 
 
+def test_source_identity_link_proof_status_accepts_title_name_aliases():
+    from src.utils.novel_context import _source_identity_link_proof_status
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Yahoi Akikawa: Female, director of Tracen Academy.\n"
+        "- Toujou: Female, trainer.\n"
+        "- Tomio Momozawa: Male, trainer.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    source = "The scene takes place in the academy."
+
+    proved1, reason1 = _source_identity_link_proof_status(source, lore, "", "director akikawa yahoi", "Yahoi Akikawa")
+    assert proved1 is True
+    assert "alias explicitly contains the target character's name" in reason1
+
+    proved2, reason2 = _source_identity_link_proof_status(source, lore, "", "trainer toujou", "Toujou")
+    assert proved2 is True
+    assert "alias explicitly contains the target character's name" in reason2
+
+    proved3, reason3 = _source_identity_link_proof_status(source, lore, "", "momozawa trainer", "Tomio Momozawa")
+    assert proved3 is True
+    assert "alias explicitly contains the target character's name" in reason3
+
+    # Generic title without name still requires source proof
+    proved4, reason4 = _source_identity_link_proof_status(source, lore, "", "trainer", "Toujou")
+    assert proved4 is False
+    assert "source chunk does not directly prove" in reason4
+
+
+
 def test_explicit_identity_link_merges_rank_entry_and_rewrites_relationships():
     from src.utils.novel_context import build_novel_context
 
