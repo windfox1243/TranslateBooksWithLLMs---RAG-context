@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.0-beta.10 - 2026-07-06
+
+### Fixed
+
+- **Senior Editor Explicit Spoken Name & Nickname Primacy**: Updated Rule 0 and Step 3 in `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) to explicitly prohibit the 2-pass Senior Editor critic from replacing explicit source text names, nicknames, or honorific suffixes (e.g. `"Maruzensky-chan"`) with default background lore relationship nicknames (e.g. `"Maru-senpai"`). Ensures spoken source text names take 100% absolute primacy over background lore defaults.
+
 ## 1.15.0-beta.9 - 2026-07-06
 
 ### Fixed
