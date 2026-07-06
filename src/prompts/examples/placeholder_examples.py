@@ -252,8 +252,8 @@ def get_example_for_pair(source_lang: str, target_lang: str) -> Dict[str, str]:
     Returns:
         Dict with "source", "correct", "wrong" keys
     """
-    source_key = source_lang.lower()
-    target_key = target_lang.lower()
+    source_key = (source_lang or "").lower()
+    target_key = (target_lang or "").lower()
 
     # Get source language text (fallback to English)
     source_data = TRANSLATIONS.get(source_key, TRANSLATIONS[DEFAULT_LANGUAGE])

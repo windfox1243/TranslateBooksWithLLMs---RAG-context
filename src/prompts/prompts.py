@@ -356,6 +356,10 @@ def generate_translation_prompt(
     Returns:
         PromptPair: A named tuple with 'system' and 'user' prompts
     """
+    # Default None languages to empty strings
+    source_language = source_language or ""
+    target_language = target_language or ""
+
     # Initialize prompt_options if not provided
     if prompt_options is None:
         prompt_options = {}
@@ -377,7 +381,7 @@ def generate_translation_prompt(
     }
 
     # Try to match target language to get appropriate example
-    target_lang_lower = target_language.lower()
+    target_lang_lower = (target_language or "").lower()
     example_format_text = example_texts.get(target_lang_lower, "Your translated text here")
 
     # Build the output format section outside the f-string to avoid backslash issues in Python 3.11
@@ -642,6 +646,8 @@ def generate_refinement_prompt(
     Returns:
         PromptPair: A named tuple with 'system' and 'user' prompts
     """
+    target_language = target_language or ""
+
     if prompt_options is None:
         prompt_options = {}
 
@@ -832,6 +838,8 @@ def generate_subtitle_refinement_block_prompt(
     Returns:
         PromptPair: A named tuple with 'system' and 'user' prompts
     """
+    target_language = target_language or ""
+
     if prompt_options is None:
         prompt_options = {}
 
@@ -987,6 +995,9 @@ def generate_subtitle_block_prompt(
     Returns:
         PromptPair: A named tuple with 'system' and 'user' prompts
     """
+    source_language = source_language or ""
+    target_language = target_language or ""
+
     if prompt_options is None:
         prompt_options = {}
 
