@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.15.0-beta.13 - 2026-07-06
+
+### Fixed
+
+- **Senior Editor Misflag Audit & Vietnamese Internal Monologue Guidance ('mình')**: Refined `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) across all 4 audit steps:
+  - **Step 1**: Excluded natural target localization and smooth sentence flow from being misflagged as dropped text.
+  - **Step 2**: Recommended `'mình'` as the preferred natural choice for Vietnamese internal monologue self-reflection, preventing false pronoun bleed flags.
+  - **Step 4**: Protected intentional emotional/attitude shifts in dialogue from being misflagged as register errors.
+
 ## 1.15.0-beta.12 - 2026-07-06
 
 ### Fixed
