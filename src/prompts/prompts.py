@@ -1418,13 +1418,15 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
 4. REGISTER HARMONY & NATURALNESS:
    - Check for unnatural, unmotivated register shifts or robotic literal phrasing.
    - Note: Do NOT flag intentional character emotional shifts (e.g. a character becoming angry, casual, or formal during a scene) or creative literary word choices as register errors.
+   - PROTECT DIALOGUE STUTTERING & DISFLUENCY: Do NOT flag stuttering, hesitations, or vocal quirks present in the source dialogue (e.g. "Wh-what..." -> "Gì-gì...", "S-sorry..." -> "X-xin lỗi...") as register flaws or unnatural phrasing. Erasing source stuttering to make dialogue sound overly smooth or polished is an AUDIT BUG.
 
 STRICT OUTPUT CONTRACT:
 - Output NO_ISSUES ONLY if the draft is 100% flawless across all 4 audit steps.
 - If ANY flaw, line drop, pronoun bleed, gender error, or register inconsistency exists, list concise, actionable bullet points explaining what MUST be repaired. Do NOT output NO_ISSUES if there is any defect.
 - DO NOT list bullet points or commentary for sections or rules that are correct or passed validation. Only list actual actionable defects that require fixing. If all audit steps pass with no repair needed, output NO_ISSUES.
 - DO NOT flag explicit spoken names or nicknames from source dialogue as lore violations (e.g. replacing "Spe-chan" with "Special" or "Maruzensky-chan" with "Maru-senpai" is strictly prohibited).
-- DO NOT flag internal monologue or 1st-person character thoughts as pronoun bleed."""
+- DO NOT flag internal monologue or 1st-person character thoughts as pronoun bleed.
+- DO NOT flag stuttering, hesitations, or emotional vocal quirks present in source dialogue as register flaws."""
 
     user_sections = [f"# RAW SOURCE CHUNK:\n{source_chunk.strip()}"]
     if custom_instructions and custom_instructions.strip():
