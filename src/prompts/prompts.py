@@ -424,7 +424,7 @@ def generate_translation_prompt(
 Translate {source_language} to {target_language}. Output only the translation.
 
 **PRIORITY ORDER:**
-1. Preserve exact names
+1. Preserve exact names and concise proper nouns (keep concise academy/school/institution names intact rather than over-expanding them into long, wordy descriptive paraphrases).
 2. Match original tone and formality
 3. Use natural {target_language} phrasing - never word-for-word
 4. Fix grammar/spelling errors in output
@@ -1310,6 +1310,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "pronoun_examples": " (e.g. 'em', 'chú', 'con', 'tới', 'tớ')",
             "monologue_guidance": ' (e.g. "Liệu mình/tôi có thắng...", or emotional mental thoughts addressing someone internally like "Em yêu anh..."). In Vietnamese internal monologue, \'mình\'/\'tôi\' are standard for self-reflection, while intimate address pairs (\'em-anh\', \'tớ-cậu\') are completely valid for emotional thoughts directed at a character.',
             "gender_examples": " (e.g., using male pronouns 'anh' for a female character, or incorrect seniority/kinship terms)",
+            "proper_name_example": ' (e.g., preserve concise proper names like "Học viện Tracen", do NOT over-expand into long descriptive phrases like "Học viện Đào tạo Mã nương Nhật Bản")',
         }
     elif "japanese" in lang_lower or lang_lower == "ja":
         return {
@@ -1317,6 +1318,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "pronoun_examples": " (e.g. dialogue first-person 'ore/boku/watashi' or informal address 'omae/kisama')",
             "monologue_guidance": ' (e.g. internal monologue using natural 1st-person self-thought like jibun/boku/watashi). Do NOT flag internal thoughts as pronoun bleed.',
             "gender_examples": " (e.g., using male pronouns/honorifics for a female character like '-kun' when lore specifies '-chan' or female register)",
+            "proper_name_example": ' (e.g., preserve concise proper names like "トレセン学園", do NOT over-expand into long descriptive phrases)',
         }
     elif "chinese" in lang_lower or lang_lower in ("zh", "zh-cn", "zh-tw"):
         return {
@@ -1324,6 +1326,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "pronoun_examples": " (e.g. dialogue kinship/honorific terms like '哥', '姐', '少爷', '前辈')",
             "monologue_guidance": ' (e.g. internal monologue thoughts using natural self-reference like 我/自己). Do NOT flag internal thoughts as pronoun bleed.',
             "gender_examples": " (e.g., mixing up gendered pronouns 他/她/它 for female/male characters according to lore)",
+            "proper_name_example": ' (e.g., preserve concise proper names like "特雷森学园", do NOT over-expand into long descriptive phrases)',
         }
     elif "korean" in lang_lower or lang_lower == "ko":
         return {
@@ -1331,6 +1334,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "pronoun_examples": " (e.g. dialogue seniority/honorific terms like '오빠', '언니', '형', '누나', '선배님')",
             "monologue_guidance": ' (e.g. internal monologue thoughts in non-polite self-thought voice). Do NOT flag internal thoughts as pronoun bleed.',
             "gender_examples": " (e.g., using male sibling terms '형/오빠' for female characters or incorrect honorific levels)",
+            "proper_name_example": ' (e.g., preserve concise proper names like "트레센 학원", do NOT over-expand into long descriptive phrases)',
         }
     elif "french" in lang_lower or lang_lower == "fr":
         return {
@@ -1338,6 +1342,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "pronoun_examples": " (e.g. informal 'tu' vs formal 'vous' dialogue register)",
             "monologue_guidance": " or 1st-person POV self-references/internal thoughts.",
             "gender_examples": " (e.g., incorrect grammatical gender agreement for adjectives/past participles or masculine 'il' for a female character)",
+            "proper_name_example": ' (e.g., preserve concise proper names, do NOT over-expand into long descriptive paraphrases)',
         }
     elif "spanish" in lang_lower or lang_lower == "es":
         return {
@@ -1345,6 +1350,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "pronoun_examples": " (e.g. informal 'tú'/'vos' vs formal 'usted' dialogue register)",
             "monologue_guidance": " or 1st-person POV self-references/internal thoughts.",
             "gender_examples": " (e.g., incorrect grammatical gender agreement for adjectives or masculine 'él' for a female character)",
+            "proper_name_example": ' (e.g., preserve concise proper names, do NOT over-expand into long descriptive paraphrases)',
         }
     elif "german" in lang_lower or lang_lower == "de":
         return {
@@ -1352,6 +1358,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "pronoun_examples": " (e.g. informal 'du' vs formal 'Sie' dialogue register)",
             "monologue_guidance": " or 1st-person POV self-references/internal thoughts.",
             "gender_examples": " (e.g., using masculine 'er' for a female character or incorrect grammatical gender agreement)",
+            "proper_name_example": ' (e.g., preserve concise proper names, do NOT over-expand into long descriptive paraphrases)',
         }
     else:
         return {
@@ -1359,6 +1366,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "pronoun_examples": " (e.g. dialogue-specific intimate pronouns or informal vocatives)",
             "monologue_guidance": " or 1st-person POV self-references/emotional mental thoughts.",
             "gender_examples": " (e.g., using male pronouns/titles for a female character or vice versa)",
+            "proper_name_example": ' (e.g., preserve concise academy/school/institution names intact rather than over-expanding into long descriptive paraphrases)',
         }
 
 
@@ -1380,6 +1388,7 @@ def generate_chunk_reflection_prompt(
     pronoun_examples = guidance["pronoun_examples"]
     monologue_guidance = guidance["monologue_guidance"]
     gender_examples = guidance["gender_examples"]
+    proper_name_example = guidance["proper_name_example"]
 
     system_prompt = f"""You are an uncompromising, ultra-rigorous Senior Literary Translation Editor specializing in {target_lang}.
 Your task is to perform an adversarial quality review of a draft translation against its original source text and active novel lore.
@@ -1387,6 +1396,7 @@ Your task is to perform an adversarial quality review of a draft translation aga
 RIGOROUS 4-STEP AUDIT PROCEDURE:
 0. EXPLICIT SOURCE INTENT & TARGET LOCALIZATION (CRITICAL RULE):
    - Respect explicit character names, nicknames, and direct address terms present in the source text dialogue or narration.
+   - PRESERVE CONCISE PROPER NAMES & TITLES: Flag and forbid over-expanding concise proper names, institution titles, or academy names in the source into long, bloated descriptive paraphrases{proper_name_example}. Enforce concise, natural proper name localization in {target_lang}.
    - When the source text explicitly uses a specific spoken name, nickname, or honorific suffix (e.g. "Spe-chan", "Maruzensky-chan", "Maru-chan"), NEVER flag or force changing it to match a default background lore nickname/address form (e.g. "Special", "Maru-senpai"). Background lore addressing rules apply ONLY when the source text uses generic pronouns, unspecific address forms, or missing titles. Spoken source nicknames and honorifics take 100% absolute primacy over background lore defaults.
    - ALWAYS localize terms using natural {target_lang} syntax, word order, and honorific rules{loc_example}.
    - NEVER let background lore defaults erase an explicit character name, but DO allow natural grammatical localization of names, titles, and honorifics into standard {target_lang} phrasing.

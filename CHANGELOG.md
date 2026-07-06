@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.15.0-beta.18 - 2026-07-06
+
+### Fixed
+
+- **Concise Proper Name & Academy Title Preservation**:
+  - Updated `generate_prompt()` (`src/prompts/prompts.py`) under `TRANSLATION PRINCIPLES` to instruct Pass 1 drafting LLMs to preserve concise proper names (e.g. `"Học viện Tracen"`) and forbid over-expanding them into long descriptive paraphrases (e.g. *"Học viện Đào tạo Mã nương Nhật Bản"*).
+  - Updated `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) under Step 0 (`EXPLICIT SOURCE INTENT & TARGET LOCALIZATION`) to explicitly audit proper names and academy titles for over-expansion, forcing Pass 2 Senior Editor to flag over-expanded terms as actionable audit defects and auto-repair them back to concise proper nouns.
+
 ## 1.15.0-beta.17 - 2026-07-06
 
 ### Fixed
