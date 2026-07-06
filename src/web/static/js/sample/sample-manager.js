@@ -940,7 +940,6 @@ function buildRunPayload({ defer = false } = {}) {
         text_cleanup: $('textCleanup')?.checked || false,
         novel_context_file: ($('novelContextSelect')?.value || '').trim(),
         reflection_mode: $('enableReflection')?.checked || false,
-        use_llm_sanitizer: $('useLlmSanitizer')?.checked || false,
     };
 
     const payload = {

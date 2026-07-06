@@ -1,7 +1,6 @@
 {
   "ui_language_label": "Interface language",
   "ui_language_help": "Native names are never translated — pick the language you read most comfortably.",
-
   "provider_and_defaults": "Provider & Defaults",
   "ai_provider": "AI Provider",
   "api_endpoint": "API Endpoint",
@@ -22,7 +21,6 @@
   "key_using_env_multi_with_masked": "Using {{count}} .env keys (last: {{masked}})",
   "key_rotation_count": "{{count}} key rotated",
   "key_rotation_count_other": "{{count}} keys rotated",
-
   "api_key_rotation_tip": "Tip: enter several keys separated by commas to enable automatic rotation on rate-limit (HTTP 429) — useful to chain free-tier accounts.",
   "api_key_placeholder_gemini": "Enter Gemini API key",
   "api_key_placeholder_openai": "Enter OpenAI API key",
@@ -31,38 +29,29 @@
   "api_key_placeholder_deepseek": "Enter DeepSeek API key",
   "api_key_placeholder_poe": "Get key at poe.com/api_key",
   "api_key_placeholder_nim": "Get key at build.nvidia.com",
-
   "refresh_models_title": "Refresh model list",
   "refresh_list_title": "Refresh list",
   "open_folder_title": "Open folder",
   "select_none": "None",
-
   "openai_local_servers_hint": "Local servers: llama.cpp (8080), LM Studio (1234), vLLM, etc.",
-
   "naming_convention_label": "Naming Convention",
   "naming_convention_input_title": "Use {originalName}, {targetLang}, {sourceLang}, {model}, {date}, {datetime}, {ext} as placeholders",
   "naming_convention_help": "Placeholders: {originalName}, {targetLang}, {sourceLang}, {model}, {date}, {datetime}, {ext}<br>Example: {originalName} ({targetLang}) ({model})_{date}.{ext}",
-
   "disable_auto_pause_title": "Don't auto-pause on rate limit (HTTP 429)",
   "disable_auto_pause_description": "By default, the translation pauses after the provider rate-limits and asks you to resume manually. Enable this to keep the translation running: it will wait for <code>Retry-After</code> seconds (or 60s default) and auto-resume from the last checkpoint. Useful for long novels on free-tier APIs. Click \"Interrupt\" anytime to cancel the auto-resume.",
-
   "parallel_workers_label": "Parallel requests",
   "parallel_workers_input_title": "Number of chunks translated at the same time",
   "parallel_workers_help": "Translate several chunks at once on cloud providers that allow concurrent requests. 1 keeps the original sequential behavior. Higher values are faster but may hit rate limits, and disable cross-chunk context for consistency. Ignored for local providers (Ollama).",
-
   "post_processing": "Post-Processing",
   "translation_options": "Translation Options",
   "enable_chunk_reflection_label": "Enable 2-Pass Chunk Reflection (Self-Correction)",
   "enable_chunk_reflection_help": "Runs a 2-pass Senior Translation Editor reflection pass after each chunk to fix line omissions, dialogue pronoun leaks, and register mismatches before saving.",
-  "enable_llm_context_sanitizer_label": "Enable LLM Context Sanitizer",
-  "enable_llm_context_sanitizer_help": "Uses LLMs to normalize character addressing forms and social hierarchies against character profiles.",
   "system_prompts": "System Prompts",
   "ocr_cleanup": "OCR Cleanup",
   "literary_refinement": "Literary Refinement",
   "save_settings": "Save Settings to .env",
   "save_settings_help": "Saves API keys, endpoints, naming convention, and current model as default values in the <code>.env</code> file. Changes in this section are <strong>not</strong> auto-saved.",
   "settings_summary_placeholder": "—",
-
   "option_bilingual_title": "Bilingual Output",
   "option_bilingual_description": "Include original text alongside the translation. Each chunk displays the source text followed by its translation, ideal for language learning or side-by-side comparison.",
   "option_plain_text_title": "Plain Text Mode (EPUB / DOCX)",
@@ -71,16 +60,13 @@
   "option_chapter_mode_description": "Uses detected chapter headings as stable translation boundaries. A complete chapter is sent in one request when it fits the token budget; oversized chapters are split only inside that chapter. Short chapters are not merged together, so this can create more requests than normal chunking while keeping translation and refinement aligned. Subtitle files keep their normal cue-based grouping.",
   "option_text_cleanup_title": "Text Cleanup (OCR Correction)",
   "option_text_cleanup_description": "For poorly formatted or OCR-scanned texts. Instructs the LLM to fix: broken line breaks, double spaces, punctuation errors, and merge incorrectly split paragraphs.",
-
   "glossary_label": "Glossary",
   "glossary_manage_title": "Manage glossaries",
   "glossary_help": "Inject a curated source-to-target term list into every chunk's prompt to keep entity translations consistent. Click <strong>Manage</strong> to create, edit or auto-extract terms.",
-
   "custom_instructions_label": "Custom Instructions",
   "custom_instructions_help": "Select custom instructions from the <code>Custom_Instructions/</code> folder. Use <code>.yaml</code> files with <code>translation:</code> and/or <code>refinement:</code> keys to scope a preset per phase. Legacy <code>.txt</code> files still work and apply to both phases.",
   "custom_instructions_load_failed": "Failed to open Custom_Instructions folder",
   "default_config_load_failed": "Failed to load default configuration",
-
   "notifications": "Notifications",
   "notifications_enable": "Enable webhook notifications",
   "notifications_url": "Webhook URL",
@@ -94,7 +80,6 @@
   "notifications_test": "Send test notification",
   "notifications_test_sent": "Test {{event}} notification sent successfully.",
   "notifications_test_failed": "Test failed: {{error}}",
-
   "notifications_intro": "Get pinged on your phone, Discord channel, or any HTTP endpoint when a translation reaches a terminal state. Useful for long-running jobs with local models. Compatible with <strong>ntfy</strong>, <strong>gotify</strong>, <strong>Discord</strong>, <strong>Slack</strong>, <strong>Healthchecks.io</strong>, or any custom webhook. See <a href=\"https://github.com/hydropix/TranslateBooksWithLLMs/blob/main/docs/NOTIFICATIONS.md\" target=\"_blank\" rel=\"noopener\" style=\"color: var(--primary-light);\">docs/NOTIFICATIONS.md</a> for the full reference.",
   "notifications_presets_label": "Quick presets",
   "notifications_presets_help": "Pick a service to pre-fill URL and payload, then edit the values to match your account.",
@@ -117,14 +102,12 @@
   "notifications_save_and_test_label": "Save and test",
   "notifications_save_and_test_help": "Click <strong>Save</strong> first, then <strong>Send test</strong>. The test uses the configuration currently on disk.",
   "notifications_send_test": "Send test",
-
   "preset_ntfy_note": "Replace the topic with something unique. Install the ntfy app and subscribe to the same topic to receive push notifications.",
   "preset_gotify_note": "Replace the host and token with your gotify app token.",
   "preset_discord_note": "Server Settings → Integrations → Webhooks → New Webhook. Paste the webhook URL above.",
   "preset_slack_note": "Create an Incoming Webhook in your Slack workspace and paste its URL above.",
   "preset_healthchecks_note": "Healthchecks just needs a ping. The {event} suffix lets it differentiate success from failure.",
   "preset_clear_note": "Notifications disabled. Leave the URL empty and click Save to persist.",
-
   "search_providers_placeholder": "Search providers...",
   "search_models_placeholder": "Search models...",
   "search_models_loading": "Loading models...",
@@ -201,7 +184,6 @@
   "llm_with_provider_count_one": "LLM: {{provider}} ({{count}} model)",
   "llm_with_provider_count_other": "LLM: {{provider}} ({{count}} models)",
   "llm_not_connected_title": "LLM not connected - check Settings",
-
   "cost_free_local": "Free (local)",
   "cost_free_local_model": "Free (local model)",
   "cost_estimating": "Estimating cost...",
@@ -231,6 +213,5 @@
   "auto_update_context_label": "Auto-update context file after translating each chunk",
   "bypass_context_gating_label": "Bypass context validation (directly trust LLM gender & corrections)",
   "enable_reflection_label": "Enable 2-pass Reflection & Repair Engine (Senior Editor Quality Review)",
-  "use_llm_sanitizer_label": "Use LLM Context Sanitizer Agent (filters out 1-scene transient NPCs)",
   "novel_context_help": "Keep character genders, forms of address (relationships), and glossaries persistent in a <code>.txt</code> file to improve translation consistency. Note: Auto-update forces sequential translation (1 worker)."
 }

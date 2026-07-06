@@ -456,7 +456,6 @@ export const ResumeManager = {
             // that legacy jobs (whose checkpoint lacks these keys) adopt them.
             const promptOverrides = {
                 reflection_mode: !!(DomHelpers.getElement('enableReflection')?.checked),
-                use_llm_sanitizer: !!(DomHelpers.getElement('useLlmSanitizer')?.checked),
             };
             const merged = overrides ? { ...overrides } : {};
             merged.prompt_options = {

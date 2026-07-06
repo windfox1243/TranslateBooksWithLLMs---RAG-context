@@ -1128,7 +1128,6 @@ def create_config_blueprint(server_session_id=None):
             "ollama_api_endpoint": _config.OLLAMA_API_ENDPOINT or "",
             "openai_api_endpoint": _config.OPENAI_API_ENDPOINT or "",
             "enable_chunk_reflection": str(_config.ENABLE_CHUNK_REFLECTION).lower() == 'true',
-            "use_llm_sanitizer": str(_config.USE_LLM_SANITIZER).lower() == 'true'
         })
 
     return bp

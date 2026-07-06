@@ -5531,25 +5531,6 @@ def _sanitize_vietnamese_dynamic_state(
             dialogue_attribution=dialogue_attribution,
             character_genders=character_genders,
         )
-    if use_llm_sanitizer and llm_client and addressing.strip():
-        try:
-            if log_callback:
-                log_callback("sanitizer_start", "Running LLM Context Sanitizer Agent on addressing forms...")
-            addressing = sanitize_addressing_with_llm(
-                addressing=addressing,
-                character_profiles=character_profiles,
-                target_language=target_language,
-                llm_client=llm_client,
-                log_callback=log_callback,
-            )
-        except Exception as e:
-            if log_callback:
-                log_callback("sanitizer_failed", f"LLM Context Sanitizer failed: {e}")
-    addressing = _repair_vietnamese_addressing_block(
-        addressing,
-        alias_map,
-        character_genders,
-    )
     filtered_addressing = _remove_vietnamese_addressing_mismatches(
         addressing,
         alias_map,

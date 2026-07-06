@@ -508,14 +508,6 @@ export const FormManager = {
                 }
             }
 
-            // Use LLM context sanitizer agent (runtime behavior default)
-            if (typeof config.use_llm_sanitizer === 'boolean') {
-                const useLlmSanitizerCheckbox = DomHelpers.getElement('useLlmSanitizer');
-                if (useLlmSanitizerCheckbox) {
-                    useLlmSanitizerCheckbox.checked = config.use_llm_sanitizer;
-                }
-            }
-
             // Parallel requests default (seeds the input; per-job request overrides it)
             if (config.parallel_translations) {
                 const parallelWorkersInput = DomHelpers.getElement('parallelWorkers');

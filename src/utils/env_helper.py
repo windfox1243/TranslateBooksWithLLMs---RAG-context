@@ -27,7 +27,6 @@ _DEFAULT_COMPACT_ENV_VALUES = {
     "AUTO_ADJUST_CONTEXT": "true",
     "PARALLEL_TRANSLATIONS": "1",
     "ENABLE_CHUNK_REFLECTION": "false",
-    "USE_LLM_SANITIZER": "false",
     "NOVEL_CONTEXT_PROMPT_MAX_TOKENS": "1800",
     "NOVEL_CONTEXT_UPDATE_INTERVAL": "1",
     "NOVEL_CONTEXT_SOURCE_MEMORY_CHARS": "6000",
@@ -62,7 +61,6 @@ _COMPACT_ENV_LAYOUT = [
     "AUTO_ADJUST_CONTEXT",
     "PARALLEL_TRANSLATIONS",
     "ENABLE_CHUNK_REFLECTION",
-    "USE_LLM_SANITIZER",
     "NOVEL_CONTEXT_PROMPT_MAX_TOKENS",
     "NOVEL_CONTEXT_UPDATE_INTERVAL",
     "NOVEL_CONTEXT_SOURCE_MEMORY_CHARS",
@@ -336,6 +334,33 @@ def interactive_env_setup():
 
     except Exception as e:
         print(f"\n❌ Failed to create .env file: {e}\n")
+
+
+def cleanup_legacy_env_flags() -> None:
+    """Automatically detect and remove obsolete environment flags (such as USE_LLM_SANITIZER) from .env files on disk."""
+    legacy_keys = {"USE_LLM_SANITIZER"}
+    config_dir = _get_config_dir()
+    for env_filename in [".env", ".env.example"]:
+        env_path = config_dir / env_filename
+        if env_path.exists():
+            try:
+                content = env_path.read_text(encoding="utf-8")
+                lines = content.splitlines()
+                new_lines = [
+                    line for line in lines
+                    if not any(
+                        line.strip().startswith(key + "=") or line.strip() == key
+                        for key in legacy_keys
+                    )
+                ]
+                if len(new_lines) != len(lines):
+                    env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            except Exception:
+                pass
+
+
+# Auto-run legacy flag cleanup on import/load
+cleanup_legacy_env_flags()
 
 
 if __name__ == '__main__':

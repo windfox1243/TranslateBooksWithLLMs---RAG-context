@@ -1,7 +1,6 @@
 {
   "ui_language_label": "界面语言",
   "ui_language_help": "本地语言名称不会被翻译 —— 请选择您阅读起来最自然的语言。",
-
   "provider_and_defaults": "服务商与默认值",
   "ai_provider": "AI 服务商",
   "api_endpoint": "API 端点",
@@ -22,7 +21,6 @@
   "key_using_env_multi_with_masked": "使用 {{count}} 个 .env 密钥（最后：{{masked}}）",
   "key_rotation_count": "已轮换 {{count}} 个密钥",
   "key_rotation_count_other": "已轮换 {{count}} 个密钥",
-
   "api_key_rotation_tip": "提示：输入多个以逗号分隔的密钥可启用速率限制（HTTP 429）时的自动轮换 —— 方便串联多个免费层级账号。",
   "api_key_placeholder_gemini": "输入 Gemini API 密钥",
   "api_key_placeholder_openai": "输入 OpenAI API 密钥",
@@ -31,38 +29,29 @@
   "api_key_placeholder_deepseek": "输入 DeepSeek API 密钥",
   "api_key_placeholder_poe": "在 poe.com/api_key 获取密钥",
   "api_key_placeholder_nim": "在 build.nvidia.com 获取密钥",
-
   "refresh_models_title": "刷新模型列表",
   "refresh_list_title": "刷新列表",
   "open_folder_title": "打开文件夹",
   "select_none": "无",
-
   "openai_local_servers_hint": "本地服务器：llama.cpp（8080）、LM Studio（1234）、vLLM 等。",
-
   "naming_convention_label": "命名规则",
   "naming_convention_input_title": "可使用 {originalName}、{targetLang}、{sourceLang}、{model}、{date}、{datetime}、{ext} 作为占位符",
   "naming_convention_help": "占位符：{originalName}、{targetLang}、{sourceLang}、{model}、{date}、{datetime}、{ext}<br>示例：{originalName} ({targetLang}) ({model})_{date}.{ext}",
-
   "disable_auto_pause_title": "速率限制（HTTP 429）时不自动暂停",
   "disable_auto_pause_description": "默认情况下，当服务商触发速率限制时翻译会暂停，并要求您手动恢复。启用此选项以让翻译持续运行：它会等待 <code>Retry-After</code> 秒（或默认 60 秒），然后从最后的检查点自动恢复。适合在免费层 API 上跑长篇小说。随时点击\"中断\"可取消自动恢复。",
-
   "parallel_workers_label": "并行请求",
   "parallel_workers_input_title": "同时翻译的文本块数量",
   "parallel_workers_help": "在允许并发请求的云服务商上同时翻译多个文本块。设为 1 时保持原有的顺序处理行为。更高的值速度更快，但可能触发速率限制，并会为保持一致性而禁用跨块上下文。本地服务商（Ollama）会忽略此设置。",
-
   "translation_options": "翻译选项",
   "post_processing": "后处理",
   "enable_chunk_reflection_label": "启用双趟分块反思（自我纠错）",
   "enable_chunk_reflection_help": "在每个文本块翻译后运行资深编辑反思环节，在保存前修正漏译、代词漂移与称谓不匹配。",
-  "enable_llm_context_sanitizer_label": "启用大模型上下文净化器",
-  "enable_llm_context_sanitizer_help": "使用大模型根据角色档案规范化人称称谓与社会关系层级。",
   "system_prompts": "系统提示词",
   "ocr_cleanup": "OCR 清理",
   "literary_refinement": "文学润色",
   "save_settings": "将设置保存到 .env",
   "save_settings_help": "将 API 密钥、端点、命名规则和当前模型作为默认值保存到 <code>.env</code> 文件。本区域中的更改 <strong>不会</strong> 自动保存。",
   "settings_summary_placeholder": "—",
-
   "option_bilingual_title": "双语输出",
   "option_bilingual_description": "在译文旁同时输出原文。每个分段先显示源文本，再显示其译文，非常适合语言学习或并排对照。",
   "option_plain_text_title": "纯文本模式（EPUB / DOCX）",
@@ -71,16 +60,13 @@
   "option_chapter_mode_description": "将检测到的章节标题用作稳定的翻译边界。章节在令牌预算内时会整章一次发送；过长章节只会在该章节内部拆分。短章节不会互相合并，因此请求数可能比普通分块更多，但能保持翻译与润色的分段一致。字幕文件仍使用原有的字幕块分组。",
   "option_text_cleanup_title": "文本清理（OCR 校正）",
   "option_text_cleanup_description": "适用于排版较差或 OCR 扫描的文本。指示 LLM 修复：错断的换行、多余空格、标点错误，并合并被错误拆分的段落。",
-
   "glossary_label": "术语表",
   "glossary_manage_title": "管理术语表",
   "glossary_help": "向每个分段的提示词中注入一份经过整理的源到目标术语列表，使实体翻译保持一致。点击 <strong>管理</strong> 可创建、编辑或自动提取术语。",
-
   "custom_instructions_label": "自定义指令",
   "custom_instructions_help": "从 <code>Custom_Instructions/</code> 文件夹选择自定义指令。使用包含 <code>translation:</code> 和/或 <code>refinement:</code> 键的 <code>.yaml</code> 文件以按阶段限定预设。原有的 <code>.txt</code> 文件仍可使用，并同时应用于两个阶段。",
   "custom_instructions_load_failed": "无法打开 Custom_Instructions 文件夹",
   "default_config_load_failed": "无法加载默认配置",
-
   "notifications": "通知",
   "notifications_enable": "启用 Webhook 通知",
   "notifications_url": "Webhook URL",
@@ -94,7 +80,6 @@
   "notifications_test": "发送测试通知",
   "notifications_test_sent": "已成功发送测试 {{event}} 通知。",
   "notifications_test_failed": "测试失败：{{error}}",
-
   "notifications_intro": "当翻译进入终止状态时，可向您的手机、Discord 频道或任何 HTTP 端点发送通知。适合在本地模型上运行的长任务。兼容 <strong>ntfy</strong>、<strong>gotify</strong>、<strong>Discord</strong>、<strong>Slack</strong>、<strong>Healthchecks.io</strong> 或任何自定义 Webhook。完整参考见 <a href=\"https://github.com/hydropix/TranslateBooksWithLLMs/blob/main/docs/NOTIFICATIONS.md\" target=\"_blank\" rel=\"noopener\" style=\"color: var(--primary-light);\">docs/NOTIFICATIONS.md</a>。",
   "notifications_presets_label": "快速预设",
   "notifications_presets_help": "选择一项服务以预填 URL 和负载，然后编辑各值以匹配您的账号。",
@@ -117,14 +102,12 @@
   "notifications_save_and_test_label": "保存并测试",
   "notifications_save_and_test_help": "请先点击 <strong>保存</strong>，再点击 <strong>发送测试</strong>。测试使用磁盘上当前的配置。",
   "notifications_send_test": "发送测试",
-
   "preset_ntfy_note": "请将主题替换为唯一的名称。安装 ntfy 应用并订阅相同主题即可接收推送通知。",
   "preset_gotify_note": "请将主机和令牌替换为您的 gotify 应用令牌。",
   "preset_discord_note": "服务器设置 → 集成 → Webhooks → 新建 Webhook。将 Webhook URL 粘贴到上方。",
   "preset_slack_note": "在您的 Slack 工作区创建一个 Incoming Webhook，并将其 URL 粘贴到上方。",
   "preset_healthchecks_note": "Healthchecks 只需 ping 一次。{event} 后缀可让其区分成功与失败。",
   "preset_clear_note": "通知已禁用。请留空 URL 并点击保存以持久化。",
-
   "search_providers_placeholder": "搜索服务商...",
   "search_models_placeholder": "搜索模型...",
   "search_models_loading": "正在加载模型...",
@@ -201,7 +184,6 @@
   "llm_with_provider_count_one": "LLM：{{provider}}（{{count}} 个模型）",
   "llm_with_provider_count_other": "LLM：{{provider}}（{{count}} 个模型）",
   "llm_not_connected_title": "LLM 未连接 —— 请检查设置",
-
   "cost_free_local": "免费（本地）",
   "cost_free_local_model": "免费（本地模型）",
   "cost_estimating": "正在估算成本...",
@@ -231,6 +213,5 @@
   "auto_update_context_label": "翻译每个片段后自动更新上下文文件",
   "bypass_context_gating_label": "绕过上下文验证（直接信任 LLM 识别的性别及修正）",
   "enable_reflection_label": "启用双路反思与修复引擎（高级编辑质量审查）",
-  "use_llm_sanitizer_label": "使用 LLM 上下文净化 Agent（过滤单场景路人角色）",
   "novel_context_help": "将角色性别、称呼方式（人物关系）和术语表保存在 <code>.txt</code> 文件中，以提高翻译的一致性。注意：自动更新会强制进行顺序翻译（单线程）。"
 }
