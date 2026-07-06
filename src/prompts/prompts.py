@@ -324,8 +324,8 @@ def generate_translation_prompt(
     context_before: str,
     context_after: str,
     previous_translation_context: str,
-    source_language: str = "English",
-    target_language: str = "English",
+    source_language: Optional[str] = None,
+    target_language: Optional[str] = None,
     translate_tag_in: str = TRANSLATE_TAG_IN,
     translate_tag_out: str = TRANSLATE_TAG_OUT,
     has_placeholders: bool = True,
@@ -515,8 +515,8 @@ NER_TAG_OUT = "</NER_JSON>"
 
 def generate_ner_extraction_prompt(
     text: str,
-    source_language: str = "Chinese",
-    target_language: str = "English",
+    source_language: Optional[str] = None,
+    target_language: Optional[str] = None,
     related_glossary_terms: Optional[Dict[str, str]] = None,
 ) -> PromptPair:
     """
@@ -609,7 +609,7 @@ def generate_refinement_prompt(
     context_before: str = "",
     context_after: str = "",
     previous_refined_context: str = "",
-    target_language: str = "English",
+    target_language: Optional[str] = None,
     translate_tag_in: str = TRANSLATE_TAG_IN,
     translate_tag_out: str = TRANSLATE_TAG_OUT,
     has_placeholders: bool = True,
@@ -806,7 +806,7 @@ Provide your refined version now:"""
 def generate_subtitle_refinement_block_prompt(
     subtitle_blocks: List[Tuple[int, str]],
     previous_refined_block: str = "",
-    target_language: str = "English",
+    target_language: Optional[str] = None,
     translate_tag_in: str = TRANSLATE_TAG_IN,
     translate_tag_out: str = TRANSLATE_TAG_OUT,
     additional_instructions: str = "",
@@ -962,8 +962,8 @@ Provide your refined block now:"""
 def generate_subtitle_block_prompt(
     subtitle_blocks: List[Tuple[int, str]],
     previous_translation_block: str,
-    source_language: str = "English",
-    target_language: str = "English",
+    source_language: Optional[str] = None,
+    target_language: Optional[str] = None,
     translate_tag_in: str = TRANSLATE_TAG_IN,
     translate_tag_out: str = TRANSLATE_TAG_OUT,
     custom_instructions: str = "",
@@ -1258,7 +1258,7 @@ Provide your corrected version now:"""
 
 def generate_post_processing_prompt(
     translated_text: str,
-    target_language: str = "English",
+    target_language: Optional[str] = None,
     context_before: str = "",
     context_after: str = "",
     additional_instructions: str = "",

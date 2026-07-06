@@ -412,7 +412,7 @@ async def _make_llm_request_with_adaptive_context(
 # Legacy wrapper for backward compatibility
 
 async def generate_translation_request(main_content, context_before, context_after, previous_translation_context,
-                                       source_language="English", target_language="Chinese", model=DEFAULT_MODEL,
+                                       source_language=None, target_language=None, model=DEFAULT_MODEL,
                                        llm_client=None, log_callback=None, has_placeholders=False,
                                        prompt_options=None, context_manager: AdaptiveContextManager = None,
                                        placeholder_format: Optional[Tuple[str, str]] = None):
