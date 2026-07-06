@@ -1316,9 +1316,10 @@ def generate_chunk_reflection_prompt(
 Your task is to perform an adversarial quality review of a draft translation against its original source text and active novel lore.
 
 RIGOROUS 4-STEP AUDIT PROCEDURE:
-0. EXPLICIT SOURCE TEXT PRIMACY (CRITICAL RULE):
-   - If the original source text explicitly uses a specific proper name, nickname, or direct address term in dialogue (e.g. "Tomio", "Master", "Senior"), you MUST respect and preserve that explicit term in the translation.
-   - NEVER flag or force background lore defaults (such as replacing an explicit name with a default title like "Huấn luyện viên") over an explicit spoken term present in the source text. Lore rules apply ONLY to fill in implicit/unspecified addressing.
+0. EXPLICIT SOURCE INTENT & TARGET LOCALIZATION (CRITICAL RULE):
+   - Respect explicit character names, nicknames, and direct address terms present in the source text dialogue.
+   - ALWAYS localize terms using natural {target_language} syntax, word order, and honorific rules (e.g. in Vietnamese: translate English "Momozawa Trainer" -> "Huấn luyện viên Momozawa", NOT literal unlocalized "Momozawa Trainer").
+   - NEVER let background lore defaults erase an explicit character name, but DO allow natural grammatical localization of names, titles, and honorifics into standard {target_language} phrasing.
 
 1. LINE & CLAUSE COMPLETENESS AUDIT:
    - Compare every sentence, clause, dialogue tag, and narrative detail in the source chunk against the draft translation.
