@@ -1429,7 +1429,7 @@ async def _resync_context_snapshots_async(
                 current_global_lore=global_lore,
                 current_dynamic_state=current_dynamic_text,
                 source_chunk=source_text,
-                translated_chunk=None,
+                translated_chunk=chunk.get('translated_text'),
                 source_language=config.get('source_language'),
                 target_language=config.get('target_language'),
                 chunk_index=idx + 1,

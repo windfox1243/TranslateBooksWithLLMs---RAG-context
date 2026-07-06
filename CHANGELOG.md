@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.0-beta.6 - 2026-07-06
+
+### Fixed
+
+- **Senior Editor Output Context Feed-Forward**: Fixed `generic_translator.py` and `NovelContextSession` to pass the final translated & refined chunk (`translated_chunk=result`) into `update_novel_context_chunk()`, ensuring Senior Editor repairs and dialogue updates persist directly into `context.txt` and SQLite database checkpoints.
+
 ## 1.15.0-beta.5 - 2026-07-06
 
 ### Added

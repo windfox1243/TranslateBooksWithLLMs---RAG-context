@@ -7309,6 +7309,63 @@ class NovelContextSession:
         self.save()
         return change_logs
 
+    async def sync_translated_output(
+        self,
+        translated_chunk: str,
+        source_chunk: str = "",
+        target_language: str = "Vietnamese",
+        source_language: str = "English",
+        llm_client: Optional[Any] = None,
+        model_name: str = "",
+        chunk_index: int = 0,
+        total_chunks: int = 0,
+    ) -> bool:
+        """Sync final polished translation output (from Senior Editor pass) back into dynamic context."""
+        if not translated_chunk or not translated_chunk.strip():
+            return False
+
+        if llm_client and source_chunk:
+            dialogue_turns = detect_dialogue_turns(source_chunk)
+            dialogue_sink: Dict[str, Any] = {}
+            self.global_lore, self.dynamic_state, change_logs = await update_novel_context_chunk(
+                llm_client=llm_client,
+                model_name=model_name,
+                current_global_lore=self.global_lore,
+                current_dynamic_state=self.dynamic_state,
+                source_chunk=source_chunk,
+                translated_chunk=translated_chunk,
+                source_language=source_language,
+                target_language=target_language,
+                chunk_index=chunk_index,
+                total_chunks=total_chunks,
+                dialogue_turns=dialogue_turns,
+                current_dialogue_state=self.dialogue_state,
+                dialogue_attribution_sink=dialogue_sink,
+                selective_context_view=self.prompt_options.get("novel_context_selective_update", True),
+                context_view_max_tokens=self.prompt_options.get("novel_context_update_prompt_max_tokens"),
+                log_callback=self.log_callback,
+            )
+            if dialogue_sink:
+                self.dialogue_attribution = dialogue_sink
+                self.dialogue_state = dict(dialogue_sink.get("state_after") or {})
+            self.save()
+            return True
+        else:
+            alias_map = _character_alias_map(self.global_lore)
+            sanitized_dynamic = _sanitize_vietnamese_dynamic_state(
+                dynamic_state=self.dynamic_state,
+                alias_map=alias_map,
+                character_genders=_character_gender_map(self.global_lore),
+                character_profiles=_character_profile_map(self.global_lore),
+                translated_chunk=translated_chunk,
+                dialogue_attribution=self.dialogue_attribution,
+            )
+            if sanitized_dynamic and sanitized_dynamic.strip() != self.dynamic_state.strip():
+                self.dynamic_state = sanitized_dynamic
+                self.save()
+                return True
+        return False
+
 
 def open_novel_context_session(
     prompt_options: Dict[str, Any],
