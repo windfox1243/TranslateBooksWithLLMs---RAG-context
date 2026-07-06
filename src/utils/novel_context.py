@@ -5493,33 +5493,7 @@ def _remove_vietnamese_addressing_mismatches(
     return "\n".join(output).strip()
 
 
-async def verify_addressing_delta_with_llm_async(
-    source_chunk: str,
-    relation_key: Tuple[str, str, str],
-    current_details: str,
-    proposed_details: str,
-    character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
-    llm_client: Optional[Any] = None,
-    log_callback: Optional[Callable] = None,
-) -> bool:
-    """
-    Streamlined addressing delta verification. With 2-pass Senior Editor quality review active,
-    proposed dynamic state updates pass through directly to avoid extra API latency.
-    """
-    return True
 
-
-def verify_addressing_delta_with_llm(
-    source_chunk: str,
-    relation_key: Tuple[str, str, str],
-    current_details: str,
-    proposed_details: str,
-    character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
-    llm_client: Optional[Any] = None,
-    log_callback: Optional[Callable] = None,
-) -> bool:
-    """Streamlined synchronous wrapper for verify_addressing_delta_with_llm_async."""
-    return True
 
 
 def _sanitize_vietnamese_dynamic_state(

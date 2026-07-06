@@ -9,39 +9,6 @@ Enforces strict linguistic separation:
 
 from typing import Dict, Tuple, Optional, Set, List, Any
 
-# Formality Index Mapping F(p) in [-2, +2] across languages
-_PRONOUN_FORMALITY_MAP: Dict[str, Dict[str, int]] = {
-    "vi": {
-        # Honorific / Extremely Formal (+2)
-        "ngài": 2, "quý khách": 2, "bệ hạ": 2, "điện hạ": 2, "quý vị": 2, "tiền bối": 2,
-        # Polite / Neutral Formal (+1)
-        "tôi": 1, "anh": 1, "chị": 1, "ông": 1, "bà": 1, "bác": 1, "chú": 1, "cô": 1, "thầy": 1, "sếp": 1,
-        # Youthful / Friendly Peer / Intimate (0)
-        "tớ": 0, "cậu": 0, "mình": 0, "bạn": 0, "em": 0, "cháu": 0, "con": 0,
-        # Vulgar / Hostile / Contemptuous (-2)
-        "tao": -2, "mày": -2, "ngươi": -2, "hắn": -2, "nó": -2,
-    },
-    "ja": {
-        "watakushi": 2, "kochira": 2, "sama": 2, "senpai": 2, "sensei": 2,
-        "watashi": 1, "anata": 1, "san": 1,
-        "boku": 0, "uchi": 0, "kimi": 0, "kun": 0,
-        "ore": -2, "omae": -2, "kisama": -2, "temee": -2,
-    },
-    "ko": {
-        "jeu": 2, "dang-sin": 2, "nim": 2, "sunbae": 2,
-        "na": 0, "cheing-gu": 0,
-        "neo": -2, "inoma": -2, "gisa-ma": -2,
-    },
-    "fr": {
-        "vous": 1,
-        "tu": 0,
-    },
-    "es": {
-        "usted": 1,
-        "tú": 0,
-    },
-}
-
 # Genuine Seniority Pronoun Sets (Strictly exclude Job Titles / Nouns)
 _SENIOR_PRONOUN_SETS: Dict[str, Set[str]] = {
     "vi": {"anh", "chị", "thầy", "cô", "sếp", "bác", "chú", "ông", "bà", "tiền bối", "ngài"},
@@ -113,17 +80,6 @@ class UniversalAddressingEngine:
             self.lang_code = "es"
         else:
             self.lang_code = "vi"
-
-    def get_formality_score(self, pronoun: str) -> int:
-        """Get Formality Index F(p) in range [-2, +2]. Defaults to 0 (neutral)."""
-        lang_dict = _PRONOUN_FORMALITY_MAP.get(self.lang_code, _PRONOUN_FORMALITY_MAP["vi"])
-        return lang_dict.get((pronoun or "").strip().casefold(), 0)
-
-    def calculate_formality_distance(self, self_pronoun: str, target_pronoun: str) -> int:
-        """Arithmetic Formality Distance |F(self) - F(target)|."""
-        f_s = self.get_formality_score(self_pronoun)
-        f_t = self.get_formality_score(target_pronoun)
-        return abs(f_s - f_t)
 
     def resolve_seniority_hierarchy(self, speaker: str, addressee: str, context: str) -> str:
         """
