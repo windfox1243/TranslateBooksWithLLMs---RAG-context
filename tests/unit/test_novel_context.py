@@ -5588,3 +5588,18 @@ def test_senior_editor_reflection_prompt_includes_explicit_source_text_primacy()
     assert "EXPLICIT SOURCE INTENT & TARGET LOCALIZATION" in prompt_pair_ja.system
     assert "ALWAYS localize terms using natural Japanese syntax" in prompt_pair_ja.system
     assert "Spoken source nicknames and honorifics take 100% absolute primacy over background lore defaults" in prompt_pair_ja.system
+
+
+def test_format_critique_tldr():
+    from src.core.translator import format_critique_tldr
+
+    critique = """1. LINE COMPLETENESS:
+* Dropped clause in sentence 2: "She looked out the window." was omitted from draft.
+* Pronoun bleed in narration: used intimate 'chú' in non-dialogue story text.
+* Register shift: Character switched unexpectedly to formal register.
+* Extra issue: Minor spacing error."""
+
+    tldr = format_critique_tldr(critique, max_bullets=3)
+    assert "• Dropped clause in sentence 2: \"She looked out the window.\" was omitted from draft." in tldr
+    assert "• Pronoun bleed in narration: used intimate 'chú' in non-dialogue story text." in tldr
+    assert "(+1 more)" in tldr
