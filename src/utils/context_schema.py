@@ -21,6 +21,7 @@ class AddressingUpdateDelta:
     register: str = "polite"
     confidence: float = 1.0
     evidence_quote: str = ""
+    is_situational: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Optional["AddressingUpdateDelta"]:
@@ -46,6 +47,9 @@ class AddressingUpdateDelta:
         except (ValueError, TypeError):
             confidence = 1.0
 
+        raw_scope = str(data.get("scope") or "").strip().lower()
+        is_sit = bool(data.get("is_situational") or raw_scope == "situational")
+
         return cls(
             speaker=speaker,
             addressee=addressee,
@@ -55,10 +59,36 @@ class AddressingUpdateDelta:
             register=str(data.get("register") or "polite").strip().lower(),
             confidence=confidence,
             evidence_quote=str(data.get("evidence_quote") or data.get("evidence") or "").strip(),
+            is_situational=is_sit,
         )
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+SITUATIONAL_KEYWORDS = (
+    "roleplay", "café", "cafe", "maid", "butler", "disguise", "cosplay",
+    "acting", "stage play", "theatrical", "mock", "undercover", "pretending",
+    "masquerade", "fake identity", "temporary", "situational", "scenario-bound",
+    "transient", "sarcastic", "one-off", "performance", "costume", "game role"
+)
+
+
+def is_situational_context(item: Any) -> bool:
+    """Check whether an addressing delta, dict, or text description represents a temporary situational context."""
+    if not item:
+        return False
+    if isinstance(item, AddressingUpdateDelta):
+        if item.is_situational:
+            return True
+        text = f"{item.vocative} {item.evidence_quote} {item.register}".lower()
+    elif isinstance(item, dict):
+        if item.get("is_situational") or str(item.get("scope", "")).lower() == "situational":
+            return True
+        text = f"{item.get('vocative', '')} {item.get('evidence_quote', '')} {item.get('register', '')}".lower()
+    else:
+        text = str(item).lower()
+    return any(kw in text for kw in SITUATIONAL_KEYWORDS)
 
 
 def extract_addressing_deltas_from_text(raw_text: str) -> List[AddressingUpdateDelta]:

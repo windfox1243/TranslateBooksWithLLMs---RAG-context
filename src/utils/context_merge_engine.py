@@ -108,21 +108,11 @@ class ContextMergeEngine:
                 return False
 
         # Rule 4: Temporary & Situational Context Protection Policy
-        # Prevents temporary/situational context shifts (roleplay, disguise, acting, sarcastic/mock tone,
-        # temporary alias/title, undercover mission, or non-durable scenario markers) from mutating
-        # an established durable baseline relationship.
-        situational_keywords = (
-            "roleplay", "café", "cafe", "maid", "butler", "disguise", "cosplay",
-            "acting", "stage play", "theatrical", "mock", "undercover", "pretending",
-            "masquerade", "fake identity", "temporary", "situational", "scenario-bound",
-            "transient", "sarcastic", "one-off", "performance", "costume", "game role"
-        )
-        update_text_check = f"{delta.vocative} {delta.evidence_quote} {delta.register}".lower()
-        is_incoming_situational = any(kw in update_text_check for kw in situational_keywords)
+        from src.utils.context_schema import is_situational_context
+        is_incoming_situational = is_situational_context(delta)
 
         if existing:
-            existing_desc = f"{existing.get('vocative', '')} {existing.get('register', '')}".lower()
-            existing_is_situational = any(kw in existing_desc for kw in situational_keywords)
+            existing_is_situational = is_situational_context(existing)
 
             if is_incoming_situational and not existing_is_situational:
                 msg = (
