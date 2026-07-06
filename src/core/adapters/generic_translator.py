@@ -1449,6 +1449,8 @@ async def _resync_context_snapshots_async(
                         "novel_context_update_prompt_max_tokens",
                     )
                 ),
+                custom_instructions=str((config.get('prompt_options') or {}).get("custom_instructions") or ""),
+                glossary_block=str((config.get('prompt_options') or {}).get("glossary_block") or ""),
             )
             if source_text.strip():
                 source_memory_chunks.append(source_text)

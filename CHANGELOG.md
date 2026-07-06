@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.15.0-beta.8 - 2026-07-06
+
+### Added
+
+- **Glossary & Custom Instructions Dynamic Context Integration**: Updated `update_novel_context_chunk()`, `UPDATE_USER_PROMPT_TEMPLATE`, and `SOURCE_ANALYSIS_USER_PROMPT_TEMPLATE` in `novel_context.py` to accept and render `# CUSTOM INSTRUCTIONS & STYLE GUIDELINES:` and `# ACTIVE PROJECT GLOSSARY:`. Prevents dynamic context extraction from proposing relationship or term updates that contradict active project glossaries or custom style guidelines.
+- **EPUB / DOCX 2-Pass Senior Editor Reflection**: Integrated `run_chunk_reflection_pass()` into `xhtml_translator.py` when `reflection_mode` is enabled, extending 2-pass Senior Editor refinement to EPUB/DOCX books while maintaining HTML placeholder integrity.
+
 ## 1.15.0-beta.7 - 2026-07-06
 
 ### Changed & Streamlined
