@@ -1312,6 +1312,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "gender_examples": " (e.g., using male pronouns 'anh' for a female character, or incorrect seniority/kinship terms)",
             "proper_name_example": ' (e.g., preserve concise proper names like "Học viện Tracen", do NOT over-expand into long descriptive phrases like "Học viện Đào tạo Mã nương Nhật Bản")',
             "stutter_example": ' (e.g., "Wh-what..." -> "Gì-gì...", "S-sorry..." -> "X-xin lỗi...")',
+            "addressee_examples": ' (e.g. "cô nương", "tiểu thư", "thiếu gia", "anh", "chị", "em", "bác sĩ")',
         }
     elif "japanese" in lang_lower or lang_lower == "ja":
         return {
@@ -1321,6 +1322,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "gender_examples": " (e.g., using male pronouns/honorifics for a female character like '-kun' when lore specifies '-chan' or female register)",
             "proper_name_example": ' (e.g., preserve concise proper names like "トレセン学園", do NOT over-expand into long descriptive phrases)',
             "stutter_example": ' (e.g., "Wh-what..." -> "な、なに...", "S-sorry..." -> "す、すみません...")',
+            "addressee_examples": ' (e.g. "Ojou-sama", "Hime-sama", "Senpai", "-san", "-kun", "-chan")',
         }
     elif "chinese" in lang_lower or lang_lower in ("zh", "zh-cn", "zh-tw"):
         return {
@@ -1330,6 +1332,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "gender_examples": " (e.g., mixing up gendered pronouns 他/她/它 for female/male characters according to lore)",
             "proper_name_example": ' (e.g., preserve concise proper names like "特雷森学园", do NOT over-expand into long descriptive phrases)',
             "stutter_example": ' (e.g., "Wh-what..." -> "什、什么...", "S-sorry..." -> "对、对不起...")',
+            "addressee_examples": ' (e.g. "小姐", "少爷", "前辈", "姑娘", "先生")',
         }
     elif "korean" in lang_lower or lang_lower == "ko":
         return {
@@ -1339,6 +1342,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "gender_examples": " (e.g., using male sibling terms '형/오빠' for female characters or incorrect honorific levels)",
             "proper_name_example": ' (e.g., preserve concise proper names like "트레센 학원", do NOT over-expand into long descriptive phrases)',
             "stutter_example": ' (e.g., "Wh-what..." -> "뭐, 뭐야...", "S-sorry..." -> "미, 미안...")',
+            "addressee_examples": ' (e.g. "아가씨", "도련님", "선배님", "선생님")',
         }
     elif "french" in lang_lower or lang_lower == "fr":
         return {
@@ -1348,6 +1352,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "gender_examples": " (e.g., incorrect grammatical gender agreement for adjectives/past participles or masculine 'il' for a female character)",
             "proper_name_example": ' (e.g., preserve concise proper names, do NOT over-expand into long descriptive paraphrases)',
             "stutter_example": ' (e.g., "Wh-what..." -> "Q-quoi...", "S-sorry..." -> "D-désolé...")',
+            "addressee_examples": ' (e.g. "mademoiselle", "monsieur", "maître")',
         }
     elif "spanish" in lang_lower or lang_lower == "es":
         return {
@@ -1357,6 +1362,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "gender_examples": " (e.g., incorrect grammatical gender agreement for adjectives or masculine 'él' for a female character)",
             "proper_name_example": ' (e.g., preserve concise proper names, do NOT over-expand into long descriptive paraphrases)',
             "stutter_example": ' (e.g., "Wh-what..." -> "Q-qué...", "S-sorry..." -> "L-lo siento...")',
+            "addressee_examples": ' (e.g. "señorita", "joven", "don", "doña")',
         }
     elif "german" in lang_lower or lang_lower == "de":
         return {
@@ -1366,6 +1372,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "gender_examples": " (e.g., using masculine 'er' for a female character or incorrect grammatical gender agreement)",
             "proper_name_example": ' (e.g., preserve concise proper names, do NOT over-expand into long descriptive paraphrases)',
             "stutter_example": ' (e.g., "Wh-what..." -> "W-was...", "S-sorry..." -> "E-entschuldigung...")',
+            "addressee_examples": ' (e.g. "Fräulein", "Herr", "Frau")',
         }
     else:
         return {
@@ -1375,6 +1382,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "gender_examples": " (e.g., using male pronouns/titles for a female character or vice versa)",
             "proper_name_example": ' (e.g., preserve concise academy/school/institution names intact rather than over-expanding into long descriptive paraphrases)',
             "stutter_example": ' (e.g. hesitations or stuttered prefixes)',
+            "addressee_examples": ' (e.g. honorific calls, titles, or gendered address forms)',
         }
 
 
@@ -1398,6 +1406,7 @@ def generate_chunk_reflection_prompt(
     gender_examples = guidance["gender_examples"]
     proper_name_example = guidance["proper_name_example"]
     stutter_example = guidance["stutter_example"]
+    addressee_examples = guidance["addressee_examples"]
 
     system_prompt = f"""You are an uncompromising, ultra-rigorous Senior Literary Translation Editor specializing in {target_lang}.
 Your task is to perform an adversarial quality review of a draft translation against its original source text and active novel lore.
@@ -1422,6 +1431,7 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
 3. GENDER & CHARACTER LORE ALIGNMENT:
    - Cross-check pronouns against the ACTIVE NOVEL LORE and custom instructions.
    - Flag gender mismatches{gender_examples}.
+   - ADDRESSEE VS SPEAKER ALIGNMENT: Vocatives, direct address forms, and second-person pronouns in spoken dialogue refer to the ADDRESSEE (the person being spoken to), NOT the speaker. Never flag a gendered address term{addressee_examples} as a gender error based on the speaker's gender when it matches the addressee.
    - ABSOLUTELY FORBIDDEN: NEVER flag or force changing explicit spoken nicknames/honorifics in source dialogue (e.g. "Spe-chan", "Maruzensky-chan") to match default background lore address entries (e.g. "Special", "Maru-senpai"). Forcing explicit source text nicknames to match background lore is an AUDIT BUG and is strictly prohibited.
 
 4. REGISTER HARMONY & NATURALNESS:
@@ -1433,6 +1443,7 @@ STRICT OUTPUT CONTRACT:
 - Output NO_ISSUES ONLY if the draft is 100% flawless across all 4 audit steps.
 - If ANY flaw, line drop, pronoun bleed, gender error, or register inconsistency exists, list concise, actionable bullet points explaining what MUST be repaired. Do NOT output NO_ISSUES if there is any defect.
 - DO NOT list bullet points or commentary for sections or rules that are correct or passed validation. Only list actual actionable defects that require fixing. If all audit steps pass with no repair needed, output NO_ISSUES.
+- DO NOT flag direct address terms or vocatives in dialogue matching the addressee's gender as speaker gender errors.
 - DO NOT flag explicit spoken names or nicknames from source dialogue as lore violations (e.g. replacing "Spe-chan" with "Special" or "Maruzensky-chan" with "Maru-senpai" is strictly prohibited).
 - DO NOT flag internal monologue or 1st-person character thoughts as pronoun bleed.
 - DO NOT flag stuttering, hesitations, or emotional vocal quirks present in source dialogue as register flaws."""

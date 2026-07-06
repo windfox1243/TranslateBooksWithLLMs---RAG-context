@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.15.0-beta.23 - 2026-07-06
+
+### Fixed
+
+- **Language-Agnostic Addressee vs. Speaker Alignment Guidance**:
+  - Added explicit `ADDRESSEE VS SPEAKER ALIGNMENT` audit rules to `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`).
+  - Parameterized `addressee_examples` across all supported languages (Vietnamese, Japanese, Chinese, Korean, French, Spanish, German, and General).
+  - Instructs the Senior Editor that vocatives, direct address forms, and second-person pronouns in spoken dialogue refer to the listener (addressee), NOT the speaker, preventing false gender mismatch flags when a speaker uses a gendered address term matching the listener.
+
 ## 1.15.0-beta.22 - 2026-07-06
 
 ### Fixed
