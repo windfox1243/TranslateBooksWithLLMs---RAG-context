@@ -7340,6 +7340,7 @@ class NovelContextSession:
         source_lang = source_language or self.prompt_options.get("source_language") or "English"
 
         if llm_client and source_chunk:
+            from src.utils.dialogue_attribution import detect_dialogue_turns
             dialogue_turns = detect_dialogue_turns(source_chunk)
             dialogue_sink: Dict[str, Any] = {}
             self.global_lore, self.dynamic_state, change_logs = await update_novel_context_chunk(
