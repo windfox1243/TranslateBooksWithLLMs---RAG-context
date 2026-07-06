@@ -25,14 +25,38 @@ def render_addressing_projection(
 
     # Filter rules to active characters in current scene when active_character_names is provided
     if active_character_names:
-        active_set = {str(n).casefold().strip() for n in active_character_names if n}
+        active_set = set()
+        if isinstance(active_character_names, dict):
+            for k, info in active_character_names.items():
+                active_set.add(str(k).casefold().strip())
+                if isinstance(info, dict):
+                    if info.get("name"):
+                        active_set.add(str(info["name"]).casefold().strip())
+                    if info.get("source_name"):
+                        active_set.add(str(info["source_name"]).casefold().strip())
+                    aliases = info.get("aliases") or info.get("alias") or []
+                    if isinstance(aliases, str):
+                        aliases = [a.strip() for a in aliases.split(",") if a.strip()]
+                    for a in aliases:
+                        if len(str(a).strip()) >= 2:
+                            active_set.add(str(a).casefold().strip())
+        elif isinstance(active_character_names, (list, set, tuple)):
+            for item in active_character_names:
+                if item:
+                    active_set.add(str(item).casefold().strip())
+
         if active_set:
             filtered_rules = []
             for r in rules:
                 spk = str(r.get("speaker_name") or "").casefold().strip()
                 adr = str(r.get("addressee_name") or "").casefold().strip()
-                # Keep rule if speaker or addressee is active, or if it is locked
-                if r.get("is_locked") or spk in active_set or adr in active_set or any(a in spk or a in adr for a in active_set):
+                # Keep rule if speaker or addressee matches active names/aliases, or if rule is locked
+                if (
+                    r.get("is_locked")
+                    or spk in active_set
+                    or adr in active_set
+                    or any(a in spk or a in adr or spk in a or adr in a for a in active_set if len(a) >= 3)
+                ):
                     filtered_rules.append(r)
             rules = filtered_rules
 
