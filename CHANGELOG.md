@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.15.0-beta.19 - 2026-07-06
+
+### Fixed
+
+- **Dialogue Stuttering & Speech Disfluency Protection**:
+  - Added explicit protection for dialogue stuttering, hesitations, and vocal quirks (e.g. `"Wh-what..."` $\rightarrow$ `"Gì-gì..."`, `"S-sorry..."` $\rightarrow$ `"X-xin lỗi..."`) in Step 4 (`REGISTER HARMONY & NATURALNESS`) and `STRICT OUTPUT CONTRACT` of `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`).
+  - Forbids Senior Editor from flagging source dialogue stuttering as a "register error" or over-correcting flustered speech into overly-smooth, flattened sentences.
+
 ## 1.15.0-beta.18 - 2026-07-06
 
 ### Fixed
