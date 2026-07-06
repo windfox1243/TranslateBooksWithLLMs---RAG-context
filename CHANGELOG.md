@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.0-beta.9 - 2026-07-06
+
+### Fixed
+
+- **UI Layout Fix (2-Pass Reflection Engine Help Text)**: Corrected element association in `translation_interface.html` so that `#enableReflection` displays `settings:enable_chunk_reflection_help` ("Runs a 2-pass Senior Translation Editor reflection pass after each chunk..."), separating it from `#novelContextSelect` help text (`settings:novel_context_help`).
+
 ## 1.15.0-beta.8 - 2026-07-06
 
 ### Added
