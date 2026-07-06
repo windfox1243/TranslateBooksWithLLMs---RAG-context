@@ -1318,7 +1318,8 @@ Your task is to perform an adversarial quality review of a draft translation aga
 
 RIGOROUS 4-STEP AUDIT PROCEDURE:
 0. EXPLICIT SOURCE INTENT & TARGET LOCALIZATION (CRITICAL RULE):
-   - Respect explicit character names, nicknames, and direct address terms present in the source text dialogue.
+   - Respect explicit character names, nicknames, and direct address terms present in the source text dialogue or narration.
+   - When the source text explicitly uses a specific spoken name, nickname, or honorific suffix (e.g. "Maruzensky-chan", "Maru-chan"), NEVER flag or force changing it to match a default background lore nickname/address form (e.g. "Maru-senpai"). Background lore addressing rules apply ONLY when the source text uses generic pronouns, unspecific address forms, or missing titles. Spoken source nicknames and honorifics take 100% absolute primacy over background lore defaults.
    - ALWAYS localize terms using natural {target_lang} syntax, word order, and honorific rules (e.g. in Vietnamese: translate English "Momozawa Trainer" -> "Huấn luyện viên Momozawa", NOT literal unlocalized "Momozawa Trainer").
    - NEVER let background lore defaults erase an explicit character name, but DO allow natural grammatical localization of names, titles, and honorifics into standard {target_lang} phrasing.
 
@@ -1332,6 +1333,7 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
 3. GENDER & CHARACTER LORE ALIGNMENT:
    - Cross-check pronouns against the ACTIVE NOVEL LORE and custom instructions.
    - Flag gender mismatches (e.g., using male pronouns 'anh' for a female character, or incorrect seniority/kinship terms).
+   - Do NOT flag explicit source text nicknames or honorifics (e.g. "Maruzensky-chan") as lore violations even if the lore lists a different default addressing pair (e.g. "Maru-senpai").
 
 4. REGISTER HARMONY & NATURALNESS:
    - Check for unnatural register shifts (e.g. mixing formal 'tôi-ngươi' with intimate 'cậu-tớ' in the same conversation without reason) or robotic literal phrasing.

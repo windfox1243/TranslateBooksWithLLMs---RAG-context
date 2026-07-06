@@ -5575,6 +5575,8 @@ def test_senior_editor_reflection_prompt_includes_explicit_source_text_primacy()
 
     assert "EXPLICIT SOURCE INTENT & TARGET LOCALIZATION" in prompt_pair_vi.system
     assert "ALWAYS localize terms using natural Vietnamese syntax" in prompt_pair_vi.system
+    assert "NEVER flag or force changing it to match a default background lore nickname/address form" in prompt_pair_vi.system
+    assert "Maruzensky-chan" in prompt_pair_vi.system
 
     prompt_pair_ja = generate_chunk_reflection_prompt(
         source_chunk="\"Momozawa Trainer, are you staying?\"",
@@ -5585,3 +5587,4 @@ def test_senior_editor_reflection_prompt_includes_explicit_source_text_primacy()
 
     assert "EXPLICIT SOURCE INTENT & TARGET LOCALIZATION" in prompt_pair_ja.system
     assert "ALWAYS localize terms using natural Japanese syntax" in prompt_pair_ja.system
+    assert "Spoken source nicknames and honorifics take 100% absolute primacy over background lore defaults" in prompt_pair_ja.system
