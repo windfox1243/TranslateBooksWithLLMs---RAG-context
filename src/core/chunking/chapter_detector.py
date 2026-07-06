@@ -87,8 +87,16 @@ def _clean_heading(text: str) -> str:
     return " ".join((text or "").strip().split())
 
 
-def is_chapter_heading(text: str, kind: Optional[str] = None) -> bool:
-    """Return whether a paragraph is a reliable chapter boundary."""
+def is_chapter_heading(
+    text: str,
+    kind: Optional[str] = None,
+    llm_client: Optional[Any] = None,
+) -> bool:
+    """Return whether a paragraph is a reliable chapter boundary.
+
+    Uses fast deterministic regex matching first ($0 cost). If uncertain and an
+    llm_client is provided, falls back to lightweight LLM boundary verification.
+    """
     cleaned = _clean_heading(text)
     if not cleaned:
         return False
@@ -97,18 +105,50 @@ def is_chapter_heading(text: str, kind: Optional[str] = None) -> bool:
     if structural_match:
         return int(structural_match.group(1)) <= 3
 
-    # Plain-text headings are normally a single short line. This prevents a
-    # prose paragraph beginning with "Chapter ..." from becoming a boundary.
+    # Plain-text headings are normally a single short line.
     if "\n" in (text or "") or len(cleaned) > 160:
         return False
 
-    return bool(
+    if bool(
         _LATIN_CHAPTER_RE.fullmatch(cleaned)
         or _LATIN_SECTION_RE.fullmatch(cleaned)
         or _NAMED_BOUNDARY_RE.fullmatch(cleaned)
         or _CJK_CHAPTER_RE.fullmatch(cleaned)
         or _KOREAN_CHAPTER_RE.fullmatch(cleaned)
-    )
+    ):
+        return True
+
+    # LLM fallback for ambiguous short standalone lines when regexes miss non-standard titles
+    if llm_client and 3 <= len(cleaned) <= 100:
+        return verify_chapter_boundary_with_llm(cleaned, llm_client)
+
+    return False
+
+
+def verify_chapter_boundary_with_llm(heading_candidate: str, llm_client: Any) -> bool:
+    """Lightweight LLM fallback to classify non-standard chapter headings (~20 tokens)."""
+    if not heading_candidate or not llm_client:
+        return False
+    try:
+        prompt = (
+            f"Determine if the following text is a structural chapter heading, section title, or episode header.\n"
+            f"Text: \"{heading_candidate}\"\n"
+            f"Respond strictly with 'YES' if it is a chapter/section heading, or 'NO' if it is normal narrative text."
+        )
+        res_call = None
+        if hasattr(llm_client, "make_request"):
+            res_call = llm_client.make_request(prompt)
+        elif hasattr(llm_client, "generate"):
+            res_call = llm_client.generate(prompt)
+        elif hasattr(llm_client, "translate_text"):
+            res_call = llm_client.translate_text(prompt)
+
+        if res_call:
+            raw = getattr(res_call, "content", str(res_call)).strip().upper()
+            return "YES" in raw
+    except Exception:
+        pass
+    return False
 
 
 def _generic_heading_family(text: str) -> Optional[str]:
@@ -140,6 +180,7 @@ def _generic_heading_family(text: str) -> Optional[str]:
 def find_chapter_ranges(
     paragraphs: Sequence[str],
     kinds: Optional[Sequence[str]] = None,
+    llm_client: Optional[Any] = None,
 ) -> List[ChapterRange]:
     """Split paragraph indices into stable chapter ranges.
 
@@ -154,7 +195,7 @@ def find_chapter_ranges(
     generic_candidates = {}
     for index, paragraph in enumerate(paragraphs):
         kind = kinds[index] if kinds is not None and index < len(kinds) else None
-        if is_chapter_heading(paragraph, kind):
+        if is_chapter_heading(paragraph, kind, llm_client):
             heading_indices.append(index)
             continue
         family = _generic_heading_family(paragraph)
