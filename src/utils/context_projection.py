@@ -6,7 +6,12 @@ from typing import Optional, List, Dict, Any
 from src.persistence.database import Database
 
 
-def render_addressing_projection(translation_id: str, db: Optional[Database] = None) -> str:
+def render_addressing_projection(
+    translation_id: str,
+    db: Optional[Database] = None,
+    target_language: Optional[str] = None,
+    active_character_names: Optional[Any] = None,
+) -> str:
     """
     Render active directed addressing rules from DB into a clear, concise instruction block
     for LLM translation system prompt.
@@ -18,13 +23,29 @@ def render_addressing_projection(translation_id: str, db: Optional[Database] = N
     if not rules:
         return ""
 
+    # Filter rules to active characters in current scene when active_character_names is provided
+    if active_character_names:
+        active_set = {str(n).casefold().strip() for n in active_character_names if n}
+        if active_set:
+            filtered_rules = []
+            for r in rules:
+                spk = str(r.get("speaker_name") or "").casefold().strip()
+                adr = str(r.get("addressee_name") or "").casefold().strip()
+                # Keep rule if speaker or addressee is active, or if it is locked
+                if r.get("is_locked") or spk in active_set or adr in active_set or any(a in spk or a in adr for a in active_set):
+                    filtered_rules.append(r)
+            rules = filtered_rules
+
+    if not rules:
+        return ""
+
     lines = [
         "### QUY TẮC XƯNG HÔ CÓ HƯỚNG (DIRECTED ADDRESSING RULES):",
         "Chú ý tuân thủ tuyệt đối cách xưng hô và xưng xưng/gọi ngôi của từng nhân vật dưới đây:",
     ]
 
     from src.utils.universal_addressing_engine import UniversalAddressingEngine
-    engine = UniversalAddressingEngine(language="vi")
+    engine = UniversalAddressingEngine(language=target_language or "vi")
 
     from src.utils.context_schema import is_situational_context
 
