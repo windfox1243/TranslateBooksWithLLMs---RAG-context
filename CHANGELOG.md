@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.0-beta.11 - 2026-07-06
+
+### Fixed
+
+- **Senior Editor Spoken Nickname Negative Constraints**: Reinforced Rule 0, Step 3, `STRICT OUTPUT CONTRACT`, and prompt section headers in `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) with explicit negative constraints to prohibit overcorrecting explicit spoken source text nicknames (e.g. `"Spe-chan"`, `"Maruzensky-chan"`) to default background lore relationship nicknames (e.g. `"Special"`, `"Maru-senpai"`).
+
 ## 1.15.0-beta.10 - 2026-07-06
 
 ### Added

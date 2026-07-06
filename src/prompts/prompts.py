@@ -1319,7 +1319,7 @@ Your task is to perform an adversarial quality review of a draft translation aga
 RIGOROUS 4-STEP AUDIT PROCEDURE:
 0. EXPLICIT SOURCE INTENT & TARGET LOCALIZATION (CRITICAL RULE):
    - Respect explicit character names, nicknames, and direct address terms present in the source text dialogue or narration.
-   - When the source text explicitly uses a specific spoken name, nickname, or honorific suffix (e.g. "Maruzensky-chan", "Maru-chan"), NEVER flag or force changing it to match a default background lore nickname/address form (e.g. "Maru-senpai"). Background lore addressing rules apply ONLY when the source text uses generic pronouns, unspecific address forms, or missing titles. Spoken source nicknames and honorifics take 100% absolute primacy over background lore defaults.
+   - When the source text explicitly uses a specific spoken name, nickname, or honorific suffix (e.g. "Spe-chan", "Maruzensky-chan", "Maru-chan"), NEVER flag or force changing it to match a default background lore nickname/address form (e.g. "Special", "Maru-senpai"). Background lore addressing rules apply ONLY when the source text uses generic pronouns, unspecific address forms, or missing titles. Spoken source nicknames and honorifics take 100% absolute primacy over background lore defaults.
    - ALWAYS localize terms using natural {target_lang} syntax, word order, and honorific rules (e.g. in Vietnamese: translate English "Momozawa Trainer" -> "Huấn luyện viên Momozawa", NOT literal unlocalized "Momozawa Trainer").
    - NEVER let background lore defaults erase an explicit character name, but DO allow natural grammatical localization of names, titles, and honorifics into standard {target_lang} phrasing.
 
@@ -1333,21 +1333,22 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
 3. GENDER & CHARACTER LORE ALIGNMENT:
    - Cross-check pronouns against the ACTIVE NOVEL LORE and custom instructions.
    - Flag gender mismatches (e.g., using male pronouns 'anh' for a female character, or incorrect seniority/kinship terms).
-   - Do NOT flag explicit source text nicknames or honorifics (e.g. "Maruzensky-chan") as lore violations even if the lore lists a different default addressing pair (e.g. "Maru-senpai").
+   - ABSOLUTELY FORBIDDEN: NEVER flag or force changing explicit spoken nicknames/honorifics in source dialogue (e.g. "Spe-chan", "Maruzensky-chan") to match default background lore address entries (e.g. "Special", "Maru-senpai"). Forcing explicit source text nicknames to match background lore is an AUDIT BUG and is strictly prohibited.
 
 4. REGISTER HARMONY & NATURALNESS:
    - Check for unnatural register shifts (e.g. mixing formal 'tôi-ngươi' with intimate 'cậu-tớ' in the same conversation without reason) or robotic literal phrasing.
 
 STRICT OUTPUT CONTRACT:
 - Output NO_ISSUES ONLY if the draft is 100% flawless across all 4 audit steps.
-- If ANY flaw, line drop, pronoun bleed, gender error, or register inconsistency exists, list concise, actionable bullet points explaining what MUST be repaired. Do NOT output NO_ISSUES if there is any defect."""
+- If ANY flaw, line drop, pronoun bleed, gender error, or register inconsistency exists, list concise, actionable bullet points explaining what MUST be repaired. Do NOT output NO_ISSUES if there is any defect.
+- DO NOT flag explicit spoken names or nicknames from source dialogue as lore violations (e.g. replacing "Spe-chan" with "Special" or "Maruzensky-chan" with "Maru-senpai" is strictly prohibited)."""
 
     user_sections = [f"# RAW SOURCE CHUNK:\n{source_chunk.strip()}"]
     if custom_instructions and custom_instructions.strip():
         user_sections.append(f"# CUSTOM INSTRUCTIONS & STYLE GUIDELINES:\n{custom_instructions.strip()}")
     if glossary_block and glossary_block.strip():
         user_sections.append(f"# GLOSSARY & TERM MAPPING:\n{glossary_block.strip()}")
-    user_sections.append(f"# ACTIVE NOVEL LORE & ADDRESSING RULES:\n{novel_context.strip() if novel_context.strip() else 'None'}")
+    user_sections.append(f"# ACTIVE NOVEL LORE & ADDRESSING RULES (Background defaults apply ONLY when source text lacks an explicit spoken nickname/title. Explicit source nicknames like 'Spe-chan' take 100% priority over lore entries like 'Special'):\n{novel_context.strip() if novel_context.strip() else 'None'}")
     user_sections.append(f"# DRAFT TRANSLATION TO AUDIT:\n{draft_translation.strip()}")
     user_sections.append("Perform your rigorous Senior Editor audit now:")
 
