@@ -5509,7 +5509,10 @@ def _sanitize_vietnamese_dynamic_state(
     dialogue_attribution: Optional[Dict[str, Any]] = None,
     target_language: Optional[str] = None,
 ) -> str:
-    """Remove stored addressing rows whose paired-address data conflicts."""
+    """Remove stored addressing rows whose paired-address data conflicts (Vietnamese target language only)."""
+    if target_language and not _is_vietnamese_target_language(target_language):
+        return dynamic_state
+
     normalized = normalize_dynamic_state(
         dynamic_state,
         alias_map,
