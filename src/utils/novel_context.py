@@ -5508,8 +5508,9 @@ def _sanitize_vietnamese_dynamic_state(
     log_callback: Optional[Callable] = None,
     translated_chunk: Optional[str] = None,
     dialogue_attribution: Optional[Dict[str, Any]] = None,
+    target_language: Optional[str] = None,
 ) -> str:
-    """Remove stored Vietnamese addressing rows whose paired-address data conflicts."""
+    """Remove stored addressing rows whose paired-address data conflicts."""
     normalized = normalize_dynamic_state(
         dynamic_state,
         alias_map,
@@ -5537,7 +5538,7 @@ def _sanitize_vietnamese_dynamic_state(
             addressing = sanitize_addressing_with_llm(
                 addressing=addressing,
                 character_profiles=character_profiles,
-                target_language="Vietnamese",
+                target_language=target_language,
                 llm_client=llm_client,
                 log_callback=log_callback,
             )
@@ -7364,6 +7365,7 @@ class NovelContextSession:
                 character_profiles=_character_profile_map(self.global_lore),
                 translated_chunk=translated_chunk,
                 dialogue_attribution=self.dialogue_attribution,
+                target_language=target_lang,
             )
             if sanitized_dynamic and sanitized_dynamic.strip() != self.dynamic_state.strip():
                 self.dynamic_state = sanitized_dynamic
@@ -7455,6 +7457,7 @@ def open_novel_context_session(
             llm_client=prompt_options.get("llm_client"),
             use_llm_sanitizer=bool((prompt_options or {}).get("use_llm_sanitizer")),
             log_callback=log_callback,
+            target_language=target_language,
         )
         if sanitized_dynamic_state != str(dynamic_state or "").strip():
             dynamic_state = sanitized_dynamic_state
