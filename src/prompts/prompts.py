@@ -1326,10 +1326,11 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
 1. LINE & CLAUSE COMPLETENESS AUDIT:
    - Compare every sentence, clause, dialogue tag, and narrative detail in the source chunk against the draft translation.
    - Flag ANY omitted sentence, dropped phrase, or summarized paragraph.
+   - Note: Do NOT flag natural target language localization, idiom adaptation, or smooth sentence flow as dropped text if all narrative facts and dialogue lines are preserved.
 
-2. DIALOGUE VS NARRATION PRONOUN ISOLATION:
+2. DIALOGUE VS NARRATION PRONOUN ISOLATION & INTERNAL MONOLOGUE:
    - Check whether dialogue-specific self-references or intimate pronouns (e.g. 'em', 'chú', 'con', 'tới', 'tớ') have improperly leaked into third-person objective story narration outside quotes.
-   - DO NOT flag internal monologue, character thoughts (e.g. "Liệu em có thắng...", "Tớ nghĩ..."), or 1st-person POV self-references as pronoun bleed errors. Intimate self-references in internal monologue and character thoughts are completely natural and valid.
+   - INTERNAL MONOLOGUE & THOUGHTS: Do NOT flag internal monologue, character thoughts (e.g. "Liệu mình có thắng...", "Tớ nghĩ..."), or 1st-person POV self-references as pronoun bleed errors. Intimate self-references in internal monologue and character thoughts are completely natural and valid. In Vietnamese, 'mình' is often the most natural choice for internal self-thought.
 
 3. GENDER & CHARACTER LORE ALIGNMENT:
    - Cross-check pronouns against the ACTIVE NOVEL LORE and custom instructions.
@@ -1337,12 +1338,14 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
    - ABSOLUTELY FORBIDDEN: NEVER flag or force changing explicit spoken nicknames/honorifics in source dialogue (e.g. "Spe-chan", "Maruzensky-chan") to match default background lore address entries (e.g. "Special", "Maru-senpai"). Forcing explicit source text nicknames to match background lore is an AUDIT BUG and is strictly prohibited.
 
 4. REGISTER HARMONY & NATURALNESS:
-   - Check for unnatural register shifts (e.g. mixing formal 'tôi-ngươi' with intimate 'cậu-tớ' in the same conversation without reason) or robotic literal phrasing.
+   - Check for unnatural, unmotivated register shifts or robotic literal phrasing.
+   - Note: Do NOT flag intentional character emotional shifts (e.g. a character becoming angry, casual, or formal during a scene) or creative literary word choices as register errors.
 
 STRICT OUTPUT CONTRACT:
 - Output NO_ISSUES ONLY if the draft is 100% flawless across all 4 audit steps.
 - If ANY flaw, line drop, pronoun bleed, gender error, or register inconsistency exists, list concise, actionable bullet points explaining what MUST be repaired. Do NOT output NO_ISSUES if there is any defect.
-- DO NOT flag explicit spoken names or nicknames from source dialogue as lore violations (e.g. replacing "Spe-chan" with "Special" or "Maruzensky-chan" with "Maru-senpai" is strictly prohibited)."""
+- DO NOT flag explicit spoken names or nicknames from source dialogue as lore violations (e.g. replacing "Spe-chan" with "Special" or "Maruzensky-chan" with "Maru-senpai" is strictly prohibited).
+- DO NOT flag internal monologue or 1st-person character thoughts as pronoun bleed."""
 
     user_sections = [f"# RAW SOURCE CHUNK:\n{source_chunk.strip()}"]
     if custom_instructions and custom_instructions.strip():
