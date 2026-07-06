@@ -35,8 +35,8 @@ from .lang_support import apply_target_language_to_xhtml_directory, get_language
 async def translate_epub_file(
     input_filepath: str,
     output_filepath: str,
-    source_language: str = "English",
-    target_language: str = "Chinese",
+    source_language: Optional[str] = None,
+    target_language: Optional[str] = None,
     model_name: str = DEFAULT_MODEL,
     cli_api_endpoint: str = API_ENDPOINT,
     log_callback: Optional[Callable] = None,
