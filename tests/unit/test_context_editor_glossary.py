@@ -231,3 +231,33 @@ async def test_run_chunk_reflection_pass_registers_editor_terms(tmp_path):
     assert "Học viện Tracen" in session.global_lore
     assert prompt_options["glossary_terms"]["Học viện Đào tạo Mã nương Nhật Bản"] == "Học viện Tracen"
 
+
+@pytest.mark.asyncio
+async def test_sync_translated_output_with_llm_client(tmp_path):
+    """Verify sync_translated_output runs update_novel_context_chunk without NameError for detect_dialogue_turns."""
+    from src.utils.novel_context import NovelContextSession
+
+    context_file = tmp_path / "test_context.txt"
+    context_file.write_text("=== GLOBAL LORE ===\n[GLOSSARY]\n", encoding="utf-8")
+
+    prompt_options = {}
+    session = NovelContextSession(
+        path=context_file,
+        prompt_options=prompt_options,
+        global_lore="=== GLOBAL LORE ===\n[GLOSSARY]\n",
+        dynamic_state="",
+    )
+
+    mock_llm = MagicMock()
+    mock_llm.generate_async = AsyncMock(return_value=MagicMock(content="[NEW_CHARACTERS]\n[IDENTITY_LINKS]\n[NEW_GLOSSARY]\n"))
+
+    success = await session.sync_translated_output(
+        translated_chunk="Tất nhiên rồi.",
+        source_chunk="\"Of course.\"",
+        llm_client=mock_llm,
+        model_name="test-model",
+    )
+
+    assert success is True
+
+
