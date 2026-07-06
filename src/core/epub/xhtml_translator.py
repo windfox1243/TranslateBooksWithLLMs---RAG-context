@@ -533,6 +533,7 @@ async def translate_chunk_with_fallback(
                     custom_instructions=(prompt_options or {}).get("custom_instructions", ""),
                     glossary_block=(prompt_options or {}).get("glossary_block", ""),
                     log_callback=log_callback,
+                    context_session=(prompt_options or {}).get("context_session"),
                 )
                 if repaired and validate_placeholders(repaired, local_tag_map):
                     translated = repaired

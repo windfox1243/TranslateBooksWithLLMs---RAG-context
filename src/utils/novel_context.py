@@ -7180,6 +7180,30 @@ class NovelContextSession:
         """Return a compressed full-context snapshot."""
         return compress_dynamic_state(self.content)
 
+    def register_editor_terms(self, term_pairs: List[Tuple[str, str]]) -> List[str]:
+        """Register term replacements ordered by Senior Editor critique into global lore & glossary."""
+        if not term_pairs:
+            return []
+        bullet_lines = [f"- {src}: {tgt}" for src, tgt in term_pairs if src and tgt]
+        new_glossary = "\n".join(bullet_lines)
+        self.global_lore, change_logs = merge_new_lore(
+            global_lore=self.global_lore,
+            new_characters="",
+            new_glossary=new_glossary,
+            source_text="",
+        )
+        if "glossary_terms" not in self.prompt_options or not isinstance(self.prompt_options.get("glossary_terms"), dict):
+            self.prompt_options["glossary_terms"] = {}
+        for src, tgt in term_pairs:
+            if src and tgt:
+                self.prompt_options["glossary_terms"][src] = tgt
+
+        self.save()
+        if self.log_callback and change_logs:
+            for log_msg in change_logs:
+                self.log_callback("novel_context_term_registered", f"📌 Senior Editor term registered: {log_msg}")
+        return change_logs
+
     def remember_source(self, source_chunk: str) -> None:
         """Retain source text for later context updates without calling the LLM."""
         clean_source = _clean_source_memory_chunk(source_chunk)

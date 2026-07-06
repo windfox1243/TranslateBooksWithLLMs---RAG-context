@@ -544,6 +544,7 @@ class GenericTranslator:
                             custom_instructions=(prompt_options or {}).get("custom_instructions", ""),
                             glossary_block=(prompt_options or {}).get("glossary_block", ""),
                             log_callback=log_callback,
+                            context_session=context_session,
                         )
 
                     feedback = self.adapter.validate_unit_translation(
@@ -693,6 +694,21 @@ class GenericTranslator:
 
                     completed_count += 1
                     _commit_context(i, unit)
+                    if auto_update_context and context_session:
+                        try:
+                            await context_session.sync_translated_output(
+                                translated_chunk=translated_content,
+                                source_chunk=unit.content,
+                                target_language=target_language,
+                                source_language=source_language,
+                                llm_client=llm_client,
+                                model_name=model_name,
+                                chunk_index=i + 1,
+                                total_chunks=total_units,
+                            )
+                        except Exception as sync_err:
+                            if log_callback:
+                                log_callback("context_sync_failed", f"Failed to sync translated chunk into novel context: {sync_err}")
 
                     self.checkpoint_manager.save_checkpoint(
                         translation_id=self.translation_id,
