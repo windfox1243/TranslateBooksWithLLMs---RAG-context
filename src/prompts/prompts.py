@@ -1311,6 +1311,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "monologue_guidance": ' (e.g. "Liệu mình/tôi có thắng...", or emotional mental thoughts addressing someone internally like "Em yêu anh..."). In Vietnamese internal monologue, \'mình\'/\'tôi\' are standard for self-reflection, while intimate address pairs (\'em-anh\', \'tớ-cậu\') are completely valid for emotional thoughts directed at a character.',
             "gender_examples": " (e.g., using male pronouns 'anh' for a female character, or incorrect seniority/kinship terms)",
             "proper_name_example": ' (e.g., preserve concise proper names like "Học viện Tracen", do NOT over-expand into long descriptive phrases like "Học viện Đào tạo Mã nương Nhật Bản")',
+            "stutter_example": ' (e.g., "Wh-what..." -> "Gì-gì...", "S-sorry..." -> "X-xin lỗi...")',
         }
     elif "japanese" in lang_lower or lang_lower == "ja":
         return {
@@ -1319,6 +1320,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "monologue_guidance": ' (e.g. internal monologue using natural 1st-person self-thought like jibun/boku/watashi). Do NOT flag internal thoughts as pronoun bleed.',
             "gender_examples": " (e.g., using male pronouns/honorifics for a female character like '-kun' when lore specifies '-chan' or female register)",
             "proper_name_example": ' (e.g., preserve concise proper names like "トレセン学園", do NOT over-expand into long descriptive phrases)',
+            "stutter_example": ' (e.g., "Wh-what..." -> "な、なに...", "S-sorry..." -> "す、すみません...")',
         }
     elif "chinese" in lang_lower or lang_lower in ("zh", "zh-cn", "zh-tw"):
         return {
@@ -1327,6 +1329,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "monologue_guidance": ' (e.g. internal monologue thoughts using natural self-reference like 我/自己). Do NOT flag internal thoughts as pronoun bleed.',
             "gender_examples": " (e.g., mixing up gendered pronouns 他/她/它 for female/male characters according to lore)",
             "proper_name_example": ' (e.g., preserve concise proper names like "特雷森学园", do NOT over-expand into long descriptive phrases)',
+            "stutter_example": ' (e.g., "Wh-what..." -> "什、什么...", "S-sorry..." -> "对、对不起...")',
         }
     elif "korean" in lang_lower or lang_lower == "ko":
         return {
@@ -1335,6 +1338,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "monologue_guidance": ' (e.g. internal monologue thoughts in non-polite self-thought voice). Do NOT flag internal thoughts as pronoun bleed.',
             "gender_examples": " (e.g., using male sibling terms '형/오빠' for female characters or incorrect honorific levels)",
             "proper_name_example": ' (e.g., preserve concise proper names like "트레센 학원", do NOT over-expand into long descriptive phrases)',
+            "stutter_example": ' (e.g., "Wh-what..." -> "뭐, 뭐야...", "S-sorry..." -> "미, 미안...")',
         }
     elif "french" in lang_lower or lang_lower == "fr":
         return {
@@ -1343,6 +1347,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "monologue_guidance": " or 1st-person POV self-references/internal thoughts.",
             "gender_examples": " (e.g., incorrect grammatical gender agreement for adjectives/past participles or masculine 'il' for a female character)",
             "proper_name_example": ' (e.g., preserve concise proper names, do NOT over-expand into long descriptive paraphrases)',
+            "stutter_example": ' (e.g., "Wh-what..." -> "Q-quoi...", "S-sorry..." -> "D-désolé...")',
         }
     elif "spanish" in lang_lower or lang_lower == "es":
         return {
@@ -1351,6 +1356,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "monologue_guidance": " or 1st-person POV self-references/internal thoughts.",
             "gender_examples": " (e.g., incorrect grammatical gender agreement for adjectives or masculine 'él' for a female character)",
             "proper_name_example": ' (e.g., preserve concise proper names, do NOT over-expand into long descriptive paraphrases)',
+            "stutter_example": ' (e.g., "Wh-what..." -> "Q-qué...", "S-sorry..." -> "L-lo siento...")',
         }
     elif "german" in lang_lower or lang_lower == "de":
         return {
@@ -1359,6 +1365,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "monologue_guidance": " or 1st-person POV self-references/internal thoughts.",
             "gender_examples": " (e.g., using masculine 'er' for a female character or incorrect grammatical gender agreement)",
             "proper_name_example": ' (e.g., preserve concise proper names, do NOT over-expand into long descriptive paraphrases)',
+            "stutter_example": ' (e.g., "Wh-what..." -> "W-was...", "S-sorry..." -> "E-entschuldigung...")',
         }
     else:
         return {
@@ -1367,6 +1374,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "monologue_guidance": " or 1st-person POV self-references/emotional mental thoughts.",
             "gender_examples": " (e.g., using male pronouns/titles for a female character or vice versa)",
             "proper_name_example": ' (e.g., preserve concise academy/school/institution names intact rather than over-expanding into long descriptive paraphrases)',
+            "stutter_example": ' (e.g. hesitations or stuttered prefixes)',
         }
 
 
@@ -1389,6 +1397,7 @@ def generate_chunk_reflection_prompt(
     monologue_guidance = guidance["monologue_guidance"]
     gender_examples = guidance["gender_examples"]
     proper_name_example = guidance["proper_name_example"]
+    stutter_example = guidance["stutter_example"]
 
     system_prompt = f"""You are an uncompromising, ultra-rigorous Senior Literary Translation Editor specializing in {target_lang}.
 Your task is to perform an adversarial quality review of a draft translation against its original source text and active novel lore.
@@ -1418,7 +1427,7 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
 4. REGISTER HARMONY & NATURALNESS:
    - Check for unnatural, unmotivated register shifts or robotic literal phrasing.
    - Note: Do NOT flag intentional character emotional shifts (e.g. a character becoming angry, casual, or formal during a scene) or creative literary word choices as register errors.
-   - PROTECT DIALOGUE STUTTERING & DISFLUENCY: Do NOT flag stuttering, hesitations, or vocal quirks present in the source dialogue (e.g. "Wh-what..." -> "Gì-gì...", "S-sorry..." -> "X-xin lỗi...") as register flaws or unnatural phrasing. Erasing source stuttering to make dialogue sound overly smooth or polished is an AUDIT BUG.
+   - PROTECT DIALOGUE STUTTERING & DISFLUENCY: Do NOT flag stuttering, hesitations, or vocal quirks present in the source dialogue{stutter_example} as register flaws or unnatural phrasing. Erasing source stuttering to make dialogue sound overly smooth or polished is an AUDIT BUG.
 
 STRICT OUTPUT CONTRACT:
 - Output NO_ISSUES ONLY if the draft is 100% flawless across all 4 audit steps.

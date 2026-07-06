@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.15.0-beta.20 - 2026-07-06
+
+### Fixed
+
+- **Language-Agnostic Dialogue Stuttering Guidance**:
+  - Parameterized `stutter_example` in `_get_language_specific_prompt_guidance()` (`src/prompts/prompts.py`) across all supported languages (Vietnamese, Japanese, Chinese, Korean, French, Spanish, German, and General).
+  - Ensures dialogue stuttering and speech disfluency prompt examples are target-language tailored without hardcoding Vietnamese examples in non-Vietnamese translation prompts.
+
 ## 1.15.0-beta.19 - 2026-07-06
 
 ### Fixed
