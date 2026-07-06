@@ -3131,6 +3131,17 @@ def _source_identity_link_proof_status(
     ):
         return True, "source uses the alias directly with the target name"
 
+    alias_tokens = {_plain_key(w) for w in alias.split() if len(w) > 1}
+    target_tokens = {_plain_key(w) for w in candidate_keys[target_key].split() if len(w) > 1}
+    shared_tokens = alias_tokens & target_tokens
+    if shared_tokens:
+        matching_targets = [
+            ck for ck, cname in candidate_keys.items()
+            if shared_tokens & {_plain_key(w) for w in cname.split() if len(w) > 1}
+        ]
+        if len(matching_targets) == 1 and matching_targets[0] == target_key:
+            return True, "alias explicitly contains the target character's name"
+
     return False, "source chunk does not directly prove this alias-target mapping"
 
 

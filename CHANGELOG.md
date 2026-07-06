@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.15.0-beta.22 - 2026-07-06
+
+### Fixed
+
+- **Self-Proving Title-Name Identity Link Proof Validation**:
+  - Refined `_source_identity_link_proof_status()` in `src/utils/novel_context.py` to recognize title/alias mappings that explicitly incorporate target character name tokens (e.g. `"director akikawa yahoi"` $\rightarrow$ `"Yahoi Akikawa"`, `"trainer toujou"` $\rightarrow$ `"Toujou"`, `"momozawa trainer"` $\rightarrow$ `"Tomio Momozawa"`).
+  - Automatically approves self-proving title-name aliases when they uniquely match a candidate character, preventing false `Skipped unsafe identity link` warning logs while maintaining strict proof gating for generic title aliases.
+
 ## 1.15.0-beta.21 - 2026-07-06
 
 ### Added
