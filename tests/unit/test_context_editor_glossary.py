@@ -151,3 +151,83 @@ async def test_xhtml_translator_reflection_mode():
         assert call_kwargs["custom_instructions"] == "Custom rule"
         assert call_kwargs["glossary_block"] == "Mana -> Năng lượng"
         assert result.succeeded
+
+
+def test_extract_term_replacements_from_critique():
+    """Verify term replacement extraction from Senior Editor critique text."""
+    from src.core.translator import extract_term_replacements_from_critique
+
+    sample_critique = """
+    1. **Global Replace:** Change all instances of "Học viện Đào tạo Mã nương Nhật Bản" to **"Học viện Tracen"** to maintain natural register.
+    2. **Consistency:** Replace "Tracen Academy" with "Học viện Tracen".
+    3. **Term Fix:** Change "Mã nương" -> "Umamusume".
+    """
+    extracted = extract_term_replacements_from_critique(sample_critique)
+    assert ("Học viện Đào tạo Mã nương Nhật Bản", "Học viện Tracen") in extracted
+    assert ("Tracen Academy", "Học viện Tracen") in extracted
+    assert ("Mã nương", "Umamusume") in extracted
+
+
+@pytest.mark.asyncio
+async def test_register_editor_terms_updates_session_and_glossary(tmp_path):
+    """Verify NovelContextSession.register_editor_terms updates global lore and prompt options."""
+    from src.utils.novel_context import NovelContextSession
+
+    context_file = tmp_path / "test_context.txt"
+    context_file.write_text("=== GLOBAL LORE ===\n[GLOSSARY]\n- Initial: Value\n", encoding="utf-8")
+
+    prompt_options = {"glossary_terms": {}}
+    session = NovelContextSession(
+        path=context_file,
+        prompt_options=prompt_options,
+        global_lore="=== GLOBAL LORE ===\n[GLOSSARY]\n- Initial: Value\n",
+        dynamic_state="",
+    )
+
+    term_pairs = [("Học viện Đào tạo Mã nương Nhật Bản", "Học viện Tracen")]
+    session.register_editor_terms(term_pairs)
+
+    assert "Học viện Tracen" in session.global_lore
+    assert prompt_options["glossary_terms"]["Học viện Đào tạo Mã nương Nhật Bản"] == "Học viện Tracen"
+    assert "Học viện Tracen" in prompt_options["novel_context"]
+
+
+@pytest.mark.asyncio
+async def test_run_chunk_reflection_pass_registers_editor_terms(tmp_path):
+    """Verify run_chunk_reflection_pass extracts and registers editor terms into context_session."""
+    from src.core.translator import run_chunk_reflection_pass
+    from src.utils.novel_context import NovelContextSession
+
+    context_file = tmp_path / "test_context.txt"
+    context_file.write_text("=== GLOBAL LORE ===\n[GLOSSARY]\n", encoding="utf-8")
+
+    prompt_options = {"glossary_terms": {}}
+    session = NovelContextSession(
+        path=context_file,
+        prompt_options=prompt_options,
+        global_lore="=== GLOBAL LORE ===\n[GLOSSARY]\n",
+        dynamic_state="",
+    )
+
+    critique_output = '1. **Global Replace:** Change all instances of "Học viện Đào tạo Mã nương Nhật Bản" to "Học viện Tracen".'
+
+    mock_llm = MagicMock()
+    mock_llm.generate_async = AsyncMock(side_effect=[
+        MagicMock(content=critique_output),
+        MagicMock(content="<TRANSLATION>[0] Sửa lại tại Học viện Tracen.</TRANSLATION>"),
+    ])
+    mock_llm.extract_translation = MagicMock(return_value="[0] Sửa lại tại Học viện Tracen.")
+
+    repaired = await run_chunk_reflection_pass(
+        source_chunk="[0] At Tracen Academy.",
+        draft_translation="[0] Tại Học viện Đào tạo Mã nương Nhật Bản.",
+        target_language="Vietnamese",
+        model_name="test-model",
+        llm_client=mock_llm,
+        context_session=session,
+    )
+
+    assert repaired == "[0] Sửa lại tại Học viện Tracen."
+    assert "Học viện Tracen" in session.global_lore
+    assert prompt_options["glossary_terms"]["Học viện Đào tạo Mã nương Nhật Bản"] == "Học viện Tracen"
+

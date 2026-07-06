@@ -2,6 +2,7 @@
 Translation module for LLM communication
 """
 import time
+import re
 from tqdm.auto import tqdm
 
 from src.config import (
@@ -1010,6 +1011,44 @@ def format_critique_tldr(critique_text: str, max_bullets: int = 3, max_len: int 
     return " | ".join(summaries)
 
 
+def extract_term_replacements_from_critique(critique: str) -> List[Tuple[str, str]]:
+    """
+    Extract term replacement pairs ordered by Senior Editor critique text.
+    For example:
+    - Change all instances of "Học viện Đào tạo Mã nương Nhật Bản" to "Học viện Tracen"
+    - Replace "Tracen Academy" with "Học viện Tracen"
+    - Change "Mã nương" -> "Umamusume"
+    """
+    if not critique or not critique.strip():
+        return []
+
+    results: List[Tuple[str, str]] = []
+    clean_text = critique.replace("**", "")
+
+    patterns = [
+        r'(?:change|replace|convert)\s+(?:all\s+instances\s+of\s+)?["`„«]([^"`„»]+)["`„»]\s+(?:to|with)\s+["`„«]([^"`„»]+)["`„»]',
+        r'["`„«]([^"`„»]+)["`„»]\s*(?:->|=>)\s*["`„«]([^"`„»]+)["`„»]',
+        r'(?:change|replace|convert)\s+["`„«]([^"`„»]+)["`„»]\s*(?:->|=>)\s*["`„«]([^"`„»]+)["`„»]',
+    ]
+
+    for pattern in patterns:
+        for match in re.finditer(pattern, clean_text, re.IGNORECASE):
+            src_term = match.group(1).strip()
+            tgt_term = match.group(2).strip()
+            if src_term and tgt_term and src_term != tgt_term:
+                if len(src_term) <= 80 and len(tgt_term) <= 80:
+                    results.append((src_term, tgt_term))
+
+    deduped: List[Tuple[str, str]] = []
+    seen = set()
+    for src, tgt in results:
+        key = (src.casefold(), tgt.casefold())
+        if key not in seen:
+            seen.add(key)
+            deduped.append((src, tgt))
+    return deduped
+
+
 async def run_chunk_reflection_pass(
     source_chunk: str,
     draft_translation: str,
@@ -1020,6 +1059,7 @@ async def run_chunk_reflection_pass(
     custom_instructions: str = "",
     glossary_block: str = "",
     log_callback: Optional[Callable] = None,
+    context_session: Optional[Any] = None,
 ) -> str:
     """Run a 2-pass Senior Translation Editor reflection & repair evaluation on a draft chunk."""
     from src.prompts.prompts import generate_chunk_reflection_prompt, generate_chunk_repair_prompt
@@ -1070,6 +1110,10 @@ async def run_chunk_reflection_pass(
     if log_callback:
         tldr_summary = format_critique_tldr(critique)
         log_callback("reflection_critique", f"Senior Editor critique: {tldr_summary}")
+
+    term_pairs = extract_term_replacements_from_critique(critique)
+    if term_pairs and context_session and hasattr(context_session, "register_editor_terms"):
+        context_session.register_editor_terms(term_pairs)
 
     repair_pair = generate_chunk_repair_prompt(
         source_chunk=source_chunk,

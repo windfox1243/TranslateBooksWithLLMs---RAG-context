@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.15.0-beta.21 - 2026-07-06
+
+### Added
+
+- **Senior Editor Dynamic Term Memory & Context Sync**:
+  - Implemented `extract_term_replacements_from_critique()` in `src/core/translator.py` to parse explicit term standardization orders (e.g. `Change all instances of "X" to "Y"`, `Replace "X" with "Y"`, `"X" -> "Y"`) from Senior Editor critiques.
+  - Added `register_editor_terms()` to `NovelContextSession` in `src/utils/novel_context.py` to dynamically persist Senior Editor term decisions directly into `global_lore` (under `[GLOSSARY]`) and `prompt_options["glossary_terms"]`.
+  - Wired `context_session` term registration into `run_chunk_reflection_pass()` and added automatic `sync_translated_output()` invocation upon unit completion in `generic_translator.py` and `xhtml_translator.py`.
+  - Ensures term standardization choices made by Senior Editor in chunk $N$ immediately propagate into Pass 1 and Pass 2 prompts for all subsequent chunks ($N+1, N+2...$), eliminating inter-chunk terminology contradictions.
+
 ## 1.15.0-beta.20 - 2026-07-06
 
 ### Fixed
