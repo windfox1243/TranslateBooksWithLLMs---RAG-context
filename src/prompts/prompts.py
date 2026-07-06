@@ -1313,6 +1313,25 @@ def generate_chunk_reflection_prompt(
     Evaluates line-by-line fidelity, narrative vs. dialogue pronoun isolation, and term accuracy.
     """
     target_lang = target_language or "target language"
+    is_vi = "vietnamese" in target_lang.lower() or target_lang.lower() == "vi"
+
+    loc_example = (
+        ' (e.g. in Vietnamese: translate English "Momozawa Trainer" -> "Huấn luyện viên Momozawa", NOT literal unlocalized "Momozawa Trainer")'
+        if is_vi else f' (e.g. localizing word order, titles, and honorifics according to natural {target_lang} grammar)'
+    )
+    pronoun_examples = (
+        " (e.g. 'em', 'chú', 'con', 'tới', 'tớ')"
+        if is_vi else " (e.g. dialogue-specific intimate pronouns or informal vocatives)"
+    )
+    monologue_guidance = (
+        ' (e.g. "Liệu mình có thắng...", "Tớ nghĩ..."). In Vietnamese, \'mình\' is often the most natural choice for internal self-thought.'
+        if is_vi else " or 1st-person POV self-references."
+    )
+    gender_examples = (
+        " (e.g., using male pronouns 'anh' for a female character, or incorrect seniority/kinship terms)"
+        if is_vi else " (e.g., using male pronouns/titles for a female character or vice versa)"
+    )
+
     system_prompt = f"""You are an uncompromising, ultra-rigorous Senior Literary Translation Editor specializing in {target_lang}.
 Your task is to perform an adversarial quality review of a draft translation against its original source text and active novel lore.
 
@@ -1320,7 +1339,7 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
 0. EXPLICIT SOURCE INTENT & TARGET LOCALIZATION (CRITICAL RULE):
    - Respect explicit character names, nicknames, and direct address terms present in the source text dialogue or narration.
    - When the source text explicitly uses a specific spoken name, nickname, or honorific suffix (e.g. "Spe-chan", "Maruzensky-chan", "Maru-chan"), NEVER flag or force changing it to match a default background lore nickname/address form (e.g. "Special", "Maru-senpai"). Background lore addressing rules apply ONLY when the source text uses generic pronouns, unspecific address forms, or missing titles. Spoken source nicknames and honorifics take 100% absolute primacy over background lore defaults.
-   - ALWAYS localize terms using natural {target_lang} syntax, word order, and honorific rules (e.g. in Vietnamese: translate English "Momozawa Trainer" -> "Huấn luyện viên Momozawa", NOT literal unlocalized "Momozawa Trainer").
+   - ALWAYS localize terms using natural {target_lang} syntax, word order, and honorific rules{loc_example}.
    - NEVER let background lore defaults erase an explicit character name, but DO allow natural grammatical localization of names, titles, and honorifics into standard {target_lang} phrasing.
 
 1. LINE & CLAUSE COMPLETENESS AUDIT:
@@ -1329,12 +1348,12 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
    - Note: Do NOT flag natural target language localization, idiom adaptation, or smooth sentence flow as dropped text if all narrative facts and dialogue lines are preserved.
 
 2. DIALOGUE VS NARRATION PRONOUN ISOLATION & INTERNAL MONOLOGUE:
-   - Check whether dialogue-specific self-references or intimate pronouns (e.g. 'em', 'chú', 'con', 'tới', 'tớ') have improperly leaked into third-person objective story narration outside quotes.
-   - INTERNAL MONOLOGUE & THOUGHTS: Do NOT flag internal monologue, character thoughts (e.g. "Liệu mình có thắng...", "Tớ nghĩ..."), or 1st-person POV self-references as pronoun bleed errors. Intimate self-references in internal monologue and character thoughts are completely natural and valid. In Vietnamese, 'mình' is often the most natural choice for internal self-thought.
+   - Check whether dialogue-specific self-references or intimate pronouns{pronoun_examples} have improperly leaked into third-person objective story narration outside quotes.
+   - INTERNAL MONOLOGUE & THOUGHTS: Do NOT flag internal monologue, character thoughts{monologue_guidance} as pronoun bleed errors. Intimate self-references in internal monologue and character thoughts are completely natural and valid.
 
 3. GENDER & CHARACTER LORE ALIGNMENT:
    - Cross-check pronouns against the ACTIVE NOVEL LORE and custom instructions.
-   - Flag gender mismatches (e.g., using male pronouns 'anh' for a female character, or incorrect seniority/kinship terms).
+   - Flag gender mismatches{gender_examples}.
    - ABSOLUTELY FORBIDDEN: NEVER flag or force changing explicit spoken nicknames/honorifics in source dialogue (e.g. "Spe-chan", "Maruzensky-chan") to match default background lore address entries (e.g. "Special", "Maru-senpai"). Forcing explicit source text nicknames to match background lore is an AUDIT BUG and is strictly prohibited.
 
 4. REGISTER HARMONY & NATURALNESS:
