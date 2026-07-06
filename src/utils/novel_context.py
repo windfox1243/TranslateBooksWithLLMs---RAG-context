@@ -5559,17 +5559,50 @@ def _select_relevant_character_profiles(
     character_profiles: Optional[Dict[str, Dict[str, str]]],
     max_profiles: int = 15,
 ) -> Dict[str, Dict[str, str]]:
-    """Select ONLY character profiles that appear in the reference text to prevent context bloat."""
+    """Select ONLY character profiles that appear in reference text (matching names, source names, or aliases)."""
     if not character_profiles or not reference_text:
         return {}
 
+    text_raw = reference_text
     text_lower = reference_text.casefold()
     relevant: Dict[str, Dict[str, str]] = {}
 
     for key, info in character_profiles.items():
+        if not isinstance(info, dict):
+            continue
+
         char_name = info.get("name", "")
-        name_parts = [p.casefold() for p in char_name.split() if len(p) >= 3]
-        if key in text_lower or char_name.casefold() in text_lower or any(p in text_lower for p in name_parts):
+        source_name = info.get("source_name") or info.get("original_name") or ""
+        aliases = info.get("aliases") or info.get("alias") or []
+        if isinstance(aliases, str):
+            aliases = [a.strip() for a in aliases.split(",") if a.strip()]
+
+        # 1. Direct key match
+        matched = key in text_lower or key.casefold() in text_lower
+
+        # 2. Canonical name or name parts match
+        if not matched and char_name:
+            if char_name.casefold() in text_lower:
+                matched = True
+            else:
+                name_parts = [p.casefold() for p in char_name.split() if len(p) >= 3]
+                if any(p in text_lower for p in name_parts):
+                    matched = True
+
+        # 3. Raw CJK/original source name match
+        if not matched and source_name:
+            if source_name in text_raw or source_name.casefold() in text_lower:
+                matched = True
+
+        # 4. Spoken aliases match
+        if not matched and aliases:
+            for alias in aliases:
+                alias_str = str(alias).strip()
+                if len(alias_str) >= 2 and (alias_str in text_raw or alias_str.casefold() in text_lower):
+                    matched = True
+                    break
+
+        if matched:
             relevant[key] = info
             if len(relevant) >= max_profiles:
                 break
