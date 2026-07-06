@@ -7313,8 +7313,8 @@ class NovelContextSession:
         self,
         translated_chunk: str,
         source_chunk: str = "",
-        target_language: str = "Vietnamese",
-        source_language: str = "English",
+        target_language: Optional[str] = None,
+        source_language: Optional[str] = None,
         llm_client: Optional[Any] = None,
         model_name: str = "",
         chunk_index: int = 0,
@@ -7323,6 +7323,9 @@ class NovelContextSession:
         """Sync final polished translation output (from Senior Editor pass) back into dynamic context."""
         if not translated_chunk or not translated_chunk.strip():
             return False
+
+        target_lang = target_language or self.prompt_options.get("target_language") or "Vietnamese"
+        source_lang = source_language or self.prompt_options.get("source_language") or "English"
 
         if llm_client and source_chunk:
             dialogue_turns = detect_dialogue_turns(source_chunk)
@@ -7334,8 +7337,8 @@ class NovelContextSession:
                 current_dynamic_state=self.dynamic_state,
                 source_chunk=source_chunk,
                 translated_chunk=translated_chunk,
-                source_language=source_language,
-                target_language=target_language,
+                source_language=source_lang,
+                target_language=target_lang,
                 chunk_index=chunk_index,
                 total_chunks=total_chunks,
                 dialogue_turns=dialogue_turns,
