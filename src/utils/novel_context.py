@@ -3438,16 +3438,52 @@ def _gate_unproven_character_gender(
     )
 
 
+def _has_non_ascii_target_script(term: str) -> bool:
+    clean = _strip_balanced_brackets(term)
+    if _has_cjk_or_hangul_name_script(clean):
+        return False
+    return bool(re.search(r"[^\x00-\x7F]", clean))
+
+
+def _is_inverted_target_to_source_glossary_pair(name: str, value: str) -> bool:
+    clean_name = _strip_balanced_brackets(name)
+    clean_val = _strip_balanced_brackets(value)
+    if not clean_name or not clean_val:
+        return False
+    name_has_target = _has_non_ascii_target_script(clean_name)
+    val_has_target = _has_non_ascii_target_script(clean_val)
+    if name_has_target and not val_has_target:
+        return True
+    return False
+
+
 def _normalize_glossary_entries(entries: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
     ordered: Dict[str, Tuple[str, str]] = {}
+    stored_pairs: set[Tuple[str, str]] = set()
     for raw_name, raw_value in entries:
-        if _is_invalid_context_key(raw_name):
+        clean_name = _strip_balanced_brackets(raw_name)
+        clean_value = _strip_balanced_brackets(raw_value)
+        if not clean_name or _is_invalid_context_key(clean_name):
             continue
-        key = _plain_key(raw_name)
-        ordered[key] = (
-            _strip_balanced_brackets(raw_name),
-            _strip_balanced_brackets(raw_value),
-        )
+
+        if _is_inverted_target_to_source_glossary_pair(clean_name, clean_value):
+            clean_name, clean_value = clean_value, clean_name
+
+        key = _plain_key(clean_name)
+        val_key = _plain_key(clean_value)
+
+        if (val_key, key) in stored_pairs:
+            continue
+
+        if key in ordered:
+            old_name, old_val = ordered[key]
+            if old_name.casefold() == clean_name.casefold() and old_name[0:1].isupper():
+                clean_name = old_name
+            if old_val.casefold() == clean_value.casefold() and old_val[0:1].isupper():
+                clean_value = old_val
+
+        ordered[key] = (clean_name, clean_value)
+        stored_pairs.add((key, val_key))
     return list(ordered.values())
 
 
@@ -7220,10 +7256,12 @@ class NovelContextSession:
         if not term_pairs:
             return []
         from src.core.translator import _is_valid_glossary_term
-        valid_pairs = [
-            (src, tgt) for src, tgt in term_pairs
-            if src and tgt and _is_valid_glossary_term(src) and _is_valid_glossary_term(tgt)
-        ]
+        valid_pairs = []
+        for src, tgt in term_pairs:
+            if src and tgt and _is_valid_glossary_term(src) and _is_valid_glossary_term(tgt):
+                if _is_inverted_target_to_source_glossary_pair(src, tgt):
+                    src, tgt = tgt, src
+                valid_pairs.append((src, tgt))
         if not valid_pairs:
             return []
         bullet_lines = [f"- {src}: {tgt}" for src, tgt in valid_pairs]
@@ -8385,11 +8423,35 @@ def merge_new_lore(
     }
 
     for raw_name, raw_value in _parse_bullet_entries(new_glossary):
-        key = _plain_key(raw_name)
-        is_delete = _strip_balanced_brackets(raw_value).casefold() == "delete"
+        clean_name = _strip_balanced_brackets(raw_name)
+        clean_value = _strip_balanced_brackets(raw_value)
+        if not clean_name or _is_invalid_context_key(clean_name):
+            continue
+
+        if _is_inverted_target_to_source_glossary_pair(clean_name, clean_value):
+            clean_name, clean_value = clean_value, clean_name
+
+        key = _plain_key(clean_name)
+        val_key = _plain_key(clean_value)
+
+        # Layer 1 inverse pair check: if key is missing but val_key is stored in glossary
+        if key not in glossary_index and val_key in glossary_index:
+            existing_name, existing_val = glossary[glossary_index[val_key]]
+            if _plain_key(existing_val) == key:
+                key = val_key
+                clean_name, clean_value = existing_name, existing_val
+
+        is_delete = clean_value.casefold() == "delete"
+
         if is_delete:
-            if key in glossary_index:
-                glossary.pop(glossary_index[key])
+            target_idx = glossary_index.get(key)
+            if target_idx is None:
+                for idx, (g_name, g_val) in enumerate(glossary):
+                    if _plain_key(g_val) == key or _plain_key(g_name) == key:
+                        target_idx = idx
+                        break
+            if target_idx is not None:
+                glossary.pop(target_idx)
                 glossary_index = {
                     _plain_key(name): index
                     for index, (name, _) in enumerate(glossary)
@@ -8397,11 +8459,13 @@ def merge_new_lore(
                 record(f"[Novel Context] Deleted glossary term '{key}'.")
             continue
 
-        clean_name = _strip_balanced_brackets(raw_name)
-        clean_value = _strip_balanced_brackets(raw_value)
         if key in glossary_index:
             index = glossary_index[key]
             old_name, old_value = glossary[index]
+            if old_value.casefold() == clean_value.casefold() and old_value[0:1].isupper():
+                clean_value = old_value
+            if old_name.casefold() == clean_name.casefold() and old_name[0:1].isupper():
+                clean_name = old_name
             if (old_name, old_value) != (clean_name, clean_value):
                 record(
                     f"[Novel Context] Updated glossary term '{key}'."

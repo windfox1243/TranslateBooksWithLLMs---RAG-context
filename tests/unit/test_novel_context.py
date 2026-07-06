@@ -5669,3 +5669,117 @@ def test_format_critique_tldr():
     assert "• Dropped clause in sentence 2: \"She looked out the window.\" was omitted from draft." in tldr
     assert "• Pronoun bleed in narration: used intimate 'chú' in non-dialogue story text." in tldr
     assert "(+1 more)" in tldr
+
+
+def test_inverted_target_to_source_glossary_pair_canonicalization():
+    from src.utils.novel_context import (
+        _is_inverted_target_to_source_glossary_pair,
+        _normalize_glossary_entries,
+        normalize_global_lore,
+    )
+
+    assert _is_inverted_target_to_source_glossary_pair("huấn luyện viên", "Trainer") is True
+    assert _is_inverted_target_to_source_glossary_pair("Trainer", "Huấn luyện viên") is False
+
+    entries = [
+        ("Trainer", "Huấn luyện viên"),
+        ("huấn luyện viên", "Trainer"),
+    ]
+    normalized = _normalize_glossary_entries(entries)
+    assert len(normalized) == 1
+    assert normalized[0] == ("Trainer", "Huấn luyện viên")
+
+    raw_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- Trainer: Huấn luyện viên\n"
+        "- huấn luyện viên: Trainer\n"
+    )
+    cleaned = normalize_global_lore(raw_lore)
+    assert "- Trainer: Huấn luyện viên" in cleaned
+    assert "- huấn luyện viên: Trainer" not in cleaned
+
+
+def test_merge_new_lore_prevents_duplicate_reversed_glossary_entry():
+    from src.utils.novel_context import merge_new_lore
+
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- Trainer: Huấn luyện viên\n"
+    )
+    new_glossary = "- huấn luyện viên: Trainer\n"
+
+    updated_lore, change_logs = merge_new_lore(
+        global_lore=initial_lore,
+        new_characters="",
+        new_glossary=new_glossary,
+        source_text="",
+    )
+
+    assert "- Trainer: Huấn luyện viên" in updated_lore
+    assert "- huấn luyện viên: Trainer" not in updated_lore
+    assert not any("Added glossary term 'huan luyen vien'" in log for log in change_logs)
+
+
+def test_register_editor_terms_canonicalizes_inverted_pairs(tmp_path):
+    from src.utils.novel_context import NovelContextSession
+
+    ctx_file = tmp_path / "test_context.txt"
+    initial_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- Trainer: Huấn luyện viên\n"
+    )
+    ctx_file.write_text(initial_lore, encoding="utf-8")
+
+    ctx = NovelContextSession(
+        path=ctx_file,
+        prompt_options={},
+        global_lore=initial_lore,
+        dynamic_state="",
+    )
+    ctx.register_editor_terms([("huấn luyện viên", "Trainer")])
+
+    updated_text = ctx_file.read_text(encoding="utf-8")
+    assert "- Trainer: Huấn luyện viên" in updated_text
+    assert "- huấn luyện viên: Trainer" not in updated_text
+
+
+def test_multi_language_inverted_glossary_pair_handling():
+    from src.utils.novel_context import (
+        _is_inverted_target_to_source_glossary_pair,
+        merge_new_lore,
+        normalize_global_lore,
+    )
+
+    # French & Spanish diacritics
+    assert _is_inverted_target_to_source_glossary_pair("entraîneur", "Trainer") is True
+    assert _is_inverted_target_to_source_glossary_pair("entrenador", "Trainer") is False
+
+    # German & French multi-language merging
+    raw_lore_fr = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- Trainer: entraîneur\n"
+        "- entraîneur: Trainer\n"
+    )
+    cleaned_fr = normalize_global_lore(raw_lore_fr)
+    assert "- Trainer: entraîneur" in cleaned_fr
+    assert "- entraîneur: Trainer" not in cleaned_fr
+
+    # Layer 1 inverse key matching for arbitrary language pairs
+    initial_lore_de = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- Master: Meister\n"
+    )
+    updated_de, _ = merge_new_lore(initial_lore_de, "", "- Meister: Master\n", "")
+    assert "- Master: Meister" in updated_de
+    assert "- Meister: Master" not in updated_de
+

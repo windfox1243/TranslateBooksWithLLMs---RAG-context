@@ -1061,9 +1061,13 @@ def extract_term_replacements_from_critique(critique: str) -> List[Tuple[str, st
                 if _is_valid_glossary_term(src_term) and _is_valid_glossary_term(tgt_term):
                     results.append((src_term, tgt_term))
 
+    from src.utils.novel_context import _is_inverted_target_to_source_glossary_pair
+
     deduped: List[Tuple[str, str]] = []
     seen = set()
     for src, tgt in results:
+        if _is_inverted_target_to_source_glossary_pair(src, tgt):
+            src, tgt = tgt, src
         key = (src.casefold(), tgt.casefold())
         if key not in seen:
             seen.add(key)

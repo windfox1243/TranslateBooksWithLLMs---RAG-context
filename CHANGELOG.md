@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.15.0-beta.26 - 2026-07-06
+
+### Fixed
+
+- **Multi-Language Inverted Glossary Term Canonicalization & Deduplication**:
+  - Added script-agnostic `_has_non_ascii_target_script()` and `_is_inverted_target_to_source_glossary_pair()` in `src/utils/novel_context.py` to detect target-to-source term inversions across all supported target languages (`vi`, `fr`, `es`, `de`, `zh-CN`, `ja`, `ko`).
+  - Added Layer 1 inverse key matching in `merge_new_lore()` and `_normalize_glossary_entries()` to collapse reversed candidate entries into existing source glossary terms (e.g. `- huấn luyện viên: Trainer` or `- entraîneur: Trainer` into `- Trainer: Huấn luyện viên`).
+  - Updated `extract_term_replacements_from_critique()` in `src/core/translator.py` and `register_editor_terms()` in `NovelContextSession` to canonicalize inverted pairs extracted during Senior Editor reflection passes before saving.
+  - Added unit tests in `tests/unit/test_novel_context.py` verifying multi-language diacritics detection, lore normalization, and editor term registration.
+
 ## 1.15.0-beta.25 - 2026-07-06
 
 ### Added
