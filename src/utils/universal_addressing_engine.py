@@ -261,17 +261,7 @@ class UniversalAddressingEngine:
             s_clean, t_clean = repaired_s, repaired_t
             s_key, t_key = s_clean.casefold(), t_key.casefold()
 
-        # 4. Check Arithmetic Formality Distance |F(self) - F(target)|
-        else:
-            distance = self.calculate_formality_distance(s_clean, t_clean)
-            if distance >= 3:
-                f_s = self.get_formality_score(s_clean)
-                f_t = self.get_formality_score(t_clean)
-                if f_s < f_t:
-                    s_clean = "tôi" if self.lang_code == "vi" else ("watashi" if self.lang_code == "ja" else "jeu")
-                    s_key = s_clean.casefold()
-
-        # 5. Self-Consistency Guard: Prevent identical self & target pronouns (e.g., em - em, chị - chị)
+        # 4. Self-Consistency Guard: Prevent identical self & target pronouns (e.g., em - em, chị - chị)
         if s_key and s_key == t_key:
             if s_key == "em":
                 t_clean = "chị" if is_addressee_female else ("anh" if is_addressee_male or "male" in c_clean else "chị")
