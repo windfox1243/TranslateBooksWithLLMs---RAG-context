@@ -153,6 +153,21 @@ def test_merge_engine_policies():
             )
             applied_locked = engine.apply_delta(tx_id, chunk_index=2, delta=delta_locked)
             assert applied_locked is False
+
+            # 4. Roleplay Rejection Priority
+            db.set_addressing_rule_lock(tx_id, "Sếp", "Cậu", False)
+            delta_roleplay = AddressingUpdateDelta(
+                speaker="Sếp",
+                addressee="Cậu",
+                self_pronoun="tôi",
+                second_pronoun="ngài",
+                vocative="Master",
+                register="butler café roleplay",
+                confidence=0.95,
+                evidence_quote="Welcome home, Master!",
+            )
+            applied_roleplay = engine.apply_delta(tx_id, chunk_index=3, delta=delta_roleplay)
+            assert applied_roleplay is False
         finally:
             db.close()
 
