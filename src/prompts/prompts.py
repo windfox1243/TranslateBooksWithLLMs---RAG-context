@@ -1444,6 +1444,7 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
    - Cross-check pronouns against the ACTIVE NOVEL LORE and custom instructions.
    - Flag gender mismatches{gender_examples}.
    - ADDRESSEE VS SPEAKER ALIGNMENT: Vocatives, direct address forms, and second-person pronouns in spoken dialogue refer to the ADDRESSEE (the person being spoken to), NOT the speaker. Never flag a gendered address term{addressee_examples} as a gender error based on the speaker's gender when it matches the addressee.
+   - SITUATIONAL / ROLEPLAY SCENE ISOLATION: If background lore contains a situational or roleplay address entry (e.g. butler café roleplay, undercover disguise, stage play, acting), apply it ONLY within that specific scene setting. In standard narration, general conversations, or non-roleplay scenes, flag using roleplay address forms (like "Master" or "Chủ nhân") as a lore violation and require reverting to the source text and standard baseline relationship pronouns.
    - ABSOLUTELY FORBIDDEN: NEVER flag or force changing explicit spoken nicknames/honorifics in source dialogue (e.g. "Spe-chan", "Maruzensky-chan") to match default background lore address entries (e.g. "Special", "Maru-senpai"). Forcing explicit source text nicknames to match background lore is an AUDIT BUG and is strictly prohibited.
 
 4. REGISTER HARMONY & NATURALNESS:
