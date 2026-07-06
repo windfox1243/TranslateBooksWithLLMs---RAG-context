@@ -230,3 +230,24 @@ def test_plain_segments_use_epub_or_docx_heading_kinds():
     assert len(segments) == 2
     assert segments[0]["indices"] == [0, 1]
     assert segments[1]["indices"] == [2, 3]
+
+
+def test_llm_chapter_boundary_verification():
+    from src.core.chunking.chapter_detector import is_chapter_heading, find_chapter_ranges
+
+    class DummyLLMClient:
+        def make_request(self, prompt: str):
+            if "Side Story 4" in prompt:
+                return "YES, this is a chapter heading."
+            return "NO"
+
+    client = DummyLLMClient()
+    assert is_chapter_heading("Side Story 4: The Beginning", llm_client=client) is True
+    assert is_chapter_heading("This is normal prose text.", llm_client=client) is False
+
+    ranges = find_chapter_ranges(
+        ["Opening text", "Side Story 4: The Beginning", "Chapter text"],
+        llm_client=client,
+    )
+    assert len(ranges) == 2
+    assert ranges[1].title == "Side Story 4: The Beginning"
