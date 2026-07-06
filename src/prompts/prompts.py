@@ -1444,11 +1444,13 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
    - Cross-check pronouns against the ACTIVE NOVEL LORE and custom instructions.
    - Flag gender mismatches{gender_examples}.
    - ADDRESSEE VS SPEAKER ALIGNMENT: Vocatives, direct address forms, and second-person pronouns in spoken dialogue refer to the ADDRESSEE (the person being spoken to), NOT the speaker. Never flag a gendered address term{addressee_examples} as a gender error based on the speaker's gender when it matches the addressee.
+   - ADDRESSEE SHIFT ACCURACY: When a speaker turns from one addressee to another within the same scene (e.g. addressing a senior trainer then turning to speak to a peer classmate), verify that the pronouns and vocatives shift accurately to match the new addressee for each line.
    - SITUATIONAL / ROLEPLAY SCENE ISOLATION: If background lore contains a situational or roleplay address entry (e.g. butler café roleplay, undercover disguise, stage play, acting), apply it ONLY within that specific scene setting. In standard narration, general conversations, or non-roleplay scenes, flag using roleplay address forms (like "Master" or "Chủ nhân") as a lore violation and require reverting to the source text and standard baseline relationship pronouns.
    - ABSOLUTELY FORBIDDEN: NEVER flag or force changing explicit spoken nicknames/honorifics in source dialogue (e.g. "Spe-chan", "Maruzensky-chan") to match default background lore address entries (e.g. "Special", "Maru-senpai"). Forcing explicit source text nicknames to match background lore is an AUDIT BUG and is strictly prohibited.
 
 4. REGISTER HARMONY & NATURALNESS:
    - Check for unnatural, unmotivated register shifts or robotic literal phrasing.
+   - UNMOTIVATED PRONOUN SHIFTS: Flag unmotivated pronoun jumping within dialogue when addressing the same character (e.g. randomly flipping between 'tôi', 'tớ', and 'em' across adjacent sentences to the same addressee without source context changes).
    - Note: Do NOT flag intentional character emotional shifts (e.g. a character becoming angry, casual, or formal during a scene) or creative literary word choices as register errors.
    - PROTECT DIALOGUE STUTTERING & DISFLUENCY: Do NOT flag stuttering, hesitations, or vocal quirks present in the source dialogue{stutter_example} as register flaws or unnatural phrasing. Erasing source stuttering to make dialogue sound overly smooth or polished is an AUDIT BUG.
 
