@@ -962,7 +962,37 @@ async def refine_chunks(
     return refined_parts
 
 
-# Subtitle translation functions moved to subtitle_translator.py
+def format_critique_tldr(critique_text: str, max_bullets: int = 3, max_len: int = 120) -> str:
+    """Format a multi-line Senior Editor critique into a concise single-line TL;DR log message."""
+    if not critique_text or not critique_text.strip():
+        return ""
+    lines = [line.strip() for line in critique_text.splitlines() if line.strip()]
+
+    bullet_items = []
+    for line in lines:
+        if line.startswith(('*', '-', '•', '>')) or (len(line) > 2 and line[0].isdigit() and line[1] in ('.', ')')):
+            clean = line.lstrip("*•-> 0123456789.)").strip()
+            # Skip section category headers like "1. LINE COMPLETENESS:" or "LINE AUDIT:"
+            if clean.endswith(":") and (" " not in clean or clean.isupper() or len(clean.split()) <= 3):
+                continue
+            if clean:
+                bullet_items.append(clean)
+
+    if not bullet_items:
+        compact = " ".join(lines)
+        return compact[:180] + "..." if len(compact) > 180 else compact
+
+    summaries = []
+    for clean in bullet_items[:max_bullets]:
+        if len(clean) > max_len:
+            clean = clean[:max_len].rstrip() + "..."
+        summaries.append(f"• {clean}")
+
+    remaining = len(bullet_items) - max_bullets
+    if remaining > 0:
+        summaries.append(f"(+{remaining} more)")
+
+    return " | ".join(summaries)
 
 
 async def run_chunk_reflection_pass(
@@ -1017,10 +1047,8 @@ async def run_chunk_reflection_pass(
     get_logger().info(f"Senior Editor critique:\n{critique.strip()}", log_type=LogType.GENERAL)
 
     if log_callback:
-        critique_text = critique.strip()
-        preview_limit = 400
-        preview = critique_text[:preview_limit] + "..." if len(critique_text) > preview_limit else critique_text
-        log_callback("reflection_critique", f"Senior Editor critique: {preview}")
+        tldr_summary = format_critique_tldr(critique)
+        log_callback("reflection_critique", f"Senior Editor critique: {tldr_summary}")
 
     repair_pair = generate_chunk_repair_prompt(
         source_chunk=source_chunk,
