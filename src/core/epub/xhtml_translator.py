@@ -520,6 +520,26 @@ async def translate_chunk_with_fallback(
         validation_result = validate_placeholders(translated, local_tag_map)
 
         if validation_result:
+            # Optional 2-pass Senior Translation Editor reflection & repair pass
+            if translated and (prompt_options or {}).get("reflection_mode"):
+                from src.core.translator import run_chunk_reflection_pass
+                repaired = await run_chunk_reflection_pass(
+                    source_chunk=chunk_text,
+                    draft_translation=translated,
+                    target_language=target_language,
+                    model_name=model_name,
+                    llm_client=llm_client,
+                    novel_context=(prompt_options or {}).get("novel_context", ""),
+                    custom_instructions=(prompt_options or {}).get("custom_instructions", ""),
+                    glossary_block=(prompt_options or {}).get("glossary_block", ""),
+                    log_callback=log_callback,
+                )
+                if repaired and validate_placeholders(repaired, local_tag_map):
+                    translated = repaired
+                elif log_callback:
+                    log_callback("reflection_placeholder_mismatch",
+                        "Senior Editor repaired translation altered placeholders — retaining validated draft translation.")
+
             # Success - restore to global indices
             if attempt == 0:
                 stats.successful_first_try += 1

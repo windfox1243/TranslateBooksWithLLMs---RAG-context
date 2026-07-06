@@ -7090,6 +7090,8 @@ class RefinementContextTracker:
                 context_view_max_tokens=self.prompt_options.get(
                     "novel_context_update_prompt_max_tokens",
                 ),
+                custom_instructions=str(self.prompt_options.get("custom_instructions") or ""),
+                glossary_block=str(self.prompt_options.get("glossary_block") or ""),
             )
             self.current_dialogue_attribution = (
                 dialogue_sink
@@ -7250,6 +7252,8 @@ class NovelContextSession:
             context_view_max_tokens=self.prompt_options.get(
                 "novel_context_update_prompt_max_tokens",
             ),
+            custom_instructions=str(self.prompt_options.get("custom_instructions") or ""),
+            glossary_block=str(self.prompt_options.get("glossary_block") or ""),
             use_llm_sanitizer=bool(self.prompt_options.get("use_llm_sanitizer")),
             log_callback=self.log_callback,
         )
@@ -7330,6 +7334,8 @@ class NovelContextSession:
                 dialogue_attribution_sink=dialogue_sink,
                 selective_context_view=self.prompt_options.get("novel_context_selective_update", True),
                 context_view_max_tokens=self.prompt_options.get("novel_context_update_prompt_max_tokens"),
+                custom_instructions=str(self.prompt_options.get("custom_instructions") or ""),
+                glossary_block=str(self.prompt_options.get("glossary_block") or ""),
                 log_callback=self.log_callback,
             )
             if dialogue_sink:
@@ -7924,7 +7930,7 @@ UPDATE_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
 
 ### CURRENT DYNAMIC RELATIONSHIP STATE:
 {current_dynamic_state}
-
+{custom_instructions_section}{glossary_block_section}
 ### TRANSLATION PROGRESS: Segment {chunk_index} of {total_chunks}
 
 ### RECENT SOURCE MEMORY ({source_language}, previous chunks only):
@@ -7949,7 +7955,7 @@ SOURCE_ANALYSIS_USER_PROMPT_TEMPLATE = """### CURRENT GLOBAL LORE:
 
 ### CURRENT DYNAMIC RELATIONSHIP STATE:
 {current_dynamic_state}
-
+{custom_instructions_section}{glossary_block_section}
 ### TRANSLATION PROGRESS: Segment {chunk_index} of {total_chunks}
 
 ### RECENT SOURCE MEMORY ({source_language}, previous chunks only):
@@ -8857,6 +8863,8 @@ async def update_novel_context_chunk(
     dialogue_attribution_sink: Optional[Dict[str, Any]] = None,
     selective_context_view: bool = True,
     context_view_max_tokens: Optional[int] = None,
+    custom_instructions: str = "",
+    glossary_block: str = "",
     use_llm_sanitizer: bool = False,
     log_callback: Optional[Callable] = None,
 ) -> Tuple[str, str, List[str]]:
@@ -8892,9 +8900,21 @@ async def update_novel_context_chunk(
         max_tokens=context_view_max_tokens,
         selective=selective_context_view,
     )
+    custom_instructions_section = (
+        f"\n### CUSTOM INSTRUCTIONS & STYLE GUIDELINES:\n{custom_instructions.strip()}\n"
+        if custom_instructions and custom_instructions.strip()
+        else ""
+    )
+    glossary_block_section = (
+        f"\n### ACTIVE PROJECT GLOSSARY:\n{glossary_block.strip()}\n"
+        if glossary_block and glossary_block.strip()
+        else ""
+    )
     prompt_values = {
         "current_global_lore": prompt_global_lore,
         "current_dynamic_state": prompt_dynamic_state,
+        "custom_instructions_section": custom_instructions_section,
+        "glossary_block_section": glossary_block_section,
         "source_language": source_language,
         "target_language": target_language,
         "source_context": source_context or "(none)",
