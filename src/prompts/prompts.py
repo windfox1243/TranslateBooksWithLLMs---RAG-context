@@ -430,6 +430,7 @@ Translate {source_language} to {target_language}. Output only the translation.
 
 **PRIORITY ORDER:**
 1. Preserve exact names and concise proper nouns (keep concise academy/school/institution names intact rather than over-expanding them into long, wordy descriptive paraphrases).
+   - **SIMILAR NAMES WARNING:** Be extremely careful with similar proper names. If two names look alike (e.g., 'Alex' and 'Alles'), treat them as distinct, separate entities unless explicitly told they are aliases. Never apply a correction or translation meant for one character name to a different character name just because they sound or look similar.
 2. Match original tone and formality
 3. Use natural {target_language} phrasing - never word-for-word
 4. Fix grammar/spelling errors in output
@@ -1430,6 +1431,7 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
    - When the source text explicitly uses a specific spoken name, nickname, or honorific suffix (e.g. "Spe-chan", "Maruzensky-chan", "Maru-chan"), NEVER flag or force changing it to match a default background lore nickname/address form (e.g. "Special", "Maru-senpai"). Background lore addressing rules apply ONLY when the source text uses generic pronouns, unspecific address forms, or missing titles. Spoken source nicknames and honorifics take 100% absolute primacy over background lore defaults.
    - ALWAYS localize terms using natural {target_lang} syntax, word order, and honorific rules{loc_example}.
    - NEVER let background lore defaults erase an explicit character name, but DO allow natural grammatical localization of names, titles, and honorifics into standard {target_lang} phrasing.
+   - **SIMILAR NAMES WARNING:** Do not conflate similar-looking proper names (e.g. Alex vs. Alles). Treat them as distinct characters. Ensure that correction rules meant for one character (e.g. translating a specific 'Alex' as 'Alles') are not incorrectly applied to another distinct character who is actually named Alex.
 
 1. LINE & CLAUSE COMPLETENESS AUDIT:
    - Compare every sentence, clause, dialogue tag, and narrative detail in the source chunk against the draft translation.

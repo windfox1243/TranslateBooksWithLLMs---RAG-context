@@ -4897,6 +4897,24 @@ def _repair_vietnamese_addressing_details(
     second_p = _vietnamese_addressing_field(details, "second-person pronoun")
     vocative = _vietnamese_addressing_field(details, "vocative/address form")
 
+    if _plain_key(self_ref) == "con" and _plain_key(second_p) in {"anh", "chị", "cậu", "bạn"}:
+        v_low = _plain_key(vocative)
+        c_low = details.casefold()
+        if v_low in {"cha", "bố", "ba"} or "father" in c_low or "cha" in c_low or "bố" in c_low:
+            rep_p = v_low if v_low in {"cha", "bố", "ba"} else "cha"
+            details = _replace_vietnamese_addressing_field(details, "second-person pronoun", rep_p)
+            second_p = rep_p
+        elif v_low in {"mẹ", "má"} or "mother" in c_low or "mẹ" in c_low or "má" in c_low:
+            rep_p = v_low if v_low in {"mẹ", "má"} else "mẹ"
+            details = _replace_vietnamese_addressing_field(details, "second-person pronoun", rep_p)
+            second_p = rep_p
+        elif v_low in {"father", "cha"} or "father" in c_low:
+            details = _replace_vietnamese_addressing_field(details, "second-person pronoun", "cha")
+            second_p = "cha"
+        elif v_low in {"mother", "mẹ"} or "mother" in c_low:
+            details = _replace_vietnamese_addressing_field(details, "second-person pronoun", "mẹ")
+            second_p = "mẹ"
+
     if self_ref or second_p:
         rep_self, rep_target, rep_voc = engine.validate_and_repair_pair(
             self_pronoun=self_ref,
@@ -7611,6 +7629,7 @@ Rules:
 - Remove duplicate romanization/source-name variants for Chinese, Japanese, and Korean names when the entries clearly describe the same person. Keep the existing canonical character name from the input and fold the facts into that one entry; do not invent a new pinyin, romaji, or revised-romanization canonical name.
 - Use IDENTITY_LINKS when a removed character entry is actually a stable label, physical form, transformed state, disguise, codename, masked identity, experimental designation, or other source-side alias for a retained canonical character. This includes nonhuman entities described under both a body/type label and a later canonical name.
 - Only add an identity link when the Characters list or Dynamic Relationship State clearly proves both labels are the same entity. Never merge from role similarity alone, and never merge merely because two entities share the same ally, enemy, species, origin, or broad function.
+- **SIMILAR NAMES WARNING (CRITICAL):** Never merge or link similar-looking character names (e.g. Alex vs. Alles, or Marc vs. Mark) unless there is absolute, direct proof in the text that they are the same person. Keep them strictly separate. Even if a correction or nickname mapping is defined for one character (e.g., 'Canonical name is Alles, source text uses Alex'), DO NOT apply that translation/remapping to a different character who is actually named Alex. They are separate individuals.
 - Output ONLY these blocks:
 [CHARACTERS]
 - Canonical Name: Gender, concise description.
@@ -7907,6 +7926,7 @@ Identity rules:
 - A descriptor-only label such as "Protagonist", "Hero", "Main Character", "Player Character", "Protagonist of X", "Hero of X", "fictional character", or "character from X" is not a canonical character name or identity link. Use source names such as Kim Ji-an, Valentine, or Eric; otherwise omit it.
 - When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
 - When the latest source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
+- **SIMILAR NAMES WARNING (CRITICAL):** Do not merge, conflate, or link similar-looking character names (e.g. Alex vs. Alles) under NEW_CHARACTERS, IDENTITY_LINKS, or DYNAMIC_STATE. Treat them as completely separate individuals unless there is absolute, direct, source-proven evidence that they are the same person. If the glossary or instructions direct you to map a specific source name to a canonical name (e.g. source 'Alex' -> canonical 'Alles'), apply this mapping ONLY to that specific character, and never to another character who is actually named Alex.
 - If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
 - For non-English source titles or aliases, preserve the exact source surface label under IDENTITY_LINKS when it is source-proven (for example, "- 중령: Eric"). If the English normalized title also appears in the model's character summary, link that title too.
 - For Chinese/Japanese/Korean source names, do not invent new romanized character names such as pinyin, romaji, or revised romanization variants. Reuse an existing canonical romanized name; otherwise record the exact source surface name under NEW_CHARACTERS and put romanization recommendations only under NEW_GLOSSARY.
@@ -7973,6 +7993,7 @@ Identity rules:
 - A descriptor-only label such as "Protagonist", "Hero", "Main Character", "Player Character", "Protagonist of X", "Hero of X", "fictional character", or "character from X" is not a canonical character name or identity link. Use source names such as Kim Ji-an, Valentine, or Eric; otherwise omit it.
 - When a title-only entry is later identified by name (for example, "Emperor" = "Serena Augusta"), output only the named canonical character with the title in its concise description.
 - When this source directly proves that a stable, book-wide title, rank, nickname, or other label is an existing character, record that mapping under IDENTITY_LINKS. Valid proof includes explicit naming, apposition, an identity reveal, or unambiguous same-scene coreference such as a direct address immediately attributed to the named character. Never create an identity link from role similarity alone. Do not persist a bare title that can refer to multiple people or transfer between characters; use the canonical name directly for that scene instead.
+- **SIMILAR NAMES WARNING (CRITICAL):** Do not merge, conflate, or link similar-looking character names (e.g. Alex vs. Alles) under NEW_CHARACTERS, IDENTITY_LINKS, or DYNAMIC_STATE. Treat them as completely separate individuals unless there is absolute, direct, source-proven evidence that they are the same person. If the glossary or instructions direct you to map a specific source name to a canonical name (e.g. source 'Alex' -> canonical 'Alles'), apply this mapping ONLY to that specific character, and never to another character who is actually named Alex.
 - If the source links a role/title to a named person by location or narration (for example, "the Lieutenant Colonel's office" followed by "Eric" as the person in that office), record the role/title under IDENTITY_LINKS instead of creating a separate character.
 - For non-English source titles or aliases, preserve the exact source surface label under IDENTITY_LINKS when it is source-proven (for example, "- 중령: Eric"). If the English normalized title also appears in the model's character summary, link that title too.
 - For Chinese/Japanese/Korean source names, do not invent new romanized character names such as pinyin, romaji, or revised romanization variants. Reuse an existing canonical romanized name; otherwise record the exact source surface name under NEW_CHARACTERS and put romanization recommendations only under NEW_GLOSSARY.

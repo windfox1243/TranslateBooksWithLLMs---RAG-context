@@ -5783,3 +5783,14 @@ def test_multi_language_inverted_glossary_pair_handling():
     assert "- Master: Meister" in updated_de
     assert "- Meister: Master" not in updated_de
 
+
+def test_parent_child_addressing_repair_in_novel_context():
+    from src.utils.novel_context import _repair_vietnamese_addressing_line
+
+    raw_line = '- Frondier De Roach → Enfer De Roach: "Father" | "self-reference: con; second-person pronoun: anh; vocative/address form: Cha" | father-son relationship; formal/respectful.'
+    repaired = _repair_vietnamese_addressing_line(raw_line, {})
+
+    assert "second-person pronoun: cha" in repaired
+    assert "second-person pronoun: anh" not in repaired
+
+

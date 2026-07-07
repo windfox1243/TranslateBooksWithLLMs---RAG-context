@@ -6,19 +6,50 @@ import pytest
 from src.utils.universal_addressing_engine import UniversalAddressingEngine
 
 
-def test_formality_score_calculation():
+def test_parent_child_addressing_repairs():
     engine = UniversalAddressingEngine(language="vi")
 
-    assert engine.get_formality_score("ngài") == 2
-    assert engine.get_formality_score("tôi") == 1
-    assert engine.get_formality_score("tớ") == 0
-    assert engine.get_formality_score("mày") == -2
+    # Child calling Father with hallucinated sibling second-person 'anh' -> Repaired to 'cha'
+    s, t, v = engine.validate_and_repair_pair(
+        self_pronoun="con",
+        target_pronoun="anh",
+        speaker="Frondier De Roach",
+        addressee="Enfer De Roach",
+        vocative="Cha",
+        details_context="father-son relationship; formal/respectful",
+    )
+    assert s == "con"
+    assert t == "cha"
+    assert v == "Cha"
 
-    # Distance calculation: |F(tớ) - F(mày)| = |0 - (-2)| = 2
-    assert engine.calculate_formality_distance("tớ", "mày") == 2
+    # Child calling Mother with peer 'cậu' -> Repaired to 'mẹ'
+    s, t, v = engine.validate_and_repair_pair(
+        self_pronoun="con",
+        target_pronoun="cậu",
+        speaker="Child",
+        addressee="Mother",
+        vocative="Mẹ",
+        details_context="mother-son relationship",
+    )
+    assert s == "con"
+    assert t == "mẹ"
+    assert v == "Mẹ"
 
 
-def test_vietnamese_2d_seniority_hierarchy_repairs():
+def test_incompatible_register_repair_toi_nguoi():
+    engine = UniversalAddressingEngine(language="vi")
+
+    # Incompatible tôi - ngươi repaired to ta - ngươi
+    s, t, v = engine.validate_and_repair_pair(
+        self_pronoun="tôi",
+        target_pronoun="ngươi",
+        speaker="Villain",
+        addressee="Hero",
+        details_context="archaic hostile context",
+    )
+    assert s == "ta"
+    assert t == "ngươi"
+
     engine = UniversalAddressingEngine(language="vi")
 
     # 1. Trainee calling Trainer with peer 'cậu' -> Repaired to genuine pronoun 'anh', vocative 'Trainer'

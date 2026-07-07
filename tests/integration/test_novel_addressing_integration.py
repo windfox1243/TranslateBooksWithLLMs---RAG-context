@@ -75,8 +75,8 @@ def test_novel_addressing_integration_with_drive_f():
 
             # Check rendered projection for next chunk system prompt
             projection = render_addressing_projection(tx_id, db=db)
-            assert "**Trainer** khi nói với **Oguri**: Tự xưng là 'tôi', gọi đối phương là 'em'" in projection
-            assert "**Oguri** khi nói với **Trainer**: Tự xưng là 'em', gọi đối phương là 'thầy'" in projection
+            assert "**Trainer** addressing **Oguri**: Self-reference as 'tôi', address target as 'em'" in projection
+            assert "**Oguri** addressing **Trainer**: Self-reference as 'em', address target as 'thầy'" in projection
 
             # Check audit logs
             logs = db.get_context_audit_logs(tx_id)

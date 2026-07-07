@@ -70,7 +70,6 @@ def test_novel_snippets():
         print(f"Test {idx}: {pair['speaker']} → {pair['addressee']}")
         print(f"  Input : Self='{pair['self']}', Target='{pair['target']}', Vocative='{pair['vocative']}'")
         print(f"  Result: Self='{s_rep}', Target='{t_rep}', Vocative='{v_rep}'")
-        print(f"  Score : |F({s_rep}) - F({t_rep})| = {engine.calculate_formality_distance(s_rep, t_rep)}")
         print("-" * 50)
 
 

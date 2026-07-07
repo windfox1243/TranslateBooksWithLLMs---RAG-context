@@ -7,11 +7,18 @@ Enforces strict linguistic separation:
 3. Nouns, job roles, and titles (Trainer, huấn luyện viên, giám đốc, bác sĩ, sensei, sunbae) MUST reside in vocative ONLY.
 """
 
+import re
 from typing import Dict, Tuple, Optional, Set, List, Any
+
+def _has_cue_word(text: str, cue: str) -> bool:
+    """Check if the cue is present in the text, ensuring word boundaries for short/single words to avoid false positive substring matches."""
+    if len(cue) <= 4 or " " not in cue:
+        return bool(re.search(rf"\b{re.escape(cue)}\b", text, re.IGNORECASE))
+    return cue.casefold() in text.casefold()
 
 # Genuine Seniority Pronoun Sets (Strictly exclude Job Titles / Nouns)
 _SENIOR_PRONOUN_SETS: Dict[str, Set[str]] = {
-    "vi": {"anh", "chị", "thầy", "cô", "sếp", "bác", "chú", "ông", "bà", "tiền bối", "ngài"},
+    "vi": {"anh", "chị", "thầy", "cô", "sếp", "bác", "chú", "ông", "bà", "cha", "bố", "mẹ", "ba", "má", "tiền bối", "ngài"},
     "ja": {"senpai", "sensei", "sama"},
     "ko": {"sunbae-nim", "sunbae"},
 }
@@ -89,21 +96,21 @@ class UniversalAddressingEngine:
         adr = (addressee or "").casefold()
         ctx = (context or "").casefold()
 
-        senior_cues = ("trainer", "coach", "mentor", "huấn luyện viên", "teacher", "thầy", "sensei", "sunbae", "sếp", "giám đốc", "senpai")
-        junior_cues = ("trainee", "student", "học sinh", "hậu bối", "junior", "kohai", "hobae")
+        senior_cues = ("trainer", "coach", "mentor", "huấn luyện viên", "teacher", "thầy", "sensei", "sunbae", "sếp", "giám đốc", "senpai", "father", "mother", "parent", "cha", "bố", "ba", "mẹ", "má")
+        junior_cues = ("trainee", "student", "học sinh", "hậu bối", "junior", "kohai", "hobae", "son", "daughter", "child", "con")
 
         # Explicit directional context cues (e.g. "trainer to trainee")
-        if any(c in ctx for c in ("trainer to trainee", "senior to junior", "teacher to student", "sếp đến nhân viên", "thầy đến trò")):
+        if any(c in ctx for c in ("trainer to trainee", "senior to junior", "teacher to student", "sếp đến nhân viên", "thầy đến trò", "parent to child", "father to son", "father to daughter", "mother to son", "mother to daughter")):
             return "SENIOR_TO_JUNIOR"
-        if any(c in ctx for c in ("trainee to trainer", "junior to senior", "student to teacher", "trò đến thầy")):
+        if any(c in ctx for c in ("trainee to trainer", "junior to senior", "student to teacher", "trò đến thầy", "child to parent", "father-son", "father-daughter", "mother-son", "mother-daughter", "parent-child", "con với cha", "con với mẹ")):
             return "JUNIOR_TO_SENIOR"
 
         # Direct explicit role cues in context or addressee
-        if any(k in adr for k in senior_cues) or (any(k in ctx for k in senior_cues) and not any(k in spk for k in senior_cues)):
-            if not any(k in spk for k in senior_cues):
+        if any(_has_cue_word(adr, k) for k in senior_cues) or (any(_has_cue_word(ctx, k) for k in senior_cues) and not any(_has_cue_word(spk, k) for k in senior_cues)):
+            if not any(_has_cue_word(spk, k) for k in senior_cues):
                 return "JUNIOR_TO_SENIOR"
 
-        if any(k in spk for k in senior_cues) and any(k in adr or k in ctx for k in junior_cues):
+        if any(_has_cue_word(spk, k) for k in senior_cues) and any(_has_cue_word(adr, k) or _has_cue_word(ctx, k) for k in junior_cues):
             return "SENIOR_TO_JUNIOR"
 
         return "PEER"
@@ -167,6 +174,30 @@ class UniversalAddressingEngine:
             else:
                 t_clean = "chị" if is_addressee_female else "anh"
             t_key = t_clean.casefold()
+
+        # Parent-child relationship cross-field repairs for Vietnamese
+        if self.lang_code == "vi":
+            if s_key == "con" or any(k in c_clean for k in ("father-son", "father-daughter", "mother-son", "mother-daughter", "parent-child", "con với cha", "con với mẹ")):
+                if t_key in {"anh", "chị", "cậu", "bạn", "mày", "ngươi"}:
+                    v_case = v_clean.casefold()
+                    if v_case in {"cha", "bố", "ba"} or any(k in c_clean for k in ("father", "cha", "bố", "ba")):
+                        t_clean = v_clean.lower() if v_case in {"cha", "bố", "ba"} else "cha"
+                    elif v_case in {"mẹ", "má"} or any(k in c_clean for k in ("mother", "mẹ", "má")):
+                        t_clean = v_clean.lower() if v_case in {"mẹ", "má"} else "mẹ"
+                    elif v_case == "father":
+                        t_clean = "cha"
+                    elif v_case == "mother":
+                        t_clean = "mẹ"
+                    elif is_addressee_female:
+                        t_clean = "mẹ"
+                    else:
+                        t_clean = "cha"
+                    t_key = t_clean.casefold()
+
+            if t_key in {"cha", "bố", "ba", "mẹ", "má"} or v_clean.casefold() in {"cha", "bố", "ba", "mẹ", "má", "father", "mother"}:
+                if s_key in {"anh", "chị", "tớ", "mày"}:
+                    s_clean = "con"
+                    s_key = "con"
 
         # 1. Resolve 2D Seniority Hierarchy (JUNIOR_TO_SENIOR, SENIOR_TO_JUNIOR, PEER)
         hierarchy = self.resolve_seniority_hierarchy(speaker, addressee, details_context)
