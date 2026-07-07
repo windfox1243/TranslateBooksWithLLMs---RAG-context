@@ -38,8 +38,7 @@ def test_real_novel_dialogue():
 
     for s, t, v in pairs:
         s_r, t_r, v_r = engine.validate_and_repair_pair(s, t, vocative=v)
-        dist = engine.calculate_formality_distance(s_r, t_r)
-        print(f"Pair: ({s}, {t}, {v}) → Repaired: ({s_r}, {t_r}, {v_r}) | Formality Distance: {dist}")
+        print(f"Pair: ({s}, {t}, {v}) → Repaired: ({s_r}, {t_r}, {v_r})")
 
 
 if __name__ == "__main__":
