@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.15.0-beta.27 - 2026-07-07
+
+### Fixed
+
+- **Vietnamese Parent-Child & Sibling Addressing Repairs**:
+  Repaired address-rule generation logic in `UniversalAddressingEngine` to
+  correctly map vocatives and self/second-person pronouns for family
+  relationships (e.g. `con → cha` instead of `con → anh` when a son
+  addresses his father, and `con → mẹ` instead of `con → cậu` for
+  mothers).
+
+- **Similar-Name Character Conflation Prevention**:
+  Inserted explicit warning structures into `SOURCE_ANALYSIS_SYSTEM_PROMPT`,
+  `CONSOLIDATION_SYSTEM_PROMPT`, and `UPDATE_SYSTEM_PROMPT` in
+  `novel_context.py`, as well as translation and editor critique prompt
+  generation steps in `prompts.py`, instructing the LLM to never merge or
+  conflate distinct characters with similar names (e.g. "Alles" vs "Alex").
+
+### Tests
+
+- Added unit tests verifying parent-child and sibling Vietnamese addressing
+  repairs in `UniversalAddressingEngine`.
+- Re-aligned outdated test assertions (removed deprecated arithmetic
+  formality-distance scoring, updated mock critique assertions to match
+  source-target inverted swapping).
+- Regenerated characterization test baselines (`refine_docx.json`,
+  `refine_epub.json`, `translate_refine_epub.json`).
+- Full pytest suite: all 1,609 unit, integration, and characterization tests
+  pass.
+
 ## 1.15.0-beta.26 - 2026-07-06
 
 ### Fixed
