@@ -4,6 +4,7 @@ from src.core.chunking.chapter_detector import (
     find_chapter_ranges,
     is_chapter_heading,
 )
+from src.core.chunking.decorative_separator import is_decorative_separator
 from src.core.common.plain_text_pipeline import build_plain_segments
 from src.core.text_processor import split_text_into_chunks
 
@@ -71,6 +72,25 @@ def test_single_generic_numbered_line_does_not_create_a_boundary():
     ranges = find_chapter_ranges(paragraphs)
 
     assert [(item.start, item.end) for item in ranges] == [(0, 3)]
+
+
+def test_decorative_separators_are_not_chapter_boundaries():
+    paragraphs = [
+        "Chapter 1",
+        "Opening body.",
+        "===",
+        "More body.",
+        "----",
+        "Final body.",
+    ]
+
+    assert is_decorative_separator("===")
+    assert is_decorative_separator("----")
+    assert not is_chapter_heading("===")
+    assert not is_chapter_heading("----")
+
+    ranges = find_chapter_ranges(paragraphs)
+    assert [(item.start, item.end) for item in ranges] == [(0, 6)]
 
 
 def test_repeated_english_prose_with_i_is_not_a_roman_heading():
@@ -155,6 +175,32 @@ def test_txt_chapter_mode_splits_oversized_chapter_within_same_chapter():
     assert all(chunk["chunks_in_chapter"] == len(chunks) for chunk in chunks)
 
 
+def test_txt_chapter_mode_does_not_create_separator_only_chunks():
+    text = (
+        "Chapter 1\n\n"
+        "Alpha one. Alpha two.\n\n"
+        "===\n\n"
+        "Beta one. Beta two.\n\n"
+        "----\n\n"
+        "Gamma one. Gamma two."
+    )
+
+    chunks = split_text_into_chunks(
+        text,
+        max_tokens_per_chunk=8,
+        chapter_mode=True,
+    )
+
+    assert len(chunks) > 1
+    assert {chunk["chapter_index"] for chunk in chunks} == {0}
+    assert not any(
+        is_decorative_separator(chunk["main_content"])
+        for chunk in chunks
+    )
+    assert any("===" in chunk["main_content"] for chunk in chunks)
+    assert any("----" in chunk["main_content"] for chunk in chunks)
+
+
 def test_plain_segments_split_oversized_structural_chapter_without_fake_ranges():
     paragraphs = ["Episode 1: Opening"] + [
         f"Paragraph {i} has enough ordinary story text to force token chunking inside one structural chapter."
@@ -172,6 +218,32 @@ def test_plain_segments_split_oversized_structural_chapter_without_fake_ranges()
     assert {segment["chapter_index"] for segment in segments} == {0}
     assert {segment["chapter_title"] for segment in segments} == {"Episode 1: Opening"}
     assert all(not segment["partial"] for segment in segments)
+
+
+def test_plain_segments_preserve_separators_without_standalone_units():
+    paragraphs = [
+        "Chapter 1",
+        "Alpha one. Alpha two.",
+        "===",
+        "Beta one. Beta two.",
+        "----",
+        "Gamma one. Gamma two.",
+    ]
+
+    segments = build_plain_segments(
+        paragraphs,
+        max_tokens_per_chunk=8,
+        chapter_mode=True,
+    )
+
+    assert len(segments) > 1
+    assert {segment["chapter_index"] for segment in segments} == {0}
+    assert not any(
+        is_decorative_separator(segment["text"])
+        for segment in segments
+    )
+    assert any("===" in segment["text"] for segment in segments)
+    assert any("----" in segment["text"] for segment in segments)
 
 
 def test_txt_chapter_mode_never_leaks_neighbor_context():

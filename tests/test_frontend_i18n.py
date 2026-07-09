@@ -486,3 +486,28 @@ def test_js_modules_have_no_hardcoded_user_visible_text() -> None:
         "to _JS_HARDCODE_ALLOWLIST in this test with a justification):\n"
         + "\n".join(offenders)
     )
+
+
+def test_frontend_start_and_batch_configs_keep_reflection_and_file_languages() -> None:
+    """Fresh and batch starts must carry reflection mode and per-file languages."""
+    form_manager = (JS_DIR / "ui" / "form-manager.js").read_text(encoding="utf-8")
+    batch_controller = (JS_DIR / "translation" / "batch-controller.js").read_text(encoding="utf-8")
+
+    reflection_snippet = "reflection_mode: DomHelpers.getElement('enableReflection')?.checked || false"
+    assert reflection_snippet in form_manager
+    assert reflection_snippet in batch_controller
+    assert "const sourceLanguageVal = file.sourceLanguage;" in batch_controller
+    assert "const targetLanguageVal = file.targetLanguage;" in batch_controller
+    assert "source_language: sourceLanguageVal" in batch_controller
+    assert "target_language: targetLanguageVal" in batch_controller
+
+
+def test_obsolete_llm_sanitizer_setting_removed_from_web_settings_surface() -> None:
+    """The removed sanitizer flag must not be persisted by web settings APIs."""
+    settings_manager = (JS_DIR / "core" / "settings-manager.js").read_text(encoding="utf-8")
+    config_routes = (ROOT / "src" / "api" / "blueprints" / "config_routes.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "useLlmSanitizer" not in settings_manager
+    assert "USE_LLM_SANITIZER" not in config_routes

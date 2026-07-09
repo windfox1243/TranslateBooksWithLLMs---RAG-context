@@ -429,3 +429,56 @@ class TestChunkSizeLimitations:
         if chunks:
             token_count = chunker._count_segment_tokens(chunks[0]['text'])
             assert token_count <= 100
+
+
+class TestChapterMode:
+    """Test chapter-aware HTML region splitting."""
+
+    def test_paragraph_chapter_labels_use_shared_detector(self):
+        chunker = HtmlChunker(max_tokens=400, chapter_mode=True)
+        text = (
+            "[id0]Chapter 1[id1]"
+            "[id2]Opening body.[id3]"
+            "[id4]Chapter 2[id5]"
+            "[id6]Second body.[id7]"
+        )
+        tag_map = {
+            "[id0]": "<p>",
+            "[id1]": "</p>",
+            "[id2]": "<p>",
+            "[id3]": "</p>",
+            "[id4]": "<p>",
+            "[id5]": "</p>",
+            "[id6]": "<p>",
+            "[id7]": "</p>",
+        }
+
+        chunks = chunker.chunk_html_with_placeholders(text, tag_map)
+
+        assert len(chunks) == 2
+        assert chunks[0]["chapter_index"] == 0
+        assert chunks[1]["chapter_index"] == 1
+        assert "Chapter 1" in chunks[0]["text"]
+        assert "Chapter 2" in chunks[1]["text"]
+
+    def test_decorative_paragraphs_do_not_create_chapter_regions(self):
+        chunker = HtmlChunker(max_tokens=400, chapter_mode=True)
+        text = (
+            "[id0]Chapter 1[id1]"
+            "[id2]===[id3]"
+            "[id4]Opening body.[id5]"
+        )
+        tag_map = {
+            "[id0]": "<p>",
+            "[id1]": "</p>",
+            "[id2]": "<p>",
+            "[id3]": "</p>",
+            "[id4]": "<p>",
+            "[id5]": "</p>",
+        }
+
+        chunks = chunker.chunk_html_with_placeholders(text, tag_map)
+
+        assert len(chunks) == 1
+        assert chunks[0]["chapter_index"] == 0
+        assert "===" in chunks[0]["text"]

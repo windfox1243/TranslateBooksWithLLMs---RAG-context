@@ -8,6 +8,23 @@ from pathlib import Path
 from .database import Database
 
 
+def _checkpoint_log(
+    message: str,
+    *,
+    level: str = "info",
+    data: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Write checkpoint events through the unified terminal logger."""
+    try:
+        from src.utils.unified_logger import LogType, get_logger
+
+        logger = get_logger()
+        log_method = getattr(logger, level, logger.info)
+        log_method(message, log_type=LogType.FILE_OPERATION, data=data)
+    except Exception:
+        print(message)
+
+
 class CheckpointManager:
     """
     Manages translation job checkpoints including database persistence
@@ -104,7 +121,11 @@ class CheckpointManager:
 
         # Only preserve if file exists
         if not input_path.exists():
-            print(f"Warning: Input file does not exist: {input_file_path}")
+            _checkpoint_log(
+                f"Warning: Input file does not exist: {input_file_path}",
+                level="warning",
+                data={"translation_id": translation_id},
+            )
             return
 
         # Always preserve uploaded files for web interface
@@ -119,9 +140,16 @@ class CheckpointManager:
             shutil.copy2(input_file_path, preserved_path)
             # Update config with preserved path (stored in DB)
             config['preserved_input_path'] = str(preserved_path)
-            print(f"Input file preserved: {preserved_path}")
+            _checkpoint_log(
+                f"Input file preserved: {preserved_path}",
+                data={"translation_id": translation_id, "path": str(preserved_path)},
+            )
         except Exception as e:
-            print(f"Warning: Could not preserve input file: {e}")
+            _checkpoint_log(
+                f"Warning: Could not preserve input file: {e}",
+                level="warning",
+                data={"translation_id": translation_id},
+            )
 
     def preserve_refinement_source(
         self,
@@ -148,7 +176,11 @@ class CheckpointManager:
         try:
             shutil.copy2(output_path, preserved_path)
         except Exception as e:
-            print(f"Warning: Could not preserve refinement source: {e}")
+            _checkpoint_log(
+                f"Warning: Could not preserve refinement source: {e}",
+                level="warning",
+                data={"translation_id": translation_id},
+            )
             return None
 
         job = self.db.get_job(translation_id) or {}
@@ -948,7 +980,16 @@ class CheckpointManager:
             with open(state_file, 'w', encoding='utf-8') as f:
                 json.dump(state.to_dict(), f, ensure_ascii=False, indent=2)
 
-            print(f"Partial state saved: {state_file} (chunk {state.current_chunk_index}/{len(state.chunks)})")
+            _checkpoint_log(
+                f"Partial state saved: {state_file} "
+                f"(chunk {state.current_chunk_index}/{len(state.chunks)})",
+                data={
+                    "translation_id": translation_id,
+                    "file_href": file_href,
+                    "current_chunk_index": state.current_chunk_index,
+                    "total_chunks": len(state.chunks),
+                },
+            )
 
             # Update main checkpoint progress with global_stats if available
             # This ensures the UI shows correct progress across all XHTML files
@@ -960,11 +1001,26 @@ class CheckpointManager:
                     completed_chunks=state.global_stats.get('completed_chunks'),
                     failed_chunks=state.global_stats.get('failed_chunks')
                 )
-                print(f"Updated main checkpoint with global stats: {state.global_stats.get('completed_chunks')}/{state.global_stats.get('total_chunks')} chunks")
+                _checkpoint_log(
+                    "Updated main checkpoint with global stats: "
+                    f"{state.global_stats.get('completed_chunks')}/"
+                    f"{state.global_stats.get('total_chunks')} chunks",
+                    data={
+                        "translation_id": translation_id,
+                        "file_href": file_href,
+                        "completed_chunks": state.global_stats.get('completed_chunks'),
+                        "total_chunks": state.global_stats.get('total_chunks'),
+                        "failed_chunks": state.global_stats.get('failed_chunks'),
+                    },
+                )
 
             return True
         except Exception as e:
-            print(f"Error saving partial state: {e}")
+            _checkpoint_log(
+                f"Error saving partial state: {e}",
+                level="error",
+                data={"translation_id": translation_id, "file_href": file_href},
+            )
             return False
 
     def load_xhtml_partial_state(
@@ -1000,13 +1056,30 @@ class CheckpointManager:
 
             # Validate the loaded state
             if not state.validate():
-                print(f"Warning: Loaded state is invalid, ignoring: {state_file}")
+                _checkpoint_log(
+                    f"Warning: Loaded state is invalid, ignoring: {state_file}",
+                    level="warning",
+                    data={"translation_id": translation_id, "file_href": file_href},
+                )
                 return None
 
-            print(f"Partial state loaded: {state_file} (resuming from chunk {state.current_chunk_index}/{len(state.chunks)})")
+            _checkpoint_log(
+                f"Partial state loaded: {state_file} "
+                f"(resuming from chunk {state.current_chunk_index}/{len(state.chunks)})",
+                data={
+                    "translation_id": translation_id,
+                    "file_href": file_href,
+                    "current_chunk_index": state.current_chunk_index,
+                    "total_chunks": len(state.chunks),
+                },
+            )
             return state
         except Exception as e:
-            print(f"Error loading partial state: {e}")
+            _checkpoint_log(
+                f"Error loading partial state: {e}",
+                level="error",
+                data={"translation_id": translation_id, "file_href": file_href},
+            )
             return None
 
     def delete_xhtml_partial_state(

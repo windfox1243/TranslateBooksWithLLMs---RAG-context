@@ -877,7 +877,8 @@ export const FormManager = {
                 custom_instruction_file: DomHelpers.getValue('customInstructionSelect') || '',
                 novel_context_file: DomHelpers.getValue('novelContextSelect') || '',
                 auto_update_context: DomHelpers.getElement('autoUpdateContext')?.checked || false,
-                bypass_context_gating: DomHelpers.getElement('bypassContextGating')?.checked || false
+                bypass_context_gating: DomHelpers.getElement('bypassContextGating')?.checked || false,
+                reflection_mode: DomHelpers.getElement('enableReflection')?.checked || false
             },
             // Bilingual output (original + translation interleaved)
             bilingual_output: DomHelpers.getElement('bilingualMode')?.checked || false,
@@ -1040,6 +1041,7 @@ window.loadSelectedProfile = async function() {
             textCleanup: data.text_cleanup,
             autoUpdateContext: data.auto_update_context,
             bypassContextGating: data.bypass_context_gating,
+            enableReflection: data.reflection_mode,
             plainTextMode: data.plain_text_mode,
             chapterMode: data.chapter_mode,
             disableAutoPause: data.auto_pause_on_rate_limit === undefined
@@ -1098,6 +1100,7 @@ window.promptSaveProfile = async function() {
         text_cleanup: !!formData.prompt_options?.text_cleanup,
         auto_update_context: !!formData.prompt_options?.auto_update_context,
         bypass_context_gating: !!formData.prompt_options?.bypass_context_gating,
+        reflection_mode: !!formData.prompt_options?.reflection_mode,
         plain_text_mode: !!formData.prompt_options?.plain_text_mode,
         chapter_mode: !!formData.prompt_options?.chapter_mode,
         auto_pause_on_rate_limit: formData.auto_pause_on_rate_limit,

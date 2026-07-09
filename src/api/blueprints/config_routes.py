@@ -987,8 +987,7 @@ def create_config_blueprint(server_session_id=None):
             'NOTIFY_ON_FAILURE',
             'NOTIFY_ON_INTERRUPTION',
             'NOTIFY_TIMEOUT_SECONDS',
-            'ENABLE_CHUNK_REFLECTION',
-            'USE_LLM_SANITIZER'
+            'ENABLE_CHUNK_REFLECTION'
         }
 
         try:

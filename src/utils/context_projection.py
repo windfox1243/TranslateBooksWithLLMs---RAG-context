@@ -4,6 +4,7 @@ Projection engine to render persistent database addressing state into prompt con
 
 from typing import Optional, List, Dict, Any
 from src.persistence.database import Database
+from src.utils.text_matching import active_label_matches_name
 
 
 def render_addressing_projection(
@@ -48,14 +49,15 @@ def render_addressing_projection(
         if active_set:
             filtered_rules = []
             for r in rules:
-                spk = str(r.get("speaker_name") or "").casefold().strip()
-                adr = str(r.get("addressee_name") or "").casefold().strip()
-                # Keep rule if speaker or addressee matches active names/aliases, or if rule is locked
+                spk = str(r.get("speaker_name") or "")
+                adr = str(r.get("addressee_name") or "")
                 if (
                     r.get("is_locked")
-                    or spk in active_set
-                    or adr in active_set
-                    or any(a in spk or a in adr or spk in a or adr in a for a in active_set if len(a) >= 3)
+                    or any(
+                        active_label_matches_name(active, spk, target_language)
+                        or active_label_matches_name(active, adr, target_language)
+                        for active in active_set
+                    )
                 ):
                     filtered_rules.append(r)
             rules = filtered_rules
@@ -69,7 +71,7 @@ def render_addressing_projection(
     ]
 
     from src.utils.universal_addressing_engine import UniversalAddressingEngine
-    engine = UniversalAddressingEngine(language=target_language or "vi")
+    engine = UniversalAddressingEngine(language=target_language or "generic")
 
     from src.utils.context_schema import is_situational_context
 
@@ -91,9 +93,15 @@ def render_addressing_projection(
         )
         vocative_str = f" (vocative '{vocative}')" if vocative else ""
         situational_note = " [SITUATIONAL CONTEXT: Active in this scene only]" if is_situational_context(r) else ""
+        if self_p and str(self_p).strip().casefold() != "unspecified":
+            instruction = (
+                f"Self-reference as '{self_p}', address target as '{target_p}'"
+            )
+        else:
+            instruction = f"Address target as '{target_p}'"
         lines.append(
             f"- **{speaker}** addressing **{addressee}**: "
-            f"Self-reference as '{self_p}', address target as '{target_p}'{vocative_str} "
+            f"{instruction}{vocative_str} "
             f"[Tone: {register}]{situational_note}{forbidden_str}."
         )
 
@@ -196,4 +204,3 @@ def convert_addressing_text_to_markdown_table(text: str) -> str:
         return text
 
     return "\n".join(table_lines)
-

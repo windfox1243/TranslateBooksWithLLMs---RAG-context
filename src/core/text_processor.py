@@ -60,7 +60,10 @@ def split_text_into_chunks(
         chapter_text = "\n\n".join(
             paragraphs[chapter_range.start:chapter_range.end]
         )
-        chapter_chunks = chunker.chunk_text(chapter_text)
+        chapter_chunks = chunker.chunk_text(
+            chapter_text,
+            glue_decorative_separators=True,
+        )
         for chunk_index, chunk in enumerate(chapter_chunks):
             chunk.update({
                 "chapter_index": chapter_index,

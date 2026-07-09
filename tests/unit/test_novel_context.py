@@ -2511,24 +2511,98 @@ def test_source_identity_link_proof_status_accepts_title_name_aliases():
         "- Tomio Momozawa: Male, trainer.\n\n"
         "## GLOSSARY & TERMINOLOGY\n"
     )
-    source = "The scene takes place in the academy."
+    source = (
+        "Yahoi Akikawa, director akikawa yahoi, opened the meeting. "
+        "Toujou, trainer toujou, checked the training schedule. "
+        "Tomio Momozawa, momozawa trainer, raised his hand."
+    )
 
     proved1, reason1 = _source_identity_link_proof_status(source, lore, "", "director akikawa yahoi", "Yahoi Akikawa")
     assert proved1 is True
-    assert "alias explicitly contains the target character's name" in reason1
+    assert "explicit identity statement or apposition" in reason1
 
     proved2, reason2 = _source_identity_link_proof_status(source, lore, "", "trainer toujou", "Toujou")
     assert proved2 is True
-    assert "alias explicitly contains the target character's name" in reason2
+    assert "explicit identity statement or apposition" in reason2
 
     proved3, reason3 = _source_identity_link_proof_status(source, lore, "", "momozawa trainer", "Tomio Momozawa")
     assert proved3 is True
-    assert "alias explicitly contains the target character's name" in reason3
+    assert "explicit identity statement or apposition" in reason3
+
+    absent_source = "The scene takes place in the academy."
+    proved_absent, reason_absent = _source_identity_link_proof_status(
+        absent_source,
+        lore,
+        "",
+        "trainer toujou",
+        "Toujou",
+    )
+    assert proved_absent is False
+    assert "absent from the source chunk" in reason_absent
 
     # Generic title without name still requires source proof
-    proved4, reason4 = _source_identity_link_proof_status(source, lore, "", "trainer", "Toujou")
+    proved4, reason4 = _source_identity_link_proof_status(absent_source, lore, "", "trainer", "Toujou")
     assert proved4 is False
     assert "source chunk does not directly prove" in reason4
+
+
+def test_source_identity_link_rejects_unproven_similar_name_conflation():
+    from src.utils.novel_context import _source_identity_link_proof_status
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Alex: Male, trainer.\n"
+        "- Alles: Female, rider.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    source = "Alles stood in the hall beside Alex."
+
+    proved_title, reason_title = _source_identity_link_proof_status(
+        source,
+        lore,
+        "",
+        "trainer alex",
+        "Alex",
+    )
+    assert proved_title is False
+    assert "absent from the source chunk" in reason_title
+
+    proved_name, reason_name = _source_identity_link_proof_status(
+        source,
+        lore,
+        "",
+        "Alles",
+        "Alex",
+    )
+    assert proved_name is False
+    assert "alias is already a named character" in reason_name
+
+
+def test_relevant_character_profiles_do_not_match_partial_latin_substrings():
+    from src.utils.novel_context import _select_relevant_character_profiles
+
+    profiles = {
+        "tomio momozawa": {
+            "name": "Tomio Momozawa",
+            "source_name": "",
+            "aliases": [],
+            "details": "Trainer.",
+        },
+        "tom": {
+            "name": "Tom",
+            "source_name": "",
+            "aliases": [],
+            "details": "Student.",
+        },
+    }
+
+    active_for_tom = _select_relevant_character_profiles("Tom checked the gate.", profiles)
+    assert "tom" in active_for_tom
+    assert "tomio momozawa" not in active_for_tom
+
+    active_for_tomio = _select_relevant_character_profiles("Tomio checked the gate.", profiles)
+    assert "tomio momozawa" in active_for_tomio
 
 
 def test_senior_editor_reflection_prompt_includes_addressee_vs_speaker_alignment():
@@ -3800,6 +3874,48 @@ def test_dynamic_address_source_form_becomes_trusted_identity_link():
     assert infer_dynamic_address_identity_links(dynamic, global_lore) == (
         "- \u62d3\u5e73: Houjo Takuhei"
     )
+
+
+def test_dynamic_address_source_form_must_be_unique_for_target():
+    global_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Houjo Takuhei: Male, student.\n"
+        "- Toda Takuhei: Male, student.\n"
+        "- Toda Hitona: Female, student.\n"
+        "- Kuroda Mei: Female, student.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    dynamic = (
+        "## CURRENT ADDRESSING FORMS\n"
+        "- Toda Hitona \u2192 Houjo Takuhei: \"\u62d3\u5e73\" | "
+        "\"Takuhei\" | casual, classmates\n"
+        "- Kuroda Mei \u2192 Toda Takuhei: \"\u62d3\u5e73\" | "
+        "\"Takuhei\" | casual, classmates\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+    )
+
+    assert infer_dynamic_address_identity_links(dynamic, global_lore) == ""
+
+
+def test_dynamic_address_source_form_rejects_short_non_latin_label():
+    global_lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Houjo Takuhei: Male, student.\n"
+        "- Toda Hitona: Female, student.\n\n"
+        "## CHARACTER ALIASES\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    dynamic = (
+        "## CURRENT ADDRESSING FORMS\n"
+        "- Toda Hitona \u2192 Houjo Takuhei: \"\u62d3\" | "
+        "\"Taku\" | casual, classmates\n\n"
+        "## RELATIONSHIP EVOLUTION\n"
+    )
+
+    assert infer_dynamic_address_identity_links(dynamic, global_lore) == ""
 
 
 def test_trusted_dynamic_alias_bypasses_source_proof_gate():
@@ -5592,23 +5708,6 @@ def test_vietnamese_addressing_slash_pronoun_and_none_vocative_cleanup():
     assert "Commentator A → Commentator B" in merged
 
 
-def test_generic_npc_roles_are_filtered_from_durable_dynamic_state():
-    from src.utils.novel_context import sanitize_addressing_with_llm
-
-    class DummyLLM:
-        def generate(self, prompt: str) -> str:
-            # Simulated LLM output following CONTEXTUAL PERMANENCE rule (filtering out transient NPCs)
-            return '- Apollo Rainbow → Double Trigger: "Double Trigger-san" | "self-reference: em; second-person pronoun: chị; vocative/address form: Double Trigger-san" | senior/junior'
-
-    proposed = (
-        '- Commentator A → Commentator B: "..." | "self-reference: tôi; second-person pronoun: anh; vocative/address form: none" | colleagues\n'
-        '- Apollo Rainbow → Double Trigger: "Double Trigger-san" | "self-reference: em; second-person pronoun: chị; vocative/address form: Double Trigger-san" | senior/junior'
-    )
-    cleaned = sanitize_addressing_with_llm(proposed, llm_client=DummyLLM())
-
-    assert "Commentator A → Commentator B" not in cleaned
-    assert "Apollo Rainbow → Double Trigger" in cleaned
-
 def test_senior_editor_reflection_prompt_includes_explicit_source_text_primacy():
     from src.prompts.prompts import generate_chunk_reflection_prompt
 
@@ -5792,5 +5891,3 @@ def test_parent_child_addressing_repair_in_novel_context():
 
     assert "second-person pronoun: cha" in repaired
     assert "second-person pronoun: anh" not in repaired
-
-

@@ -68,6 +68,13 @@ from src.config import (
 )
 from src.prompts.prompts import generate_placeholder_correction_prompt, CORRECTED_TAG_IN, CORRECTED_TAG_OUT
 from src.utils.unified_logger import LogLevel, LogType
+from src.utils.progress_logging import emit_progress_log
+from src.utils.db_addressing import (
+    apply_db_addressing_to_session,
+    build_directed_addressing_prompt_context,
+    sync_context_update_addressing_to_db,
+    sync_markdown_addressing_to_db,
+)
 
 
 def _log_error(log_callback: Optional[Callable], event_name: str, message: str):
@@ -534,6 +541,12 @@ async def translate_chunk_with_fallback(
                     glossary_block=(prompt_options or {}).get("glossary_block", ""),
                     log_callback=log_callback,
                     context_session=(prompt_options or {}).get("context_session"),
+                    prompt_options=prompt_options,
+                    repair_validator=lambda repaired: (
+                        None
+                        if validate_placeholders(repaired, local_tag_map)
+                        else "placeholder mismatch"
+                    ),
                 )
                 if repaired and validate_placeholders(repaired, local_tag_map):
                     translated = repaired
@@ -1066,6 +1079,26 @@ async def _translate_all_chunks_with_checkpoint(
             dialogue_state=current_dialogue_state,
             dialogue_scene_key=current_dialogue_scene_key,
         )
+        if (
+            checkpoint_manager
+            and translation_id
+            and hasattr(checkpoint_manager, "db")
+            and prompt_options.get("use_db_directed_addressing", True)
+        ):
+            sync_markdown_addressing_to_db(
+                translation_id=translation_id,
+                db=checkpoint_manager.db,
+                context_or_dynamic_state=context_session.content,
+                target_language=target_language,
+                chunk_index=global_completed_chunks or 0,
+                trigger_source="job_context_load",
+                log_callback=log_callback,
+            )
+            apply_db_addressing_to_session(
+                context_session,
+                translation_id,
+                checkpoint_manager.db,
+            )
 
     if auto_update_context and novel_context_path:
         if parallel_workers > 1:
@@ -1197,6 +1230,25 @@ async def _translate_all_chunks_with_checkpoint(
                             "filename": context_session.path.name,
                         },
                     )
+                if (
+                    checkpoint_manager
+                    and translation_id
+                    and hasattr(checkpoint_manager, "db")
+                    and prompt_options.get("use_db_directed_addressing", True)
+                ):
+                    sync_context_update_addressing_to_db(
+                        translation_id=translation_id,
+                        db=checkpoint_manager.db,
+                        updated_context_or_dynamic_state=context_session.content,
+                        target_language=target_language,
+                        chunk_index=global_chunk_idx,
+                        log_callback=log_callback,
+                    )
+                    apply_db_addressing_to_session(
+                        context_session,
+                        translation_id,
+                        checkpoint_manager.db,
+                    )
             except Exception as e:
                 if log_callback:
                     log_callback(
@@ -1219,6 +1271,16 @@ async def _translate_all_chunks_with_checkpoint(
                     )
             except Exception:
                 pass
+        chunk_prompt_options = dict(prompt_options or {})
+        directed_context = build_directed_addressing_prompt_context(
+            translation_id=translation_id or "",
+            db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
+            target_language=target_language,
+            prompt_options=chunk_prompt_options,
+            log_callback=log_callback,
+        )
+        if directed_context:
+            chunk_prompt_options["directed_addressing_context"] = directed_context
         return await translate_chunk_with_fallback(
             chunk_text=chunk['text'],
             local_tag_map=chunk['local_tag_map'],
@@ -1232,7 +1294,7 @@ async def _translate_all_chunks_with_checkpoint(
             max_retries=max_retries,
             context_manager=context_manager,
             placeholder_format=placeholder_format,
-            prompt_options=prompt_options
+            prompt_options=chunk_prompt_options
         )
 
     pending = sorted(
@@ -2231,12 +2293,17 @@ async def _refine_epub_chunks(
         try:
             # Log the refinement request (like translation does)
             if log_callback:
-                log_callback("refinement_request", "Sending refinement request to LLM", data={
-                    'type': 'refinement_request',
-                    'system_prompt': prompt_pair.system,
-                    'user_prompt': prompt_pair.user,
-                    'model': model_name
-                })
+                emit_progress_log(
+                    log_callback,
+                    "refinement_request",
+                    "Sending refinement request to LLM",
+                    layer="xhtml_refinement",
+                    data={
+                        'system_prompt': prompt_pair.system,
+                        'user_prompt': prompt_pair.user,
+                        'model': model_name,
+                    },
+                )
 
             # Set context from manager if available
             if context_manager and hasattr(llm_client, 'context_window'):
@@ -2253,18 +2320,23 @@ async def _refine_epub_chunks(
 
             # Log the response (like translation does)
             if log_callback and llm_response:
-                log_callback("refinement_response", "Refinement response received", data={
-                    'type': 'refinement_response',
-                    'response': llm_response.content,
-                    'execution_time': execution_time,
-                    'model': model_name,
-                    'tokens': {
-                        'prompt': llm_response.prompt_tokens,
-                        'completion': llm_response.completion_tokens,
-                        'total': llm_response.context_used,
-                        'limit': llm_response.context_limit
-                    }
-                })
+                emit_progress_log(
+                    log_callback,
+                    "refinement_response",
+                    "Refinement response received",
+                    layer="xhtml_refinement",
+                    data={
+                        'response': llm_response.content,
+                        'execution_time': execution_time,
+                        'model': model_name,
+                        'tokens': {
+                            'prompt': llm_response.prompt_tokens,
+                            'completion': llm_response.completion_tokens,
+                            'total': llm_response.context_used,
+                            'limit': llm_response.context_limit,
+                        },
+                    },
+                )
 
             if llm_response and llm_response.content:
                 # Extract refined text

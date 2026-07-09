@@ -9,6 +9,7 @@ from typing import List, Dict
 import tiktoken
 
 from src.config import SENTENCE_TERMINATORS
+from src.core.chunking.decorative_separator import is_decorative_separator
 
 
 class TokenChunker:
@@ -98,7 +99,12 @@ class TokenChunker:
 
         return sentences
 
-    def _chunk_units(self, units: List[str], separator: str = "\n\n") -> List[str]:
+    def _chunk_units(
+        self,
+        units: List[str],
+        separator: str = "\n\n",
+        glue_decorative_separators: bool = False,
+    ) -> List[str]:
         """
         Chunk a list of text units (paragraphs or sentences) into appropriately sized chunks.
 
@@ -116,8 +122,24 @@ class TokenChunker:
         chunks = []
         current_units = []
         current_tokens = 0
+        pending_prefix_units = []
 
         for unit in units:
+            if glue_decorative_separators and is_decorative_separator(unit):
+                unit_tokens = self.count_tokens(unit)
+                if current_units:
+                    current_units.append(unit)
+                    current_tokens += unit_tokens + self.count_tokens(separator)
+                elif chunks:
+                    chunks[-1] = chunks[-1] + separator + unit
+                else:
+                    pending_prefix_units.append(unit)
+                continue
+
+            if pending_prefix_units:
+                unit = separator.join(pending_prefix_units + [unit])
+                pending_prefix_units = []
+
             unit_tokens = self.count_tokens(unit)
 
             # If single unit exceeds max, we need to handle it specially
@@ -192,10 +214,20 @@ class TokenChunker:
         # Don't forget the last chunk
         if current_units:
             chunks.append(separator.join(current_units))
+        elif pending_prefix_units:
+            pending_text = separator.join(pending_prefix_units)
+            if chunks:
+                chunks[-1] = chunks[-1] + separator + pending_text
+            else:
+                chunks.append(pending_text)
 
         return chunks
 
-    def chunk_text(self, text: str) -> List[Dict[str, str]]:
+    def chunk_text(
+        self,
+        text: str,
+        glue_decorative_separators: bool = False,
+    ) -> List[Dict[str, str]]:
         """
         Split text into chunks with context preservation.
 
@@ -225,7 +257,11 @@ class TokenChunker:
             return []
 
         # Chunk paragraphs
-        raw_chunks = self._chunk_units(paragraphs, separator="\n\n")
+        raw_chunks = self._chunk_units(
+            paragraphs,
+            separator="\n\n",
+            glue_decorative_separators=glue_decorative_separators,
+        )
 
         if not raw_chunks:
             return []

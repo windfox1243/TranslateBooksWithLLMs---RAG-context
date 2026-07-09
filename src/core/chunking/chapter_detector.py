@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import Any, List, Optional, Sequence
+
+from src.core.chunking.decorative_separator import is_decorative_separator
 
 
 _STRUCTURAL_HEADING_RE = re.compile(r"^(?:h|heading)([1-6])$", re.IGNORECASE)
@@ -100,6 +102,8 @@ def is_chapter_heading(
     cleaned = _clean_heading(text)
     if not cleaned:
         return False
+    if is_decorative_separator(cleaned):
+        return False
 
     structural_match = _STRUCTURAL_HEADING_RE.fullmatch((kind or "").strip())
     if structural_match:
@@ -161,6 +165,8 @@ def _generic_heading_family(text: str) -> Optional[str]:
     """
     cleaned = _clean_heading(text)
     if not cleaned or "\n" in (text or "") or len(cleaned) > 120:
+        return None
+    if is_decorative_separator(cleaned):
         return None
 
     label_match = (

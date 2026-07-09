@@ -114,6 +114,112 @@ async def test_run_chunk_reflection_pass_includes_glossary_and_custom_instructio
 
 
 @pytest.mark.asyncio
+async def test_run_chunk_reflection_pass_accepts_two_argument_log_callback():
+    """Reflection logging must not crash callbacks that only accept event and message."""
+    from src.prompts.prompts import REFLECTION_JSON_TAG_IN, REFLECTION_JSON_TAG_OUT
+
+    repaired_json = f"""{REFLECTION_JSON_TAG_IN}
+{{"status": "no_issues", "issues": []}}
+{REFLECTION_JSON_TAG_OUT}"""
+
+    mock_llm = MagicMock()
+    mock_llm.generate_async = AsyncMock(side_effect=[
+        MagicMock(content='{"status": "needs_repair", "issues": ['),
+        MagicMock(content=repaired_json),
+    ])
+    events = []
+
+    def two_arg_logger(event, message):
+        events.append((event, message))
+
+    result = await run_chunk_reflection_pass(
+        source_chunk="Mana increased.",
+        draft_translation="Năng lượng tăng lên.",
+        target_language="Vietnamese",
+        model_name="test-model",
+        llm_client=mock_llm,
+        log_callback=two_arg_logger,
+    )
+
+    assert result == "Năng lượng tăng lên."
+    assert mock_llm.generate_async.await_count == 2
+    assert any(event == "reflection_parse_retry" for event, _ in events)
+
+
+@pytest.mark.asyncio
+async def test_invalid_reflection_json_does_not_silently_become_no_issues():
+    """Malformed JSON is retried and then logged as parse failure, not no issues."""
+    mock_llm = MagicMock()
+    mock_llm.generate_async = AsyncMock(side_effect=[
+        MagicMock(content='{"status": "needs_repair", "issues": ['),
+        MagicMock(content='{"status": "needs_repair", "issues": ['),
+    ])
+    events = []
+
+    def two_arg_logger(event, message):
+        events.append((event, message))
+
+    result = await run_chunk_reflection_pass(
+        source_chunk="Mana increased.",
+        draft_translation="Mana.",
+        target_language="Vietnamese",
+        model_name="test-model",
+        llm_client=mock_llm,
+        log_callback=two_arg_logger,
+    )
+
+    assert result == "Mana."
+    assert mock_llm.generate_async.await_count == 2
+    assert any(event == "reflection_parse_failed" for event, _ in events)
+    assert not any(
+        event == "reflection_complete" and "No issues" in message
+        for event, message in events
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_chunk_reflection_pass_rejects_invalid_repair():
+    """Senior Editor repairs must pass the adapter validator before replacement."""
+    from src.prompts.prompts import REFLECTION_JSON_TAG_IN, REFLECTION_JSON_TAG_OUT
+
+    critique_output = f"""{REFLECTION_JSON_TAG_IN}
+{{
+  "status": "needs_repair",
+  "issues": [
+    {{
+      "category": "format",
+      "severity": "major",
+      "source_quote": "[0] Mana increased.",
+      "draft_quote": "[0] Mana.",
+      "instruction": "Restore the omitted detail without changing markers.",
+      "term_replacement": null
+    }}
+  ]
+}}
+{REFLECTION_JSON_TAG_OUT}"""
+
+    mock_llm = MagicMock()
+    mock_llm.generate_async = AsyncMock(side_effect=[
+        MagicMock(content=critique_output),
+        MagicMock(content="<TRANSLATION>Mana increased.</TRANSLATION>"),
+    ])
+    mock_llm.extract_translation = MagicMock(return_value="Mana increased.")
+
+    result = await run_chunk_reflection_pass(
+        source_chunk="[0] Mana increased.",
+        draft_translation="[0] Mana.",
+        target_language="Vietnamese",
+        model_name="test-model",
+        llm_client=mock_llm,
+        repair_validator=lambda repaired: (
+            None if repaired.startswith("[0]") else "missing marker"
+        ),
+    )
+
+    assert result == "[0] Mana."
+
+
+@pytest.mark.asyncio
 async def test_xhtml_translator_reflection_mode():
     """Verify xhtml_translator invokes Senior Editor pass when reflection_mode is enabled."""
     from src.core.epub.xhtml_translator import translate_chunk_with_fallback, TranslationMetrics
@@ -171,6 +277,163 @@ def test_extract_term_replacements_from_critique():
     # Full dialogue quotes and exclamations with punctuation must be rejected
     assert ("huh!? you're double trigger-san!?", "hả!? cậu là double trigger-san sao!?") not in extracted
     assert ("eh? u-um... is that a compliment?", "hả? ừ-ừm... đó là một lời khen sao?") not in extracted
+
+
+def test_structured_reflection_parser_does_not_substring_skip_no_issues():
+    """Embedded NO_ISSUES text must not hide actionable legacy defects."""
+    from src.core.translator import parse_reflection_result
+
+    result = parse_reflection_result(
+        "NO_ISSUES is not valid here.\n- Restore the omitted second sentence."
+    )
+
+    assert result.needs_repair
+    assert result.issues[0]["instruction"] == "Restore the omitted second sentence."
+
+
+def test_structured_reflection_term_replacement_extraction():
+    """Structured Senior Editor issues expose glossary replacements directly."""
+    from src.core.translator import extract_term_replacements_from_critique
+    from src.prompts.prompts import REFLECTION_JSON_TAG_IN, REFLECTION_JSON_TAG_OUT
+
+    critique = f"""{REFLECTION_JSON_TAG_IN}
+{{
+  "status": "needs_repair",
+  "issues": [
+    {{
+      "category": "glossary",
+      "severity": "major",
+      "source_quote": "Tracen Academy",
+      "draft_quote": "Học viện Đào tạo Mã nương Nhật Bản",
+      "instruction": "Use the concise established academy name.",
+      "term_replacement": {{"source": "Tracen Academy", "target": "Học viện Tracen"}}
+    }}
+  ]
+}}
+{REFLECTION_JSON_TAG_OUT}"""
+
+    assert extract_term_replacements_from_critique(critique) == [
+        ("Tracen Academy", "Học viện Tracen")
+    ]
+
+
+def test_reflection_prompt_uses_json_contract():
+    """Senior Editor prompts must request structured JSON instead of free-form bullets."""
+    from src.prompts.prompts import (
+        REFLECTION_JSON_TAG_IN,
+        generate_chunk_reflection_prompt,
+    )
+
+    prompt_pair = generate_chunk_reflection_prompt(
+        source_chunk="Mana increased.",
+        draft_translation="Năng lượng tăng lên.",
+        target_language="Vietnamese",
+    )
+
+    assert REFLECTION_JSON_TAG_IN in prompt_pair.system
+    assert '"status": "needs_repair"' in prompt_pair.system
+    assert "Do not include prose, markdown, bullets, or comments outside the JSON tags" in prompt_pair.system
+    assert "Output NO_ISSUES" not in prompt_pair.system
+
+
+@pytest.mark.asyncio
+async def test_run_chunk_reflection_pass_sends_context_and_structured_feedback_to_repair():
+    """Repair receives active lore plus parsed structured issues."""
+    from src.prompts.prompts import REFLECTION_JSON_TAG_IN, REFLECTION_JSON_TAG_OUT
+
+    critique_output = f"""{REFLECTION_JSON_TAG_IN}
+{{
+  "status": "needs_repair",
+  "issues": [
+    {{
+      "category": "omission",
+      "severity": "major",
+      "source_quote": "Mana increased.",
+      "draft_quote": "",
+      "instruction": "Restore the source detail about mana increasing.",
+      "term_replacement": null
+    }}
+  ]
+}}
+{REFLECTION_JSON_TAG_OUT}"""
+
+    mock_llm = MagicMock()
+    mock_llm.generate_async = AsyncMock(side_effect=[
+        MagicMock(content=critique_output),
+        MagicMock(content="<TRANSLATION>Năng lượng tăng lên.</TRANSLATION>"),
+    ])
+    mock_llm.extract_translation = MagicMock(return_value="Năng lượng tăng lên.")
+
+    repaired = await run_chunk_reflection_pass(
+        source_chunk="Mana increased.",
+        draft_translation="Mana.",
+        target_language="Vietnamese",
+        model_name="test-model",
+        llm_client=mock_llm,
+        novel_context="Alice: Female mage.",
+    )
+
+    assert repaired == "Năng lượng tăng lên."
+    repair_prompt = mock_llm.generate_async.call_args_list[1][1]["prompt"]
+    assert "# ACTIVE NOVEL LORE & ADDRESSING RULES:" in repair_prompt
+    assert "Alice: Female mage." in repair_prompt
+    assert '"status": "needs_repair"' in repair_prompt
+    assert "Restore the source detail about mana increasing." in repair_prompt
+
+
+@pytest.mark.asyncio
+async def test_subtitle_reflection_rejects_marker_corrupting_repair(monkeypatch):
+    """Subtitle reflection repairs are accepted only when local markers survive exactly."""
+    from src.core import subtitle_translator
+
+    class FakeSubtitleClient:
+        def __init__(self):
+            self.closed = False
+
+        async def make_request(self, prompt, model, system_prompt=None):
+            return MagicMock(
+                content="<TRANSLATION>[0] Năng lượng tăng lên.\n[1] Chạy đi.</TRANSLATION>"
+            )
+
+        def extract_translation(self, content):
+            return content.replace("<TRANSLATION>", "").replace("</TRANSLATION>", "")
+
+        async def close(self):
+            self.closed = True
+
+    fake_client = FakeSubtitleClient()
+    monkeypatch.setattr(
+        subtitle_translator,
+        "create_llm_client",
+        lambda *args, **kwargs: fake_client,
+    )
+
+    async def corrupting_repair(**kwargs):
+        return "[0] Năng lượng tăng lên.\nChạy đi."
+
+    monkeypatch.setattr(
+        "src.core.translator.run_chunk_reflection_pass",
+        corrupting_repair,
+    )
+
+    translations = await subtitle_translator.translate_subtitles_in_blocks(
+        subtitle_blocks=[
+            [
+                {"number": "1", "text": "Mana increased."},
+                {"number": "2", "text": "Run."},
+            ]
+        ],
+        source_language="English",
+        target_language="Vietnamese",
+        model_name="test-model",
+        api_endpoint="http://localhost",
+        prompt_options={"reflection_mode": True},
+    )
+
+    assert translations == {
+        0: "Năng lượng tăng lên.",
+        1: "Chạy đi.",
+    }
 
 
 @pytest.mark.asyncio
@@ -264,5 +527,3 @@ async def test_sync_translated_output_with_llm_client(tmp_path):
     )
 
     assert success is True
-
-

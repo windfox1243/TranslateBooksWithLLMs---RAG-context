@@ -1,6 +1,7 @@
 """
 Subtitle-specific translation module
 """
+import re
 import time
 from typing import Any, List, Dict, Optional, Tuple
 from tqdm.auto import tqdm
@@ -23,6 +24,20 @@ from .llm_client import create_llm_client
 from .post_processor import clean_translated_text
 from .translator import generate_translation_request, _build_chunk_glossary_block
 from .epub import TagPreserver
+from src.utils.progress_logging import emit_progress_log
+
+
+def _subtitle_markers_are_exact(text: str, expected_count: int) -> bool:
+    """Return whether a subtitle block has exactly one ordered local marker per subtitle."""
+    if expected_count <= 0:
+        return True
+    found = [int(match) for match in re.findall(r"\[(\d+)\]", text or "")]
+    return found == list(range(expected_count))
+
+
+def _format_subtitle_block_for_reflection(subtitle_tuples: List[Tuple[int, str]]) -> str:
+    """Render local subtitle tuples in the same indexed shape the LLM sees."""
+    return "\n".join(f"[{idx}]{text}" for idx, text in subtitle_tuples)
 
 
 async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: str,
@@ -106,7 +121,26 @@ async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: 
             
             if translated_text is not None:
                 # Single point of cleaning for subtitles
-                translations[idx] = clean_translated_text(translated_text)
+                cleaned_translation = clean_translated_text(translated_text)
+                if (prompt_options or {}).get("reflection_mode"):
+                    from src.core.translator import run_chunk_reflection_pass
+
+                    cleaned_translation = await run_chunk_reflection_pass(
+                        source_chunk=text_to_translate,
+                        draft_translation=cleaned_translation,
+                        target_language=target_language,
+                        model_name=model_name,
+                        llm_client=llm_client,
+                        novel_context=(prompt_options or {}).get("novel_context", ""),
+                        custom_instructions=(
+                            (prompt_options or {}).get("custom_instructions")
+                            or custom_instructions
+                        ),
+                        glossary_block=(prompt_options or {}).get("glossary_block", ""),
+                        log_callback=log_callback,
+                        prompt_options=prompt_options,
+                    )
+                translations[idx] = cleaned_translation
                 completed_count += 1
             else:
                 # Keep original text if translation fails
@@ -393,11 +427,16 @@ async def refine_subtitle_translations(
 
                 if llm_response and llm_response.content:
                     if log_callback:
-                        log_callback("refinement_response", "Refinement response received", data={
-                            'type': 'refinement_response',
-                            'response': llm_response.content,
-                            'model': model_name,
-                        })
+                        emit_progress_log(
+                            log_callback,
+                            "refinement_response",
+                            "Refinement response received",
+                            layer="subtitle_refinement",
+                            data={
+                                'response': llm_response.content,
+                                'model': model_name,
+                            },
+                        )
 
                     refined_block_text = llm_client.extract_translation(llm_response.content)
                     if refined_block_text:
@@ -624,12 +663,17 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
 
                     # Log the LLM request with structured data for web interface
                     if log_callback:
-                        log_callback("llm_request", "Sending subtitle block to LLM", data={
-                            'type': 'llm_request',
-                            'system_prompt': prompt_pair.system,
-                            'user_prompt': prompt_pair.user,
-                            'model': model_name
-                        })
+                        emit_progress_log(
+                            log_callback,
+                            "llm_request",
+                            "Sending subtitle block to LLM",
+                            layer="subtitle_translation",
+                            data={
+                                'system_prompt': prompt_pair.system,
+                                'user_prompt': prompt_pair.user,
+                                'model': model_name,
+                            },
+                        )
 
                     # Use provided client or default - pass system and user prompts separately
                     client = llm_client or default_client
@@ -644,12 +688,17 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
 
                     # Log the LLM response with structured data for web interface preview
                     if full_raw_response and log_callback:
-                        log_callback("llm_response", "LLM Response received", data={
-                            'type': 'llm_response',
-                            'response': full_raw_response,
-                            'execution_time': execution_time,
-                            'model': model_name
-                        })
+                        emit_progress_log(
+                            log_callback,
+                            "llm_response",
+                            "LLM Response received",
+                            layer="subtitle_translation",
+                            data={
+                                'response': full_raw_response,
+                                'execution_time': execution_time,
+                                'model': model_name,
+                            },
+                        )
 
                     if full_raw_response:
                         translated_block_text = client.extract_translation(full_raw_response)
@@ -660,7 +709,6 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                             expected_local_indices = list(range(len(local_subtitle_tuples)))
                             expected_tags = set(f"[{idx}]" for idx in expected_local_indices)
                             found_tags = set()
-                            import re
                             for match in re.finditer(r'\[(\d+)\]', translated_block_text):
                                 found_tags.add(match.group(0))
 
@@ -692,6 +740,44 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                                     break
                             else:
                                 # All tags present, translation successful
+                                if (prompt_options or {}).get("reflection_mode"):
+                                    from src.core.translator import run_chunk_reflection_pass
+
+                                    repaired_block_text = await run_chunk_reflection_pass(
+                                        source_chunk=_format_subtitle_block_for_reflection(
+                                            local_subtitle_tuples
+                                        ),
+                                        draft_translation=translated_block_text,
+                                        target_language=target_language,
+                                        model_name=model_name,
+                                        llm_client=client,
+                                        novel_context=(prompt_options or {}).get("novel_context", ""),
+                                        custom_instructions=(
+                                            (prompt_options or {}).get("custom_instructions")
+                                            or custom_instructions
+                                        ),
+                                        glossary_block=glossary_block,
+                                        log_callback=log_callback,
+                                        prompt_options=prompt_options,
+                                        repair_validator=lambda repaired: (
+                                            None
+                                            if _subtitle_markers_are_exact(
+                                                repaired,
+                                                len(local_subtitle_tuples),
+                                            )
+                                            else "subtitle marker mismatch"
+                                        ),
+                                    )
+                                    if _subtitle_markers_are_exact(
+                                        repaired_block_text,
+                                        len(local_subtitle_tuples),
+                                    ):
+                                        translated_block_text = repaired_block_text
+                                    elif log_callback:
+                                        log_callback(
+                                            "reflection_marker_mismatch",
+                                            "Senior Editor repaired subtitle block altered index markers - retaining validated draft translation.",
+                                        )
                                 if retry_count > 0 and log_callback:
                                     log_callback("srt_retry_successful",
                                                f"Block {block_idx+1} translation successful after {retry_count} retries")

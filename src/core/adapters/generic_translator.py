@@ -249,6 +249,12 @@ class GenericTranslator:
                 open_novel_context_session,
                 should_update_novel_context_for_index,
             )
+            from src.utils.db_addressing import (
+                apply_db_addressing_to_session,
+                build_directed_addressing_prompt_context,
+                sync_context_update_addressing_to_db,
+                sync_markdown_addressing_to_db,
+            )
 
             resume_snapshot = None
             resume_snapshot_index = None
@@ -369,6 +375,26 @@ class GenericTranslator:
                         )
                     )
                     log_callback(event_type, message)
+                if (
+                    context_session
+                    and self.translation_id
+                    and getattr(self.checkpoint_manager, "db", None)
+                    and prompt_options.get("use_db_directed_addressing", True)
+                ):
+                    sync_markdown_addressing_to_db(
+                        translation_id=self.translation_id,
+                        db=self.checkpoint_manager.db,
+                        context_or_dynamic_state=context_session.content,
+                        target_language=target_language,
+                        chunk_index=0,
+                        trigger_source="job_context_load",
+                        log_callback=log_callback,
+                    )
+                    apply_db_addressing_to_session(
+                        context_session,
+                        self.translation_id,
+                        self.checkpoint_manager.db,
+                    )
             except Exception as e:
                 context_session = None
                 if log_callback:
@@ -463,6 +489,27 @@ class GenericTranslator:
                             context_session.snapshot()
                         )
                         analyzed_context_indices.add(i)
+                        if (
+                            self.translation_id
+                            and getattr(self.checkpoint_manager, "db", None)
+                            and prompt_options.get("use_db_directed_addressing", True)
+                        ):
+                            sync_context_update_addressing_to_db(
+                                translation_id=self.translation_id,
+                                db=self.checkpoint_manager.db,
+                                updated_context_or_dynamic_state=context_session.content,
+                                target_language=target_language,
+                                chunk_index=i,
+                                log_callback=log_callback,
+                            )
+                            apply_db_addressing_to_session(
+                                context_session,
+                                self.translation_id,
+                                self.checkpoint_manager.db,
+                            )
+                            unit.metadata['context_snapshot'] = (
+                                context_session.snapshot()
+                            )
                     except Exception as e:
                         if log_callback:
                             log_callback(
@@ -503,6 +550,16 @@ class GenericTranslator:
                         and units[i - 1].metadata.get("chapter_index")
                         == unit.metadata.get("chapter_index")
                     )
+                    unit_prompt_options = dict(attempt_options or {})
+                    directed_context = build_directed_addressing_prompt_context(
+                        translation_id=self.translation_id,
+                        db=getattr(self.checkpoint_manager, "db", None),
+                        target_language=target_language,
+                        prompt_options=unit_prompt_options,
+                        log_callback=log_callback,
+                    )
+                    if directed_context:
+                        unit_prompt_options["directed_addressing_context"] = directed_context
                     result = await generate_translation_request(
                         main_content=unit.content,
                         context_before=unit.context_before,
@@ -524,7 +581,7 @@ class GenericTranslator:
                         model=model_name,
                         llm_client=llm_client,
                         log_callback=log_callback,
-                        prompt_options=attempt_options
+                        prompt_options=unit_prompt_options
                     )
 
                     # API failure / empty result: existing failure semantics.
@@ -545,6 +602,12 @@ class GenericTranslator:
                             glossary_block=(prompt_options or {}).get("glossary_block", ""),
                             log_callback=log_callback,
                             context_session=context_session,
+                            prompt_options=unit_prompt_options,
+                            repair_validator=lambda repaired, unit_id=unit.unit_id: (
+                                self.adapter.validate_unit_translation(
+                                    unit_id, repaired
+                                )
+                            ),
                         )
 
                     feedback = self.adapter.validate_unit_translation(
