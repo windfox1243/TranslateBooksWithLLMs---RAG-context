@@ -16,11 +16,18 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.core.chunking.token_chunker import TokenChunker
+from src.core.chunking.decorative_separator import is_decorative_separator
 from src.core.translator import generate_translation_request
 from src.core.post_processor import clean_translated_text
 from src.core.epub.translation_metrics import TranslationMetrics
 from src.core.common.parallel import iter_ordered_concurrent
 from src.core.llm.exceptions import RateLimitError
+from src.utils.db_addressing import (
+    apply_db_addressing_to_session,
+    build_directed_addressing_prompt_context,
+    sync_context_update_addressing_to_db,
+    sync_markdown_addressing_to_db,
+)
 
 
 PARAGRAPH_SEPARATOR = "\n\n"
@@ -113,6 +120,8 @@ def build_plain_segments(
     cur_indices: List[int] = []
     cur_texts: List[str] = []
     cur_tokens = 0
+    pending_separator_indices: List[int] = []
+    pending_separator_texts: List[str] = []
 
     def flush():
         nonlocal cur_indices, cur_texts, cur_tokens
@@ -136,11 +145,40 @@ def build_plain_segments(
         text = paragraph or ""
         if not text.strip():
             continue
+        if chapter_mode and is_decorative_separator(text):
+            if cur_indices:
+                cur_indices.append(idx)
+                cur_texts.append(text)
+                cur_tokens += (
+                    chunker.count_tokens(text)
+                    + (sep_tokens if len(cur_indices) > 1 else 0)
+                )
+            else:
+                pending_separator_indices.append(idx)
+                pending_separator_texts.append(text)
+            continue
+        if pending_separator_texts:
+            text = PARAGRAPH_SEPARATOR.join(pending_separator_texts + [text])
+            text_indices = pending_separator_indices + [idx]
+            pending_separator_indices = []
+            pending_separator_texts = []
+        else:
+            text_indices = [idx]
 
         tokens = chunker.count_tokens(text)
 
         if tokens > chunker.max_tokens:
             flush()
+            if len(text_indices) > 1:
+                chapter_index, chapter_title = chapter_by_index.get(idx, (0, ""))
+                segments.append({
+                    'indices': text_indices,
+                    'text': text,
+                    'partial': False,
+                    'chapter_index': chapter_index,
+                    'chapter_title': chapter_title,
+                })
+                continue
             sentences = chunker.split_paragraph_into_sentences(text)
             if len(sentences) > 1:
                 pieces = chunker._chunk_units(sentences, separator=" ")
@@ -149,7 +187,7 @@ def build_plain_segments(
             chapter_index, chapter_title = chapter_by_index.get(idx, (0, ""))
             for piece in pieces:
                 segments.append({
-                    'indices': [idx],
+                    'indices': text_indices,
                     'text': piece,
                     'partial': True,
                     'chapter_index': chapter_index,
@@ -160,11 +198,17 @@ def build_plain_segments(
         potential = cur_tokens + tokens + (sep_tokens if cur_indices else 0)
         if cur_indices and potential > chunker.max_tokens:
             flush()
-        cur_indices.append(idx)
+        cur_indices.extend(text_indices)
         cur_texts.append(text)
         cur_tokens = cur_tokens + tokens + (sep_tokens if len(cur_indices) > 1 else 0)
 
     flush()
+    if pending_separator_texts and segments:
+        segments[-1]['indices'].extend(pending_separator_indices)
+        segments[-1]['text'] = (
+            f"{segments[-1]['text']}{PARAGRAPH_SEPARATOR}"
+            f"{PARAGRAPH_SEPARATOR.join(pending_separator_texts)}"
+        )
     return segments
 
 
@@ -442,6 +486,27 @@ async def translate_paragraphs_plain(
                     f"{continuation_context_seed.get('chunk_index')} "
                     "snapshot.",
                 )
+            if (
+                context_session
+                and checkpoint_manager
+                and translation_id
+                and hasattr(checkpoint_manager, "db")
+                and prompt_options.get("use_db_directed_addressing", True)
+            ):
+                sync_markdown_addressing_to_db(
+                    translation_id=translation_id,
+                    db=checkpoint_manager.db,
+                    context_or_dynamic_state=context_session.content,
+                    target_language=target_language,
+                    chunk_index=global_chunk_offset,
+                    trigger_source="job_context_load",
+                    log_callback=log_callback,
+                )
+                apply_db_addressing_to_session(
+                    context_session,
+                    translation_id,
+                    checkpoint_manager.db,
+                )
         except Exception as e:
             if log_callback:
                 log_callback("novel_context_error", f"Error loading novel context '{novel_context_file}': {str(e)}")
@@ -527,6 +592,25 @@ async def translate_paragraphs_plain(
                             "filename": context_session.path.name,
                         },
                     )
+                if (
+                    checkpoint_manager
+                    and translation_id
+                    and hasattr(checkpoint_manager, "db")
+                    and prompt_options.get("use_db_directed_addressing", True)
+                ):
+                    sync_context_update_addressing_to_db(
+                        translation_id=translation_id,
+                        db=checkpoint_manager.db,
+                        updated_context_or_dynamic_state=context_session.content,
+                        target_language=target_language,
+                        chunk_index=global_chunk_offset + i,
+                        log_callback=log_callback,
+                    )
+                    apply_db_addressing_to_session(
+                        context_session,
+                        translation_id,
+                        checkpoint_manager.db,
+                    )
             except Exception as e:
                 if log_callback:
                     log_callback(
@@ -539,6 +623,17 @@ async def translate_paragraphs_plain(
             )
         elif analyze_context and auto_update_context and context_session:
             context_session.remember_source(main_content)
+
+        unit_prompt_options = dict(prompt_options or {})
+        directed_context = build_directed_addressing_prompt_context(
+            translation_id=translation_id or "",
+            db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
+            target_language=target_language,
+            prompt_options=unit_prompt_options,
+            log_callback=log_callback,
+        )
+        if directed_context:
+            unit_prompt_options["directed_addressing_context"] = directed_context
 
         translated = await generate_translation_request(
             main_content=main_content,
@@ -563,7 +658,7 @@ async def translate_paragraphs_plain(
             llm_client=llm_client,
             log_callback=log_callback,
             has_placeholders=False,
-            prompt_options=prompt_options,
+            prompt_options=unit_prompt_options,
             context_manager=context_manager,
             placeholder_format=None,
         )

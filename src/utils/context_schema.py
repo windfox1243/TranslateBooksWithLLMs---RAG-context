@@ -4,7 +4,7 @@ Structured data schema definitions for directed addressing context.
 
 import json
 import re
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from typing import Optional, List, Dict, Any
 
 
@@ -142,56 +142,6 @@ def extract_addressing_deltas_from_text(raw_text: str) -> List[AddressingUpdateD
             unique_deltas.append(d)
 
     return unique_deltas
-
-    """
-    Structured delta extracted from LLM output representing an addressing update.
-    """
-    speaker: str
-    addressee: str
-    self_pronoun: str
-    second_pronoun: str
-    vocative: str = ""
-    register: str = "polite"
-    confidence: float = 1.0
-    evidence_quote: str = ""
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> Optional["AddressingUpdateDelta"]:
-        """Parse dictionary safely into AddressingUpdateDelta instance."""
-        if not isinstance(data, dict):
-            return None
-        speaker = str(data.get("speaker") or "").strip()
-        addressee = str(data.get("addressee") or "").strip()
-        self_pronoun = str(data.get("self_pronoun") or data.get("self") or "").strip()
-        second_pronoun = str(data.get("second_pronoun") or data.get("second") or "").strip()
-
-        if not speaker or not addressee or not self_pronoun or not second_pronoun:
-            return None
-
-        # Ignore group dialogue or unassigned addressee
-        lowered_addressee = addressee.lower()
-        if lowered_addressee in ("everyone", "group", "crowd", "all", "mọi người", "cả nhóm", "không rõ"):
-            return None
-
-        try:
-            confidence = float(data.get("confidence", 1.0))
-            confidence = max(0.0, min(1.0, confidence))
-        except (ValueError, TypeError):
-            confidence = 1.0
-
-        return cls(
-            speaker=speaker,
-            addressee=addressee,
-            self_pronoun=self_pronoun,
-            second_pronoun=second_pronoun,
-            vocative=str(data.get("vocative") or "").strip(),
-            register=str(data.get("register") or "polite").strip().lower(),
-            confidence=confidence,
-            evidence_quote=str(data.get("evidence_quote") or data.get("evidence") or "").strip(),
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
 
 
 @dataclass

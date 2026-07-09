@@ -1,15 +1,25 @@
 """
 Translation module for LLM communication
 """
+import inspect
+import json
 import time
 import re
+from dataclasses import dataclass
 from tqdm.auto import tqdm
 
 from src.config import (
     DEFAULT_MODEL, TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT, SENTENCE_TERMINATORS,
     THINKING_MODELS, ADAPTIVE_CONTEXT_INITIAL_THINKING
 )
-from src.prompts.prompts import generate_translation_prompt, generate_refinement_prompt
+from src.prompts.prompts import (
+    REFLECTION_CONTRACT_VERSION,
+    REFLECTION_JSON_TAG_IN,
+    REFLECTION_JSON_TAG_OUT,
+    REFLECTION_PROMPT_VERSION,
+    generate_translation_prompt,
+    generate_refinement_prompt,
+)
 from .llm_client import default_client, create_llm_client, LLMResponse
 from .llm import ContextOverflowError, RepetitionLoopError, RateLimitError
 from .post_processor import clean_translated_text
@@ -21,12 +31,27 @@ from .context_optimizer import (
 from .progress_tracker import TokenProgressTracker
 from .chunking.token_chunker import TokenChunker
 from typing import List, Dict, Tuple, Optional, Any, Callable
+from src.utils.progress_logging import emit_progress_log
 
 
 # Configuration for context overflow recovery
 MAX_CHUNK_REDUCTION_ATTEMPTS = 3
 CHUNK_REDUCTION_FACTOR = 0.6  # Reduce to 60% of original size each attempt
 MIN_CHUNK_CHARACTERS = 200  # Minimum chunk size to attempt translation
+
+
+@dataclass
+class ReflectionResult:
+    """Parsed Senior Editor reflection result."""
+
+    status: str
+    issues: List[Dict[str, Any]]
+    raw_text: str = ""
+    parse_status: str = "empty"
+
+    @property
+    def needs_repair(self) -> bool:
+        return self.status == "needs_repair" and bool(self.issues)
 
 
 def _build_chunk_glossary_block(
@@ -58,6 +83,11 @@ def _build_chunk_glossary_block(
     except ImportError:
         return ""
     config = prompt_options.get("glossary_config") or GlossaryConfig()
+    if not getattr(config, "source_language", ""):
+        try:
+            config.source_language = str(prompt_options.get("source_language") or "")
+        except Exception:
+            pass
     filtered, capped = filter_glossary(chunk_content, terms, config)
 
     if runtime_state is None:
@@ -65,12 +95,14 @@ def _build_chunk_glossary_block(
 
     if capped and config.warn_on_cap and not runtime_state.get("glossary_cap_warned"):
         runtime_state["glossary_cap_warned"] = True
-        if log_callback:
-            log_callback(
-                "glossary_capped",
-                f"⚠️ Glossary cap reached: more than {config.max_entries} terms matched in a single chunk. "
-                f"Excess entries are dropped — increase `max_entries` if you need full coverage."
-            )
+        emit_progress_log(
+            log_callback,
+            "glossary_capped",
+            f"⚠️ Glossary cap reached: more than {config.max_entries} terms matched in a single chunk. "
+            f"Excess entries are dropped — increase `max_entries` if you need full coverage.",
+            layer="glossary",
+            data={"max_entries": config.max_entries},
+        )
 
     if not filtered:
         return ""
@@ -207,12 +239,17 @@ async def _make_llm_request_with_adaptive_context(
 
             # Log the request
             if log_callback and reduction_attempt == 0:
-                log_callback("llm_request", "Sending request to LLM", data={
-                    'type': 'llm_request',
-                    'system_prompt': prompt_pair.system,
-                    'user_prompt': prompt_pair.user,
-                    'model': model
-                })
+                emit_progress_log(
+                    log_callback,
+                    "llm_request",
+                    "Sending request to LLM",
+                    layer="translation",
+                    data={
+                        'system_prompt': prompt_pair.system,
+                        'user_prompt': prompt_pair.user,
+                        'model': model,
+                    },
+                )
 
             start_time = time.time()
             client = llm_client or default_client
@@ -263,18 +300,23 @@ async def _make_llm_request_with_adaptive_context(
 
             # Log the response
             if log_callback:
-                log_callback("llm_response", "LLM Response received", data={
-                    'type': 'llm_response',
-                    'response': full_raw_response,
-                    'execution_time': execution_time,
-                    'model': model,
-                    'tokens': {
-                        'prompt': llm_response.prompt_tokens,
-                        'completion': llm_response.completion_tokens,
-                        'total': llm_response.context_used,
-                        'limit': llm_response.context_limit
-                    }
-                })
+                emit_progress_log(
+                    log_callback,
+                    "llm_response",
+                    "LLM Response received",
+                    layer="translation",
+                    data={
+                        'response': full_raw_response,
+                        'execution_time': execution_time,
+                        'model': model,
+                        'tokens': {
+                            'prompt': llm_response.prompt_tokens,
+                            'completion': llm_response.completion_tokens,
+                            'total': llm_response.context_used,
+                            'limit': llm_response.context_limit,
+                        },
+                    },
+                )
 
             # Extract translation
             translated_text = client.extract_translation(full_raw_response)
@@ -439,6 +481,15 @@ async def generate_translation_request(main_content, context_before, context_aft
     Returns:
         str: Translated text or None if failed
     """
+    if prompt_options is None:
+        prompt_options = {}
+    else:
+        prompt_options = dict(prompt_options)
+    if source_language and not prompt_options.get("source_language"):
+        prompt_options["source_language"] = source_language
+    if target_language and not prompt_options.get("target_language"):
+        prompt_options["target_language"] = target_language
+
     # Skip LLM translation for single character or empty chunks
     if len(main_content.strip()) <= 1:
         if log_callback:
@@ -561,12 +612,17 @@ async def _make_refinement_request(
         try:
             # Log the request
             if log_callback:
-                log_callback("refinement_request", "Sending refinement request to LLM", data={
-                    'type': 'refinement_request',
-                    'system_prompt': prompt_pair.system,
-                    'user_prompt': prompt_pair.user,
-                    'model': model
-                })
+                emit_progress_log(
+                    log_callback,
+                    "refinement_request",
+                    "Sending refinement request to LLM",
+                    layer="refinement",
+                    data={
+                        'system_prompt': prompt_pair.system,
+                        'user_prompt': prompt_pair.user,
+                        'model': model,
+                    },
+                )
 
             start_time = time.time()
 
@@ -601,18 +657,23 @@ async def _make_refinement_request(
 
             # Log the response
             if log_callback:
-                log_callback("refinement_response", "Refinement response received", data={
-                    'type': 'refinement_response',
-                    'response': full_raw_response,
-                    'execution_time': execution_time,
-                    'model': model,
-                    'tokens': {
-                        'prompt': llm_response.prompt_tokens,
-                        'completion': llm_response.completion_tokens,
-                        'total': llm_response.context_used,
-                        'limit': llm_response.context_limit
-                    }
-                })
+                emit_progress_log(
+                    log_callback,
+                    "refinement_response",
+                    "Refinement response received",
+                    layer="refinement",
+                    data={
+                        'response': full_raw_response,
+                        'execution_time': execution_time,
+                        'model': model,
+                        'tokens': {
+                            'prompt': llm_response.prompt_tokens,
+                            'completion': llm_response.completion_tokens,
+                            'total': llm_response.context_used,
+                            'limit': llm_response.context_limit,
+                        },
+                    },
+                )
 
             # Extract refined text
             refined_text = client.extract_translation(full_raw_response)
@@ -989,8 +1050,187 @@ def _filter_actionable_critiques(critique_text: str) -> list[str]:
     return actionable
 
 
+def _strip_json_code_fence(text: str) -> str:
+    """Remove a surrounding JSON code fence when present."""
+    stripped = (text or "").strip()
+    fence_match = re.fullmatch(
+        r"```(?:json)?\s*(.*?)\s*```",
+        stripped,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return fence_match.group(1).strip() if fence_match else stripped
+
+
+def _reflection_json_candidates(text: str) -> List[str]:
+    """Return possible JSON payloads from a Senior Editor response."""
+    if not text or not text.strip():
+        return []
+
+    candidates: List[str] = []
+    tag_pattern = (
+        rf"{re.escape(REFLECTION_JSON_TAG_IN)}\s*(.*?)\s*"
+        rf"{re.escape(REFLECTION_JSON_TAG_OUT)}"
+    )
+    for match in re.finditer(tag_pattern, text, flags=re.IGNORECASE | re.DOTALL):
+        candidates.append(match.group(1).strip())
+
+    stripped = _strip_json_code_fence(text)
+    candidates.append(stripped)
+
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if 0 <= start < end:
+        candidates.append(stripped[start:end + 1])
+
+    unique: List[str] = []
+    seen = set()
+    for candidate in candidates:
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            unique.append(candidate)
+    return unique
+
+
+def _load_reflection_json_object(text: str) -> Optional[Dict[str, Any]]:
+    """Parse the first valid Senior Editor JSON object from a response."""
+    for candidate in _reflection_json_candidates(text):
+        try:
+            data = json.loads(candidate)
+        except Exception:
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
+def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
+    """Normalize one structured reflection issue into the internal shape."""
+    if isinstance(raw_issue, str):
+        instruction = raw_issue.strip()
+        if not instruction:
+            return None
+        return {
+            "category": "other",
+            "severity": "major",
+            "source_quote": "",
+            "draft_quote": "",
+            "instruction": instruction,
+            "term_replacement": None,
+        }
+
+    if not isinstance(raw_issue, dict):
+        return None
+
+    instruction = str(raw_issue.get("instruction") or "").strip()
+    if not instruction:
+        return None
+
+    term_replacement = raw_issue.get("term_replacement")
+    if isinstance(term_replacement, dict):
+        source = str(term_replacement.get("source") or "").strip()
+        target = str(term_replacement.get("target") or "").strip()
+        term_replacement = (
+            {"source": source, "target": target}
+            if source and target
+            else None
+        )
+    else:
+        term_replacement = None
+
+    return {
+        "category": str(raw_issue.get("category") or "other").strip() or "other",
+        "severity": str(raw_issue.get("severity") or "major").strip() or "major",
+        "source_quote": str(raw_issue.get("source_quote") or "").strip(),
+        "draft_quote": str(raw_issue.get("draft_quote") or "").strip(),
+        "instruction": instruction,
+        "term_replacement": term_replacement,
+    }
+
+
+def parse_reflection_result(reflection_text: str) -> ReflectionResult:
+    """Parse structured Senior Editor output with a conservative legacy fallback."""
+    raw_text = reflection_text or ""
+    if not raw_text.strip():
+        return ReflectionResult("no_issues", [], raw_text, "empty")
+
+    data = _load_reflection_json_object(raw_text)
+    had_json_markers = (
+        REFLECTION_JSON_TAG_IN in raw_text
+        or REFLECTION_JSON_TAG_OUT in raw_text
+        or raw_text.strip().startswith("{")
+    )
+    if data is not None:
+        raw_status = str(data.get("status") or "").strip().lower().replace("-", "_")
+        raw_issues = data.get("issues") if isinstance(data.get("issues"), list) else []
+        issues = [
+            issue for issue in (
+                _normalize_reflection_issue(item) for item in raw_issues
+            )
+            if issue is not None
+        ]
+        if raw_status not in {"no_issues", "needs_repair"}:
+            raw_status = "needs_repair" if issues else "no_issues"
+        if issues and raw_status == "no_issues":
+            raw_status = "needs_repair"
+        if not issues and raw_status == "needs_repair":
+            raw_status = "no_issues"
+        return ReflectionResult(raw_status, issues, raw_text, "json")
+
+    if raw_text.strip().upper() == "NO_ISSUES":
+        return ReflectionResult("no_issues", [], raw_text, "legacy_no_issues")
+
+    legacy_items = _filter_actionable_critiques(raw_text)
+    if legacy_items:
+        issues = [
+            {
+                "category": "other",
+                "severity": "major",
+                "source_quote": "",
+                "draft_quote": "",
+                "instruction": item,
+                "term_replacement": None,
+            }
+            for item in legacy_items
+        ]
+        return ReflectionResult("needs_repair", issues, raw_text, "legacy_bullets")
+
+    if had_json_markers:
+        return ReflectionResult("no_issues", [], raw_text, "invalid_json")
+    return ReflectionResult("no_issues", [], raw_text, "legacy_no_action")
+
+
+def _reflection_feedback_payload(result: ReflectionResult) -> str:
+    """Serialize parsed reflection issues for the repair prompt."""
+    return json.dumps(
+        {
+            "status": result.status,
+            "issues": result.issues,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
 def format_critique_tldr(critique_text: str, max_bullets: int = 3, max_len: int = 120) -> str:
     """Format a multi-line Senior Editor critique into a concise single-line TL;DR log message."""
+    data = _load_reflection_json_object(critique_text)
+    if data and isinstance(data.get("issues"), list):
+        issue_summaries = []
+        for issue in data.get("issues") or []:
+            normalized = _normalize_reflection_issue(issue)
+            if normalized:
+                issue_summaries.append(normalized["instruction"])
+        if issue_summaries:
+            summaries = []
+            for clean in issue_summaries[:max_bullets]:
+                if len(clean) > max_len:
+                    clean = clean[:max_len].rstrip() + "..."
+                summaries.append(f"• {clean}")
+            remaining = len(issue_summaries) - max_bullets
+            if remaining > 0:
+                summaries.append(f"(+{remaining} more)")
+            return " | ".join(summaries)
+
     bullet_items = _filter_actionable_critiques(critique_text)
 
     if not bullet_items:
@@ -1045,6 +1285,25 @@ def extract_term_replacements_from_critique(critique: str) -> List[Tuple[str, st
         return []
 
     results: List[Tuple[str, str]] = []
+    structured = _load_reflection_json_object(critique)
+    if structured and isinstance(structured.get("issues"), list):
+        for issue in structured.get("issues") or []:
+            if not isinstance(issue, dict):
+                continue
+            replacement = issue.get("term_replacement")
+            if not isinstance(replacement, dict):
+                continue
+            src_term = str(replacement.get("source") or "").strip()
+            tgt_term = str(replacement.get("target") or "").strip()
+            if (
+                src_term
+                and tgt_term
+                and src_term != tgt_term
+                and _is_valid_glossary_term(src_term)
+                and _is_valid_glossary_term(tgt_term)
+            ):
+                results.append((src_term, tgt_term))
+
     clean_text = critique.replace("**", "")
 
     patterns = [
@@ -1075,6 +1334,90 @@ def extract_term_replacements_from_critique(critique: str) -> List[Tuple[str, st
     return deduped
 
 
+def _render_reflection_novel_context(
+    novel_context: str,
+    prompt_options: Optional[Dict[str, Any]],
+    source_chunk: str,
+    draft_translation: str,
+) -> str:
+    """Render the same selective novel-context view for reflection and repair."""
+    options = dict(prompt_options or {})
+    if novel_context and not options.get("novel_context"):
+        options["novel_context"] = novel_context
+
+    raw_context = str(options.get("novel_context") or novel_context or "")
+    if not raw_context.strip():
+        return ""
+
+    active_speaker = None
+    attribution = options.get("dialogue_attribution") or {}
+    if isinstance(attribution, dict):
+        state_after = attribution.get("state_after") or {}
+        if isinstance(state_after, dict):
+            active_speaker = state_after.get("speaker")
+
+    try:
+        from src.utils.novel_context import render_novel_context_for_prompt
+
+        rendered = render_novel_context_for_prompt(
+            raw_context,
+            reference_text="\n".join(
+                part for part in (source_chunk, draft_translation) if part
+            ),
+            max_tokens=options.get("novel_context_prompt_max_tokens"),
+            selective=options.get("novel_context_selective_injection", True),
+            active_speaker=active_speaker,
+        )
+        active_context = rendered.strip() or raw_context.strip()
+    except Exception:
+        active_context = raw_context.strip()
+    directed_context = str(options.get("directed_addressing_context") or "").strip()
+    if directed_context:
+        return (
+            "# STRUCTURED DIRECTED ADDRESSING RULES\n"
+            f"{directed_context}\n\n"
+            "# ACTIVE MARKDOWN NOVEL CONTEXT\n"
+            f"{active_context}"
+        ).strip()
+    return active_context
+
+
+async def _generate_editor_response(
+    llm_client: Any,
+    prompt: str,
+    system_prompt: str,
+    model_name: str,
+    temperature: float,
+):
+    """Call the available LLM client method for reflection/repair."""
+    if hasattr(llm_client, "generate_async"):
+        result = llm_client.generate_async(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            model=model_name,
+            temperature=temperature,
+        )
+    elif hasattr(llm_client, "generate"):
+        result = llm_client.generate(
+            prompt,
+            system_prompt=system_prompt,
+            model=model_name,
+            temperature=temperature,
+        )
+    elif hasattr(llm_client, "make_request"):
+        result = llm_client.make_request(
+            prompt,
+            model_name,
+            system_prompt=system_prompt,
+        )
+    else:
+        raise AttributeError("LLM client has no supported generation method")
+
+    if inspect.isawaitable(result):
+        return await result
+    return result
+
+
 async def run_chunk_reflection_pass(
     source_chunk: str,
     draft_translation: str,
@@ -1086,6 +1429,8 @@ async def run_chunk_reflection_pass(
     glossary_block: str = "",
     log_callback: Optional[Callable] = None,
     context_session: Optional[Any] = None,
+    prompt_options: Optional[Dict[str, Any]] = None,
+    repair_validator: Optional[Callable[[str], Optional[str]]] = None,
 ) -> str:
     """Run a 2-pass Senior Translation Editor reflection & repair evaluation on a draft chunk."""
     from src.prompts.prompts import generate_chunk_reflection_prompt, generate_chunk_repair_prompt
@@ -1095,22 +1440,45 @@ async def run_chunk_reflection_pass(
         return draft_translation
 
     if log_callback:
-        log_callback("reflection_start", "Running 2-pass Senior Editor reflection pass...")
+        emit_progress_log(
+            log_callback,
+            "reflection_start",
+            "Running 2-pass Senior Editor reflection pass...",
+            layer="senior_editor_reflection",
+        )
+        emit_progress_log(
+            log_callback,
+            "reflection_prompt_contract",
+            "Senior Editor reflection contract active.",
+            layer="senior_editor_reflection",
+            data={
+                "prompt_version": REFLECTION_PROMPT_VERSION,
+                "contract_version": REFLECTION_CONTRACT_VERSION,
+            },
+        )
+
+    active_novel_context = _render_reflection_novel_context(
+        novel_context=novel_context,
+        prompt_options=prompt_options,
+        source_chunk=source_chunk,
+        draft_translation=draft_translation,
+    )
 
     reflection_pair = generate_chunk_reflection_prompt(
         source_chunk=source_chunk,
         draft_translation=draft_translation,
         target_language=target_language,
-        novel_context=novel_context,
+        novel_context=active_novel_context,
         custom_instructions=custom_instructions,
         glossary_block=glossary_block,
     )
 
     try:
-        response = await llm_client.generate_async(
+        response = await _generate_editor_response(
+            llm_client=llm_client,
             prompt=reflection_pair.user,
             system_prompt=reflection_pair.system,
-            model=model_name,
+            model_name=model_name,
             temperature=0.2,
         )
         critique = (response.content or "").strip() if response and getattr(response, "content", None) else ""
@@ -1119,15 +1487,105 @@ async def run_chunk_reflection_pass(
             log_callback("reflection_failed", f"Senior Editor reflection failed: {e}")
         return draft_translation
 
-    if not critique or "NO_ISSUES" in critique.upper():
+    reflection_result = parse_reflection_result(critique)
+    if log_callback:
+        emit_progress_log(
+            log_callback,
+            "reflection_parse_status",
+            f"Senior Editor reflection parsed with {reflection_result.parse_status}.",
+            layer="senior_editor_reflection",
+            data={
+                "prompt_version": REFLECTION_PROMPT_VERSION,
+                "contract_version": REFLECTION_CONTRACT_VERSION,
+                "parse_status": reflection_result.parse_status,
+            },
+        )
+
+    if reflection_result.parse_status == "invalid_json":
         if log_callback:
-            log_callback("reflection_complete", "Senior Editor reflection complete: No issues found.")
+            emit_progress_log(
+                log_callback,
+                "reflection_parse_retry",
+                "Senior Editor returned malformed JSON; retrying once with a strict JSON contract.",
+                layer="senior_editor_reflection",
+                data={
+                    "prompt_version": REFLECTION_PROMPT_VERSION,
+                    "contract_version": REFLECTION_CONTRACT_VERSION,
+                },
+            )
+        retry_user_prompt = (
+            f"{reflection_pair.user}\n\n"
+            "Your previous response was not valid JSON. Return only one valid "
+            f"JSON object inside {REFLECTION_JSON_TAG_IN} and "
+            f"{REFLECTION_JSON_TAG_OUT}. Do not include prose, markdown, or bullets."
+        )
+        try:
+            retry_response = await _generate_editor_response(
+                llm_client=llm_client,
+                prompt=retry_user_prompt,
+                system_prompt=reflection_pair.system,
+                model_name=model_name,
+                temperature=0.0,
+            )
+            retry_critique = (
+                (retry_response.content or "").strip()
+                if retry_response and getattr(retry_response, "content", None)
+                else ""
+            )
+            retry_result = parse_reflection_result(retry_critique)
+            if log_callback:
+                emit_progress_log(
+                    log_callback,
+                    "reflection_parse_retry_status",
+                    f"Senior Editor reflection retry parsed with {retry_result.parse_status}.",
+                    layer="senior_editor_reflection",
+                    data={
+                        "prompt_version": REFLECTION_PROMPT_VERSION,
+                        "contract_version": REFLECTION_CONTRACT_VERSION,
+                        "parse_status": retry_result.parse_status,
+                    },
+                )
+            if retry_result.parse_status != "invalid_json":
+                critique = retry_critique
+                reflection_result = retry_result
+        except Exception as e:
+            if log_callback:
+                emit_progress_log(
+                    log_callback,
+                    "reflection_parse_retry_failed",
+                    f"Senior Editor reflection JSON retry failed: {e}",
+                    layer="senior_editor_reflection",
+                )
+
+    if reflection_result.parse_status == "invalid_json":
+        if log_callback:
+            emit_progress_log(
+                log_callback,
+                "reflection_parse_failed",
+                "Senior Editor reflection could not be parsed as JSON; repair skipped instead of treating it as no issues.",
+                layer="senior_editor_reflection",
+                data={
+                    "prompt_version": REFLECTION_PROMPT_VERSION,
+                    "contract_version": REFLECTION_CONTRACT_VERSION,
+                    "parse_status": reflection_result.parse_status,
+                },
+            )
         return draft_translation
 
-    actionable_bullets = _filter_actionable_critiques(critique)
-    if not actionable_bullets:
+    if (
+        reflection_result.parse_status.startswith("legacy")
+        or reflection_result.parse_status == "invalid_json"
+    ) and log_callback:
+        emit_progress_log(
+            log_callback,
+            "reflection_parse_fallback",
+            f"Senior Editor reflection used {reflection_result.parse_status} parsing.",
+            layer="senior_editor_reflection",
+        )
+
+    if not reflection_result.needs_repair:
         if log_callback:
-            log_callback("reflection_complete", "Senior Editor reflection complete: No actionable issues found.")
+            log_callback("reflection_complete", "Senior Editor reflection complete: No issues found.")
         return draft_translation
 
     from src.utils.unified_logger import get_logger, LogType
@@ -1137,24 +1595,29 @@ async def run_chunk_reflection_pass(
         tldr_summary = format_critique_tldr(critique)
         log_callback("reflection_critique", f"Senior Editor critique: {tldr_summary}")
 
-    term_pairs = extract_term_replacements_from_critique(critique)
+    critique_feedback = _reflection_feedback_payload(reflection_result)
+    term_pairs = extract_term_replacements_from_critique(critique_feedback)
+    if not term_pairs:
+        term_pairs = extract_term_replacements_from_critique(critique)
     if term_pairs and context_session and hasattr(context_session, "register_editor_terms"):
         context_session.register_editor_terms(term_pairs)
 
     repair_pair = generate_chunk_repair_prompt(
         source_chunk=source_chunk,
         draft_translation=draft_translation,
-        critique_feedback=critique,
+        critique_feedback=critique_feedback,
         target_language=target_language,
         custom_instructions=custom_instructions,
         glossary_block=glossary_block,
+        novel_context=active_novel_context,
     )
 
     try:
-        repair_response = await llm_client.generate_async(
+        repair_response = await _generate_editor_response(
+            llm_client=llm_client,
             prompt=repair_pair.user,
             system_prompt=repair_pair.system,
-            model=model_name,
+            model_name=model_name,
             temperature=0.3,
         )
         raw_content = repair_response.content if repair_response and getattr(repair_response, "content", None) else ""
@@ -1163,12 +1626,29 @@ async def run_chunk_reflection_pass(
             extractor = TranslationExtractor("<TRANSLATION>", "</TRANSLATION>")
             repaired_text = extractor.extract(raw_content)
         if repaired_text and repaired_text.strip():
+            repaired_text = repaired_text.strip()
+            if repair_validator:
+                try:
+                    validation_feedback = repair_validator(repaired_text)
+                except Exception as validation_error:
+                    validation_feedback = (
+                        f"repair validator raised {validation_error}"
+                    )
+                if validation_feedback:
+                    if log_callback:
+                        emit_progress_log(
+                            log_callback,
+                            "repair_validation_failed",
+                            "Senior Editor repair failed adapter validation; retaining original draft.",
+                            layer="senior_editor_repair",
+                            data={"reason": str(validation_feedback)},
+                        )
+                    return draft_translation
             if log_callback:
                 log_callback("repair_applied", "Applied Senior Editor repair fixes.")
-            return repaired_text.strip()
+            return repaired_text
     except Exception as e:
         if log_callback:
             log_callback("repair_failed", f"Senior Editor repair failed: {e}")
 
     return draft_translation
-

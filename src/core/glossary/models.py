@@ -76,6 +76,7 @@ class GlossaryConfig:
     max_entries: int = 50
     case_sensitive: bool = True
     warn_on_cap: bool = True
+    source_language: str = ""
 
 
 @dataclass

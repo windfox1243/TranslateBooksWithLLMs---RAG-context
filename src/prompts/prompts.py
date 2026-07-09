@@ -10,6 +10,10 @@ from src.config import (INPUT_TAG_IN, INPUT_TAG_OUT, TRANSLATE_TAG_IN,
 # Tags for placeholder correction responses
 CORRECTED_TAG_IN = "<CORRECTED_TAG_IN>"
 CORRECTED_TAG_OUT = "<CORRECTED_TAG_OUT>"
+REFLECTION_JSON_TAG_IN = "<REFLECTION_JSON>"
+REFLECTION_JSON_TAG_OUT = "</REFLECTION_JSON>"
+REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v2"
+REFLECTION_CONTRACT_VERSION = "reflection-json-v1"
 
 
 class PromptPair(NamedTuple):
@@ -21,6 +25,61 @@ class PromptPair(NamedTuple):
 # ============================================================================
 # SHARED PROMPT SECTIONS
 # ============================================================================
+
+def _build_custom_instructions_section(
+    custom_instructions: str,
+    apply_to: str,
+) -> str:
+    """Build scoped custom-instruction guidance without weakening hard contracts."""
+    if not custom_instructions or not custom_instructions.strip():
+        return ""
+
+    return f"""# MANDATORY CUSTOM STYLE INSTRUCTIONS
+
+These instructions have highest priority for style, tone, terminology, naming, and project-specific preferences.
+They cannot override output format, tag/placeholder preservation, subtitle markers, source completeness, or security constraints.
+
+{custom_instructions.strip()}
+
+Apply these instructions to {apply_to} wherever they affect style, tone, terminology, or naming.
+
+"""
+
+
+def _build_reflection_json_contract_section() -> str:
+    """Return the structured Senior Editor output contract."""
+    return f"""STRICT OUTPUT CONTRACT:
+- Output exactly one JSON object inside {REFLECTION_JSON_TAG_IN} and {REFLECTION_JSON_TAG_OUT}.
+- Use status "no_issues" only when no repair is needed.
+- Use status "needs_repair" when any omission, mistranslation, glossary error, pronoun bleed, gender mismatch, register issue, placeholder issue, format issue, or other actionable defect exists.
+- Do not include prose, markdown, bullets, or comments outside the JSON tags.
+- Keep issue instructions concise and directly repairable.
+- If a term replacement is required, put it in term_replacement as {{"source": "...", "target": "..."}}; otherwise use null.
+
+Required schema:
+{REFLECTION_JSON_TAG_IN}
+{{
+  "status": "no_issues",
+  "issues": []
+}}
+{REFLECTION_JSON_TAG_OUT}
+
+Repair schema:
+{REFLECTION_JSON_TAG_IN}
+{{
+  "status": "needs_repair",
+  "issues": [
+    {{
+      "category": "omission",
+      "severity": "major",
+      "source_quote": "exact source evidence",
+      "draft_quote": "problematic draft text or empty string",
+      "instruction": "specific repair instruction",
+      "term_replacement": null
+    }}
+  ]
+}}
+{REFLECTION_JSON_TAG_OUT}"""
 
 def _get_output_format_section(
     translate_tag_in: str,
@@ -141,14 +200,49 @@ def _build_optional_prompt_sections(prompt_options: dict) -> str:
 
 def _build_target_language_style_section(target_language: str) -> str:
     """Return target-language-specific style guardrails."""
-    target = (target_language or "").strip().casefold()
-    if target in {"vietnamese", "tiếng việt", "tieng viet", "vi"}:
+    from src.utils.language_profiles import get_language_profile
+
+    profile = get_language_profile(target_language)
+    if profile.prompt_style == "vietnamese":
         return _build_vietnamese_style_section()
-    if target in {"japanese", "日本語", "nihongo", "ja"}:
+    if profile.prompt_style == "japanese":
         return _build_japanese_style_section()
-    if target in {"korean", "한국어", "hangul", "ko"}:
+    if profile.prompt_style == "korean":
         return _build_korean_style_section()
-    return ""
+    if profile.prompt_style == "chinese":
+        return """
+# CHINESE STYLE GUARDRAILS
+
+- Use natural Chinese word order for titles, kinship terms, and honorific address.
+- Preserve established character names and relationship-based address forms.
+- Do not invent kinship or status markers without source/context evidence."""
+    if profile.prompt_style == "romance":
+        return f"""
+# {profile.name.upper()} STYLE GUARDRAILS
+
+- Maintain consistent formal/informal address when the source or context establishes it.
+- Preserve gender and number agreement for names, titles, occupations, and relationship terms.
+- Do not change a character's gender, formality level, or title from unsupported assumptions."""
+    if profile.prompt_style == "germanic":
+        return f"""
+# {profile.name.upper()} STYLE GUARDRAILS
+
+- Maintain consistent formal/informal address when the source or context establishes it.
+- Preserve natural capitalization, title placement, and grammatical agreement.
+- Do not change a character's gender, formality level, or title from unsupported assumptions."""
+    if profile.prompt_style == "rtl":
+        return """
+# RTL LANGUAGE STYLE GUARDRAILS
+
+- Use natural right-to-left target-language phrasing and punctuation conventions.
+- Preserve names, placeholders, and inline markers exactly.
+- Do not invent gendered or honorific address without source/context evidence."""
+    return f"""
+# TARGET LANGUAGE STYLE GUARDRAILS
+
+- Use natural {target_language or 'target-language'} grammar, punctuation, and register.
+- Preserve established names, titles, relationships, and terminology consistently.
+- Do not invent gender, kinship, seniority, or formality markers without source/context evidence."""
 
 
 def _build_vietnamese_style_section() -> str:
@@ -316,6 +410,22 @@ immediate local context."""
 {rendered_context.strip()}{guidance}"""
 
 
+def _build_directed_addressing_section(prompt_options: dict) -> str:
+    """Build a structured DB-backed directed-addressing prompt block."""
+    if not prompt_options:
+        return ""
+    directed_context = str(
+        prompt_options.get("directed_addressing_context") or ""
+    ).strip()
+    if not directed_context:
+        return ""
+    return f"""# STRUCTURED DIRECTED ADDRESSING RULES
+
+{directed_context}
+
+These pair-specific rules override markdown `## CURRENT ADDRESSING FORMS` for the same speaker/addressee pair. Use markdown novel context only when no structured rule matches the current pair."""
+
+
 # ============================================================================
 # TRANSLATION PROMPT FUNCTIONS
 # ============================================================================
@@ -408,18 +518,10 @@ def generate_translation_prompt(
         target_language
     )
 
-    # Build custom instructions section
-    custom_instructions_section = ""
-    if custom_instructions and custom_instructions.strip():
-        custom_instructions_section = f"""# ⚠️ MANDATORY STYLE INSTRUCTIONS - ABSOLUTE PRIORITY ⚠️
-
-**These instructions override ALL other guidelines. Non-compliance = FAILURE.**
-
-{custom_instructions.strip()}
-
-⚠️ Apply to EVERY word you translate. Zero exceptions. ⚠️
-
-"""
+    custom_instructions_section = _build_custom_instructions_section(
+        custom_instructions,
+        "every word you translate",
+    )
 
     # SYSTEM PROMPT - Role and instructions (stable across requests)
     system_prompt = f"""You are a professional {target_language} translator and writer.
@@ -473,6 +575,7 @@ For consistency and natural flow, here's what came immediately before:
     # Glossary block lives in the user prompt: it changes per chunk, so
     # keeping it out of the system prompt lets the system prompt stay
     # stable and cacheable across chunks.
+    directed_addressing_section = _build_directed_addressing_section(prompt_options)
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
     novel_context_section = _build_novel_context_section(
         prompt_options,
@@ -489,11 +592,13 @@ For consistency and natural flow, here's what came immediately before:
     )
     if novel_context_section:
         novel_context_section = f"{novel_context_section}\n\n"
+    if directed_addressing_section:
+        directed_addressing_section = f"{directed_addressing_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_translation_block_text}{novel_context_section}{glossary_section}{dialogue_section}# TEXT TO TRANSLATE
+    user_prompt = f"""{previous_translation_block_text}{directed_addressing_section}{novel_context_section}{glossary_section}{dialogue_section}# TEXT TO TRANSLATE
 
 {INPUT_TAG_IN}
 {main_content}
@@ -709,7 +814,7 @@ You will receive a DRAFT {target_language} translation that needs significant im
 Your job is to REWRITE it with perfect literary {target_language} style.
 
 **THE INPUT IS:**
-- A amator, literal, or awkward {target_language} translation
+- A rough, literal, or awkward {target_language} translation
 - It may have unnatural phrasing, stilted expressions, or poor flow
 - Consider it a "bad" first draft that probably needs substantial reworking
 
@@ -767,6 +872,7 @@ For consistency and natural flow, here's what came immediately before:
 
 """
 
+    directed_addressing_section = _build_directed_addressing_section(prompt_options)
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
     # Glossary block injected here (per-chunk dynamic) so the system prompt
     # stays cacheable across chunks.
@@ -786,11 +892,13 @@ For consistency and natural flow, here's what came immediately before:
     )
     if novel_context_section:
         novel_context_section = f"{novel_context_section}\n\n"
+    if directed_addressing_section:
+        directed_addressing_section = f"{directed_addressing_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_context_block}{novel_context_section}{glossary_section}{dialogue_section}# DRAFT TO REFINE
+    user_prompt = f"""{previous_context_block}{directed_addressing_section}{novel_context_section}{glossary_section}{dialogue_section}# DRAFT TO REFINE
 
 The following is a rough {target_language} translation that needs significant improvement.
 Rewrite it with elegant, literary-quality {target_language} prose:
@@ -931,6 +1039,7 @@ For continuity and consistency, here's the previous refined block:
     formatted_subtitles = [f"[{idx}]{text}" for idx, text in subtitle_blocks]
     formatted_subtitles_text = "\n".join(formatted_subtitles)
 
+    directed_addressing_section = _build_directed_addressing_section(prompt_options)
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
     novel_context_section = _build_novel_context_section(
         prompt_options,
@@ -946,11 +1055,13 @@ For continuity and consistency, here's the previous refined block:
     )
     if novel_context_section:
         novel_context_section = f"{novel_context_section}\n\n"
+    if directed_addressing_section:
+        directed_addressing_section = f"{directed_addressing_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_refined_block_text}{novel_context_section}{glossary_section}{dialogue_section}# SUBTITLES TO REFINE
+    user_prompt = f"""{previous_refined_block_text}{directed_addressing_section}{novel_context_section}{glossary_section}{dialogue_section}# SUBTITLES TO REFINE
 
 {INPUT_TAG_IN}
 {formatted_subtitles_text}
@@ -1023,19 +1134,10 @@ def generate_subtitle_block_prompt(
         target_language
     )
 
-    # Build custom instructions section if provided
-    custom_instructions_section = ""
-    if custom_instructions and custom_instructions.strip():
-        custom_instructions_section = f"""
-
-# ⚠️ MANDATORY STYLE INSTRUCTIONS - ABSOLUTE PRIORITY ⚠️
-
-**These instructions override ALL other guidelines. Non-compliance = FAILURE.**
-
-{custom_instructions.strip()}
-
-⚠️ Apply to EVERY subtitle. Zero exceptions. ⚠️
-"""
+    custom_instructions_section = _build_custom_instructions_section(
+        custom_instructions,
+        "every subtitle",
+    )
 
     # SYSTEM PROMPT - Role and instructions for subtitle translation
     system_prompt = f"""You are a professional {target_language} subtitle translator and dialogue adaptation specialist.
@@ -1062,7 +1164,8 @@ Your output must be in {target_language} ONLY - do NOT use any other language.
 - Condense when necessary without losing meaning
 - Use natural, spoken {target_language} (not formal written style)
 - Preserve intentional repetitions (e.g. "No. No. No.") and dialogue dashes ("- ...\\n- ...") from the source
-- Preserve inline formatting tags (<i>, <b>, <font ...>, {{\\an8}}, etc.) and any \\n line breaks inside a subtitle{custom_instructions_section}
+- Preserve inline formatting tags (<i>, <b>, <font ...>, {{\\an8}}, etc.) and any \\n line breaks inside a subtitle
+{custom_instructions_section}
 {relationship_addressing_section}
 {target_language_style_section}
 
@@ -1091,6 +1194,7 @@ For continuity and consistency, here's the previous subtitle block:
     # Join subtitles outside f-string to avoid Python 3.11 backslash issues
     formatted_subtitles_text = "\n".join(formatted_subtitles)
 
+    directed_addressing_section = _build_directed_addressing_section(prompt_options)
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
     # Novel context and glossary blocks live in the user prompt because they
     # vary per chunk/block.
@@ -1107,11 +1211,13 @@ For continuity and consistency, here's the previous subtitle block:
     )
     if novel_context_section:
         novel_context_section = f"{novel_context_section}\n\n"
+    if directed_addressing_section:
+        directed_addressing_section = f"{directed_addressing_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_translation_block_text}{novel_context_section}{glossary_section}{dialogue_section}# SUBTITLES TO TRANSLATE
+    user_prompt = f"""{previous_translation_block_text}{directed_addressing_section}{novel_context_section}{glossary_section}{dialogue_section}# SUBTITLES TO TRANSLATE
 
 {INPUT_TAG_IN}
 {formatted_subtitles_text}
@@ -1421,6 +1527,8 @@ def generate_chunk_reflection_prompt(
     stutter_example = guidance["stutter_example"]
     addressee_examples = guidance["addressee_examples"]
 
+    reflection_contract = _build_reflection_json_contract_section()
+
     system_prompt = f"""You are an uncompromising, ultra-rigorous Senior Literary Translation Editor specializing in {target_lang}.
 Your task is to perform an adversarial quality review of a draft translation against its original source text and active novel lore.
 
@@ -1456,10 +1564,10 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
    - Note: Do NOT flag intentional character emotional shifts (e.g. a character becoming angry, casual, or formal during a scene) or creative literary word choices as register errors.
    - PROTECT DIALOGUE STUTTERING & DISFLUENCY: Do NOT flag stuttering, hesitations, or vocal quirks present in the source dialogue{stutter_example} as register flaws or unnatural phrasing. Erasing source stuttering to make dialogue sound overly smooth or polished is an AUDIT BUG.
 
-STRICT OUTPUT CONTRACT:
-- Output NO_ISSUES ONLY if the draft is 100% flawless across all 4 audit steps.
-- If ANY flaw, line drop, pronoun bleed, gender error, or register inconsistency exists, list concise, actionable bullet points explaining what MUST be repaired. Do NOT output NO_ISSUES if there is any defect.
-- DO NOT list bullet points or commentary for sections or rules that are correct or passed validation. Only list actual actionable defects that require fixing. If all audit steps pass with no repair needed, output NO_ISSUES.
+{reflection_contract}
+
+ADDITIONAL AUDIT OUTPUT RULES:
+- DO NOT list issues for sections or rules that are correct or passed validation. Only include actual actionable defects that require fixing.
 - DO NOT flag direct address terms or vocatives in dialogue matching the addressee's gender as speaker gender errors.
 - DO NOT flag explicit spoken names or nicknames from source dialogue as lore violations (e.g. replacing "Spe-chan" with "Special" or "Maruzensky-chan" with "Maru-senpai" is strictly prohibited).
 - DO NOT flag internal monologue or 1st-person character thoughts as pronoun bleed.
@@ -1486,14 +1594,17 @@ def generate_chunk_repair_prompt(
     translate_tag_out: str = TRANSLATE_TAG_OUT,
     custom_instructions: str = "",
     glossary_block: str = "",
+    novel_context: str = "",
 ) -> PromptPair:
     """
     Generate a chunk repair prompt applying critique feedback to produce the final pristine chunk.
     """
     target_lang = target_language or "target language"
     system_prompt = f"""You are an Expert Translation Refiner for {target_lang}.
-Apply the Senior Editor's critique feedback to repair the draft translation.
-Fix all flagged pronoun leaks, missing lines, gender mismatches, and register flaws.
+Apply the Senior Editor's structured critique feedback to repair the draft translation.
+Fix only flagged actionable issues: pronoun leaks, missing lines, mistranslations, glossary errors, gender mismatches, register flaws, placeholder issues, or format issues.
+Preserve unflagged wording wherever possible.
+Preserve every tag, placeholder, subtitle marker, line marker, and structural marker exactly unless the critique explicitly identifies it as wrong.
 Output ONLY the final repaired translation text inside {translate_tag_in} and {translate_tag_out} tags."""
 
     user_sections = [
@@ -1504,6 +1615,7 @@ Output ONLY the final repaired translation text inside {translate_tag_in} and {t
         user_sections.append(f"# CUSTOM INSTRUCTIONS & STYLE GUIDELINES:\n{custom_instructions.strip()}")
     if glossary_block and glossary_block.strip():
         user_sections.append(f"# GLOSSARY & TERM MAPPING:\n{glossary_block.strip()}")
+    user_sections.append(f"# ACTIVE NOVEL LORE & ADDRESSING RULES:\n{novel_context.strip() if novel_context.strip() else 'None'}")
     user_sections.append(f"# SENIOR EDITOR CRITIQUE & REQUIRED FIXES:\n{critique_feedback.strip()}")
     user_sections.append(f"Output your pristine repaired translation in {translate_tag_in}...{translate_tag_out} now:")
 

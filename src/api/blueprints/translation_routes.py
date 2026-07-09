@@ -50,6 +50,17 @@ def _clamp_chunk_tokens(value):
     return max(50, resolved)
 
 
+def _prompt_options_from_start_request(data):
+    """Return start-request prompt options with legacy reflection fallback."""
+    prompt_options = dict((data or {}).get('prompt_options') or {})
+    if 'reflection_mode' not in prompt_options:
+        prompt_options['reflection_mode'] = (
+            str(getattr(_config, 'ENABLE_CHUNK_REFLECTION', 'false')).lower()
+            == 'true'
+        )
+    return prompt_options
+
+
 # Cloud providers whose key lives in config['<provider>_api_key'] and env var
 # '<PROVIDER>_API_KEY'. The mapping is mechanical, so supporting a new provider
 # in the resume-override path requires only adding it here (and nowhere else in
@@ -211,9 +222,9 @@ def _apply_resume_overrides(config, overrides):
     through `_resolve_api_key` exactly like the start endpoint, and a multi-key
     string is passed through unchanged so the key-rotation pool still works.
 
-    Also merges prompt_options overrides (e.g. reflection_mode, use_llm_sanitizer)
-    so that resumed legacy jobs can adopt newly introduced settings from the
-    current UI state.
+    Also merges prompt_options overrides (e.g. reflection_mode) so that
+    resumed legacy jobs can adopt newly introduced settings from the current
+    UI state.
 
     Credentials are validated even with an empty body: checkpoints no longer
     persist API keys (issue #213), so every resume must find its key in .env
@@ -235,8 +246,8 @@ def _apply_resume_overrides(config, overrides):
             except (TypeError, ValueError):
                 return jsonify({"error": "context_window must be an integer"}), 400
 
-        # Merge prompt_options overrides so newly introduced settings
-        # (reflection_mode, use_llm_sanitizer, etc.) apply to resumed jobs.
+        # Merge prompt_options overrides so newly introduced settings apply to
+        # resumed jobs.
         prompt_options_overrides = overrides.get('prompt_options')
         if isinstance(prompt_options_overrides, dict) and prompt_options_overrides:
             existing_opts = config.get('prompt_options') or {}
@@ -482,7 +493,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         # Generate unique translation ID
         translation_id = f"trans_{int(time.time() * 1000)}"
 
-        prompt_options = dict(data.get('prompt_options') or {})
+        prompt_options = _prompt_options_from_start_request(data)
         if (
             prompt_options.get('auto_update_context')
             and not prompt_options.get('novel_context_file')
@@ -1511,4 +1522,3 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         return jsonify({"error": "Failed to update addressing rule lock"}), 500
 
     return bp
-

@@ -73,8 +73,8 @@ class UniversalAddressingEngine:
     Enforces strict separation between pronouns and job titles/vocatives.
     """
 
-    def __init__(self, language: str = "vi"):
-        lang_clean = (language or "vi").strip().casefold()
+    def __init__(self, language: str = "generic"):
+        lang_clean = (language or "generic").strip().casefold()
         if lang_clean in {"vietnamese", "tiếng việt", "vi"}:
             self.lang_code = "vi"
         elif lang_clean in {"japanese", "tiếng nhật", "ja"}:
@@ -86,7 +86,7 @@ class UniversalAddressingEngine:
         elif lang_clean in {"spanish", "es"}:
             self.lang_code = "es"
         else:
-            self.lang_code = "vi"
+            self.lang_code = "generic"
 
     def resolve_seniority_hierarchy(self, speaker: str, addressee: str, context: str) -> str:
         """
@@ -158,8 +158,12 @@ class UniversalAddressingEngine:
             or "giới tính: nam" in c_clean
         )
 
-        # Strict Rule: Job titles/nouns in target_pronoun MUST be moved to vocative & converted to genuine pronouns
-        if t_key in _JOB_TITLE_NOUNA or any(t_key.startswith(job) for job in _JOB_TITLE_NOUNA):
+        # Strict Rule: Vietnamese job titles/nouns in target_pronoun are moved
+        # to vocative and converted only when the target profile supports that
+        # pronoun system. Unknown/custom languages must remain neutral.
+        if self.lang_code == "vi" and (
+            t_key in _JOB_TITLE_NOUNA or any(t_key.startswith(job) for job in _JOB_TITLE_NOUNA)
+        ):
             if not v_clean:
                 v_clean = t_clean
             # Determine genuine pronoun replacement
@@ -202,9 +206,9 @@ class UniversalAddressingEngine:
         # 1. Resolve 2D Seniority Hierarchy (JUNIOR_TO_SENIOR, SENIOR_TO_JUNIOR, PEER)
         hierarchy = self.resolve_seniority_hierarchy(speaker, addressee, details_context)
 
-        peer_set = _PEER_PRONOUN_SETS.get(self.lang_code, _PEER_PRONOUN_SETS["vi"])
-        senior_set = _SENIOR_PRONOUN_SETS.get(self.lang_code, _SENIOR_PRONOUN_SETS["vi"])
-        junior_set = _JUNIOR_PRONOUN_SETS.get(self.lang_code, _JUNIOR_PRONOUN_SETS["vi"])
+        peer_set = _PEER_PRONOUN_SETS.get(self.lang_code, set())
+        senior_set = _SENIOR_PRONOUN_SETS.get(self.lang_code, set())
+        junior_set = _JUNIOR_PRONOUN_SETS.get(self.lang_code, set())
 
         # 2. Hierarchy Constraint Solver
         if hierarchy == "JUNIOR_TO_SENIOR":
@@ -234,22 +238,23 @@ class UniversalAddressingEngine:
                 s_clean = "tôi"
                 s_key = s_clean.casefold()
 
-        # Cross-validation: enforce gender alignment of target_pronoun with character_genders
-        if is_addressee_female and t_key == "anh" and "teacher" not in c_clean and "giáo viên" not in c_clean and "thầy" not in c_clean:
+        # Cross-validation: enforce Vietnamese gendered address alignment only
+        # for Vietnamese targets. Other/custom languages keep neutral fallback.
+        if self.lang_code == "vi" and is_addressee_female and t_key == "anh" and "teacher" not in c_clean and "giáo viên" not in c_clean and "thầy" not in c_clean:
             t_clean = "chị"
             t_key = "chị"
-        elif is_addressee_male and t_key in {"chị", "cô", "bà"}:
+        elif self.lang_code == "vi" and is_addressee_male and t_key in {"chị", "cô", "bà"}:
             t_clean = "anh"
             t_key = "anh"
 
         # 3. Check Fast Harmonious Alignment Table
-        if (s_key, t_key) in _HARMONIOUS_ALIGNMENT_MAP:
+        if self.lang_code != "generic" and (s_key, t_key) in _HARMONIOUS_ALIGNMENT_MAP:
             repaired_s, repaired_t = _HARMONIOUS_ALIGNMENT_MAP[(s_key, t_key)]
             s_clean, t_clean = repaired_s, repaired_t
             s_key, t_key = s_clean.casefold(), t_key.casefold()
 
         # 4. Self-Consistency Guard: Prevent identical self & target pronouns (e.g., em - em, chị - chị)
-        if s_key and s_key == t_key:
+        if self.lang_code == "vi" and s_key and s_key == t_key:
             if s_key == "em":
                 t_clean = "chị" if is_addressee_female else ("anh" if is_addressee_male or "male" in c_clean else "chị")
             elif s_key in {"chị", "anh"}:
@@ -344,4 +349,3 @@ class UniversalAddressingEngine:
                         break
 
         return violations
-

@@ -153,7 +153,7 @@ class TxtAdapter(FormatAdapter):
                 text_chunks.append(translated if translated_chunk else original)
 
         # Join chunks
-        joiner = "\n\n" if bilingual else "\n"
+        joiner = "\n\n"
         final_text = joiner.join(text_chunks)
 
         # Remove trailing separator in bilingual mode

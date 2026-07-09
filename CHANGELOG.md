@@ -1,5 +1,73 @@
 # Changelog
 
+## 1.15.0-beta.28 - 2026-07-09
+
+### Added
+
+- **Shared Language Profiles & Script-Aware Matching**:
+  Added internal language profiles and shared text matching helpers for
+  Latin, CJK, Hangul, RTL, Thai/no-space, and unknown/custom languages.
+  Unknown languages now use a neutral fallback instead of inheriting
+  Vietnamese-specific addressing behavior.
+
+- **DB-Backed Directed Addressing Prompt Bridge**:
+  Added markdown-to-DB import, context-update import, DB-to-markdown export,
+  prompt projection, lock-aware merge handling, and active-character filtering
+  for directed speaker-addressee address rules. DB rules now take precedence
+  over markdown addressing rows for the same directed pair while markdown
+  remains the human-editable compatibility layer.
+
+- **Terminal-Visible Pipeline Logging**:
+  Added a safe progress logging helper used by translation, refinement,
+  subtitle, glossary, DB-addressing, reflection, and checkpoint paths. The
+  helper supports callbacks with or without structured `data` and avoids
+  dumping full book content or secrets into logs.
+
+### Fixed
+
+- **Senior Editor Reflection Safety**:
+  Fixed crashes when reflection callbacks only accept `(event, message)`.
+  Malformed Senior Editor JSON now retries once with a strict JSON contract
+  and is logged as a parse failure instead of silently becoming `no_issues`.
+  Reflection repairs are accepted only after adapter validation passes for
+  generic units, EPUB/XHTML placeholders, and subtitle markers.
+
+- **Prompt Layer Consistency**:
+  Consolidated directed-addressing prompt injection across translation,
+  refinement, subtitle translation, and subtitle refinement prompts. Repair
+  prompts now receive the same active context, glossary, dialogue attribution,
+  and structured addressing projection as reflection prompts.
+
+- **Alias, Character, and Glossary Matching**:
+  Replaced unsafe substring activation with exact normalized aliases,
+  Latin/RTL word boundaries, and exact CJK/Hangul/no-space matching. This
+  prevents partial matches such as `Tom` activating `Tomio Momozawa` and
+  keeps similar names such as `Alex` and `Alles` separate.
+
+- **Chapter-Aware Chunking & Reconstruction**:
+  Added shared decorative separator detection for divider-only lines such as
+  `===`, `----`, `***`, and `___`. TXT and plain-mode chunking now keep
+  separators attached to neighboring content without standalone translation
+  units, HTML/XHTML chapter mode can detect paragraph-encoded chapter labels
+  through the shared detector, and TXT reconstruction preserves paragraph
+  spacing across chunk boundaries.
+
+- **Reflection and Runtime Configuration**:
+  Normal web-start requests now preserve `prompt_options.reflection_mode`
+  consistently, while the backend only falls back to
+  `ENABLE_CHUNK_REFLECTION` when the prompt option is omitted. Obsolete web
+  settings for `USE_LLM_SANITIZER` / `useLlmSanitizer` were removed.
+
+### Tests
+
+- Added regressions for reflection callback compatibility, malformed JSON
+  handling, repair validation, DB-addressing import/export/locks/projection,
+  unknown-language neutrality, script-aware matching, decorative separators,
+  HTML/XHTML chapter labels, TXT spacing, frontend reflection settings, and
+  stale sanitizer removal.
+- Full pytest suite: all 1,631 selected tests pass, with 1 skipped and 10
+  deselected.
+
 ## 1.15.0-beta.27 - 2026-07-07
 
 ### Fixed

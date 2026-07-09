@@ -374,12 +374,6 @@ export const SettingsManager = {
                 enableReflectionCheckbox.checked = prefs.enableReflection;
             }
         }
-        if (prefs.useLlmSanitizer !== undefined) {
-            const useLlmSanitizerCheckbox = DomHelpers.getElement('useLlmSanitizer');
-            if (useLlmSanitizerCheckbox) {
-                useLlmSanitizerCheckbox.checked = prefs.useLlmSanitizer;
-            }
-        }
         // Note: disableAutoPause is now loaded from .env via /api/config in FormManager,
         // not from localStorage.
 
@@ -401,7 +395,7 @@ export const SettingsManager = {
 
         // Keep Prompt Options section open if any option is active.
         // Note: disableAutoPause now lives in the Provider & Defaults section, not here.
-        const hasAnyPromptOption = prefs.textCleanup || prefs.bilingualMode || prefs.plainTextMode || prefs.chapterMode || prefs.enableReflection || prefs.useLlmSanitizer || prefs.customInstructionFile || prefs.novelContextFile || prefs.autoUpdateContext;
+        const hasAnyPromptOption = prefs.textCleanup || prefs.bilingualMode || prefs.plainTextMode || prefs.chapterMode || prefs.enableReflection || prefs.customInstructionFile || prefs.novelContextFile || prefs.autoUpdateContext;
         if (hasAnyPromptOption) {
             const promptOptionsSection = DomHelpers.getElement('promptOptionsSection');
             const promptOptionsIcon = DomHelpers.getElement('promptOptionsIcon');
@@ -458,7 +452,6 @@ export const SettingsManager = {
         const plainTextModeCheckbox = DomHelpers.getElement('plainTextMode');
         const chapterModeCheckbox = DomHelpers.getElement('chapterMode');
         const enableReflectionCheckbox = DomHelpers.getElement('enableReflection');
-        const useLlmSanitizerCheckbox = DomHelpers.getElement('useLlmSanitizer');
 
         const prefs = {
             lastProvider: DomHelpers.getValue('llmProvider'),

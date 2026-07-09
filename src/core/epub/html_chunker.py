@@ -13,6 +13,11 @@ from src.common.placeholder_format import PlaceholderFormat
 from .text_splitter import TextSplitter
 from .tag_classifier import TagClassifier
 from .placeholder_renumberer import PlaceholderRenumberer
+from src.core.chunking.chapter_detector import is_chapter_heading
+from src.core.chunking.decorative_separator import is_decorative_separator
+
+
+_TAG_NAME_RE = re.compile(r"<\s*(/)?\s*(?:[A-Za-z0-9_.-]+:)?([A-Za-z][\w.-]*)\b")
 
 
 class HtmlChunker:
@@ -89,14 +94,32 @@ class HtmlChunker:
         text: str,
         tag_map: Dict[str, str],
     ) -> List[str]:
-        """Split before h1-h3 opening tags so headings stay with their body."""
+        """Split before detected chapter headings so headings stay with their body."""
         starts = []
-        for start, _end, placeholder, _idx in self.placeholder_format.find_all(text):
+        placeholder_positions = self.placeholder_format.find_all(text)
+        for position_index, (start, _end, placeholder, _idx) in enumerate(
+            placeholder_positions
+        ):
             tag = (tag_map.get(placeholder) or "").strip()
-            if re.search(
-                r"<\s*(?!/)(?:[A-Za-z0-9_.-]+:)?h[1-3]\b",
-                tag,
-                re.IGNORECASE,
+            tag_name, is_closing = self._tag_name(tag)
+            if is_closing or not tag_name:
+                continue
+            if tag_name in {"h1", "h2", "h3"}:
+                starts.append(start)
+                continue
+            if tag_name not in self.tag_classifier.BLOCK_TAGS:
+                continue
+            heading_text = self._collect_block_text(
+                text,
+                placeholder_positions,
+                position_index,
+                tag_map,
+                tag_name,
+            )
+            if (
+                heading_text
+                and not is_decorative_separator(heading_text)
+                and is_chapter_heading(heading_text)
             ):
                 starts.append(start)
 
@@ -114,6 +137,39 @@ class HtmlChunker:
             if region.strip():
                 regions.append(region)
         return regions or [text]
+
+    @staticmethod
+    def _tag_name(tag: str) -> Tuple[str, bool]:
+        match = _TAG_NAME_RE.search(tag or "")
+        if not match:
+            return "", False
+        return match.group(2).lower(), bool(match.group(1))
+
+    def _collect_block_text(
+        self,
+        text: str,
+        placeholder_positions: List[Tuple[int, int, str, int]],
+        opening_index: int,
+        tag_map: Dict[str, str],
+        opening_tag_name: str,
+    ) -> str:
+        """Collect visible text inside a block placeholder pair."""
+        pieces: List[str] = []
+        cursor = placeholder_positions[opening_index][1]
+        for next_index in range(opening_index + 1, len(placeholder_positions)):
+            next_start, next_end, next_placeholder, _idx = placeholder_positions[next_index]
+            if next_start > cursor:
+                pieces.append(text[cursor:next_start])
+            next_tag_name, is_closing = self._tag_name(
+                tag_map.get(next_placeholder) or ""
+            )
+            if is_closing and next_tag_name == opening_tag_name:
+                break
+            cursor = next_end
+        else:
+            pieces.append(text[cursor:])
+
+        return " ".join("".join(pieces).split())
 
     def _find_safe_split_points(
         self,

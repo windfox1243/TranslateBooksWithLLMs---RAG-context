@@ -14,6 +14,7 @@ from src.persistence.database import Database, sanitize_config_secrets
 from src.api.blueprints.translation_routes import (
     _available_context_chunk_indices,
     _apply_resume_overrides,
+    _prompt_options_from_start_request,
     _rehydrate_resume_credentials,
     _strip_api_keys,
 )
@@ -179,6 +180,25 @@ class TestResponseStripping:
 
     def test_strip_api_keys_tolerates_none(self):
         assert _strip_api_keys(None) is None
+
+
+class TestStartPromptOptions:
+    def test_reflection_falls_back_only_when_start_request_omits_option(self, monkeypatch):
+        import src.api.blueprints.translation_routes as routes
+
+        monkeypatch.setattr(routes._config, 'ENABLE_CHUNK_REFLECTION', 'true')
+
+        explicit_false = _prompt_options_from_start_request({
+            'prompt_options': {'reflection_mode': False}
+        })
+        assert explicit_false['reflection_mode'] is False
+
+        omitted = _prompt_options_from_start_request({'prompt_options': {}})
+        assert omitted['reflection_mode'] is True
+
+        monkeypatch.setattr(routes._config, 'ENABLE_CHUNK_REFLECTION', 'false')
+        no_options = _prompt_options_from_start_request({})
+        assert no_options['reflection_mode'] is False
 
 
 def test_available_context_indices_come_from_real_checkpoint_rows():

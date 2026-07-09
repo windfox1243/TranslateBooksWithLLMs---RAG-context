@@ -201,6 +201,6 @@ jobs:
           TranslateBook-macOS-AppleSilicon/TranslateBook-macOS-AppleSilicon.zip
         body_path: RELEASE_NOTES.md
         draft: false
-        prerelease: false
+        prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

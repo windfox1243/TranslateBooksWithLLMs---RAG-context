@@ -2341,6 +2341,39 @@ def _name_reference_pattern(name: str) -> str:
     return rf"(?<![\w'-]){escaped}(?![\w'-])"
 
 
+_LATIN_BOUNDARY_CHARS = "A-Za-z0-9À-ÖØ-öø-ÿ_'’-"
+
+
+def _label_has_cjk_or_hangul(value: str) -> bool:
+    return bool(re.search(r"[\u3400-\u9fff\uf900-\ufaff\uac00-\ud7a3]", value))
+
+
+def _reference_text_mentions_label(value: str, reference_text: str) -> bool:
+    clean = _strip_balanced_brackets(_clean_inline_text(value))
+    if _is_invalid_context_key(clean):
+        return False
+    reference = str(reference_text or "")
+    if not reference.strip():
+        return False
+
+    if _label_has_cjk_or_hangul(clean):
+        compact_value = re.sub(r"\s+", "", clean).casefold()
+        compact_reference = re.sub(r"\s+", "", reference).casefold()
+        return bool(compact_value and compact_value in compact_reference)
+
+    pattern = re.escape(clean).replace(r"\ ", r"\s+")
+    if re.search(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]", clean):
+        return bool(
+            re.search(
+                rf"(?<![{_LATIN_BOUNDARY_CHARS}]){pattern}(?![{_LATIN_BOUNDARY_CHARS}])",
+                reference,
+                flags=re.IGNORECASE,
+            )
+        )
+
+    return clean.casefold() in reference.casefold()
+
+
 def _infer_gender_reference_to_character(details: str, name: str) -> str:
     """Infer gender from direct pronoun evidence attached to a named target.
 
@@ -3140,7 +3173,9 @@ def _source_identity_link_proof_status(
             if shared_tokens & {_plain_key(w) for w in cname.split() if len(w) > 1}
         ]
         if len(matching_targets) == 1 and matching_targets[0] == target_key:
-            return True, "alias explicitly contains the target character's name"
+            if _reference_text_mentions_label(alias, text):
+                return True, "source uses the alias label with the target character's name"
+            return False, "alias contains the target name but is absent from the source chunk"
 
     return False, "source chunk does not directly prove this alias-target mapping"
 
@@ -4103,8 +4138,8 @@ def _source_address_label_from_details(details: str) -> str:
 def _is_source_address_identity_label(label: str) -> bool:
     compact = re.sub(r"\s+", "", _strip_balanced_brackets(label))
     return bool(
-        re.fullmatch(r"[\u3400-\u9fff\uf900-\ufaff]{1,8}", compact)
-        or re.fullmatch(r"[\uac00-\ud7a3]{1,6}", compact)
+        re.fullmatch(r"[\u3400-\u9fff\uf900-\ufaff]{2,8}", compact)
+        or re.fullmatch(r"[\uac00-\ud7a3]{2,6}", compact)
     )
 
 
@@ -4121,7 +4156,8 @@ def infer_dynamic_address_identity_links(
         for name in _candidate_named_characters(global_lore, "")
     }
     addressing, _, _ = _split_dynamic_sections(dynamic_state)
-    links: Dict[str, str] = {}
+    proposed: Dict[str, Tuple[str, str]] = {}
+    ambiguous: set[str] = set()
     for line in addressing.splitlines():
         parsed = _parse_dynamic_relation(line, alias_map)
         if not parsed:
@@ -4133,13 +4169,32 @@ def infer_dynamic_address_identity_links(
         if not _is_source_address_identity_label(label):
             continue
         target = candidates[target_key]
-        if any(
-            alias_key in _character_alias_keys(target)
-            for alias_key in _character_alias_keys(label)
-        ):
+        label_keys = _character_alias_keys(label)
+        if any(alias_key in _character_alias_keys(target) for alias_key in label_keys):
             continue
-        links[label] = target
-    return "\n".join(f"- {alias}: {target}" for alias, target in links.items())
+        existing_targets = {
+            alias_map[alias_key]
+            for alias_key in label_keys
+            if alias_key in alias_map
+        }
+        if existing_targets and existing_targets != {target}:
+            ambiguous.update(label_keys)
+            continue
+        for alias_key in label_keys:
+            existing = proposed.get(alias_key)
+            if existing and existing[1] != target:
+                ambiguous.add(alias_key)
+                continue
+            proposed[alias_key] = (label, target)
+
+    unique_links: Dict[Tuple[str, str], Tuple[str, str]] = {}
+    for alias_key, (label, target) in proposed.items():
+        if alias_key not in ambiguous:
+            unique_links[(_plain_key(label), target)] = (label, target)
+    return "\n".join(
+        f"- {alias}: {target}"
+        for alias, target in unique_links.values()
+    )
 
 
 def _split_dynamic_sections(dynamic_state: str) -> Tuple[str, str, bool]:
@@ -5556,9 +5611,6 @@ def _sanitize_vietnamese_dynamic_state(
     discarded_character_aliases: Optional[set[str]] = None,
     character_genders: Optional[Dict[str, str]] = None,
     character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
-    llm_client: Optional[Any] = None,
-    use_llm_sanitizer: bool = False,
-    log_callback: Optional[Callable] = None,
     translated_chunk: Optional[str] = None,
     dialogue_attribution: Optional[Dict[str, Any]] = None,
     target_language: Optional[str] = None,
@@ -5620,8 +5672,6 @@ def _select_relevant_character_profiles(
     if not character_profiles or not reference_text:
         return {}
 
-    text_raw = reference_text
-    text_lower = reference_text.casefold()
     relevant: Dict[str, Dict[str, str]] = {}
 
     for key, info in character_profiles.items():
@@ -5634,28 +5684,24 @@ def _select_relevant_character_profiles(
         if isinstance(aliases, str):
             aliases = [a.strip() for a in aliases.split(",") if a.strip()]
 
-        # 1. Direct key match
-        matched = key in text_lower or key.casefold() in text_lower
+        matched = _reference_text_mentions_label(str(key), reference_text)
 
-        # 2. Canonical name or name parts match
         if not matched and char_name:
-            if char_name.casefold() in text_lower:
-                matched = True
-            else:
-                name_parts = [p.casefold() for p in char_name.split() if len(p) >= 3]
-                if any(p in text_lower for p in name_parts):
-                    matched = True
+            matched = (
+                _reference_text_mentions_label(char_name, reference_text)
+                or _reference_mentions_latin_name_part(char_name, reference_text)
+            )
 
-        # 3. Raw CJK/original source name match
         if not matched and source_name:
-            if source_name in text_raw or source_name.casefold() in text_lower:
-                matched = True
+            matched = _reference_text_mentions_label(source_name, reference_text)
 
-        # 4. Spoken aliases match
         if not matched and aliases:
             for alias in aliases:
                 alias_str = str(alias).strip()
-                if len(alias_str) >= 2 and (alias_str in text_raw or alias_str.casefold() in text_lower):
+                if len(alias_str) >= 2 and _reference_text_mentions_label(
+                    alias_str,
+                    reference_text,
+                ):
                     matched = True
                     break
 
@@ -5735,120 +5781,6 @@ def cross_check_addressing_with_dialogue(
     return "\n".join(repaired_lines)
 
 
-async def sanitize_addressing_with_llm_async(
-    addressing: str,
-    character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
-    target_language: Optional[str] = None,
-    llm_client: Optional[Any] = None,
-    log_callback: Optional[Callable] = None,
-) -> str:
-    """
-    Sanitize and normalize addressing forms using LLM Context Sanitizer Agent with safe fallback.
-    """
-    if not addressing.strip() or not llm_client:
-        return addressing
-
-    lang = target_language or "target language"
-
-    try:
-        from src.utils.unified_logger import get_logger, LogType
-        logger = get_logger()
-        logger.info("Running LLM Context Sanitizer on addressing forms...", log_type=LogType.GENERAL)
-        if log_callback:
-            log_callback("sanitizer_start", "Running LLM Context Sanitizer Agent on addressing forms...")
-
-        profiles_summary = ""
-        if character_profiles:
-            relevant_profiles = _select_relevant_character_profiles(addressing, character_profiles)
-            profiles_summary = "\n".join([
-                f"- {info.get('name', name)}: {info.get('details', '')} (Gender: {info.get('gender', 'Unknown')})"
-                for name, info in (relevant_profiles or character_profiles).items()
-            ])
-
-        prompt = f"""Given these character profiles:
-{profiles_summary}
-
-And these addressing rules for target language {lang}:
-{addressing}
-
-Normalize and repair the addressing rules into clean canonical format:
-1. CONTEXTUAL PERMANENCE: Omit or filter out any 1-scene transient background NPCs, commentators, mobs, side merchants, or temporary background speakers who have no lasting narrative significance to the story. Keep ONLY recurring main and major supporting characters.
-2. GENDER ALIGNMENT: Ensure single exact pronouns aligned with the addressee's gender and seniority (never use slash options like 'anh/chị').
-3. OPERATOR SANITY: Fix invalid ↔ operators into directional → rules when pronouns are asymmetric.
-4. PLACEHOLDER CLEANUP: Remove placeholder values like 'none', 'N/A', '...', or 'null'.
-
-Return ONLY the cleaned addressing lines for recurring characters."""
-
-        import inspect
-        res_call = None
-        if hasattr(llm_client, "translate_text"):
-            res_call = llm_client.translate_text(prompt)
-        elif hasattr(llm_client, "make_request"):
-            res_call = llm_client.make_request(prompt)
-        elif hasattr(llm_client, "generate"):
-            res_call = llm_client.generate(prompt)
-
-        if inspect.isawaitable(res_call):
-            res_raw = await res_call
-        else:
-            res_raw = res_call
-
-        if hasattr(res_raw, "content"):
-            res = res_raw.content
-        else:
-            res = res_raw
-
-        if res and isinstance(res, str) and res.strip() and not ("error" in res.lower() and len(res) < 50):
-            clean_res = res.strip().replace("```markdown", "").replace("```json", "").replace("```", "").strip()
-            if len(clean_res) > 20 and ":" in clean_res:
-                if log_callback:
-                    log_callback("sanitizer_complete", "LLM Context Sanitizer Agent completed successfully.")
-                return clean_res
-    except Exception as e:
-        from src.utils.unified_logger import get_logger, LogType
-        get_logger().warning(f"LLM Context Sanitizer failed: {e}. Falling back to Python sanitizer.", log_type=LogType.GENERAL)
-        if log_callback:
-            log_callback("sanitizer_failed", f"LLM Context Sanitizer warning: {e}")
-
-    return addressing
-
-
-def sanitize_addressing_with_llm(
-    addressing: str,
-    character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
-    target_language: Optional[str] = None,
-    llm_client: Optional[Any] = None,
-    log_callback: Optional[Callable] = None,
-) -> str:
-    """Synchronous wrapper for sanitize_addressing_with_llm_async."""
-    if not addressing.strip() or not llm_client:
-        return addressing
-
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(lambda: asyncio.run(sanitize_addressing_with_llm_async(
-                addressing=addressing,
-                character_profiles=character_profiles,
-                target_language=target_language,
-                llm_client=llm_client,
-            )))
-            return future.result(timeout=60)
-    else:
-        return asyncio.run(sanitize_addressing_with_llm_async(
-            addressing=addressing,
-            character_profiles=character_profiles,
-            target_language=target_language,
-            llm_client=llm_client,
-        ))
-
-
 def merge_dynamic_state(
     current_dynamic_state: str,
     proposed_dynamic_state: str,
@@ -5856,9 +5788,6 @@ def merge_dynamic_state(
     target_language: Optional[str] = None,
     character_genders: Optional[Dict[str, str]] = None,
     character_profiles: Optional[Dict[str, Dict[str, str]]] = None,
-    llm_client: Optional[Any] = None,
-    use_llm_sanitizer: bool = False,
-    log_callback: Optional[Callable] = None,
 ) -> str:
     """Merge durable addressing and relationship deltas by participant key.
 
@@ -5874,9 +5803,6 @@ def merge_dynamic_state(
             aliases,
             character_genders=character_genders,
             character_profiles=character_profiles,
-            llm_client=llm_client,
-            use_llm_sanitizer=use_llm_sanitizer,
-            log_callback=log_callback,
         )
     if not str(proposed_dynamic_state or "").strip():
         return current
@@ -6368,14 +6294,7 @@ def _section_body(text: str, section_name: str) -> str:
 
 
 def _text_mentions(value: str, reference_text: str) -> bool:
-    value = _strip_balanced_brackets(value)
-    if _is_invalid_context_key(value):
-        return False
-    folded_reference = str(reference_text or "").casefold()
-    if not folded_reference.strip():
-        return False
-    folded_value = value.casefold()
-    return bool(folded_value and folded_value in folded_reference)
+    return _reference_text_mentions_label(value, reference_text)
 
 
 def _entry_mentions_reference(
@@ -7375,7 +7294,6 @@ class NovelContextSession:
             ),
             custom_instructions=str(self.prompt_options.get("custom_instructions") or ""),
             glossary_block=str(self.prompt_options.get("glossary_block") or ""),
-            use_llm_sanitizer=bool(self.prompt_options.get("use_llm_sanitizer")),
             log_callback=self.log_callback,
         )
         self.remember_source(source_chunk)
@@ -7563,9 +7481,6 @@ def open_novel_context_session(
             character_aliases,
             character_genders=_character_gender_map(global_lore),
             character_profiles=_character_profile_map(global_lore),
-            llm_client=prompt_options.get("llm_client"),
-            use_llm_sanitizer=bool((prompt_options or {}).get("use_llm_sanitizer")),
-            log_callback=log_callback,
             target_language=target_language,
         )
         if sanitized_dynamic_state != str(dynamic_state or "").strip():
@@ -9016,7 +8931,6 @@ async def update_novel_context_chunk(
     context_view_max_tokens: Optional[int] = None,
     custom_instructions: str = "",
     glossary_block: str = "",
-    use_llm_sanitizer: bool = False,
     log_callback: Optional[Callable] = None,
 ) -> Tuple[str, str, List[str]]:
     """Calls the LLM to update global lore and dynamic state incrementally.
@@ -9215,9 +9129,6 @@ async def update_novel_context_chunk(
             target_language=target_language,
             character_genders=_character_gender_map(updated_global_lore),
             character_profiles=_character_profile_map(updated_global_lore),
-            llm_client=llm_client,
-            use_llm_sanitizer=use_llm_sanitizer,
-            log_callback=log_callback,
         )
 
         # LLM consolidation pass: periodically deduplicate character descriptions
