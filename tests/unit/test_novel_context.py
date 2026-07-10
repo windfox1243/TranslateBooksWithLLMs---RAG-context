@@ -5354,6 +5354,60 @@ def test_vietnamese_addressing_flexible_field_parsing_and_eastern_cues():
     assert "second-person pronoun: tông chủ" in merged
 
 
+def test_weapon_name_cannot_become_character_identity_alias():
+    from src.utils.novel_context import character_alias_map, merge_new_lore
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Frondier De Roach: Male, recurring student and weapon user.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- Gram: named sword wielded by Frondier.\n"
+    )
+
+    updated, logs = merge_new_lore(
+        lore,
+        new_characters="",
+        new_glossary="",
+        new_aliases="- Gram: Frondier De Roach",
+    )
+
+    assert "Gram: Frondier De Roach" not in updated
+    assert character_alias_map(updated).get("gram") != "Frondier De Roach"
+    assert logs == []
+
+
+def test_weapon_to_weapon_identity_alias_is_rejected_but_character_alias_still_works():
+    from src.utils.novel_context import character_alias_map, merge_new_lore
+
+    lore = (
+        "# GLOBAL LORE\n\n"
+        "## CHARACTERS & GENDERS\n"
+        "- Frondier De Roach: Male, recurring student.\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+        "- Gram: named sword wielded by Frondier.\n"
+        "- Holy Sword: legendary weapon.\n"
+    )
+
+    rejected, _ = merge_new_lore(
+        lore,
+        new_characters="",
+        new_glossary="",
+        new_aliases="- Gram: Holy Sword",
+    )
+    assert "Gram: Holy Sword" not in rejected
+
+    accepted, logs = merge_new_lore(
+        lore,
+        new_characters="",
+        new_glossary="",
+        new_aliases="- Frontier: Frondier De Roach",
+    )
+    aliases = character_alias_map(accepted)
+    assert aliases["frontier"] == "Frondier De Roach"
+    assert any("Linked identity 'frontier' -> 'Frondier De Roach'" in log for log in logs)
+
+
 def test_vietnamese_addressing_respects_attitude_shift():
     from src.utils.novel_context import (
         _has_vietnamese_addressing_mismatch,

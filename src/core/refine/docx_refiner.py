@@ -46,6 +46,17 @@ async def refine_docx_file(
     translation_id: Optional[str] = None,
 ) -> bool:
     """Run a refinement-only pass on an already-translated DOCX file."""
+    from src.utils.relationship_sync import (
+        attach_relationship_context_to_prompt_options,
+    )
+
+    prompt_options = attach_relationship_context_to_prompt_options(
+        prompt_options,
+        translation_id=translation_id or "",
+        db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
+        target_language=target_language,
+        log_callback=log_callback,
+    )
     if not os.path.exists(input_filepath):
         err_msg = f"ERROR: Input DOCX file '{input_filepath}' not found."
         if log_callback:

@@ -44,6 +44,17 @@ async def refine_txt_file(
     `target_language` names the language the file is already in: refinement
     is monolingual and does not translate.
     """
+    from src.utils.relationship_sync import (
+        attach_relationship_context_to_prompt_options,
+    )
+
+    prompt_options = attach_relationship_context_to_prompt_options(
+        prompt_options,
+        translation_id=translation_id or "",
+        db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
+        target_language=target_language,
+        log_callback=log_callback,
+    )
     if not os.path.exists(input_filepath):
         err_msg = f"ERROR: Input file '{input_filepath}' not found."
         if log_callback:

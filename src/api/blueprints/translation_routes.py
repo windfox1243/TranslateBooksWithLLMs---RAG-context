@@ -53,6 +53,7 @@ def _clamp_chunk_tokens(value):
 def _prompt_options_from_start_request(data):
     """Return start-request prompt options with legacy reflection fallback."""
     prompt_options = dict((data or {}).get('prompt_options') or {})
+    prompt_options.setdefault('use_relationship_reasoning', 'project')
     if 'reflection_mode' not in prompt_options:
         prompt_options['reflection_mode'] = (
             str(getattr(_config, 'ENABLE_CHUNK_REFLECTION', 'false')).lower()
@@ -1520,5 +1521,200 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                 "is_locked": is_locked
             }), 200
         return jsonify({"error": "Failed to update addressing rule lock"}), 500
+
+    @bp.route('/<translation_id>/addressing-rules', methods=['DELETE'])
+    def delete_addressing_rule_route(translation_id):
+        """Delete a directed character addressing rule for a translation job."""
+        data = request.get_json() or {}
+        speaker_name = data.get('speaker_name')
+        addressee_name = data.get('addressee_name')
+
+        if not speaker_name or not addressee_name:
+            return jsonify({"error": "speaker_name and addressee_name are required"}), 400
+
+        db = state_manager.checkpoint_manager.db
+        existing = next(
+            (
+                rule for rule in db.get_addressing_rules(translation_id)
+                if rule.get("speaker_name") == speaker_name
+                and rule.get("addressee_name") == addressee_name
+            ),
+            None,
+        )
+        success = db.delete_addressing_rule(
+            translation_id, speaker_name, addressee_name
+        )
+        if success:
+            db.add_context_audit_log(
+                translation_id=translation_id,
+                chunk_index=-1,
+                speaker_name=speaker_name,
+                addressee_name=addressee_name,
+                old_state=existing,
+                new_state={"status": "deleted", "reason": "manual API delete"},
+                trigger_source="rest_api:delete",
+                evidence_quote="",
+                confidence=1.0,
+            )
+            return jsonify({
+                "message": "Addressing rule deleted successfully",
+                "translation_id": translation_id,
+                "speaker_name": speaker_name,
+                "addressee_name": addressee_name,
+            }), 200
+        return jsonify({"error": "Addressing rule not found or could not be deleted"}), 404
+
+    @bp.route('/api/translation/<translation_id>/relationship-graph', methods=['GET'])
+    @bp.route('/<translation_id>/relationship-graph', methods=['GET'])
+    def get_relationship_graph_route(translation_id):
+        """Get relationship graph nodes and edges for a translation job."""
+
+        db = state_manager.checkpoint_manager.db
+        status = request.args.get('status')
+        statuses = [status] if status else None
+        nodes = db.get_relationship_nodes(translation_id)
+        edges = db.get_relationship_edges(translation_id, statuses=statuses)
+        return jsonify({
+            "translation_id": translation_id,
+            "nodes": nodes,
+            "edges": edges,
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+        }), 200
+
+    @bp.route('/api/translation/<translation_id>/relationship-conflicts', methods=['GET'])
+    @bp.route('/<translation_id>/relationship-conflicts', methods=['GET'])
+    def get_relationship_conflicts_route(translation_id):
+        """Get open or historical relationship validation conflicts."""
+
+        status = request.args.get('status')
+        limit = request.args.get('limit', 200, type=int)
+        conflicts = (
+            state_manager.checkpoint_manager.db.get_relationship_conflicts(
+                translation_id,
+                status=status,
+                limit=max(1, min(limit, 1000)),
+            )
+        )
+        return jsonify({
+            "translation_id": translation_id,
+            "conflicts": conflicts,
+            "count": len(conflicts),
+        }), 200
+
+    @bp.route('/api/translation/<translation_id>/relationship-audit', methods=['GET'])
+    @bp.route('/<translation_id>/relationship-audit', methods=['GET'])
+    def get_relationship_pair_audit_route(translation_id):
+        """Get accepted state, evidence, and conflicts for one character pair."""
+
+        source_name = str(request.args.get('source') or '').strip()
+        target_name = str(request.args.get('target') or '').strip()
+        if not source_name or not target_name:
+            return jsonify({"error": "source and target are required"}), 400
+        from src.utils.relationship_schema import normalize_relationship_name
+
+        audit = state_manager.checkpoint_manager.db.get_relationship_pair_audit(
+            translation_id,
+            normalize_relationship_name(source_name),
+            normalize_relationship_name(target_name),
+        )
+        return jsonify({
+            "translation_id": translation_id,
+            "source": source_name,
+            "target": target_name,
+            **audit,
+        }), 200
+
+    @bp.route('/api/translation/<translation_id>/relationship-edges/<int:edge_id>/lock', methods=['POST'])
+    @bp.route('/<translation_id>/relationship-edges/<int:edge_id>/lock', methods=['POST'])
+    def set_relationship_edge_lock_route(translation_id, edge_id):
+        """Lock or unlock a relationship edge."""
+
+        data = request.get_json() or {}
+        is_locked = bool(data.get('is_locked', True))
+        success = state_manager.checkpoint_manager.db.set_relationship_edge_lock(
+            translation_id,
+            edge_id,
+            is_locked,
+        )
+        if not success:
+            return jsonify({"error": "Relationship edge not found"}), 404
+        return jsonify({
+            "message": "Relationship edge lock updated successfully",
+            "translation_id": translation_id,
+            "edge_id": edge_id,
+            "is_locked": is_locked,
+        }), 200
+
+    @bp.route('/api/translation/<translation_id>/relationship-edges/<int:edge_id>/quarantine', methods=['POST'])
+    @bp.route('/<translation_id>/relationship-edges/<int:edge_id>/quarantine', methods=['POST'])
+    def quarantine_relationship_edge_route(translation_id, edge_id):
+        """Quarantine an unlocked relationship edge and retain its audit state."""
+
+        db = state_manager.checkpoint_manager.db
+        existing = next((
+            edge for edge in db.get_relationship_edges(translation_id)
+            if edge.get("id") == edge_id
+        ), None)
+        if not existing:
+            return jsonify({"error": "Relationship edge not found"}), 404
+        if existing.get("is_locked"):
+            return jsonify({"error": "Locked relationship edges cannot be quarantined"}), 409
+        if not db.set_relationship_edge_status(translation_id, edge_id, "quarantined"):
+            return jsonify({"error": "Relationship edge could not be quarantined"}), 409
+        db.add_relationship_conflict(
+            translation_id=translation_id,
+            source_name=existing.get("source_name") or "",
+            target_name=existing.get("target_name") or "",
+            severity="warning",
+            validator="manual_quarantine",
+            reason="Relationship edge quarantined through the REST API.",
+            remediation_hint="Review the source evidence before restoring this edge.",
+            candidate=existing,
+            chunk_index=-1,
+            edge_id=edge_id,
+        )
+        return jsonify({
+            "message": "Relationship edge quarantined successfully",
+            "translation_id": translation_id,
+            "edge_id": edge_id,
+        }), 200
+
+    @bp.route('/api/translation/<translation_id>/relationship-edges/<int:edge_id>', methods=['DELETE'])
+    @bp.route('/<translation_id>/relationship-edges/<int:edge_id>', methods=['DELETE'])
+    def delete_relationship_edge_route(translation_id, edge_id):
+        """Delete an unlocked relationship edge and retain an audit marker."""
+
+        db = state_manager.checkpoint_manager.db
+        existing = next((
+            edge for edge in db.get_relationship_edges(translation_id)
+            if edge.get("id") == edge_id
+        ), None)
+        if not existing:
+            return jsonify({"error": "Relationship edge not found"}), 404
+        if existing.get("is_locked"):
+            return jsonify({"error": "Locked relationship edges cannot be deleted"}), 409
+        conflict_id = db.add_relationship_conflict(
+            translation_id=translation_id,
+            source_name=existing.get("source_name") or "",
+            target_name=existing.get("target_name") or "",
+            severity="info",
+            validator="manual_delete",
+            reason="Relationship edge deleted through the REST API.",
+            remediation_hint="No action required.",
+            candidate=existing,
+            chunk_index=-1,
+            edge_id=edge_id,
+        )
+        success = db.delete_relationship_edge(translation_id, edge_id)
+        if not success:
+            return jsonify({"error": "Relationship edge could not be deleted"}), 409
+        if conflict_id:
+            db.resolve_relationship_conflict(translation_id, conflict_id)
+        return jsonify({
+            "message": "Relationship edge deleted successfully",
+            "translation_id": translation_id,
+            "edge_id": edge_id,
+        }), 200
 
     return bp

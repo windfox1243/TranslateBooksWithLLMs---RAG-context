@@ -108,6 +108,23 @@ def parse_markdown_addressing_lines(markdown_text: str) -> List[AddressingUpdate
     return deltas
 
 
+def parse_markdown_addressing_deletes(markdown_text: str) -> List[Tuple[str, str]]:
+    """Parse CURRENT ADDRESSING FORMS delete directives."""
+
+    deletes: List[Tuple[str, str]] = []
+    for raw_line in str(markdown_text or "").splitlines():
+        match = _PAIR_RE.match(raw_line)
+        if not match:
+            continue
+        if _clean(match.group("details")).casefold() != "delete":
+            continue
+        speaker = _clean(match.group("speaker"))
+        addressee = _clean(match.group("addressee"))
+        if speaker and addressee:
+            deletes.append((speaker, addressee))
+    return deletes
+
+
 def _extract_addressing_markdown(context_or_dynamic_state: str) -> str:
     from src.utils.novel_context import (
         ADDRESSING_SECTION,
@@ -123,6 +140,42 @@ def _extract_addressing_markdown(context_or_dynamic_state: str) -> str:
     return addressing
 
 
+def _known_character_names_from_context(context_or_dynamic_state: str) -> List[str]:
+    """Return canonical character names and aliases available in a context blob."""
+
+    try:
+        from src.utils.novel_context import (
+            _character_profile_map,
+            character_alias_map,
+            extract_global_lore,
+        )
+
+        text = textwrap.dedent(str(context_or_dynamic_state or ""))
+        global_lore = extract_global_lore(text) or text
+        profiles = _character_profile_map(global_lore)
+        names = [str(info.get("name") or key) for key, info in profiles.items()]
+        aliases = character_alias_map(global_lore)
+        names.extend(aliases.keys())
+        names.extend(aliases.values())
+        return [name for name in names if str(name or "").strip()]
+    except Exception:
+        return []
+
+
+def _active_names_from_dialogue(dialogue_attribution: Optional[Dict[str, Any]]) -> List[str]:
+    if not isinstance(dialogue_attribution, dict):
+        return []
+    state_after = dialogue_attribution.get("state_after") or {}
+    if not isinstance(state_after, dict):
+        return []
+    active: List[str] = []
+    for key in ("speaker", "addressee"):
+        value = state_after.get(key)
+        if value and str(value).casefold() not in {"unknown", "none", "null"}:
+            active.append(str(value))
+    return active
+
+
 def sync_markdown_addressing_to_db(
     *,
     translation_id: str,
@@ -132,30 +185,81 @@ def sync_markdown_addressing_to_db(
     chunk_index: int = 0,
     trigger_source: str = "markdown_context",
     log_callback=None,
+    known_character_names: Optional[Iterable[str]] = None,
+    active_character_names: Optional[Iterable[str]] = None,
+    dialogue_attribution: Optional[Dict[str, Any]] = None,
 ) -> int:
     """Import markdown addressing rules into DB through the merge engine."""
 
-    del target_language
     if not translation_id or db is None:
         return 0
     addressing = _extract_addressing_markdown(context_or_dynamic_state)
+    deleted = 0
+    for speaker, addressee in parse_markdown_addressing_deletes(addressing):
+        existing = next(
+            (
+                rule for rule in db.get_addressing_rules(translation_id)
+                if _clean(rule.get("speaker_name")).casefold() == speaker.casefold()
+                and _clean(rule.get("addressee_name")).casefold() == addressee.casefold()
+            ),
+            None,
+        )
+        if existing and existing.get("is_locked"):
+            if log_callback:
+                log_callback(
+                    "addressing_delete_rejected",
+                    f"Rejected addressing delete for {speaker} -> {addressee}: locked by user.",
+                )
+            continue
+        if db.delete_addressing_rule(translation_id, speaker, addressee):
+            deleted += 1
+            db.add_context_audit_log(
+                translation_id=translation_id,
+                chunk_index=chunk_index,
+                speaker_name=speaker,
+                addressee_name=addressee,
+                old_state=existing,
+                new_state={"status": "deleted", "reason": "delete directive"},
+                trigger_source=f"{trigger_source}:delete",
+                evidence_quote=f"- {speaker} -> {addressee}: DELETE",
+                confidence=1.0,
+            )
+            if log_callback:
+                log_callback(
+                    "addressing_deleted",
+                    f"Deleted addressing rule: {speaker} -> {addressee} [chunk {chunk_index + 1}]",
+                )
     deltas = parse_markdown_addressing_lines(addressing)
     if not deltas:
-        return 0
+        return deleted
     engine = ContextMergeEngine(db=db)
+    known_names = list(known_character_names or []) or _known_character_names_from_context(
+        context_or_dynamic_state
+    )
+    active_names = list(active_character_names or []) + _active_names_from_dialogue(
+        dialogue_attribution
+    )
     applied = engine.apply_batch_deltas(
         translation_id=translation_id,
         chunk_index=chunk_index,
         deltas=deltas,
         trigger_source=trigger_source,
         log_callback=log_callback,
+        target_language=target_language,
+        known_character_names=known_names,
+        active_character_names=active_names,
+        dialogue_attribution=dialogue_attribution,
     )
     emit_progress_log(
         log_callback,
         "db_addressing_imported",
         f"Imported {applied}/{len(deltas)} directed addressing rule(s) into DB.",
         layer="db_addressing",
-        data={"candidate_count": len(deltas), "applied_count": applied},
+        data={
+            "candidate_count": len(deltas),
+            "applied_count": applied,
+            "deleted_count": deleted,
+        },
     )
     return applied
 
@@ -168,6 +272,9 @@ def sync_context_update_addressing_to_db(
     target_language: str = "",
     chunk_index: int = 0,
     log_callback=None,
+    known_character_names: Optional[Iterable[str]] = None,
+    active_character_names: Optional[Iterable[str]] = None,
+    dialogue_attribution: Optional[Dict[str, Any]] = None,
 ) -> int:
     """Import addressing rules discovered by a context update into DB."""
 
@@ -179,6 +286,9 @@ def sync_context_update_addressing_to_db(
         chunk_index=chunk_index,
         trigger_source="context_update",
         log_callback=log_callback,
+        known_character_names=known_character_names,
+        active_character_names=active_character_names,
+        dialogue_attribution=dialogue_attribution,
     )
 
 
@@ -281,12 +391,15 @@ def apply_db_addressing_to_context(
     context_content: str,
     translation_id: str,
     db: Optional[Database],
+    fallback_context: str = "",
 ) -> str:
     """Return context content with DB addressing exported into dynamic state."""
 
     exported = export_db_addressing_to_markdown(translation_id, db)
     if not exported:
-        return context_content
+        if not fallback_context:
+            return context_content
+        exported = _extract_addressing_markdown(fallback_context)
     from src.utils.novel_context import (
         build_novel_context,
         extract_dynamic_state_from_text,
@@ -305,12 +418,18 @@ def apply_db_addressing_to_session(
     context_session: Any,
     translation_id: str,
     db: Optional[Database],
+    fallback_context: str = "",
 ) -> bool:
     """Refresh a NovelContextSession dynamic state from DB addressing rules."""
 
     if not context_session or not translation_id or db is None:
         return False
-    updated = apply_db_addressing_to_context(context_session.content, translation_id, db)
+    updated = apply_db_addressing_to_context(
+        context_session.content,
+        translation_id,
+        db,
+        fallback_context=fallback_context,
+    )
     if updated == context_session.content:
         return False
     from src.utils.novel_context import extract_dynamic_state_from_text

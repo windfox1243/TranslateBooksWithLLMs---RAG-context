@@ -90,6 +90,10 @@ def test_database_addressing_and_audit_logs():
             rules = db.get_addressing_rules(tx_id)
             assert rules[0]["is_locked"] == 1
 
+            # Test Delete
+            assert db.delete_addressing_rule(tx_id, "Nam", "Lan") is True
+            assert db.get_addressing_rules(tx_id) == []
+
             # Test Audit Log
             db.add_context_audit_log(
                 translation_id=tx_id,
@@ -110,6 +114,225 @@ def test_database_addressing_and_audit_logs():
             db.close()
 
 
+def test_vietnamese_markdown_import_rejects_unspecified_self_reference():
+    from src.utils.db_addressing import sync_markdown_addressing_to_db
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_unspecified_vi.db")
+        db = Database(db_path=db_path)
+        tx_id = "tx_unspecified_vi"
+
+        try:
+            context = """
+            ## CHARACTERS & GENDERS
+            - Quinier: Male, recurring character.
+            - Frondier: Male, recurring character.
+
+            === DYNAMIC STATE ===
+            ## CURRENT ADDRESSING FORMS
+            - Quinier → Frondier: source form "Frondier" | recommended target-language form "Frondier" | polite
+            """
+            applied = sync_markdown_addressing_to_db(
+                translation_id=tx_id,
+                db=db,
+                context_or_dynamic_state=context,
+                target_language="Vietnamese",
+                chunk_index=11,
+                trigger_source="context_update",
+            )
+
+            assert applied == 0
+            assert db.get_addressing_rules(tx_id) == []
+            logs = db.get_context_audit_logs(tx_id)
+            assert logs
+            assert "self-reference is unspecified" in logs[0]["new_state"]["reason"]
+        finally:
+            db.close()
+
+
+def test_merge_engine_rejects_reversed_dialogue_pair_without_trusted_evidence():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_reversed_pair.db")
+        db = Database(db_path=db_path)
+        engine = ContextMergeEngine(db=db, confidence_threshold=0.80)
+        tx_id = "tx_reversed_pair"
+
+        try:
+            delta = AddressingUpdateDelta(
+                speaker="Quinier",
+                addressee="Frondier",
+                self_pronoun="tôi",
+                second_pronoun="anh",
+                register="polite",
+                confidence=0.98,
+            )
+            applied = engine.apply_delta(
+                tx_id,
+                chunk_index=11,
+                delta=delta,
+                trigger_source="context_update",
+                target_language="Vietnamese",
+                known_character_names=["Quinier", "Frondier"],
+                dialogue_attribution={
+                    "state_after": {
+                        "speaker": "Frondier",
+                        "addressee": "Quinier",
+                    }
+                },
+            )
+
+            assert applied is False
+            assert db.get_addressing_rules(tx_id) == []
+            logs = db.get_context_audit_logs(tx_id)
+            assert "opposite speaker/addressee direction" in logs[0]["new_state"]["reason"]
+        finally:
+            db.close()
+
+
+def test_merge_engine_preserves_compatible_reverse_pair_rules():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_reverse_pair.db")
+        db = Database(db_path=db_path)
+        engine = ContextMergeEngine(db=db, confidence_threshold=0.80)
+        tx_id = "tx_reverse_pair"
+
+        try:
+            first = AddressingUpdateDelta(
+                speaker="Alice",
+                addressee="Bob",
+                self_pronoun="chị",
+                second_pronoun="em",
+                register="polite",
+                confidence=0.95,
+            )
+            second = AddressingUpdateDelta(
+                speaker="Bob",
+                addressee="Alice",
+                self_pronoun="em",
+                second_pronoun="chị",
+                register="polite",
+                confidence=0.95,
+            )
+
+            assert engine.apply_delta(
+                tx_id,
+                0,
+                first,
+                trigger_source="markdown_context",
+                target_language="Vietnamese",
+                known_character_names=["Alice", "Bob"],
+            ) is True
+            assert engine.apply_delta(
+                tx_id,
+                1,
+                second,
+                trigger_source="markdown_context",
+                target_language="Vietnamese",
+                known_character_names=["Alice", "Bob"],
+            ) is True
+
+            rules = db.get_addressing_rules(tx_id)
+            assert len(rules) == 2
+            assert {(r["speaker_name"], r["addressee_name"]) for r in rules} == {
+                ("Alice", "Bob"),
+                ("Bob", "Alice"),
+            }
+        finally:
+            db.close()
+
+
+def test_merge_engine_rejects_untrusted_register_jump():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_register_jump.db")
+        db = Database(db_path=db_path)
+        engine = ContextMergeEngine(db=db, confidence_threshold=0.80)
+        tx_id = "tx_register_jump"
+
+        try:
+            initial = AddressingUpdateDelta(
+                speaker="Alice",
+                addressee="Bob",
+                self_pronoun="tôi",
+                second_pronoun="anh",
+                register="polite",
+                confidence=0.95,
+            )
+            hostile = AddressingUpdateDelta(
+                speaker="Alice",
+                addressee="Bob",
+                self_pronoun="tao",
+                second_pronoun="mày",
+                register="hostile",
+                confidence=0.99,
+            )
+
+            assert engine.apply_delta(
+                tx_id,
+                0,
+                initial,
+                trigger_source="markdown_context",
+                target_language="Vietnamese",
+                known_character_names=["Alice", "Bob"],
+            ) is True
+            assert engine.apply_delta(
+                tx_id,
+                1,
+                hostile,
+                trigger_source="context_update",
+                target_language="Vietnamese",
+                known_character_names=["Alice", "Bob"],
+            ) is False
+
+            rules = db.get_addressing_rules(tx_id)
+            assert rules[0]["register"] == "polite"
+            logs = db.get_context_audit_logs(tx_id)
+            assert "register shift polite -> hostile" in logs[0]["new_state"]["reason"]
+        finally:
+            db.close()
+
+
+def test_markdown_addressing_delete_directive_removes_rule():
+    from src.utils.db_addressing import sync_markdown_addressing_to_db
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "test_delete_directive.db")
+        db = Database(db_path=db_path)
+        tx_id = "tx_delete_directive"
+
+        try:
+            db.upsert_addressing_rule(
+                translation_id=tx_id,
+                speaker_name="Quinier",
+                addressee_name="Frondier",
+                self_pronoun="tôi",
+                target_pronoun="anh",
+                register="polite",
+            )
+            context = """
+            ## CHARACTERS & GENDERS
+            - Quinier: Male, recurring character.
+            - Frondier: Male, recurring character.
+
+            === DYNAMIC STATE ===
+            ## CURRENT ADDRESSING FORMS
+            - Quinier → Frondier: DELETE
+            """
+
+            deleted = sync_markdown_addressing_to_db(
+                translation_id=tx_id,
+                db=db,
+                context_or_dynamic_state=context,
+                target_language="Vietnamese",
+                chunk_index=12,
+                trigger_source="markdown_context",
+            )
+
+            assert deleted == 1
+            assert db.get_addressing_rules(tx_id) == []
+        finally:
+            db.close()
+
+
 def test_merge_engine_policies():
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = os.path.join(tmpdir, "test_merge.db")
@@ -126,6 +349,7 @@ def test_merge_engine_policies():
                 second_pronoun="cậu",
                 register="polite",
                 confidence=0.9,
+                evidence_quote="Sếp nói với Cậu bằng giọng lịch sự.",
             )
             applied = engine.apply_delta(tx_id, chunk_index=0, delta=delta1)
             assert applied is True

@@ -1,5 +1,71 @@
 # Changelog
 
+## 1.15.0-beta.29 - 2026-07-10
+
+### Added
+
+- **Relationship Reasoning Engine**:
+  Added a typed relationship graph with evidence, conflicts, locks, quarantine,
+  audit history, markdown synchronization, DB-addressing projection, and
+  scene-aware prompt projection. Project mode is enabled by default for beta
+  testing; shadow and off modes remain available.
+
+- **Structured Relationship LLM Contract**:
+  Context-analysis LLMs now return evidence-bearing relationship candidates in
+  a strict JSON block. Malformed candidate JSON retries once and then becomes
+  an auditable quarantine instead of silently changing persistent state.
+
+- **Relationship Graph Diagnostics API**:
+  Added internal beta routes for graph nodes and edges, conflicts, pair audit,
+  edge locks, quarantine, and deletion without breaking existing addressing
+  routes.
+
+- **Addressing Rule Deletion Path**:
+  Added internal and REST deletion support for bad directed-addressing rules,
+  with audit entries so users can trace and remove incorrect pair state.
+
+### Fixed
+
+- **Directed Addressing Merge Safety**:
+  Tightened DB-addressing merges so Vietnamese rules with unspecified
+  self-reference are rejected, new speaker-addressee pairs require trusted
+  context or evidence, local dialogue attribution can reject reversed pairs,
+  reverse-pair hierarchy is cross-checked, and sudden register jumps are
+  blocked unless supported by trusted evidence.
+
+- **Failed Chunk State Leakage**:
+  Staged context-update DB-addressing imports until translation succeeds, so
+  empty or failed chunks cannot export questionable newly imported addressing
+  state back into later prompt context.
+
+- **Relationship State Leakage**:
+  Staged relationship candidates until successful adapter validation and kept
+  failed chunk snapshots on the last accepted graph state.
+
+- **Relationship and Addressing Cross-Checks**:
+  Cross-checked Vietnamese directed-address hierarchy against accepted graph
+  seniority, quarantined incompatible unlocked historical rules, and preserved
+  locked user addressing as the final override.
+
+- **Object Alias Contamination**:
+  Prevented weapons, swords, artifacts, items, skills, spells, abilities, and
+  other non-character terminology from entering character identity alias
+  links. Object-to-object terminology remains glossary/object data instead of
+  character identity state.
+
+- **Progress Log Duplication and Preview Updates**:
+  Updated progress logging so callback-driven web logs are not duplicated by
+  terminal fanout, while structured preview payloads remain untruncated for
+  the UI and older two-argument callbacks remain compatible.
+
+### Tests
+
+- Added regressions for Vietnamese unspecified addressing rejection,
+  reversed-dialogue pair rejection, compatible reverse-pair preservation,
+  untrusted register-jump rejection, markdown delete directives, sword/object
+  alias rejection, valid character alias preservation, and progress logging
+  callback behavior.
+
 ## 1.15.0-beta.28 - 2026-07-09
 
 ### Added

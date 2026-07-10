@@ -5,23 +5,35 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Optional
 
 
-MAX_LOG_VALUE_CHARS = 500
+MAX_TERMINAL_LOG_VALUE_CHARS = 500
 
 
-def _sanitize_log_value(value: Any, *, depth: int = 0) -> Any:
+def _sanitize_log_value(
+    value: Any,
+    *,
+    depth: int = 0,
+    truncate_strings: bool = True,
+) -> Any:
     if depth > 3:
         return "<nested>"
     if isinstance(value, dict):
         return {
-            str(k): _sanitize_log_value(v, depth=depth + 1)
+            str(k): _sanitize_log_value(
+                v,
+                depth=depth + 1,
+                truncate_strings=truncate_strings,
+            )
             for k, v in value.items()
             if str(k).casefold() not in {"api_key", "token", "secret", "password", "authorization"}
         }
     if isinstance(value, (list, tuple)):
-        return [_sanitize_log_value(v, depth=depth + 1) for v in value[:20]]
+        return [
+            _sanitize_log_value(v, depth=depth + 1, truncate_strings=truncate_strings)
+            for v in value[:20]
+        ]
     if isinstance(value, str):
-        if len(value) > MAX_LOG_VALUE_CHARS:
-            return value[:MAX_LOG_VALUE_CHARS].rstrip() + "...<truncated>"
+        if truncate_strings and len(value) > MAX_TERMINAL_LOG_VALUE_CHARS:
+            return value[:MAX_TERMINAL_LOG_VALUE_CHARS].rstrip() + "...<truncated>"
         return value
     return value
 
@@ -40,6 +52,12 @@ def _call_log_callback(
         else:
             log_callback(event, message)
     except TypeError:
+        if data is not None:
+            try:
+                log_callback(event, message, data)
+                return
+            except TypeError:
+                pass
         log_callback(event, message)
 
 
@@ -56,7 +74,7 @@ def emit_progress_log(
     data: Optional[Dict[str, Any]] = None,
     terminal: bool = True,
 ) -> None:
-    """Emit a user-visible event to terminal logger and optional web callback."""
+    """Emit a user-visible event to the active callback or terminal fallback."""
 
     payload: Dict[str, Any] = {
         "type": event,
@@ -71,16 +89,17 @@ def emit_progress_log(
         payload["language_profile"] = language_profile
     if data:
         payload.update(data)
-    safe_payload = _sanitize_log_value(payload)
+    callback_payload = _sanitize_log_value(payload, truncate_strings=False)
+    terminal_payload = _sanitize_log_value(payload, truncate_strings=True)
 
-    if terminal:
+    if terminal and log_callback is None:
         try:
             from src.utils.unified_logger import LogType, get_logger
 
             logger = get_logger()
             log_method = getattr(logger, level, logger.info)
-            log_method(message, log_type=LogType.GENERAL, data=safe_payload)
+            log_method(message, log_type=LogType.GENERAL, data=terminal_payload)
         except Exception:
             pass
 
-    _call_log_callback(log_callback, event, message, safe_payload)
+    _call_log_callback(log_callback, event, message, callback_payload)
