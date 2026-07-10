@@ -169,6 +169,8 @@ class RelationshipCandidate:
     direction: str = "symmetric"
     scope: str = "durable"
     hierarchy: str = "unknown"
+    relative_age: str = "unknown"
+    rank_relation: str = "unknown"
     intimacy: str = "unknown"
     register: str = "neutral"
     evidence_quote: str = ""
@@ -210,6 +212,24 @@ class RelationshipCandidate:
         if hierarchy == "unknown":
             hierarchy = default_relationship_hierarchy(self.relationship_type)
         self.hierarchy = hierarchy
+        relative_age = normalize_relationship_name(self.relative_age).replace("-", "_")
+        if relative_age not in {
+            "source_older", "source_younger", "same_age", "unknown",
+        }:
+            relative_age = "unknown"
+        if relative_age == "unknown" and self.relationship_type == "sibling":
+            relative_age = {
+                "source_senior": "source_older",
+                "source_junior": "source_younger",
+                "peer": "same_age",
+            }.get(self.hierarchy, "unknown")
+        self.relative_age = relative_age
+        rank_relation = normalize_relationship_name(self.rank_relation).replace("-", "_")
+        if rank_relation not in {
+            "source_higher", "source_lower", "equal", "unknown",
+        }:
+            rank_relation = "unknown"
+        self.rank_relation = rank_relation
         self.intimacy = clean_relationship_text(self.intimacy, 80) or "unknown"
         self.register = clean_relationship_text(self.register, 80) or "neutral"
         self.evidence_quote = clean_relationship_text(self.evidence_quote)
@@ -261,6 +281,8 @@ class RelationshipCandidate:
             direction=str(data.get("direction") or ""),
             scope=str(data.get("scope") or "durable"),
             hierarchy=str(data.get("hierarchy") or "unknown"),
+            relative_age=str(data.get("relative_age") or "unknown"),
+            rank_relation=str(data.get("rank_relation") or "unknown"),
             intimacy=str(data.get("intimacy") or "unknown"),
             register=str(data.get("register") or "neutral"),
             evidence_quote=str(data.get("evidence_quote") or data.get("evidence") or ""),

@@ -326,8 +326,12 @@ def test_context_preview_dynamic_strings_are_locale_reactive() -> None:
     assert "btn.setAttribute('data-i18n', sec.titleKey)" in tracker
     assert "window.NovelContextUI.initializeLocaleListener()" in tracker
     assert "if (this.localizedView && !this.isEditing)" in tracker
-    assert "activeTabIndex" in tracker
+    assert "activeTabKey" in tracker
+    assert "activeTabIndex" not in tracker
     assert "activeTabTitle" not in tracker
+    assert "ApiClient.getAddressingRules(translationId)" in tracker
+    assert "data-context-pane-key" in tracker
+    assert "context_current_addressing_tab" in tracker
     assert "hasContextResyncEditorChanges()" in tracker
     assert "t('translation:context_resync_no_changes')" in tracker
     assert "btnSave.disabled = true; // disabled until changed" not in tracker

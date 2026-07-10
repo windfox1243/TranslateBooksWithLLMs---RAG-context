@@ -54,6 +54,10 @@ class ReflectionResult:
         return self.status == "needs_repair" and bool(self.issues)
 
 
+class ReflectionValidationError(RuntimeError):
+    """Raised when a contract-v2 editor gate cannot validate a chunk."""
+
+
 def _build_chunk_glossary_block(
     chunk_content: str,
     prompt_options: Optional[dict],
@@ -1115,6 +1119,8 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
             "source_quote": "",
             "draft_quote": "",
             "instruction": instruction,
+            "draft_replacement": None,
+            "glossary_update": None,
             "term_replacement": None,
         }
 
@@ -1125,17 +1131,41 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
     if not instruction:
         return None
 
-    term_replacement = raw_issue.get("term_replacement")
-    if isinstance(term_replacement, dict):
-        source = str(term_replacement.get("source") or "").strip()
-        target = str(term_replacement.get("target") or "").strip()
-        term_replacement = (
+    glossary_update = raw_issue.get("glossary_update")
+    if not isinstance(glossary_update, dict):
+        glossary_update = raw_issue.get("term_replacement")
+    if isinstance(glossary_update, dict):
+        source = str(glossary_update.get("source") or "").strip()
+        target = str(glossary_update.get("target") or "").strip()
+        glossary_update = (
             {"source": source, "target": target}
             if source and target
             else None
         )
     else:
-        term_replacement = None
+        glossary_update = None
+
+    draft_replacement = raw_issue.get("draft_replacement")
+    if isinstance(draft_replacement, dict):
+        draft_span = str(
+            draft_replacement.get("draft")
+            or draft_replacement.get("source")
+            or draft_replacement.get("from")
+            or ""
+        ).strip()
+        replacement = str(
+            draft_replacement.get("replacement")
+            or draft_replacement.get("target")
+            or draft_replacement.get("to")
+            or ""
+        ).strip()
+        draft_replacement = (
+            {"draft": draft_span, "replacement": replacement}
+            if draft_span and replacement
+            else None
+        )
+    else:
+        draft_replacement = None
 
     return {
         "category": str(raw_issue.get("category") or "other").strip() or "other",
@@ -1143,8 +1173,31 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
         "source_quote": str(raw_issue.get("source_quote") or "").strip(),
         "draft_quote": str(raw_issue.get("draft_quote") or "").strip(),
         "instruction": instruction,
-        "term_replacement": term_replacement,
+        "draft_replacement": draft_replacement,
+        "glossary_update": glossary_update,
+        "term_replacement": glossary_update,
     }
+
+
+def _issue_requires_draft_replacement(issue: Dict[str, Any]) -> bool:
+    """Return whether an issue describes a direct, locally verifiable edit."""
+
+    category = str(issue.get("category") or "other").casefold()
+    return bool(
+        str(issue.get("draft_quote") or "").strip()
+        and category not in {"omission", "placeholder", "format"}
+        and not issue.get("deterministic")
+    )
+
+
+def _reflection_contract_incomplete(result: ReflectionResult) -> bool:
+    if result.status == "needs_repair" and not result.issues:
+        return True
+    return any(
+        _issue_requires_draft_replacement(issue)
+        and not issue.get("draft_replacement")
+        for issue in result.issues
+    )
 
 
 def parse_reflection_result(reflection_text: str) -> ReflectionResult:
@@ -1172,9 +1225,10 @@ def parse_reflection_result(reflection_text: str) -> ReflectionResult:
             raw_status = "needs_repair" if issues else "no_issues"
         if issues and raw_status == "no_issues":
             raw_status = "needs_repair"
+        parse_status = "json"
         if not issues and raw_status == "needs_repair":
-            raw_status = "no_issues"
-        return ReflectionResult(raw_status, issues, raw_text, "json")
+            parse_status = "incomplete_json"
+        return ReflectionResult(raw_status, issues, raw_text, parse_status)
 
     if raw_text.strip().upper() == "NO_ISSUES":
         return ReflectionResult("no_issues", [], raw_text, "legacy_no_issues")
@@ -1188,6 +1242,8 @@ def parse_reflection_result(reflection_text: str) -> ReflectionResult:
                 "source_quote": "",
                 "draft_quote": "",
                 "instruction": item,
+                "draft_replacement": None,
+                "glossary_update": None,
                 "term_replacement": None,
             }
             for item in legacy_items
@@ -1290,7 +1346,9 @@ def extract_term_replacements_from_critique(critique: str) -> List[Tuple[str, st
         for issue in structured.get("issues") or []:
             if not isinstance(issue, dict):
                 continue
-            replacement = issue.get("term_replacement")
+            replacement = issue.get("glossary_update")
+            if not isinstance(replacement, dict):
+                replacement = issue.get("term_replacement")
             if not isinstance(replacement, dict):
                 continue
             src_term = str(replacement.get("source") or "").strip()
@@ -1444,9 +1502,64 @@ async def run_chunk_reflection_pass(
     """Run a 2-pass Senior Translation Editor reflection & repair evaluation on a draft chunk."""
     from src.prompts.prompts import generate_chunk_reflection_prompt, generate_chunk_repair_prompt
     from src.core.llm import TranslationExtractor
+    from src.utils.addressing_schema import context_contract_version
+    from src.utils.translation_quality import (
+        find_source_residue,
+        residue_findings_to_editor_issues,
+        validate_editor_repair,
+    )
 
     if not draft_translation or not draft_translation.strip() or not llm_client:
         return draft_translation
+
+    options = prompt_options or {}
+    contract_v2 = context_contract_version(options) >= 2
+    source_language = str(options.get("source_language") or "")
+    glossary_terms = (
+        options.get("glossary_terms")
+        if isinstance(options.get("glossary_terms"), dict)
+        else {}
+    )
+    protected_terms = [
+        str(item) for item in options.get("active_character_names") or [] if item
+    ]
+    protected_terms.extend(
+        str(item) for item in options.get("preserved_terms") or [] if item
+    )
+    try:
+        from src.utils.novel_context import (
+            _character_profile_map,
+            character_alias_map,
+            extract_global_lore,
+        )
+
+        raw_lore = extract_global_lore(
+            str(options.get("novel_context") or novel_context or "")
+        )
+        protected_terms.extend(
+            str(profile.get("name") or key)
+            for key, profile in _character_profile_map(raw_lore).items()
+        )
+        aliases = character_alias_map(raw_lore)
+        protected_terms.extend(str(item) for item in aliases.keys())
+        protected_terms.extend(str(item) for item in aliases.values())
+    except Exception:
+        pass
+    residue_findings = []
+    if bool(options.get("source_residue_validation", contract_v2)):
+        residue_findings = find_source_residue(
+            source_chunk,
+            draft_translation,
+            source_language=source_language,
+            target_language=target_language,
+            protected_terms=protected_terms,
+            glossary_terms=glossary_terms,
+        )
+    deterministic_findings = json.dumps(
+        [finding.to_dict() for finding in residue_findings],
+        ensure_ascii=False,
+        indent=2,
+    ) if residue_findings else ""
 
     if log_callback:
         emit_progress_log(
@@ -1480,6 +1593,7 @@ async def run_chunk_reflection_pass(
         novel_context=active_novel_context,
         custom_instructions=custom_instructions,
         glossary_block=glossary_block,
+        deterministic_findings=deterministic_findings,
     )
 
     try:
@@ -1493,7 +1607,16 @@ async def run_chunk_reflection_pass(
         critique = (response.content or "").strip() if response and getattr(response, "content", None) else ""
     except Exception as e:
         if log_callback:
-            log_callback("reflection_failed", f"Senior Editor reflection failed: {e}")
+            emit_progress_log(
+                log_callback,
+                "reflection_failed",
+                f"Senior Editor reflection failed: {e}",
+                layer="senior_editor_reflection",
+            )
+        if contract_v2 and residue_findings:
+            raise ReflectionValidationError(
+                "Senior Editor failed while deterministic source residue remained."
+            ) from e
         return draft_translation
 
     reflection_result = parse_reflection_result(critique)
@@ -1510,12 +1633,18 @@ async def run_chunk_reflection_pass(
             },
         )
 
-    if reflection_result.parse_status == "invalid_json":
+    def reflection_contract_invalid(result: ReflectionResult) -> bool:
+        return bool(
+            result.parse_status in {"invalid_json", "empty", "incomplete_json"}
+            or (contract_v2 and _reflection_contract_incomplete(result))
+        )
+
+    if reflection_contract_invalid(reflection_result):
         if log_callback:
             emit_progress_log(
                 log_callback,
                 "reflection_parse_retry",
-                "Senior Editor returned malformed JSON; retrying once with a strict JSON contract.",
+                "Senior Editor returned malformed or incomplete JSON; retrying once with the strict editor contract.",
                 layer="senior_editor_reflection",
                 data={
                     "prompt_version": REFLECTION_PROMPT_VERSION,
@@ -1526,7 +1655,9 @@ async def run_chunk_reflection_pass(
             f"{reflection_pair.user}\n\n"
             "Your previous response was not valid JSON. Return only one valid "
             f"JSON object inside {REFLECTION_JSON_TAG_IN} and "
-            f"{REFLECTION_JSON_TAG_OUT}. Do not include prose, markdown, or bullets."
+            f"{REFLECTION_JSON_TAG_OUT}. Every direct correction with a draft_quote "
+            "must include draft_replacement with exact draft and replacement spans. "
+            "Do not include prose, markdown, or bullets."
         )
         try:
             retry_response = await _generate_editor_response(
@@ -1554,7 +1685,7 @@ async def run_chunk_reflection_pass(
                         "parse_status": retry_result.parse_status,
                     },
                 )
-            if retry_result.parse_status != "invalid_json":
+            if not reflection_contract_invalid(retry_result):
                 critique = retry_critique
                 reflection_result = retry_result
         except Exception as e:
@@ -1566,18 +1697,22 @@ async def run_chunk_reflection_pass(
                     layer="senior_editor_reflection",
                 )
 
-    if reflection_result.parse_status == "invalid_json":
+    if reflection_contract_invalid(reflection_result):
         if log_callback:
             emit_progress_log(
                 log_callback,
                 "reflection_parse_failed",
-                "Senior Editor reflection could not be parsed as JSON; repair skipped instead of treating it as no issues.",
+                "Senior Editor reflection contract remained invalid or incomplete after retry.",
                 layer="senior_editor_reflection",
                 data={
                     "prompt_version": REFLECTION_PROMPT_VERSION,
                     "contract_version": REFLECTION_CONTRACT_VERSION,
                     "parse_status": reflection_result.parse_status,
                 },
+            )
+        if contract_v2:
+            raise ReflectionValidationError(
+                "Senior Editor reflection contract remained invalid after retry."
             )
         return draft_translation
 
@@ -1591,6 +1726,33 @@ async def run_chunk_reflection_pass(
             f"Senior Editor reflection used {reflection_result.parse_status} parsing.",
             layer="senior_editor_reflection",
         )
+
+    if residue_findings:
+        existing_spans = {
+            str(issue.get("draft_quote") or "").casefold().strip()
+            for issue in reflection_result.issues
+        }
+        mandatory_issues = [
+            issue for issue in residue_findings_to_editor_issues(residue_findings)
+            if str(issue.get("draft_quote") or "").casefold().strip()
+            not in existing_spans
+        ]
+        if mandatory_issues:
+            reflection_result = ReflectionResult(
+                "needs_repair",
+                [*reflection_result.issues, *mandatory_issues],
+                reflection_result.raw_text,
+                reflection_result.parse_status,
+            )
+            if log_callback:
+                emit_progress_log(
+                    log_callback,
+                    "source_residue_blocker",
+                    f"Detected {len(mandatory_issues)} mandatory source-residue repair issue(s).",
+                    level="warning",
+                    layer="senior_editor_reflection",
+                    data={"findings": [finding.to_dict() for finding in residue_findings]},
+                )
 
     if not reflection_result.needs_repair:
         if log_callback:
@@ -1608,56 +1770,104 @@ async def run_chunk_reflection_pass(
     term_pairs = extract_term_replacements_from_critique(critique_feedback)
     if not term_pairs:
         term_pairs = extract_term_replacements_from_critique(critique)
-    if term_pairs and context_session and hasattr(context_session, "register_editor_terms"):
-        context_session.register_editor_terms(term_pairs)
-
-    repair_pair = generate_chunk_repair_prompt(
-        source_chunk=source_chunk,
-        draft_translation=draft_translation,
-        critique_feedback=critique_feedback,
-        target_language=target_language,
-        custom_instructions=custom_instructions,
-        glossary_block=glossary_block,
-        novel_context=active_novel_context,
-    )
-
-    try:
-        repair_response = await _generate_editor_response(
-            llm_client=llm_client,
-            prompt=repair_pair.user,
-            system_prompt=repair_pair.system,
-            model_name=model_name,
-            temperature=0.3,
+    validation_errors: List[str] = []
+    for repair_attempt in range(2):
+        repair_feedback = critique_feedback
+        if validation_errors:
+            repair_feedback += (
+                "\n\nPREVIOUS REPAIR VALIDATION FAILURES:\n- "
+                + "\n- ".join(validation_errors)
+                + "\nReturn a corrected complete translation."
+            )
+        repair_pair = generate_chunk_repair_prompt(
+            source_chunk=source_chunk,
+            draft_translation=draft_translation,
+            critique_feedback=repair_feedback,
+            target_language=target_language,
+            custom_instructions=custom_instructions,
+            glossary_block=glossary_block,
+            novel_context=active_novel_context,
         )
-        raw_content = repair_response.content if repair_response and getattr(repair_response, "content", None) else ""
-        repaired_text = llm_client.extract_translation(raw_content) if hasattr(llm_client, "extract_translation") else None
-        if not repaired_text:
-            extractor = TranslationExtractor("<TRANSLATION>", "</TRANSLATION>")
-            repaired_text = extractor.extract(raw_content)
-        if repaired_text and repaired_text.strip():
-            repaired_text = repaired_text.strip()
-            if repair_validator:
+        validation_errors = []
+        try:
+            repair_response = await _generate_editor_response(
+                llm_client=llm_client,
+                prompt=repair_pair.user,
+                system_prompt=repair_pair.system,
+                model_name=model_name,
+                temperature=0.3 if repair_attempt == 0 else 0.0,
+            )
+            raw_content = (
+                repair_response.content
+                if repair_response and getattr(repair_response, "content", None)
+                else ""
+            )
+            repaired_text = (
+                llm_client.extract_translation(raw_content)
+                if hasattr(llm_client, "extract_translation")
+                else None
+            )
+            if not repaired_text:
+                extractor = TranslationExtractor("<TRANSLATION>", "</TRANSLATION>")
+                repaired_text = extractor.extract(raw_content)
+            repaired_text = str(repaired_text or "").strip()
+            if not repaired_text:
+                validation_errors.append("repair output was empty")
+            if repaired_text and repair_validator:
                 try:
-                    validation_feedback = repair_validator(repaired_text)
+                    adapter_feedback = repair_validator(repaired_text)
                 except Exception as validation_error:
-                    validation_feedback = (
-                        f"repair validator raised {validation_error}"
+                    adapter_feedback = f"repair validator raised {validation_error}"
+                if adapter_feedback:
+                    validation_errors.append(str(adapter_feedback))
+            if repaired_text and contract_v2:
+                validation_errors.extend(validate_editor_repair(
+                    repaired_text,
+                    reflection_result.issues,
+                    source_text=source_chunk,
+                    source_language=source_language,
+                    target_language=target_language,
+                    protected_terms=protected_terms,
+                    glossary_terms=glossary_terms,
+                ))
+            if repaired_text and not validation_errors:
+                if term_pairs and context_session and hasattr(
+                    context_session,
+                    "register_editor_terms",
+                ):
+                    context_session.register_editor_terms(term_pairs)
+                if log_callback:
+                    emit_progress_log(
+                        log_callback,
+                        "repair_applied",
+                        "Applied and validated Senior Editor repair fixes.",
+                        layer="senior_editor_repair",
                     )
-                if validation_feedback:
-                    if log_callback:
-                        emit_progress_log(
-                            log_callback,
-                            "repair_validation_failed",
-                            "Senior Editor repair failed adapter validation; retaining original draft.",
-                            layer="senior_editor_repair",
-                            data={"reason": str(validation_feedback)},
-                        )
-                    return draft_translation
-            if log_callback:
-                log_callback("repair_applied", "Applied Senior Editor repair fixes.")
-            return repaired_text
-    except Exception as e:
-        if log_callback:
-            log_callback("repair_failed", f"Senior Editor repair failed: {e}")
+                return repaired_text
+        except Exception as e:
+            validation_errors.append(f"repair call failed: {type(e).__name__}: {e}")
 
+        if log_callback:
+            emit_progress_log(
+                log_callback,
+                "repair_validation_failed",
+                (
+                    "Senior Editor repair failed validation; retrying once."
+                    if repair_attempt == 0
+                    else "Senior Editor repair remained invalid after retry."
+                ),
+                level="warning",
+                layer="senior_editor_repair",
+                data={"attempt": repair_attempt + 1, "reasons": validation_errors},
+            )
+
+    has_blocking_issue = any(
+        str(issue.get("severity") or "major").casefold() in {"blocker", "major"}
+        for issue in reflection_result.issues
+    )
+    if contract_v2 and has_blocking_issue:
+        raise ReflectionValidationError(
+            "Senior Editor repair did not pass validation: "
+            + "; ".join(validation_errors[:3])
+        )
     return draft_translation

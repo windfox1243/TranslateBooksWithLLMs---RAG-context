@@ -1,5 +1,68 @@
 # Changelog
 
+## 1.15.0-beta.30 - 2026-07-10
+
+### Added
+
+- **Evidence-Backed Addressing Contract v2**:
+  New jobs now capture exact source address forms, target pronouns and
+  vocatives, register, social basis, scope, dialogue turn, confidence, and
+  provenance as typed deltas. Source forms are stored as evidence rather than
+  character aliases, and legacy jobs retain the contract-v1 markdown parser.
+
+- **Multi-Hop Social Seniority**:
+  Relationship reasoning now reconciles type, relative age, rank, hierarchy,
+  intimacy, and register across paths of up to three edges. Strong unique
+  derivations are projected into prompts, including Vietnamese senior/junior
+  guidance, while close competing paths are quarantined and audited.
+
+- **Addressing Resolution Diagnostics**:
+  Added pair-resolution and derived-seniority endpoints with current rules,
+  evidence, derivation paths, confidence, conflicts, and rejection reasons.
+
+- **Senior Editor Issue Contract v2**:
+  Editor output now separates exact local `draft_replacement` corrections from
+  durable `glossary_update` entries. Legacy `term_replacement` remains a
+  compatibility alias.
+
+### Fixed
+
+- **Addressing State Corruption**:
+  Addressing imports are delta-only and idempotent, invalid register text is
+  normalized, empty source forms export as `unknown`, multiple observed source
+  forms are preserved, and untranslated generic vocatives such as `Brother`
+  are rejected for Vietnamese output.
+
+- **Relationship Seniority Errors**:
+  Internally inconsistent parent, sibling, age, hierarchy, and institutional
+  rank claims are quarantined. Relationship resolution no longer trusts the
+  first matching edge and supports explicit situational source overrides
+  without replacing durable or locked facts.
+
+- **Untranslated Source Residue**:
+  A language-aware deterministic gate detects high-confidence source residue
+  across Latin, CJK, Hangul, RTL, and Thai scripts while protecting names,
+  markup, placeholders, brands, and approved terms. Major unresolved editor
+  issues now fail contract-v2 chunks instead of committing an unverified draft.
+
+- **Atomic Context Commits**:
+  Addressing and relationship candidates commit together only after translation,
+  editor, and adapter validation succeeds. Failed, empty, or invalid chunks roll
+  back staged context state and cannot influence later prompts.
+
+- **Stable Context Preview**:
+  The Current Addressing pane now reads live structured DB state, uses stable tab
+  identifiers, and remains visible when empty or temporarily unavailable.
+  Relationship Evolution and both Raw View structural headings remain visible,
+  with all new UI text reactive across seven locales.
+
+### Tests
+
+- Added regressions for addressing source evidence, empty forms, register
+  corruption, idempotency, atomic rollback, `Brother` residue, preserved
+  `Gram`, multilingual residue, batched LLM judging, multi-hop sibling
+  seniority, inconsistent hierarchy quarantine, stable tabs, and reactive i18n.
+
 ## 1.15.0-beta.29 - 2026-07-10
 
 ### Added

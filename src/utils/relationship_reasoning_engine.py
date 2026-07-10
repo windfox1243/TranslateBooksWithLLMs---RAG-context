@@ -72,6 +72,8 @@ def _edge_changed(existing: Dict[str, Any], candidate: RelationshipCandidate) ->
     return any((
         normalize_relationship_name(existing.get("direction")) != candidate.direction,
         normalize_relationship_name(existing.get("hierarchy")) != candidate.hierarchy,
+        normalize_relationship_name(existing.get("relative_age")) != candidate.relative_age,
+        normalize_relationship_name(existing.get("rank_relation")) != candidate.rank_relation,
         normalize_relationship_name(existing.get("intimacy")) != normalize_relationship_name(candidate.intimacy),
         normalize_relationship_name(existing.get("register")) != normalize_relationship_name(candidate.register),
         normalize_relationship_name(existing.get("details")) != normalize_relationship_name(candidate.details),
@@ -191,6 +193,7 @@ class RelationshipReasoningEngine:
         *,
         aliases: Optional[List[str]] = None,
         entity_type: str = "character",
+        gender: str = "unknown",
         is_locked: bool = False,
     ) -> Optional[int]:
         normalized = normalize_relationship_name(canonical_name)
@@ -202,6 +205,7 @@ class RelationshipReasoningEngine:
             normalized_name=normalized,
             aliases=[clean_relationship_text(alias, 160) for alias in aliases or [] if alias],
             entity_type=entity_type,
+            gender=gender,
             is_locked=int(bool(is_locked)),
         )
 
@@ -304,6 +308,8 @@ class RelationshipReasoningEngine:
             direction=candidate.direction,
             scope=candidate.scope,
             hierarchy=candidate.hierarchy,
+            relative_age=candidate.relative_age,
+            rank_relation=candidate.rank_relation,
             intimacy=candidate.intimacy,
             register=candidate.register,
             confidence=candidate.confidence,
@@ -391,12 +397,93 @@ class RelationshipReasoningEngine:
             source=source_node["canonical_name"],
             target=target_node["canonical_name"],
         )
+        expected_hierarchy = {
+            "parent": "source_senior",
+            "mentor": "source_senior",
+            "master": "source_senior",
+            "superior": "source_senior",
+            "child": "source_junior",
+            "student": "source_junior",
+            "servant": "source_junior",
+            "subordinate": "source_junior",
+            "peer": "peer",
+        }.get(candidate.relationship_type)
+        age_hierarchy = {
+            "source_older": "source_senior",
+            "source_younger": "source_junior",
+            "same_age": "peer",
+        }.get(candidate.relative_age)
+        rank_hierarchy = {
+            "source_higher": "source_senior",
+            "source_lower": "source_junior",
+            "equal": "peer",
+        }.get(candidate.rank_relation)
+        hierarchy_signals = [
+            value for value in (
+                expected_hierarchy,
+                age_hierarchy,
+                rank_hierarchy,
+                candidate.hierarchy if candidate.hierarchy != "unknown" else None,
+            )
+            if value
+        ]
+        if len(set(hierarchy_signals)) > 1:
+            edge_id = self._quarantine_edge(
+                translation_id, chunk_index, candidate, source_node, target_node,
+            )
+            return self._record_conflict(
+                translation_id, chunk_index, candidate,
+                status="quarantined", validator="semantic_hierarchy",
+                reason=(
+                    "Relationship type, relative age, institutional rank, and "
+                    "hierarchy fields contain incompatible seniority directions."
+                ),
+                severity="error", edge_id=edge_id,
+                log_callback=log_callback,
+            )
+        if (
+            expected_hierarchy
+            and candidate.hierarchy not in {"unknown", expected_hierarchy}
+        ):
+            edge_id = self._quarantine_edge(
+                translation_id, chunk_index, candidate, source_node, target_node,
+            )
+            return self._record_conflict(
+                translation_id, chunk_index, candidate,
+                status="quarantined", validator="semantic_hierarchy",
+                reason=(
+                    f"Relationship '{candidate.relationship_type}' requires "
+                    f"hierarchy '{expected_hierarchy}', not "
+                    f"'{candidate.hierarchy}'."
+                ),
+                severity="error", edge_id=edge_id,
+                log_callback=log_callback,
+            )
+        if expected_hierarchy and candidate.hierarchy == "unknown":
+            candidate = replace(candidate, hierarchy=expected_hierarchy)
+        elif candidate.hierarchy == "unknown" and (age_hierarchy or rank_hierarchy):
+            candidate = replace(candidate, hierarchy=age_hierarchy or rank_hierarchy)
         if candidate.direction == "symmetric" and source_node["id"] > target_node["id"]:
             source_node, target_node = target_node, source_node
+            reversed_hierarchy = {
+                "source_senior": "source_junior",
+                "source_junior": "source_senior",
+            }.get(candidate.hierarchy, candidate.hierarchy)
+            reversed_age = {
+                "source_older": "source_younger",
+                "source_younger": "source_older",
+            }.get(candidate.relative_age, candidate.relative_age)
+            reversed_rank = {
+                "source_higher": "source_lower",
+                "source_lower": "source_higher",
+            }.get(candidate.rank_relation, candidate.rank_relation)
             candidate = replace(
                 candidate,
                 source=source_node["canonical_name"],
                 target=target_node["canonical_name"],
+                hierarchy=reversed_hierarchy,
+                relative_age=reversed_age,
+                rank_relation=reversed_rank,
             )
 
         pair_edges = self.db.get_relationship_edges_for_pair(
@@ -632,6 +719,8 @@ class RelationshipReasoningEngine:
             direction=candidate.direction,
             scope=candidate.scope,
             hierarchy=candidate.hierarchy,
+            relative_age=candidate.relative_age,
+            rank_relation=candidate.rank_relation,
             intimacy=candidate.intimacy,
             register=candidate.register,
             confidence=candidate.confidence,
@@ -705,39 +794,273 @@ def relationship_support_for_addressing(
     speaker_name: str,
     addressee_name: str,
 ) -> Dict[str, Any]:
-    """Summarize accepted graph evidence relative to a directed addressing pair."""
+    """Resolve direct and explainable multi-hop seniority for one pair."""
 
     if db is None or not translation_id:
-        return {"supported": False, "hierarchy": "unknown", "edges": []}
+        return {
+            "supported": False,
+            "hierarchy": "unknown",
+            "edges": [],
+            "confidence": 0.0,
+            "path": [],
+            "conflict": False,
+        }
     source_key = normalize_relationship_name(speaker_name)
     target_key = normalize_relationship_name(addressee_name)
     source_node = db.get_relationship_node_by_name(translation_id, source_key)
-    edges = db.get_relationship_edges_for_pair(
-        translation_id,
-        source_key,
-        target_key,
-        statuses=["accepted"],
-        include_reverse=True,
-    )
-    hierarchy = "unknown"
-    for edge in edges:
-        edge_hierarchy = str(edge.get("hierarchy") or "unknown")
-        direct = bool(
-            source_node
-            and edge.get("source_node_id") == source_node.get("id")
+    target_node = db.get_relationship_node_by_name(translation_id, target_key)
+    if not source_node or not target_node:
+        return {
+            "supported": False,
+            "hierarchy": "unknown",
+            "edges": [],
+            "confidence": 0.0,
+            "path": [],
+            "conflict": False,
+        }
+
+    all_edges = [
+        edge for edge in db.get_relationship_edges(
+            translation_id,
+            statuses=["accepted"],
         )
-        if not direct:
-            edge_hierarchy = {
-                "source_senior": "source_junior",
-                "source_junior": "source_senior",
-            }.get(edge_hierarchy, edge_hierarchy)
-        if edge_hierarchy in {"source_senior", "source_junior", "peer"}:
-            hierarchy = edge_hierarchy
-            break
+        if edge.get("relationship_type") != "addressing"
+    ]
+    pair_edges = [
+        edge for edge in all_edges
+        if {edge.get("source_node_id"), edge.get("target_node_id")}
+        == {source_node["id"], target_node["id"]}
+    ]
+
+    def inverse(value: str) -> str:
+        return {
+            "source_senior": "source_junior",
+            "source_junior": "source_senior",
+        }.get(value, value)
+
+    def edge_hierarchy(edge: Dict[str, Any]) -> str:
+        hierarchy = str(edge.get("hierarchy") or "unknown")
+        if hierarchy != "unknown":
+            return hierarchy
+        relative_age = str(edge.get("relative_age") or "unknown")
+        if relative_age == "source_older":
+            return "source_senior"
+        if relative_age == "source_younger":
+            return "source_junior"
+        if relative_age == "same_age":
+            return "peer"
+        rank_relation = str(edge.get("rank_relation") or "unknown")
+        if rank_relation == "source_higher":
+            return "source_senior"
+        if rank_relation == "source_lower":
+            return "source_junior"
+        if rank_relation == "equal":
+            return "peer"
+        relationship_type = str(edge.get("relationship_type") or "")
+        if relationship_type in {"parent", "mentor", "master", "superior"}:
+            return "source_senior"
+        if relationship_type in {"child", "student", "servant", "subordinate"}:
+            return "source_junior"
+        if relationship_type in {"friend", "peer"}:
+            return "peer"
+        return "unknown"
+
+    def edge_priority(edge: Dict[str, Any]) -> int:
+        if edge.get("is_locked"):
+            return 4
+        if str(edge.get("provenance") or "") in TRUSTED_RELATIONSHIP_PROVENANCE:
+            return 3
+        return 2
+
+    adjacency: Dict[int, List[Dict[str, Any]]] = {}
+    for edge in all_edges:
+        hierarchy = edge_hierarchy(edge)
+        if hierarchy == "unknown":
+            continue
+        confidence = float(edge.get("confidence") or 0.0)
+        if edge.get("relationship_type") in {"friend", "peer"}:
+            confidence = min(confidence, 0.80)
+        base = {
+            "edge_id": edge.get("id"),
+            "relationship_type": edge.get("relationship_type"),
+            "confidence": confidence,
+            "priority": edge_priority(edge),
+            "source_name": edge.get("source_name"),
+            "target_name": edge.get("target_name"),
+        }
+        adjacency.setdefault(edge["source_node_id"], []).append({
+            **base,
+            "to": edge["target_node_id"],
+            "hierarchy": hierarchy,
+        })
+        adjacency.setdefault(edge["target_node_id"], []).append({
+            **base,
+            "to": edge["source_node_id"],
+            "hierarchy": inverse(hierarchy),
+        })
+
+    def combine(left: str, right: str) -> str:
+        if left == "peer":
+            return right
+        if right == "peer":
+            return left
+        if left == right and left in {"source_senior", "source_junior"}:
+            return left
+        return "unknown"
+
+    paths: List[Dict[str, Any]] = []
+
+    def walk(node_id: int, relation: str, arcs: List[Dict[str, Any]], seen: set) -> None:
+        if len(arcs) >= 3:
+            return
+        for arc in adjacency.get(node_id, []):
+            next_id = int(arc["to"])
+            if next_id in seen:
+                continue
+            combined = arc["hierarchy"] if not arcs else combine(
+                relation,
+                arc["hierarchy"],
+            )
+            if combined == "unknown":
+                continue
+            next_arcs = [*arcs, arc]
+            if next_id == target_node["id"]:
+                confidence = min(
+                    float(item["confidence"]) for item in next_arcs
+                ) * (0.9 ** max(0, len(next_arcs) - 1))
+                paths.append({
+                    "hierarchy": combined,
+                    "confidence": round(confidence, 4),
+                    "priority": (
+                        min(int(item["priority"]) for item in next_arcs)
+                        if len(next_arcs) == 1
+                        else 1
+                    ),
+                    "derived": len(next_arcs) > 1,
+                    "path": [
+                        {
+                            key: item.get(key)
+                            for key in (
+                                "edge_id", "source_name", "target_name",
+                                "relationship_type", "hierarchy", "confidence",
+                            )
+                        }
+                        for item in next_arcs
+                    ],
+                })
+            else:
+                walk(next_id, combined, next_arcs, {*seen, next_id})
+
+    walk(source_node["id"], "unknown", [], {source_node["id"]})
+    if not paths:
+        return {
+            "supported": bool(pair_edges),
+            "hierarchy": "unknown",
+            "edges": pair_edges,
+            "confidence": 0.0,
+            "path": [],
+            "conflict": False,
+        }
+    paths.sort(
+        key=lambda item: (item["priority"], item["confidence"]),
+        reverse=True,
+    )
+    best = paths[0]
+    competing = next((
+        item for item in paths[1:]
+        if item["priority"] == best["priority"]
+        and item["hierarchy"] != best["hierarchy"]
+        and abs(item["confidence"] - best["confidence"]) <= 0.10
+    ), None)
+    if competing:
+        if best["derived"]:
+            db.upsert_relationship_derivation(
+                translation_id,
+                source_node["canonical_name"],
+                target_node["canonical_name"],
+                "unknown",
+                best["confidence"],
+                best["path"],
+                "conflicting_seniority_paths",
+                status="quarantined",
+                chunk_index=max(
+                    [int(edge.get("last_chunk_index") or 0) for edge in all_edges]
+                    or [0]
+                ),
+            )
+        existing_conflict = next((
+            item for item in db.get_relationship_conflicts(
+                translation_id,
+                status="open",
+                limit=500,
+            )
+            if item.get("validator") == "derived_seniority"
+            and {
+                normalize_relationship_name(item.get("source_name")),
+                normalize_relationship_name(item.get("target_name")),
+            } == {source_key, target_key}
+        ), None)
+        if not existing_conflict:
+            db.add_relationship_conflict(
+                translation_id=translation_id,
+                source_name=source_node["canonical_name"],
+                target_name=target_node["canonical_name"],
+                severity="warning",
+                validator="derived_seniority",
+                reason=(
+                    "Competing seniority paths differ in direction within the "
+                    "0.10 confidence quarantine margin."
+                ),
+                remediation_hint=(
+                    "Add exact source evidence or lock a manual relationship fact."
+                ),
+                candidate={
+                    "best_path": best,
+                    "competing_path": competing,
+                },
+                chunk_index=max(
+                    [int(edge.get("last_chunk_index") or 0) for edge in all_edges]
+                    or [0]
+                ),
+            )
+        return {
+            "supported": True,
+            "hierarchy": "unknown",
+            "edges": pair_edges,
+            "confidence": best["confidence"],
+            "path": best["path"],
+            "conflict": True,
+            "competing_path": competing["path"],
+            "basis": "conflicting_seniority_paths",
+            "source_gender": source_node.get("gender", "unknown"),
+            "target_gender": target_node.get("gender", "unknown"),
+        }
+    basis = "direct_relationship" if not best["derived"] else "derived_relationship_chain"
+    if best["derived"] and best["confidence"] >= 0.72:
+        db.upsert_relationship_derivation(
+            translation_id,
+            source_node["canonical_name"],
+            target_node["canonical_name"],
+            best["hierarchy"],
+            best["confidence"],
+            best["path"],
+            basis,
+            chunk_index=max(
+                [int(edge.get("last_chunk_index") or 0) for edge in all_edges]
+                or [0]
+            ),
+        )
     return {
-        "supported": bool(edges),
-        "hierarchy": hierarchy,
-        "edges": edges,
+        "supported": True,
+        "hierarchy": best["hierarchy"],
+        "edges": pair_edges,
+        "confidence": best["confidence"],
+        "path": best["path"],
+        "conflict": False,
+        "derived": best["derived"],
+        "basis": basis,
+        "source_gender": source_node.get("gender", "unknown"),
+        "target_gender": target_node.get("gender", "unknown"),
     }
 
 

@@ -54,6 +54,9 @@ def _prompt_options_from_start_request(data):
     """Return start-request prompt options with legacy reflection fallback."""
     prompt_options = dict((data or {}).get('prompt_options') or {})
     prompt_options.setdefault('use_relationship_reasoning', 'project')
+    prompt_options.setdefault('use_relationship_llm_judge', 'selective')
+    prompt_options.setdefault('context_contract_version', 2)
+    prompt_options.setdefault('source_residue_validation', True)
     if 'reflection_mode' not in prompt_options:
         prompt_options['reflection_mode'] = (
             str(getattr(_config, 'ENABLE_CHUNK_REFLECTION', 'false')).lower()
@@ -1480,11 +1483,52 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
     @bp.route('/<translation_id>/addressing-rules', methods=['GET'])
     def get_addressing_rules_route(translation_id):
         """Get directed character addressing rules for a translation job."""
-        rules = state_manager.checkpoint_manager.db.get_addressing_rules(translation_id)
+        db = state_manager.checkpoint_manager.db
+        rules = db.get_addressing_rules(translation_id)
+        from src.utils.relationship_reasoning_engine import (
+            relationship_support_for_addressing,
+        )
+
+        audits = db.get_context_audit_logs(translation_id, limit=500)
+        rejection_by_pair = {}
+        rejections = []
+        for item in audits:
+            state = item.get("new_state") or {}
+            if state.get("status") != "rejected":
+                continue
+            pair = (
+                str(item.get("speaker_name") or "").casefold(),
+                str(item.get("addressee_name") or "").casefold(),
+            )
+            reason = str(state.get("reason") or "")
+            rejection_by_pair.setdefault(pair, reason)
+            rejections.append({
+                "speaker_name": item.get("speaker_name"),
+                "addressee_name": item.get("addressee_name"),
+                "reason": reason,
+                "chunk_index": item.get("chunk_index"),
+                "confidence": item.get("confidence"),
+                "timestamp": item.get("timestamp"),
+            })
+        for rule in rules:
+            resolution = relationship_support_for_addressing(
+                db,
+                translation_id,
+                str(rule.get("speaker_name") or ""),
+                str(rule.get("addressee_name") or ""),
+            )
+            rule["derivation_path"] = resolution.get("path", [])
+            rule["derived_hierarchy"] = resolution.get("hierarchy", "unknown")
+            rule["relationship_confidence"] = resolution.get("confidence", 0.0)
+            rule["rejection_reason"] = rejection_by_pair.get((
+                str(rule.get("speaker_name") or "").casefold(),
+                str(rule.get("addressee_name") or "").casefold(),
+            ))
         return jsonify({
             "translation_id": translation_id,
             "rules": rules,
-            "count": len(rules)
+            "count": len(rules),
+            "rejections": rejections,
         }), 200
 
     @bp.route('/<translation_id>/addressing-audit-log', methods=['GET'])
@@ -1496,6 +1540,50 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "translation_id": translation_id,
             "audit_logs": logs,
             "count": len(logs)
+        }), 200
+
+    @bp.route('/api/translation/<translation_id>/addressing-resolution', methods=['GET'])
+    @bp.route('/<translation_id>/addressing-resolution', methods=['GET'])
+    @bp.route('/api/translation/<translation_id>/derived-seniority', methods=['GET'])
+    @bp.route('/<translation_id>/derived-seniority', methods=['GET'])
+    def get_addressing_resolution_route(translation_id):
+        """Explain current addressing state and relationship-derived seniority."""
+
+        speaker = str(request.args.get('speaker') or request.args.get('source') or '').strip()
+        addressee = str(request.args.get('addressee') or request.args.get('target') or '').strip()
+        if not speaker or not addressee:
+            return jsonify({"error": "speaker/source and addressee/target are required"}), 400
+        from src.utils.relationship_reasoning_engine import (
+            relationship_support_for_addressing,
+        )
+        from src.utils.relationship_schema import normalize_relationship_name
+
+        db = state_manager.checkpoint_manager.db
+        current_rule = next((
+            rule for rule in db.get_addressing_rules(translation_id)
+            if str(rule.get("speaker_name") or "").casefold() == speaker.casefold()
+            and str(rule.get("addressee_name") or "").casefold() == addressee.casefold()
+        ), None)
+        support = relationship_support_for_addressing(
+            db,
+            translation_id,
+            speaker,
+            addressee,
+        )
+        audit = db.get_relationship_pair_audit(
+            translation_id,
+            normalize_relationship_name(speaker),
+            normalize_relationship_name(addressee),
+        )
+        return jsonify({
+            "translation_id": translation_id,
+            "speaker": speaker,
+            "addressee": addressee,
+            "addressing_rule": current_rule,
+            "resolution": support,
+            "evidence": audit.get("evidence", []),
+            "conflicts": audit.get("conflicts", []),
+            "derivations": audit.get("derivations", []),
         }), 200
 
     @bp.route('/<translation_id>/addressing-rules/lock', methods=['POST'])

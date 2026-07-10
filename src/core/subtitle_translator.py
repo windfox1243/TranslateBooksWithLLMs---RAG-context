@@ -124,6 +124,9 @@ async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: 
                 cleaned_translation = clean_translated_text(translated_text)
                 if (prompt_options or {}).get("reflection_mode"):
                     from src.core.translator import run_chunk_reflection_pass
+                    reflection_options = dict(prompt_options or {})
+                    reflection_options.setdefault("source_language", source_language)
+                    reflection_options.setdefault("target_language", target_language)
 
                     cleaned_translation = await run_chunk_reflection_pass(
                         source_chunk=text_to_translate,
@@ -138,7 +141,7 @@ async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: 
                         ),
                         glossary_block=(prompt_options or {}).get("glossary_block", ""),
                         log_callback=log_callback,
-                        prompt_options=prompt_options,
+                        prompt_options=reflection_options,
                     )
                 translations[idx] = cleaned_translation
                 completed_count += 1
@@ -742,6 +745,9 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                                 # All tags present, translation successful
                                 if (prompt_options or {}).get("reflection_mode"):
                                     from src.core.translator import run_chunk_reflection_pass
+                                    reflection_options = dict(prompt_options or {})
+                                    reflection_options.setdefault("source_language", source_language)
+                                    reflection_options.setdefault("target_language", target_language)
 
                                     repaired_block_text = await run_chunk_reflection_pass(
                                         source_chunk=_format_subtitle_block_for_reflection(
@@ -758,7 +764,7 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                                         ),
                                         glossary_block=glossary_block,
                                         log_callback=log_callback,
-                                        prompt_options=prompt_options,
+                                        prompt_options=reflection_options,
                                         repair_validator=lambda repaired: (
                                             None
                                             if _subtitle_markers_are_exact(

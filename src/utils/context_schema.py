@@ -4,7 +4,7 @@ Structured data schema definitions for directed addressing context.
 
 import json
 import re
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Optional, List, Dict, Any
 
 
@@ -22,6 +22,13 @@ class AddressingUpdateDelta:
     confidence: float = 1.0
     evidence_quote: str = ""
     is_situational: bool = False
+    source_forms: List[Dict[str, Any]] = field(default_factory=list)
+    social_basis: List[str] = field(default_factory=list)
+    scope: str = "durable"
+    contract_version: int = 1
+    dialogue_turn_id: str = ""
+    action: str = "upsert"
+    provenance: str = "unknown"
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Optional["AddressingUpdateDelta"]:
@@ -49,6 +56,10 @@ class AddressingUpdateDelta:
 
         raw_scope = str(data.get("scope") or "").strip().lower()
         is_sit = bool(data.get("is_situational") or raw_scope == "situational")
+        try:
+            contract_version = int(data.get("contract_version") or 1)
+        except (TypeError, ValueError):
+            contract_version = 1
 
         return cls(
             speaker=speaker,
@@ -60,6 +71,13 @@ class AddressingUpdateDelta:
             confidence=confidence,
             evidence_quote=str(data.get("evidence_quote") or data.get("evidence") or "").strip(),
             is_situational=is_sit,
+            source_forms=list(data.get("source_forms") or []),
+            social_basis=list(data.get("social_basis") or []),
+            scope=raw_scope if raw_scope in {"durable", "situational"} else "durable",
+            contract_version=contract_version,
+            dialogue_turn_id=str(data.get("dialogue_turn_id") or "").strip(),
+            action=str(data.get("action") or "upsert").strip().lower(),
+            provenance=str(data.get("provenance") or "unknown").strip(),
         )
 
     def to_dict(self) -> Dict[str, Any]:

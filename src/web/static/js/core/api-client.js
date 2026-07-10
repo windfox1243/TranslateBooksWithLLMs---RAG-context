@@ -133,6 +133,15 @@ export const ApiClient = {
     },
 
     /**
+     * Get structured directed-addressing state for a translation job.
+     * @param {string} translationId - Translation ID
+     * @returns {Promise<Object>} Addressing rules and evidence
+     */
+    async getAddressingRules(translationId) {
+        return await apiRequest(`/api/translation/${translationId}/addressing-rules`);
+    },
+
+    /**
      * Get all active translations
      * @returns {Promise<Object>} Active translations list
      */

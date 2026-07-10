@@ -2,13 +2,12 @@
 Deterministic merge policy engine for directed addressing updates.
 """
 
-import logging
+from dataclasses import replace
 from typing import Optional, Dict, Any, List, Callable, Iterable
-from src.utils.context_schema import AddressingUpdateDelta, AddressingRuleState
+from src.utils.context_schema import AddressingUpdateDelta
 from src.persistence.database import Database
+from src.utils.progress_logging import emit_progress_log
 import src.config as config
-
-logger = logging.getLogger("context_merge_engine")
 
 # Hierarchy of registers for stability comparison
 REGISTER_HIERARCHY = {
@@ -32,6 +31,11 @@ TRUSTED_PAIR_SOURCES = {
 VI_SENIOR_FORMS = {"anh", "chị", "thầy", "cô", "sếp", "bác", "chú", "ông", "bà", "ngài"}
 VI_JUNIOR_FORMS = {"em", "cháu", "con", "hậu bối"}
 VI_PEER_FORMS = {"cậu", "bạn", "tớ", "mình", "tao", "mày"}
+_SOURCE_KINSHIP_TERMS = {
+    "brother", "sister", "older brother", "older sister", "younger brother",
+    "younger sister", "teacher", "senior", "junior", "master", "father",
+    "mother", "mom", "dad",
+}
 
 
 def _norm(value: Any) -> str:
@@ -77,6 +81,37 @@ def _dialogue_state_pair(dialogue_attribution: Optional[Dict[str, Any]]) -> tupl
     return speaker, addressee
 
 
+def _source_form_supported(source_form: str, source_text: str, evidence: str) -> bool:
+    form = _norm(source_form)
+    if not form:
+        return False
+    return form in _norm(source_text) and (
+        not evidence or _norm(evidence) in _norm(source_text)
+    )
+
+
+def _untranslated_generic_vocative(delta: AddressingUpdateDelta, target_language: str) -> bool:
+    try:
+        from src.utils.language_profiles import get_language_profile
+
+        profile = get_language_profile(target_language)
+    except Exception:
+        profile = None
+    if not profile or profile.addressing_family != "vietnamese":
+        return False
+    vocative = _norm(delta.vocative)
+    source_forms = {
+        _norm(item.get("text"))
+        for item in delta.source_forms
+        if isinstance(item, dict)
+    }
+    return bool(
+        vocative
+        and vocative in source_forms
+        and vocative in _SOURCE_KINSHIP_TERMS
+    )
+
+
 def _vi_pair_direction(self_pronoun: str, target_pronoun: str) -> str:
     self_key = _norm(self_pronoun)
     target_key = _norm(target_pronoun)
@@ -118,6 +153,8 @@ class ContextMergeEngine:
         known_character_names: Optional[Iterable[str]] = None,
         active_character_names: Optional[Iterable[str]] = None,
         dialogue_attribution: Optional[Dict[str, Any]] = None,
+        source_text: str = "",
+        source_language: str = "",
     ) -> bool:
         """
         Evaluate and merge a single AddressingUpdateDelta into persistent database state.
@@ -142,7 +179,6 @@ class ContextMergeEngine:
                 f"Rejected addressing update for {delta.speaker} -> {delta.addressee} "
                 f"[chunk {chunk_index + 1}]: {reason}"
             )
-            logger.info(f"[Merge Engine] {msg}")
             self.db.add_context_audit_log(
                 translation_id=translation_id,
                 chunk_index=chunk_index,
@@ -164,8 +200,21 @@ class ContextMergeEngine:
                 evidence_quote=delta.evidence_quote,
                 confidence=delta.confidence,
             )
-            if log_callback:
-                log_callback("addressing_rejected", msg)
+            emit_progress_log(
+                log_callback,
+                "addressing_rejected",
+                msg,
+                level="warning",
+                layer="db_addressing",
+                chunk_index=chunk_index,
+                data={
+                    "speaker": delta.speaker,
+                    "addressee": delta.addressee,
+                    "reason": reason,
+                    "confidence": delta.confidence,
+                    "trigger_source": trigger_source,
+                },
+            )
             return False
 
         try:
@@ -198,6 +247,42 @@ class ContextMergeEngine:
                 "hierarchy": "unknown",
                 "edges": [],
             }
+
+        v2_source_supported = False
+        if delta.contract_version >= 2 and not trusted_pair_source:
+            source_forms = [
+                item for item in delta.source_forms
+                if isinstance(item, dict) and str(item.get("text") or "").strip()
+            ]
+            if not source_forms:
+                return reject(
+                    "context contract v2 requires at least one exact source form."
+                )
+            unsupported = [
+                str(item.get("text") or "").strip()
+                for item in source_forms
+                if not _source_form_supported(
+                    str(item.get("text") or ""),
+                    source_text,
+                    str(item.get("evidence_quote") or delta.evidence_quote or ""),
+                )
+            ]
+            if unsupported:
+                return reject(
+                    "source-form evidence is not present in the source chunk: "
+                    + ", ".join(unsupported[:3])
+                )
+            v2_source_supported = True
+            strong_evidence = True
+
+        if (
+            delta.contract_version >= 2
+            and _untranslated_generic_vocative(delta, target_language)
+        ):
+            return reject(
+                "target vocative preserves an untranslated generic source-language "
+                "kinship/title term."
+            )
 
         if requires_paired_forms and _is_unspecified(delta.self_pronoun):
             return reject(
@@ -271,9 +356,22 @@ class ContextMergeEngine:
                 and expected_direction
                 and incoming_direction != expected_direction
             ):
-                return reject(
-                    "paired address hierarchy contradicts the accepted relationship graph "
-                    f"({graph_hierarchy})."
+                explicit_scene_override = bool(
+                    graph_support.get("derived")
+                    and v2_source_supported
+                    and delta.scope == "situational"
+                )
+                if not explicit_scene_override:
+                    return reject(
+                        "paired address hierarchy contradicts the accepted relationship graph "
+                        f"({graph_hierarchy})."
+                    )
+                delta = replace(
+                    delta,
+                    social_basis=list(dict.fromkeys([
+                        *delta.social_basis,
+                        "explicit scene-level source address overrides derived default",
+                    ])),
                 )
 
         # Rule 1: User Lock Override
@@ -296,8 +394,41 @@ class ContextMergeEngine:
             if (
                 old_self == delta.self_pronoun
                 and old_second == delta.second_pronoun
+                and _norm(existing.get("vocative")) == _norm(delta.vocative)
                 and old_register == new_register
+                and list(existing.get("social_basis") or [])
+                == list(delta.social_basis or [])
+                and _norm(existing.get("scope")) == _norm(delta.scope)
             ):
+                for source_form in delta.source_forms:
+                    if isinstance(source_form, dict):
+                        db_form = str(source_form.get("text") or "").strip()
+                        if db_form:
+                            self.db.add_addressing_evidence(
+                                translation_id,
+                                delta.speaker,
+                                delta.addressee,
+                                db_form,
+                                usage=str(source_form.get("usage") or "direct_address"),
+                                source_language=str(
+                                    source_form.get("source_language")
+                                    or source_language
+                                    or ""
+                                ),
+                                evidence_quote=str(
+                                    source_form.get("evidence_quote")
+                                    or delta.evidence_quote
+                                    or ""
+                                ),
+                                scope=str(source_form.get("scope") or delta.scope),
+                                confidence=float(
+                                    source_form.get("confidence")
+                                    or delta.confidence
+                                ),
+                                provenance=delta.provenance or trigger_source,
+                                dialogue_turn_id=delta.dialogue_turn_id,
+                                chunk_index=chunk_index,
+                            )
                 return False
 
             old_rank = REGISTER_HIERARCHY.get(old_register, 3)
@@ -354,6 +485,10 @@ class ContextMergeEngine:
             "vocative": delta.vocative,
             "register": delta.register,
             "confidence": delta.confidence,
+            "source_forms": list(delta.source_forms or []),
+            "social_basis": list(delta.social_basis or []),
+            "scope": delta.scope,
+            "contract_version": delta.contract_version,
         }
 
         success = self.db.upsert_addressing_rule(
@@ -364,12 +499,43 @@ class ContextMergeEngine:
             target_pronoun=delta.second_pronoun,
             vocative=delta.vocative,
             register=delta.register,
+            social_basis=list(delta.social_basis or []),
+            scope=delta.scope,
+            contract_version=delta.contract_version,
             confidence=delta.confidence,
             is_locked=0 if not existing else existing.get("is_locked", 0),
             chunk_index=chunk_index,
         )
 
         if success:
+            for source_form in delta.source_forms:
+                if not isinstance(source_form, dict):
+                    continue
+                db_form = str(source_form.get("text") or "").strip()
+                if not db_form:
+                    continue
+                self.db.add_addressing_evidence(
+                    translation_id,
+                    delta.speaker,
+                    delta.addressee,
+                    db_form,
+                    usage=str(source_form.get("usage") or "direct_address"),
+                    source_language=str(
+                        source_form.get("source_language") or source_language or ""
+                    ),
+                    evidence_quote=str(
+                        source_form.get("evidence_quote")
+                        or delta.evidence_quote
+                        or ""
+                    ),
+                    scope=str(source_form.get("scope") or delta.scope),
+                    confidence=float(
+                        source_form.get("confidence") or delta.confidence
+                    ),
+                    provenance=delta.provenance or trigger_source,
+                    dialogue_turn_id=delta.dialogue_turn_id,
+                    chunk_index=chunk_index,
+                )
             self.db.add_context_audit_log(
                 translation_id=translation_id,
                 chunk_index=chunk_index,
@@ -385,9 +551,20 @@ class ContextMergeEngine:
                 f"Updated addressing rule: {delta.speaker} -> {delta.addressee} "
                 f"('{delta.self_pronoun}' / '{delta.second_pronoun}') [chunk {chunk_index + 1}]"
             )
-            logger.info(f"[Merge Engine] {merged_msg}")
-            if log_callback:
-                log_callback("addressing_merged", merged_msg)
+            emit_progress_log(
+                log_callback,
+                "addressing_merged",
+                merged_msg,
+                layer="db_addressing",
+                chunk_index=chunk_index,
+                data={
+                    "speaker": delta.speaker,
+                    "addressee": delta.addressee,
+                    "confidence": delta.confidence,
+                    "trigger_source": trigger_source,
+                    "source_form_count": len(delta.source_forms),
+                },
+            )
             return True
 
         return False
