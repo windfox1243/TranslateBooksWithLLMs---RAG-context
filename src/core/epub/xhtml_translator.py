@@ -75,6 +75,14 @@ from src.utils.db_addressing import (
     sync_context_update_addressing_to_db,
     sync_markdown_addressing_to_db,
 )
+from src.utils.relationship_sync import (
+    apply_relationship_graph_to_session,
+    build_relationship_prompt_context,
+    judge_ambiguous_relationship_candidates,
+    resolve_relationship_reasoning_mode,
+    sync_context_update_relationships_to_db,
+    sync_markdown_relationships_to_db,
+)
 
 
 def _log_error(log_callback: Optional[Callable], event_name: str, message: str):
@@ -890,6 +898,15 @@ async def _translate_all_chunks_with_checkpoint(
 
     if prompt_options is None:
         prompt_options = {}
+    relationship_mode = resolve_relationship_reasoning_mode(prompt_options)
+    if (global_completed_chunks or 0) == 0:
+        emit_progress_log(
+            log_callback,
+            "relationship_reasoning_mode",
+            f"Relationship reasoning mode: {relationship_mode}.",
+            layer="relationship_reasoning",
+            data={"mode": relationship_mode, "contract_version": "1.0"},
+        )
 
     novel_context_file = prompt_options.get('novel_context_file')
     auto_update_context = prompt_options.get('auto_update_context', False)
@@ -919,6 +936,8 @@ async def _translate_all_chunks_with_checkpoint(
     latest_restored_context_global_idx = None
     checkpoint_rows = []
     checkpoint_context_data_by_global_index = {}
+    pending_db_addressing_context_by_index = {}
+    pending_relationship_context_by_index = {}
     if checkpoint_manager and translation_id and hasattr(checkpoint_manager, 'db'):
         checkpoint_rows = checkpoint_manager.db.get_chunks(translation_id) or []
         for row in checkpoint_rows:
@@ -1083,6 +1102,26 @@ async def _translate_all_chunks_with_checkpoint(
             checkpoint_manager
             and translation_id
             and hasattr(checkpoint_manager, "db")
+            and relationship_mode != "off"
+        ):
+            sync_markdown_relationships_to_db(
+                translation_id=translation_id,
+                db=checkpoint_manager.db,
+                context_or_dynamic_state=context_session.content,
+                target_language=target_language,
+                chunk_index=global_completed_chunks or 0,
+                trigger_source="job_context_load",
+                log_callback=log_callback,
+            )
+            apply_relationship_graph_to_session(
+                context_session,
+                translation_id,
+                checkpoint_manager.db,
+            )
+        if (
+            checkpoint_manager
+            and translation_id
+            and hasattr(checkpoint_manager, "db")
             and prompt_options.get("use_db_directed_addressing", True)
         ):
             sync_markdown_addressing_to_db(
@@ -1207,6 +1246,7 @@ async def _translate_all_chunks_with_checkpoint(
                     f"Analyzing source context for chunk {i+1} before translation...",
                 )
             try:
+                relationship_fallback_context = context_session.content
                 change_logs = await context_session.analyze_source(
                     llm_client=llm_client,
                     model_name=model_name,
@@ -1221,6 +1261,72 @@ async def _translate_all_chunks_with_checkpoint(
                     log_callback("novel_context_updated", f"Novel context prepared for chunk {i+1}.")
                     for change_log in change_logs:
                         log_callback("novel_context_log", change_log)
+                if (
+                    checkpoint_manager
+                    and translation_id
+                    and hasattr(checkpoint_manager, "db")
+                    and prompt_options.get("use_db_directed_addressing", True)
+                ):
+                    pending_db_addressing_context_by_index[i] = {
+                        "content": context_session.content,
+                        "dialogue_attribution": context_session.dialogue_attribution,
+                    }
+                if (
+                    checkpoint_manager
+                    and translation_id
+                    and hasattr(checkpoint_manager, "db")
+                    and relationship_mode != "off"
+                ):
+                    locked_facts = [
+                        edge for edge in checkpoint_manager.db.get_relationship_edges(
+                            translation_id,
+                            statuses=["accepted"],
+                        )
+                        if edge.get("is_locked")
+                    ]
+                    judged_candidates = await judge_ambiguous_relationship_candidates(
+                        llm_client=llm_client,
+                        candidates=context_session.relationship_candidates,
+                        source_text=chunk['text'],
+                        model_name=model_name,
+                        enabled=bool(
+                            prompt_options.get("use_relationship_llm_judge", False)
+                        ),
+                        locked_facts=locked_facts,
+                        log_callback=log_callback,
+                    )
+                    pending_relationship_context_by_index[i] = {
+                        "content": context_session.content,
+                        "source_text": chunk['text'],
+                        "candidates": judged_candidates,
+                        "parser_status": context_session.relationship_parse_status,
+                        "active_character_names": [
+                            value
+                            for value in (
+                                context_session.dialogue_attribution.get("state_after") or {}
+                            ).values()
+                            if value and str(value).casefold() != "unknown"
+                        ],
+                    }
+                    if relationship_mode == "project":
+                        if prompt_options.get(
+                            "use_db_directed_addressing",
+                            True,
+                        ):
+                            apply_db_addressing_to_session(
+                                context_session,
+                                translation_id,
+                                checkpoint_manager.db,
+                                fallback_context=relationship_fallback_context,
+                            )
+                        apply_relationship_graph_to_session(
+                            context_session,
+                            translation_id,
+                            checkpoint_manager.db,
+                            fallback_context=relationship_fallback_context,
+                        )
+                        context_session.save()
+                if log_callback:
                     log_callback(
                         "novel_context_state",
                         "Context updated",
@@ -1229,25 +1335,6 @@ async def _translate_all_chunks_with_checkpoint(
                             "content": context_session.content,
                             "filename": context_session.path.name,
                         },
-                    )
-                if (
-                    checkpoint_manager
-                    and translation_id
-                    and hasattr(checkpoint_manager, "db")
-                    and prompt_options.get("use_db_directed_addressing", True)
-                ):
-                    sync_context_update_addressing_to_db(
-                        translation_id=translation_id,
-                        db=checkpoint_manager.db,
-                        updated_context_or_dynamic_state=context_session.content,
-                        target_language=target_language,
-                        chunk_index=global_chunk_idx,
-                        log_callback=log_callback,
-                    )
-                    apply_db_addressing_to_session(
-                        context_session,
-                        translation_id,
-                        checkpoint_manager.db,
                     )
             except Exception as e:
                 if log_callback:
@@ -1267,7 +1354,11 @@ async def _translate_all_chunks_with_checkpoint(
                 if disk_global_lore:
                     prompt_options['novel_context'] = build_novel_context(
                         disk_global_lore,
-                        current_dynamic_state or "",
+                        (
+                            context_session.dynamic_state
+                            if context_session
+                            else current_dynamic_state or ""
+                        ),
                     )
             except Exception:
                 pass
@@ -1281,6 +1372,16 @@ async def _translate_all_chunks_with_checkpoint(
         )
         if directed_context:
             chunk_prompt_options["directed_addressing_context"] = directed_context
+        relationship_context = build_relationship_prompt_context(
+            translation_id=translation_id or "",
+            db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
+            target_language=target_language,
+            prompt_options=chunk_prompt_options,
+            reference_text=chunk['text'],
+            log_callback=log_callback,
+        )
+        if relationship_context:
+            chunk_prompt_options["relationship_context"] = relationship_context
         return await translate_chunk_with_fallback(
             chunk_text=chunk['text'],
             local_tag_map=chunk['local_tag_map'],
@@ -1331,8 +1432,61 @@ async def _translate_all_chunks_with_checkpoint(
             )
 
         if succeeded:
+            pending = pending_db_addressing_context_by_index.pop(i, None)
+            if (
+                pending
+                and checkpoint_manager
+                and translation_id
+                and hasattr(checkpoint_manager, "db")
+                and context_session
+                and prompt_options.get("use_db_directed_addressing", True)
+            ):
+                global_chunk_idx = _global_chunk_index(i)
+                sync_context_update_addressing_to_db(
+                    translation_id=translation_id,
+                    db=checkpoint_manager.db,
+                    updated_context_or_dynamic_state=pending["content"],
+                    target_language=target_language,
+                    chunk_index=global_chunk_idx,
+                    log_callback=log_callback,
+                    dialogue_attribution=pending.get("dialogue_attribution"),
+                )
+                apply_db_addressing_to_session(
+                    context_session,
+                    translation_id,
+                    checkpoint_manager.db,
+                )
+            pending_relationship = pending_relationship_context_by_index.pop(i, None)
+            if (
+                pending_relationship
+                and checkpoint_manager
+                and translation_id
+                and hasattr(checkpoint_manager, "db")
+                and context_session
+                and relationship_mode != "off"
+            ):
+                sync_context_update_relationships_to_db(
+                    translation_id=translation_id,
+                    db=checkpoint_manager.db,
+                    updated_context_or_dynamic_state=pending_relationship["content"],
+                    source_text=pending_relationship["source_text"],
+                    candidates=pending_relationship.get("candidates"),
+                    parser_status=pending_relationship.get("parser_status", "absent"),
+                    target_language=target_language,
+                    chunk_index=_global_chunk_index(i),
+                    active_character_names=pending_relationship.get("active_character_names"),
+                    log_callback=log_callback,
+                )
+                apply_relationship_graph_to_session(
+                    context_session,
+                    translation_id,
+                    checkpoint_manager.db,
+                )
+                context_session.save()
             failed_indices.discard(i)
         else:
+            pending_db_addressing_context_by_index.pop(i, None)
+            pending_relationship_context_by_index.pop(i, None)
             failed_indices.add(i)
         stats.failed_chunks = len(failed_indices)
         stats.processed_chunks = len(translated_chunks)

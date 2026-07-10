@@ -1,0 +1,829 @@
+"""Deterministic relationship graph validation and merge engine."""
+
+from __future__ import annotations
+
+import inspect
+import json
+import re
+from dataclasses import replace
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+
+from src.persistence.database import Database
+from src.utils.progress_logging import emit_progress_log
+from src.utils.relationship_schema import (
+    ASYMMETRIC_RELATIONSHIP_INVERSES,
+    NON_CHARACTER_ENTITY_TYPES,
+    SYMMETRIC_RELATIONSHIP_TYPES,
+    RelationshipCandidate,
+    RelationshipJudgeResult,
+    RelationshipMergeDecision,
+    clean_relationship_text,
+    normalize_relationship_name,
+)
+from src.utils.text_matching import active_label_matches_name, reference_mentions_label
+
+
+TRUSTED_RELATIONSHIP_PROVENANCE = frozenset({
+    "db_addressing",
+    "job_context_load",
+    "manual",
+    "manual_context",
+    "markdown_context",
+    "relationship_markdown",
+    "rest_api",
+    "user_manual",
+})
+
+_HARD_CONFLICTS = {
+    "parent": {"child", "romantic_partner", "sibling", "spouse"},
+    "child": {"parent", "romantic_partner", "sibling", "spouse"},
+    "sibling": {"child", "parent", "romantic_partner", "spouse"},
+    "spouse": {"child", "parent", "sibling"},
+    "romantic_partner": {"child", "parent", "sibling"},
+    "mentor": {"student"},
+    "student": {"mentor"},
+    "superior": {"subordinate"},
+    "subordinate": {"superior"},
+    "master": {"servant"},
+    "servant": {"master"},
+}
+
+
+def _names_match(candidate: str, known: str, language: str = "") -> bool:
+    if normalize_relationship_name(candidate) == normalize_relationship_name(known):
+        return True
+    return (
+        active_label_matches_name(candidate, known, language)
+        or active_label_matches_name(known, candidate, language)
+    )
+
+
+def _matches_any_name(value: str, names: Iterable[str], language: str = "") -> bool:
+    return any(_names_match(value, name, language) for name in names if name)
+
+
+def _quote_is_source_supported(quote: str, source_text: str) -> bool:
+    quote_key = normalize_relationship_name(quote)
+    source_key = normalize_relationship_name(source_text)
+    return bool(quote_key and source_key and quote_key in source_key)
+
+
+def _edge_changed(existing: Dict[str, Any], candidate: RelationshipCandidate) -> bool:
+    return any((
+        normalize_relationship_name(existing.get("direction")) != candidate.direction,
+        normalize_relationship_name(existing.get("hierarchy")) != candidate.hierarchy,
+        normalize_relationship_name(existing.get("intimacy")) != normalize_relationship_name(candidate.intimacy),
+        normalize_relationship_name(existing.get("register")) != normalize_relationship_name(candidate.register),
+        normalize_relationship_name(existing.get("details")) != normalize_relationship_name(candidate.details),
+    ))
+
+
+class RelationshipReasoningEngine:
+    """Validate, merge, quarantine, and audit structured relationship facts."""
+
+    def __init__(self, db: Optional[Database] = None, confidence_threshold: float = 0.72):
+        self.db = db or Database()
+        self.confidence_threshold = max(0.0, min(1.0, float(confidence_threshold)))
+
+    def _log(
+        self,
+        log_callback: Optional[Callable],
+        event: str,
+        message: str,
+        *,
+        level: str = "info",
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        emit_progress_log(
+            log_callback,
+            event,
+            message,
+            level=level,
+            layer="relationship_reasoning",
+            data=data or {},
+        )
+
+    def _record_conflict(
+        self,
+        translation_id: str,
+        chunk_index: int,
+        candidate: RelationshipCandidate,
+        *,
+        status: str,
+        validator: str,
+        reason: str,
+        severity: str = "warning",
+        edge_id: Optional[int] = None,
+        log_callback: Optional[Callable] = None,
+    ) -> RelationshipMergeDecision:
+        conflict_id = self.db.add_relationship_conflict(
+            translation_id=translation_id,
+            source_name=candidate.source,
+            target_name=candidate.target,
+            severity=severity,
+            validator=validator,
+            reason=reason,
+            remediation_hint=(
+                "Provide an exact source quote or correct the relationship manually; "
+                "locked user facts take precedence."
+            ),
+            candidate=candidate.to_dict(),
+            chunk_index=chunk_index,
+            edge_id=edge_id,
+        )
+        event = "relationship_quarantined" if status == "quarantined" else "relationship_rejected"
+        self._log(
+            log_callback,
+            event,
+            f"{status.title()} relationship {candidate.source} -> {candidate.target} "
+            f"[{candidate.relationship_type}, chunk {chunk_index + 1}]: {reason}",
+            level="warning",
+            data={
+                "chunk_index": chunk_index,
+                "source": candidate.source,
+                "target": candidate.target,
+                "relationship_type": candidate.relationship_type,
+                "validator": validator,
+                "reason": reason,
+                "confidence": candidate.confidence,
+                "provenance": candidate.provenance,
+            },
+        )
+        return RelationshipMergeDecision(
+            status=status,
+            reason=reason,
+            validator=validator,
+            edge_id=edge_id,
+            audit_id=conflict_id,
+        )
+
+    def record_parse_failure(
+        self,
+        translation_id: str,
+        chunk_index: int,
+        parser_status: str,
+        *,
+        log_callback: Optional[Callable] = None,
+    ) -> RelationshipMergeDecision:
+        candidate = RelationshipCandidate(
+            source="<context-update>",
+            target="<relationship-contract>",
+            relationship_type="associated",
+            confidence=0.0,
+            provenance="llm_context",
+            parser_status=parser_status,
+        )
+        return self._record_conflict(
+            translation_id,
+            chunk_index,
+            candidate,
+            status="quarantined",
+            validator="relationship_contract",
+            reason=f"Relationship candidate contract could not be parsed ({parser_status}).",
+            severity="error",
+            log_callback=log_callback,
+        )
+
+    def register_node(
+        self,
+        translation_id: str,
+        canonical_name: str,
+        *,
+        aliases: Optional[List[str]] = None,
+        entity_type: str = "character",
+        is_locked: bool = False,
+    ) -> Optional[int]:
+        normalized = normalize_relationship_name(canonical_name)
+        if not normalized:
+            return None
+        return self.db.upsert_relationship_node(
+            translation_id=translation_id,
+            canonical_name=clean_relationship_text(canonical_name, 160),
+            normalized_name=normalized,
+            aliases=[clean_relationship_text(alias, 160) for alias in aliases or [] if alias],
+            entity_type=entity_type,
+            is_locked=int(bool(is_locked)),
+        )
+
+    def register_alias(
+        self,
+        translation_id: str,
+        canonical_name: str,
+        alias: str,
+        *,
+        alias_entity_type: str = "character",
+        chunk_index: int = 0,
+        log_callback: Optional[Callable] = None,
+    ) -> bool:
+        node = self.db.get_relationship_node_by_name(
+            translation_id,
+            normalize_relationship_name(canonical_name),
+        )
+        if not node:
+            return False
+        if node.get("entity_type") != "character" or alias_entity_type in NON_CHARACTER_ENTITY_TYPES:
+            candidate = RelationshipCandidate(
+                source=alias,
+                target=canonical_name,
+                relationship_type="associated",
+                source_entity_type=alias_entity_type,
+                provenance="markdown_context",
+                confidence=1.0,
+            )
+            self._record_conflict(
+                translation_id,
+                chunk_index,
+                candidate,
+                status="rejected",
+                validator="entity_type",
+                reason="Objects, weapons, items, skills, and system terms cannot be character identity aliases.",
+                severity="error",
+                log_callback=log_callback,
+            )
+            return False
+        return self.db.add_relationship_node_alias(
+            translation_id,
+            node["normalized_name"],
+            clean_relationship_text(alias, 160),
+        )
+
+    def _resolve_node(
+        self,
+        translation_id: str,
+        name: str,
+        entity_type: str,
+        known_character_names: Iterable[str],
+        language: str,
+        trusted: bool,
+    ) -> Optional[Dict[str, Any]]:
+        node = self.db.get_relationship_node_by_name(
+            translation_id,
+            normalize_relationship_name(name),
+        )
+        if node:
+            return node
+        if entity_type != "character":
+            return None
+        if not trusted and not _matches_any_name(name, known_character_names, language):
+            return None
+        node_id = self.register_node(
+            translation_id,
+            name,
+            entity_type=entity_type,
+        )
+        if node_id is None:
+            return None
+        return self.db.get_relationship_node_by_name(
+            translation_id,
+            normalize_relationship_name(name),
+        )
+
+    def _quarantine_edge(
+        self,
+        translation_id: str,
+        chunk_index: int,
+        candidate: RelationshipCandidate,
+        source_node: Optional[Dict[str, Any]],
+        target_node: Optional[Dict[str, Any]],
+    ) -> Optional[int]:
+        if not source_node or not target_node:
+            return None
+        existing = self.db.get_relationship_edges_for_pair(
+            translation_id,
+            source_node["normalized_name"],
+            target_node["normalized_name"],
+            statuses=["accepted"],
+        )
+        if any(edge.get("relationship_type") == candidate.relationship_type for edge in existing):
+            return None
+        return self.db.upsert_relationship_edge(
+            translation_id=translation_id,
+            source_node_id=source_node["id"],
+            target_node_id=target_node["id"],
+            relationship_type=candidate.relationship_type,
+            direction=candidate.direction,
+            scope=candidate.scope,
+            hierarchy=candidate.hierarchy,
+            intimacy=candidate.intimacy,
+            register=candidate.register,
+            confidence=candidate.confidence,
+            status="quarantined",
+            is_locked=0,
+            chunk_index=chunk_index,
+            provenance=candidate.provenance,
+            details=candidate.details,
+        )
+
+    def merge_candidate(
+        self,
+        translation_id: str,
+        chunk_index: int,
+        candidate: RelationshipCandidate,
+        *,
+        source_text: str = "",
+        known_character_names: Optional[Iterable[str]] = None,
+        active_character_names: Optional[Iterable[str]] = None,
+        language: str = "",
+        log_callback: Optional[Callable] = None,
+    ) -> RelationshipMergeDecision:
+        """Validate and merge one relationship candidate into persistent state."""
+
+        known_names = list(known_character_names or [])
+        active_names = list(active_character_names or [])
+        trusted = candidate.provenance in TRUSTED_RELATIONSHIP_PROVENANCE
+
+        if not candidate.source or not candidate.target:
+            return self._record_conflict(
+                translation_id, chunk_index, candidate,
+                status="rejected", validator="identity",
+                reason="Relationship endpoints must both be named.",
+                log_callback=log_callback,
+            )
+        if normalize_relationship_name(candidate.source) == normalize_relationship_name(candidate.target):
+            return self._record_conflict(
+                translation_id, chunk_index, candidate,
+                status="rejected", validator="identity",
+                reason="A relationship edge cannot connect a character to itself.",
+                log_callback=log_callback,
+            )
+        if (
+            candidate.source_entity_type in NON_CHARACTER_ENTITY_TYPES
+            or candidate.target_entity_type in NON_CHARACTER_ENTITY_TYPES
+        ):
+            return self._record_conflict(
+                translation_id, chunk_index, candidate,
+                status="rejected", validator="entity_type",
+                reason="Only character nodes can own relationship edges.",
+                severity="error", log_callback=log_callback,
+            )
+
+        source_node = self._resolve_node(
+            translation_id, candidate.source, candidate.source_entity_type,
+            known_names + active_names, language, trusted,
+        )
+        target_node = self._resolve_node(
+            translation_id, candidate.target, candidate.target_entity_type,
+            known_names + active_names, language, trusted,
+        )
+        if not source_node or not target_node:
+            edge_id = self._quarantine_edge(
+                translation_id, chunk_index, candidate, source_node, target_node,
+            )
+            return self._record_conflict(
+                translation_id, chunk_index, candidate,
+                status="quarantined", validator="known_character",
+                reason="Relationship endpoints do not resolve to trusted canonical characters.",
+                edge_id=edge_id, log_callback=log_callback,
+            )
+        if (
+            source_node.get("entity_type") != "character"
+            or target_node.get("entity_type") != "character"
+        ):
+            return self._record_conflict(
+                translation_id, chunk_index, candidate,
+                status="rejected", validator="entity_type",
+                reason="A stored non-character entity cannot participate in a character relationship.",
+                severity="error", log_callback=log_callback,
+            )
+
+        candidate = replace(
+            candidate,
+            source=source_node["canonical_name"],
+            target=target_node["canonical_name"],
+        )
+        if candidate.direction == "symmetric" and source_node["id"] > target_node["id"]:
+            source_node, target_node = target_node, source_node
+            candidate = replace(
+                candidate,
+                source=source_node["canonical_name"],
+                target=target_node["canonical_name"],
+            )
+
+        pair_edges = self.db.get_relationship_edges_for_pair(
+            translation_id,
+            source_node["normalized_name"],
+            target_node["normalized_name"],
+            include_reverse=True,
+        )
+        same_edge = next((
+            edge for edge in pair_edges
+            if edge["source_node_id"] == source_node["id"]
+            and edge["target_node_id"] == target_node["id"]
+            and edge.get("relationship_type") == candidate.relationship_type
+            and edge.get("scope") == candidate.scope
+        ), None)
+
+        if candidate.action == "delete":
+            deletable_edges = [
+                edge for edge in pair_edges
+                if edge.get("relationship_type") != "addressing"
+            ]
+            if not deletable_edges:
+                return RelationshipMergeDecision(
+                    status="unchanged", reason="Relationship edge does not exist.",
+                    validator="delete", edge_id=None,
+                )
+            locked_edge = next(
+                (edge for edge in deletable_edges if edge.get("is_locked")),
+                None,
+            )
+            if locked_edge:
+                return self._record_conflict(
+                    translation_id, chunk_index, candidate,
+                    status="rejected", validator="lock",
+                    reason="Relationship edge is locked by the user.",
+                    severity="error", edge_id=locked_edge["id"],
+                    log_callback=log_callback,
+                )
+            deleted_ids = [
+                edge["id"] for edge in deletable_edges
+                if self.db.delete_relationship_edge(translation_id, edge["id"])
+            ]
+            return RelationshipMergeDecision(
+                status="accepted" if deleted_ids else "rejected",
+                reason=(
+                    f"Deleted {len(deleted_ids)} relationship edge(s)."
+                    if deleted_ids
+                    else "Relationship edge could not be deleted."
+                ),
+                validator="delete",
+                edge_id=deleted_ids[0] if deleted_ids else None,
+            )
+
+        if same_edge and same_edge.get("is_locked"):
+            if not _edge_changed(same_edge, candidate):
+                return RelationshipMergeDecision(
+                    status="unchanged", reason="Locked relationship already matches.",
+                    validator="lock", edge_id=same_edge["id"],
+                )
+            return self._record_conflict(
+                translation_id, chunk_index, candidate,
+                status="rejected", validator="lock",
+                reason="Relationship edge is locked by the user.",
+                severity="error", edge_id=same_edge["id"],
+                log_callback=log_callback,
+            )
+
+        locked_pair = next((edge for edge in pair_edges if edge.get("is_locked")), None)
+        if locked_pair and locked_pair.get("relationship_type") != candidate.relationship_type:
+            return self._record_conflict(
+                translation_id, chunk_index, candidate,
+                status="rejected", validator="lock",
+                reason="A locked relationship fact already defines this character pair.",
+                severity="error", edge_id=locked_pair["id"],
+                log_callback=log_callback,
+            )
+
+        if candidate.scope == "durable" and not trusted:
+            if not candidate.evidence_quote:
+                edge_id = self._quarantine_edge(
+                    translation_id, chunk_index, candidate, source_node, target_node,
+                )
+                return self._record_conflict(
+                    translation_id, chunk_index, candidate,
+                    status="quarantined", validator="source_evidence",
+                    reason="A new durable LLM relationship requires an exact source evidence quote.",
+                    edge_id=edge_id, log_callback=log_callback,
+                )
+            if not _quote_is_source_supported(candidate.evidence_quote, source_text):
+                edge_id = self._quarantine_edge(
+                    translation_id, chunk_index, candidate, source_node, target_node,
+                )
+                return self._record_conflict(
+                    translation_id, chunk_index, candidate,
+                    status="quarantined", validator="source_evidence",
+                    reason="The proposed evidence quote is not present in the source chunk.",
+                    edge_id=edge_id, log_callback=log_callback,
+                )
+            participant_text = f"{candidate.evidence_quote}\n{source_text}"
+            source_supported = any(
+                reference_mentions_label(label, participant_text, language)
+                for label in [candidate.source, *(source_node.get("aliases") or [])]
+                if label
+            )
+            target_supported = any(
+                reference_mentions_label(label, participant_text, language)
+                for label in [candidate.target, *(target_node.get("aliases") or [])]
+                if label
+            )
+            if not (source_supported and target_supported):
+                edge_id = self._quarantine_edge(
+                    translation_id, chunk_index, candidate, source_node, target_node,
+                )
+                return self._record_conflict(
+                    translation_id, chunk_index, candidate,
+                    status="quarantined", validator="source_participants",
+                    reason="The source chunk does not explicitly identify both relationship participants.",
+                    edge_id=edge_id, log_callback=log_callback,
+                )
+
+        if not trusted and candidate.judge_decision == "reject":
+            edge_id = self._quarantine_edge(
+                translation_id, chunk_index, candidate, source_node, target_node,
+            )
+            return self._record_conflict(
+                translation_id, chunk_index, candidate,
+                status="quarantined", validator="llm_judge",
+                reason=(
+                    "Optional LLM evidence judge rejected the ambiguous candidate; "
+                    "manual review is required."
+                ),
+                edge_id=edge_id, log_callback=log_callback,
+            )
+
+        if not trusted and candidate.confidence < self.confidence_threshold:
+            edge_id = self._quarantine_edge(
+                translation_id, chunk_index, candidate, source_node, target_node,
+            )
+            return self._record_conflict(
+                translation_id, chunk_index, candidate,
+                status="quarantined", validator="confidence",
+                reason=(
+                    f"Confidence {candidate.confidence:.2f} is below the "
+                    f"{self.confidence_threshold:.2f} acceptance threshold."
+                ),
+                edge_id=edge_id, log_callback=log_callback,
+            )
+
+        if candidate.relationship_type in ASYMMETRIC_RELATIONSHIP_INVERSES:
+            expected_reverse = ASYMMETRIC_RELATIONSHIP_INVERSES[candidate.relationship_type]
+            for edge in pair_edges:
+                is_reverse = (
+                    edge["source_node_id"] == target_node["id"]
+                    and edge["target_node_id"] == source_node["id"]
+                    and edge.get("status") == "accepted"
+                )
+                if is_reverse and edge.get("relationship_type") != expected_reverse:
+                    return self._record_conflict(
+                        translation_id, chunk_index, candidate,
+                        status="rejected", validator="reverse_semantics",
+                        reason=(
+                            "Reverse relationship is incompatible: expected "
+                            f"'{expected_reverse}', found '{edge.get('relationship_type')}'."
+                        ),
+                        severity="error", edge_id=edge["id"],
+                        log_callback=log_callback,
+                    )
+
+        for edge in pair_edges:
+            if edge.get("status") != "accepted" or edge.get("scope") != "durable":
+                continue
+            existing_type = str(edge.get("relationship_type") or "")
+            same_direction = (
+                edge["source_node_id"] == source_node["id"]
+                and edge["target_node_id"] == target_node["id"]
+            )
+            if (
+                same_direction
+                and existing_type in _HARD_CONFLICTS.get(
+                    candidate.relationship_type,
+                    set(),
+                )
+            ):
+                return self._record_conflict(
+                    translation_id, chunk_index, candidate,
+                    status="rejected", validator="relationship_compatibility",
+                    reason=(
+                        f"Durable relationship '{candidate.relationship_type}' conflicts "
+                        f"with stored '{existing_type}'."
+                    ),
+                    severity="error", edge_id=edge["id"],
+                    log_callback=log_callback,
+                )
+            if (
+                edge["source_node_id"] == source_node["id"]
+                and edge["target_node_id"] == target_node["id"]
+                and edge.get("hierarchy") in {"source_senior", "source_junior"}
+                and candidate.hierarchy in {"source_senior", "source_junior"}
+                and edge.get("hierarchy") != candidate.hierarchy
+                and not trusted
+            ):
+                return self._record_conflict(
+                    translation_id, chunk_index, candidate,
+                    status="quarantined", validator="hierarchy_flip",
+                    reason="A durable seniority direction cannot flip without a trusted manual correction.",
+                    edge_id=edge["id"], log_callback=log_callback,
+                )
+
+        if same_edge and not _edge_changed(same_edge, candidate) and same_edge.get("status") == "accepted":
+            evidence_id = None
+            if candidate.evidence_quote:
+                evidence_id = self.db.add_relationship_evidence(
+                    translation_id=translation_id,
+                    edge_id=same_edge["id"],
+                    chunk_index=chunk_index,
+                    evidence_quote=candidate.evidence_quote,
+                    provenance=candidate.provenance,
+                    parser_status=candidate.parser_status,
+                    confidence=candidate.confidence,
+                    file_id=candidate.file_id,
+                    dialogue_turn_id=candidate.dialogue_turn_id,
+                )
+            return RelationshipMergeDecision(
+                status="unchanged", reason="Relationship already matches accepted graph state.",
+                validator="deduplication", edge_id=same_edge["id"], audit_id=evidence_id,
+            )
+
+        edge_id = self.db.upsert_relationship_edge(
+            translation_id=translation_id,
+            source_node_id=source_node["id"],
+            target_node_id=target_node["id"],
+            relationship_type=candidate.relationship_type,
+            direction=candidate.direction,
+            scope=candidate.scope,
+            hierarchy=candidate.hierarchy,
+            intimacy=candidate.intimacy,
+            register=candidate.register,
+            confidence=candidate.confidence,
+            status="accepted",
+            is_locked=0 if not same_edge else same_edge.get("is_locked", 0),
+            chunk_index=chunk_index,
+            provenance=candidate.provenance,
+            details=candidate.details,
+        )
+        if edge_id is None:
+            return self._record_conflict(
+                translation_id, chunk_index, candidate,
+                status="rejected", validator="persistence",
+                reason="Relationship graph persistence failed.",
+                severity="error", log_callback=log_callback,
+            )
+        evidence_id = self.db.add_relationship_evidence(
+            translation_id=translation_id,
+            edge_id=edge_id,
+            chunk_index=chunk_index,
+            evidence_quote=candidate.evidence_quote,
+            provenance=candidate.provenance,
+            parser_status=candidate.parser_status,
+            confidence=candidate.confidence,
+            file_id=candidate.file_id,
+            dialogue_turn_id=candidate.dialogue_turn_id,
+        )
+        self._log(
+            log_callback,
+            "relationship_accepted",
+            f"Accepted relationship {candidate.source} -> {candidate.target} "
+            f"[{candidate.relationship_type}, chunk {chunk_index + 1}].",
+            data={
+                "chunk_index": chunk_index,
+                "source": candidate.source,
+                "target": candidate.target,
+                "relationship_type": candidate.relationship_type,
+                "scope": candidate.scope,
+                "hierarchy": candidate.hierarchy,
+                "confidence": candidate.confidence,
+                "provenance": candidate.provenance,
+            },
+        )
+        return RelationshipMergeDecision(
+            status="accepted", reason="Relationship passed deterministic validation.",
+            validator="accepted", edge_id=edge_id, audit_id=evidence_id,
+        )
+
+    def merge_candidates(
+        self,
+        translation_id: str,
+        chunk_index: int,
+        candidates: Iterable[RelationshipCandidate],
+        **kwargs: Any,
+    ) -> List[RelationshipMergeDecision]:
+        return [
+            self.merge_candidate(
+                translation_id,
+                chunk_index,
+                candidate,
+                **kwargs,
+            )
+            for candidate in candidates
+            if candidate
+        ]
+
+
+def relationship_support_for_addressing(
+    db: Optional[Database],
+    translation_id: str,
+    speaker_name: str,
+    addressee_name: str,
+) -> Dict[str, Any]:
+    """Summarize accepted graph evidence relative to a directed addressing pair."""
+
+    if db is None or not translation_id:
+        return {"supported": False, "hierarchy": "unknown", "edges": []}
+    source_key = normalize_relationship_name(speaker_name)
+    target_key = normalize_relationship_name(addressee_name)
+    source_node = db.get_relationship_node_by_name(translation_id, source_key)
+    edges = db.get_relationship_edges_for_pair(
+        translation_id,
+        source_key,
+        target_key,
+        statuses=["accepted"],
+        include_reverse=True,
+    )
+    hierarchy = "unknown"
+    for edge in edges:
+        edge_hierarchy = str(edge.get("hierarchy") or "unknown")
+        direct = bool(
+            source_node
+            and edge.get("source_node_id") == source_node.get("id")
+        )
+        if not direct:
+            edge_hierarchy = {
+                "source_senior": "source_junior",
+                "source_junior": "source_senior",
+            }.get(edge_hierarchy, edge_hierarchy)
+        if edge_hierarchy in {"source_senior", "source_junior", "peer"}:
+            hierarchy = edge_hierarchy
+            break
+    return {
+        "supported": bool(edges),
+        "hierarchy": hierarchy,
+        "edges": edges,
+    }
+
+
+def relationship_candidate_needs_llm_judge(candidate: RelationshipCandidate) -> bool:
+    """Return whether optional semantic evidence classification may add value."""
+
+    return bool(
+        candidate.relationship_type == "associated"
+        or candidate.confidence < 0.85
+        or not candidate.evidence_quote
+        or candidate.hierarchy == "unknown"
+    )
+
+
+async def judge_relationship_candidate(
+    llm_client: Any,
+    candidate: RelationshipCandidate,
+    source_text: str,
+    *,
+    model_name: str = "",
+    locked_facts: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[RelationshipCandidate, RelationshipJudgeResult]:
+    """Ask an optional LLM judge to classify ambiguous evidence.
+
+    The result annotates confidence only. It never changes endpoints, creates
+    evidence, or bypasses deterministic validation and lock precedence.
+    """
+
+    contract = {
+        "decision": "support | reject | uncertain",
+        "confidence": 0.0,
+        "reason": "brief evidence classification",
+    }
+    prompt = (
+        "Classify whether the source excerpt explicitly supports the proposed "
+        "relationship. Do not infer from genre stereotypes or names. Return only "
+        "one JSON object matching this contract:\n"
+        f"{json.dumps(contract)}\n\n"
+        f"Candidate: {json.dumps(candidate.to_dict(), ensure_ascii=False)}\n"
+        f"Locked facts: {json.dumps(locked_facts or [], ensure_ascii=False)}\n"
+        f"Source excerpt: {str(source_text or '')[:4000]}"
+    )
+    system_prompt = (
+        "You are a conservative relationship evidence classifier. Locked facts "
+        "are immutable. Use 'uncertain' whenever both named participants and the "
+        "relationship direction are not explicit in the source."
+    )
+    if hasattr(llm_client, "generate_async"):
+        response = llm_client.generate_async(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            model=model_name,
+            temperature=0.0,
+        )
+    else:
+        response = llm_client.generate(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            model=model_name,
+            temperature=0.0,
+        )
+    if inspect.isawaitable(response):
+        response = await response
+    raw = str(getattr(response, "content", "") or "").strip()
+    fence = re.search(r"```(?:json)?\s*(.*?)```", raw, flags=re.DOTALL | re.IGNORECASE)
+    if fence:
+        raw = fence.group(1).strip()
+    match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+    try:
+        payload = json.loads(match.group(0) if match else raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        result = RelationshipJudgeResult("uncertain", 0.0, "Judge returned invalid JSON.", "invalid_json")
+        return candidate, result
+    decision = normalize_relationship_name(payload.get("decision"))
+    if decision not in {"support", "reject", "uncertain"}:
+        decision = "uncertain"
+    try:
+        confidence = max(0.0, min(1.0, float(payload.get("confidence", 0.0))))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    reason = clean_relationship_text(payload.get("reason"), 300)
+    result = RelationshipJudgeResult(decision, confidence, reason, "json")
+    judged = replace(
+        candidate,
+        confidence=max(candidate.confidence, confidence) if decision == "support" else candidate.confidence,
+        judge_decision=decision,
+        judge_reason=reason,
+    )
+    return judged, result

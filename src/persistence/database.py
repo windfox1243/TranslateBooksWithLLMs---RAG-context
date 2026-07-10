@@ -163,6 +163,93 @@ class Database:
                 )
             """)
 
+            # Structured relationship graph. These tables are additive so
+            # existing jobs and the directed-addressing API remain compatible.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_relationship_nodes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    translation_id TEXT NOT NULL,
+                    canonical_name TEXT NOT NULL,
+                    normalized_name TEXT NOT NULL,
+                    aliases JSON,
+                    entity_type TEXT NOT NULL DEFAULT 'character',
+                    is_locked INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(translation_id, normalized_name)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_relationship_edges (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    translation_id TEXT NOT NULL,
+                    source_node_id INTEGER NOT NULL,
+                    target_node_id INTEGER NOT NULL,
+                    relationship_type TEXT NOT NULL,
+                    direction TEXT NOT NULL DEFAULT 'symmetric',
+                    scope TEXT NOT NULL DEFAULT 'durable',
+                    hierarchy TEXT NOT NULL DEFAULT 'unknown',
+                    intimacy TEXT NOT NULL DEFAULT 'unknown',
+                    register TEXT NOT NULL DEFAULT 'neutral',
+                    confidence REAL NOT NULL DEFAULT 0.5,
+                    status TEXT NOT NULL DEFAULT 'accepted',
+                    is_locked INTEGER NOT NULL DEFAULT 0,
+                    last_chunk_index INTEGER NOT NULL DEFAULT 0,
+                    provenance TEXT NOT NULL DEFAULT 'unknown',
+                    details TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(
+                        translation_id, source_node_id, target_node_id,
+                        relationship_type, scope
+                    ),
+                    FOREIGN KEY (source_node_id)
+                        REFERENCES context_relationship_nodes(id) ON DELETE CASCADE,
+                    FOREIGN KEY (target_node_id)
+                        REFERENCES context_relationship_nodes(id) ON DELETE CASCADE
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_relationship_evidence (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    translation_id TEXT NOT NULL,
+                    edge_id INTEGER,
+                    chunk_index INTEGER NOT NULL DEFAULT 0,
+                    file_id TEXT,
+                    dialogue_turn_id TEXT,
+                    evidence_quote TEXT,
+                    provenance TEXT NOT NULL DEFAULT 'unknown',
+                    parser_status TEXT NOT NULL DEFAULT 'unknown',
+                    confidence REAL NOT NULL DEFAULT 0.5,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (edge_id)
+                        REFERENCES context_relationship_edges(id) ON DELETE CASCADE
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_relationship_conflicts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    translation_id TEXT NOT NULL,
+                    edge_id INTEGER,
+                    source_name TEXT NOT NULL,
+                    target_name TEXT NOT NULL,
+                    severity TEXT NOT NULL DEFAULT 'warning',
+                    validator TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    reason TEXT NOT NULL,
+                    remediation_hint TEXT,
+                    candidate_json JSON,
+                    chunk_index INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at TIMESTAMP,
+                    FOREIGN KEY (edge_id)
+                        REFERENCES context_relationship_edges(id) ON DELETE SET NULL
+                )
+            """)
+
             # Create indexes for performance
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_jobs_status
@@ -182,6 +269,26 @@ class Database:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_audit_translation
                 ON context_audit_logs(translation_id, chunk_index)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_relationship_nodes_translation
+                ON context_relationship_nodes(translation_id, normalized_name)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_relationship_edges_translation
+                ON context_relationship_edges(translation_id, status)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_relationship_evidence_edge
+                ON context_relationship_evidence(translation_id, edge_id, chunk_index)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_relationship_conflicts_translation
+                ON context_relationship_conflicts(translation_id, status, chunk_index)
             """)
 
             conn.commit()
@@ -693,6 +800,19 @@ class Database:
                 conn = self._get_connection()
                 cursor = conn.cursor()
 
+                for table in (
+                    "context_relationship_conflicts",
+                    "context_relationship_evidence",
+                    "context_relationship_edges",
+                    "context_relationship_nodes",
+                    "context_audit_logs",
+                    "context_addressing_rules",
+                    "context_entities",
+                ):
+                    cursor.execute(
+                        f"DELETE FROM {table} WHERE translation_id = ?",
+                        (translation_id,),
+                    )
                 cursor.execute(
                     "DELETE FROM translation_jobs WHERE translation_id = ?",
                     (translation_id,)
@@ -790,6 +910,27 @@ class Database:
                 print(f"Error setting addressing rule lock: {e}")
                 return False
 
+    def delete_addressing_rule(
+        self,
+        translation_id: str,
+        speaker_name: str,
+        addressee_name: str,
+    ) -> bool:
+        """Delete a directed addressing rule for a speaker-addressee pair."""
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    DELETE FROM context_addressing_rules
+                    WHERE translation_id = ? AND speaker_name = ? AND addressee_name = ?
+                """, (translation_id, speaker_name, addressee_name))
+                conn.commit()
+                return cursor.rowcount > 0
+            except Exception as e:
+                print(f"Error deleting addressing rule: {e}")
+                return False
+
     def add_context_audit_log(
         self,
         translation_id: str,
@@ -863,9 +1004,506 @@ class Database:
                 print(f"Error fetching context audit logs: {e}")
                 return []
 
+    def upsert_relationship_node(
+        self,
+        translation_id: str,
+        canonical_name: str,
+        normalized_name: str,
+        aliases: Optional[List[str]] = None,
+        entity_type: str = "character",
+        is_locked: int = 0,
+    ) -> Optional[int]:
+        """Create or update a relationship graph node and return its id."""
+
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, canonical_name, aliases, entity_type, is_locked
+                    FROM context_relationship_nodes
+                    WHERE translation_id = ? AND normalized_name = ?
+                """, (translation_id, normalized_name))
+                existing = cursor.fetchone()
+                merged_aliases = []
+                if existing and existing["aliases"]:
+                    try:
+                        merged_aliases.extend(json.loads(existing["aliases"]) or [])
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        pass
+                merged_aliases.extend(aliases or [])
+                seen = set()
+                merged_aliases = [
+                    alias for alias in merged_aliases
+                    if alias and not (
+                        str(alias).casefold() in seen
+                        or seen.add(str(alias).casefold())
+                    )
+                ]
+
+                if existing:
+                    locked = bool(existing["is_locked"])
+                    cursor.execute("""
+                        UPDATE context_relationship_nodes
+                        SET canonical_name = ?, aliases = ?, entity_type = ?,
+                            is_locked = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (
+                        existing["canonical_name"] if locked else canonical_name,
+                        json.dumps(merged_aliases, ensure_ascii=False),
+                        existing["entity_type"] if locked else entity_type,
+                        1 if locked else int(bool(is_locked)),
+                        existing["id"],
+                    ))
+                    node_id = int(existing["id"])
+                else:
+                    cursor.execute("""
+                        INSERT INTO context_relationship_nodes (
+                            translation_id, canonical_name, normalized_name,
+                            aliases, entity_type, is_locked
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        translation_id,
+                        canonical_name,
+                        normalized_name,
+                        json.dumps(merged_aliases, ensure_ascii=False),
+                        entity_type,
+                        int(bool(is_locked)),
+                    ))
+                    node_id = int(cursor.lastrowid)
+                conn.commit()
+                return node_id
+            except Exception as e:
+                print(f"Error upserting relationship node: {e}")
+                return None
+
+    def get_relationship_nodes(self, translation_id: str) -> List[Dict[str, Any]]:
+        """Return all relationship graph nodes for a translation job."""
+
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                rows = conn.execute("""
+                    SELECT id, canonical_name, normalized_name, aliases,
+                           entity_type, is_locked, created_at, updated_at
+                    FROM context_relationship_nodes
+                    WHERE translation_id = ?
+                    ORDER BY canonical_name
+                """, (translation_id,)).fetchall()
+                result = []
+                for row in rows:
+                    item = dict(row)
+                    try:
+                        item["aliases"] = json.loads(item.get("aliases") or "[]")
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        item["aliases"] = []
+                    result.append(item)
+                return result
+            except Exception as e:
+                print(f"Error getting relationship nodes: {e}")
+                return []
+
+    def get_relationship_node_by_name(
+        self,
+        translation_id: str,
+        normalized_name: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Resolve a node by an exact normalized canonical name or alias."""
+
+        wanted = str(normalized_name or "").casefold().strip()
+        for node in self.get_relationship_nodes(translation_id):
+            if str(node.get("normalized_name") or "").casefold() == wanted:
+                return node
+            if any(str(alias).casefold().strip() == wanted for alias in node.get("aliases") or []):
+                return node
+        return None
+
+    def add_relationship_node_alias(
+        self,
+        translation_id: str,
+        normalized_name: str,
+        alias: str,
+    ) -> bool:
+        """Attach an exact alias to an existing unlocked character node."""
+
+        node = self.get_relationship_node_by_name(translation_id, normalized_name)
+        if not node or node.get("is_locked"):
+            return False
+        aliases = list(node.get("aliases") or [])
+        if str(alias).casefold() not in {str(item).casefold() for item in aliases}:
+            aliases.append(alias)
+        return self.upsert_relationship_node(
+            translation_id=translation_id,
+            canonical_name=node["canonical_name"],
+            normalized_name=node["normalized_name"],
+            aliases=aliases,
+            entity_type=node.get("entity_type") or "character",
+            is_locked=node.get("is_locked", 0),
+        ) is not None
+
+    def upsert_relationship_edge(
+        self,
+        translation_id: str,
+        source_node_id: int,
+        target_node_id: int,
+        relationship_type: str,
+        direction: str,
+        scope: str,
+        hierarchy: str,
+        intimacy: str,
+        register: str,
+        confidence: float,
+        status: str,
+        is_locked: int,
+        chunk_index: int,
+        provenance: str,
+        details: str = "",
+    ) -> Optional[int]:
+        """Create or update a relationship graph edge and return its id."""
+
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO context_relationship_edges (
+                        translation_id, source_node_id, target_node_id,
+                        relationship_type, direction, scope, hierarchy,
+                        intimacy, register, confidence, status, is_locked,
+                        last_chunk_index, provenance, details
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(
+                        translation_id, source_node_id, target_node_id,
+                        relationship_type, scope
+                    ) DO UPDATE SET
+                        direction = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.direction ELSE excluded.direction END,
+                        hierarchy = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.hierarchy ELSE excluded.hierarchy END,
+                        intimacy = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.intimacy ELSE excluded.intimacy END,
+                        register = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.register ELSE excluded.register END,
+                        confidence = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.confidence ELSE excluded.confidence END,
+                        status = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.status ELSE excluded.status END,
+                        is_locked = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN 1 ELSE excluded.is_locked END,
+                        last_chunk_index = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.last_chunk_index ELSE excluded.last_chunk_index END,
+                        provenance = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.provenance ELSE excluded.provenance END,
+                        details = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.details ELSE excluded.details END,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (
+                    translation_id, source_node_id, target_node_id,
+                    relationship_type, direction, scope, hierarchy,
+                    intimacy, register, confidence, status, int(bool(is_locked)),
+                    chunk_index, provenance, details,
+                ))
+                cursor.execute("""
+                    SELECT id FROM context_relationship_edges
+                    WHERE translation_id = ? AND source_node_id = ?
+                      AND target_node_id = ? AND relationship_type = ? AND scope = ?
+                """, (
+                    translation_id, source_node_id, target_node_id,
+                    relationship_type, scope,
+                ))
+                row = cursor.fetchone()
+                conn.commit()
+                return int(row["id"]) if row else None
+            except Exception as e:
+                print(f"Error upserting relationship edge: {e}")
+                return None
+
+    def get_relationship_edges(
+        self,
+        translation_id: str,
+        statuses: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return relationship edges joined to canonical node names."""
+
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                query = """
+                    SELECT e.*, source.canonical_name AS source_name,
+                           source.normalized_name AS source_normalized_name,
+                           source.entity_type AS source_entity_type,
+                           target.canonical_name AS target_name,
+                           target.normalized_name AS target_normalized_name,
+                           target.entity_type AS target_entity_type
+                    FROM context_relationship_edges e
+                    JOIN context_relationship_nodes source ON source.id = e.source_node_id
+                    JOIN context_relationship_nodes target ON target.id = e.target_node_id
+                    WHERE e.translation_id = ?
+                """
+                params: List[Any] = [translation_id]
+                if statuses:
+                    query += " AND e.status IN ({})".format(
+                        ",".join("?" for _ in statuses)
+                    )
+                    params.extend(statuses)
+                query += " ORDER BY e.source_node_id, e.target_node_id, e.relationship_type"
+                return [dict(row) for row in conn.execute(query, params).fetchall()]
+            except Exception as e:
+                print(f"Error getting relationship edges: {e}")
+                return []
+
+    def get_relationship_edges_for_pair(
+        self,
+        translation_id: str,
+        source_normalized_name: str,
+        target_normalized_name: str,
+        statuses: Optional[List[str]] = None,
+        include_reverse: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Return exact node-pair edges, optionally including the reverse pair."""
+
+        source = self.get_relationship_node_by_name(translation_id, source_normalized_name)
+        target = self.get_relationship_node_by_name(translation_id, target_normalized_name)
+        if not source or not target:
+            return []
+        source_id = source["id"]
+        target_id = target["id"]
+        result = []
+        for edge in self.get_relationship_edges(translation_id, statuses=statuses):
+            direct = edge["source_node_id"] == source_id and edge["target_node_id"] == target_id
+            reverse = edge["source_node_id"] == target_id and edge["target_node_id"] == source_id
+            if direct or (include_reverse and reverse):
+                result.append(edge)
+        return result
+
+    def set_relationship_edge_lock(
+        self,
+        translation_id: str,
+        edge_id: int,
+        is_locked: bool,
+    ) -> bool:
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.execute("""
+                    UPDATE context_relationship_edges
+                    SET is_locked = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE translation_id = ? AND id = ?
+                """, (int(bool(is_locked)), translation_id, edge_id))
+                conn.commit()
+                return cursor.rowcount > 0
+            except Exception as e:
+                print(f"Error setting relationship edge lock: {e}")
+                return False
+
+    def set_relationship_edge_status(
+        self,
+        translation_id: str,
+        edge_id: int,
+        status: str,
+    ) -> bool:
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.execute("""
+                    UPDATE context_relationship_edges
+                    SET status = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE translation_id = ? AND id = ? AND is_locked = 0
+                """, (status, translation_id, edge_id))
+                conn.commit()
+                return cursor.rowcount > 0
+            except Exception as e:
+                print(f"Error setting relationship edge status: {e}")
+                return False
+
+    def delete_relationship_edge(self, translation_id: str, edge_id: int) -> bool:
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.execute("""
+                    DELETE FROM context_relationship_edges
+                    WHERE translation_id = ? AND id = ? AND is_locked = 0
+                """, (translation_id, edge_id))
+                conn.commit()
+                return cursor.rowcount > 0
+            except Exception as e:
+                print(f"Error deleting relationship edge: {e}")
+                return False
+
+    def add_relationship_evidence(
+        self,
+        translation_id: str,
+        edge_id: Optional[int],
+        chunk_index: int,
+        evidence_quote: str,
+        provenance: str,
+        parser_status: str,
+        confidence: float,
+        file_id: str = "",
+        dialogue_turn_id: str = "",
+    ) -> Optional[int]:
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.execute("""
+                    INSERT INTO context_relationship_evidence (
+                        translation_id, edge_id, chunk_index, file_id,
+                        dialogue_turn_id, evidence_quote, provenance,
+                        parser_status, confidence
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    translation_id, edge_id, chunk_index, file_id,
+                    dialogue_turn_id, evidence_quote, provenance,
+                    parser_status, confidence,
+                ))
+                conn.commit()
+                return int(cursor.lastrowid)
+            except Exception as e:
+                print(f"Error adding relationship evidence: {e}")
+                return None
+
+    def get_relationship_evidence(
+        self,
+        translation_id: str,
+        edge_id: Optional[int] = None,
+        limit: int = 200,
+    ) -> List[Dict[str, Any]]:
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                if edge_id is None:
+                    rows = conn.execute("""
+                        SELECT * FROM context_relationship_evidence
+                        WHERE translation_id = ? ORDER BY id DESC LIMIT ?
+                    """, (translation_id, limit)).fetchall()
+                else:
+                    rows = conn.execute("""
+                        SELECT * FROM context_relationship_evidence
+                        WHERE translation_id = ? AND edge_id = ?
+                        ORDER BY id DESC LIMIT ?
+                    """, (translation_id, edge_id, limit)).fetchall()
+                return [dict(row) for row in rows]
+            except Exception as e:
+                print(f"Error getting relationship evidence: {e}")
+                return []
+
+    def add_relationship_conflict(
+        self,
+        translation_id: str,
+        source_name: str,
+        target_name: str,
+        severity: str,
+        validator: str,
+        reason: str,
+        remediation_hint: str,
+        candidate: Optional[Dict[str, Any]],
+        chunk_index: int,
+        edge_id: Optional[int] = None,
+    ) -> Optional[int]:
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.execute("""
+                    INSERT INTO context_relationship_conflicts (
+                        translation_id, edge_id, source_name, target_name,
+                        severity, validator, status, reason,
+                        remediation_hint, candidate_json, chunk_index
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)
+                """, (
+                    translation_id, edge_id, source_name, target_name,
+                    severity, validator, reason, remediation_hint,
+                    json.dumps(candidate or {}, ensure_ascii=False), chunk_index,
+                ))
+                conn.commit()
+                return int(cursor.lastrowid)
+            except Exception as e:
+                print(f"Error adding relationship conflict: {e}")
+                return None
+
+    def get_relationship_conflicts(
+        self,
+        translation_id: str,
+        status: Optional[str] = None,
+        limit: int = 200,
+    ) -> List[Dict[str, Any]]:
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                if status:
+                    rows = conn.execute("""
+                        SELECT * FROM context_relationship_conflicts
+                        WHERE translation_id = ? AND status = ?
+                        ORDER BY id DESC LIMIT ?
+                    """, (translation_id, status, limit)).fetchall()
+                else:
+                    rows = conn.execute("""
+                        SELECT * FROM context_relationship_conflicts
+                        WHERE translation_id = ? ORDER BY id DESC LIMIT ?
+                    """, (translation_id, limit)).fetchall()
+                result = []
+                for row in rows:
+                    item = dict(row)
+                    try:
+                        item["candidate"] = json.loads(item.get("candidate_json") or "{}")
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        item["candidate"] = {}
+                    result.append(item)
+                return result
+            except Exception as e:
+                print(f"Error getting relationship conflicts: {e}")
+                return []
+
+    def resolve_relationship_conflict(
+        self,
+        translation_id: str,
+        conflict_id: int,
+    ) -> bool:
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.execute("""
+                    UPDATE context_relationship_conflicts
+                    SET status = 'resolved', resolved_at = CURRENT_TIMESTAMP
+                    WHERE translation_id = ? AND id = ?
+                """, (translation_id, conflict_id))
+                conn.commit()
+                return cursor.rowcount > 0
+            except Exception as e:
+                print(f"Error resolving relationship conflict: {e}")
+                return False
+
+    def get_relationship_pair_audit(
+        self,
+        translation_id: str,
+        source_normalized_name: str,
+        target_normalized_name: str,
+    ) -> Dict[str, Any]:
+        """Return graph state, evidence, and conflicts for an exact pair."""
+
+        edges = self.get_relationship_edges_for_pair(
+            translation_id,
+            source_normalized_name,
+            target_normalized_name,
+            include_reverse=True,
+        )
+        edge_ids = {edge["id"] for edge in edges}
+        evidence = [
+            item for item in self.get_relationship_evidence(translation_id)
+            if item.get("edge_id") in edge_ids
+        ]
+        source_key = str(source_normalized_name or "").casefold()
+        target_key = str(target_normalized_name or "").casefold()
+        conflicts = [
+            item for item in self.get_relationship_conflicts(translation_id)
+            if {
+                str(item.get("source_name") or "").casefold(),
+                str(item.get("target_name") or "").casefold(),
+            } == {source_key, target_key}
+        ]
+        return {"edges": edges, "evidence": evidence, "conflicts": conflicts}
+
     def close(self):
         """Close database connection."""
         if hasattr(self._local, 'connection') and self._local.connection:
             self._local.connection.close()
             self._local.connection = None
-

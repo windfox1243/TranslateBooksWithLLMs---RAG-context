@@ -409,6 +409,11 @@ _NON_CHARACTER_ITEM_DETAIL_PATTERNS = (
     r"\b(?:active|awakening|combat|passive|status|system)\s+skill\b",
     r"\bskill\s+that\b",
     r"\b(?:ability|buff|debuff|quest|stat|title)\s+that\b",
+    r"\b(?:named|legendary|holy|magic|cursed|demonic|divine)\s+"
+    r"(?:sword|weapon|artifact|artefact|relic|item|equipment)\b",
+    r"\b(?:sword|weapon|artifact|artefact|relic|item|equipment|spell|"
+    r"skill|ability|technique)\s+(?:used|wielded|owned|summoned|created|"
+    r"forged|equipped|activated)\b",
 )
 _ROMANTIC_RELATION_LABELS = {
     "beloved",
@@ -815,6 +820,63 @@ def _is_non_character_metadata_or_item_entry(name: str, value: str) -> bool:
     ):
         return True
     return False
+
+
+def _glossary_entry_is_item_or_terminology(name: str, value: str) -> bool:
+    """Return whether a glossary entry is object/skill terminology, not a person."""
+    text = _plain_key(f"{name} {value}")
+    if not text:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:sword|weapon|blade|artifact|artefact|relic|item|equipment|"
+            r"spell|skill|ability|technique|title|quest|stat|system|buff|"
+            r"debuff|magic\s+circle|formation|rune|sigil)\b",
+            text,
+        )
+    )
+
+
+def _identity_endpoint_non_character_reason(
+    label: str,
+    global_lore: str,
+    new_characters: str = "",
+    new_glossary: str = "",
+) -> str:
+    """Return a reason when an identity-link endpoint is known non-character terminology."""
+    label_key = _plain_key(label)
+    if not label_key:
+        return "empty identity label"
+
+    character_entries: List[Tuple[str, str]] = []
+    bounds = _find_lore_section(global_lore, CHARACTERS_SECTION)
+    if bounds:
+        _, body_start, body_end = bounds
+        character_entries.extend(_parse_bullet_entries(global_lore[body_start:body_end]))
+    character_entries.extend(_parse_bullet_entries(new_characters))
+    for name, value in character_entries:
+        if _plain_key(name) != label_key:
+            continue
+        if (
+            _is_non_character_work_entry(name, value)
+            or _is_non_character_group_entry(name, value)
+            or _is_non_character_metadata_or_item_entry(name, value)
+        ):
+            return "identity label is classified as non-character terminology"
+
+    glossary_entries: List[Tuple[str, str]] = []
+    glossary_bounds = _find_lore_section(global_lore, GLOSSARY_SECTION)
+    if glossary_bounds:
+        _, body_start, body_end = glossary_bounds
+        glossary_entries.extend(_parse_bullet_entries(global_lore[body_start:body_end]))
+    glossary_entries.extend(_parse_bullet_entries(new_glossary))
+    for source, target in glossary_entries:
+        if _plain_key(source) != label_key and _plain_key(target) != label_key:
+            continue
+        if _glossary_entry_is_item_or_terminology(source, target):
+            return "identity label is glossary/object terminology"
+
+    return ""
 
 
 def _is_descriptive_role_name(name: str) -> bool:
@@ -7169,6 +7231,8 @@ class NovelContextSession:
     dialogue_attribution: Dict[str, Any] = field(default_factory=dict)
     dialogue_scene_key: Optional[str] = None
     source_memory: List[str] = field(default_factory=list)
+    relationship_candidates: List[Dict[str, Any]] = field(default_factory=list)
+    relationship_parse_status: str = "absent"
 
     @property
     def content(self) -> str:
@@ -7270,6 +7334,7 @@ class NovelContextSession:
         source_context = _bounded_source_memory(self.source_memory)
         dialogue_turns = detect_dialogue_turns(source_chunk)
         dialogue_sink: Dict[str, Any] = {}
+        relationship_sink: Dict[str, Any] = {}
         self.global_lore, self.dynamic_state, change_logs = await update_novel_context_chunk(
             llm_client=llm_client,
             model_name=model_name,
@@ -7285,6 +7350,7 @@ class NovelContextSession:
             dialogue_turns=dialogue_turns,
             current_dialogue_state=self.dialogue_state,
             dialogue_attribution_sink=dialogue_sink,
+            relationship_candidate_sink=relationship_sink,
             selective_context_view=self.prompt_options.get(
                 "novel_context_selective_update",
                 True,
@@ -7295,6 +7361,12 @@ class NovelContextSession:
             custom_instructions=str(self.prompt_options.get("custom_instructions") or ""),
             glossary_block=str(self.prompt_options.get("glossary_block") or ""),
             log_callback=self.log_callback,
+        )
+        self.relationship_candidates = list(
+            relationship_sink.get("candidates") or []
+        )
+        self.relationship_parse_status = str(
+            relationship_sink.get("parse_status") or "absent"
         )
         self.remember_source(source_chunk)
         dialogue_state_after = dialogue_sink.get("state_after") or {}
@@ -7358,6 +7430,7 @@ class NovelContextSession:
             from src.utils.dialogue_attribution import detect_dialogue_turns
             dialogue_turns = detect_dialogue_turns(source_chunk)
             dialogue_sink: Dict[str, Any] = {}
+            relationship_sink: Dict[str, Any] = {}
             self.global_lore, self.dynamic_state, change_logs = await update_novel_context_chunk(
                 llm_client=llm_client,
                 model_name=model_name,
@@ -7372,11 +7445,18 @@ class NovelContextSession:
                 dialogue_turns=dialogue_turns,
                 current_dialogue_state=self.dialogue_state,
                 dialogue_attribution_sink=dialogue_sink,
+                relationship_candidate_sink=relationship_sink,
                 selective_context_view=self.prompt_options.get("novel_context_selective_update", True),
                 context_view_max_tokens=self.prompt_options.get("novel_context_update_prompt_max_tokens"),
                 custom_instructions=str(self.prompt_options.get("custom_instructions") or ""),
                 glossary_block=str(self.prompt_options.get("glossary_block") or ""),
                 log_callback=self.log_callback,
+            )
+            self.relationship_candidates = list(
+                relationship_sink.get("candidates") or []
+            )
+            self.relationship_parse_status = str(
+                relationship_sink.get("parse_status") or "absent"
             )
             if dialogue_sink:
                 self.dialogue_attribution = dialogue_sink
@@ -7892,6 +7972,10 @@ Your output must follow this strict format:
 - Character A ↔ Character B: concise current relationship
 (Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed in the target language. For Vietnamese, every addressing entry must make the target-language form a complete paired-address record with all applicable parts: `self-reference: ...; second-person pronoun: ...; vocative/address form: ...`. Use `none` only for a part that truly does not apply. Prefer a true Vietnamese paired-address choice in `self-reference` and `second-person pronoun` (e.g. tôi/cô, em/anh, chị/em, tớ/cậu, ta/ngươi) when relationship facts support one. Use a proper name or short title in `second-person pronoun` (e.g. Apollo, Tomio, Spe, huấn luyện viên, bác sĩ) only when no stable pronoun/kinship pair is known, or when the source consistently uses that name/title as the direct address; otherwise put names, titles, and longer calls in `vocative/address form`. Proven kinship, age, seniority, family, rank, or teacher/student hierarchy overrides name/title fallback. When a speaker naturally alternates or mixes address forms (e.g. calling someone both "anh" and "huấn luyện viên", or "cậu" and "Tomio"), list the acceptable variants separated by slashes only if both variants are actually supported by the source/context. Never put long descriptive background phrases or multi-word role explanations (e.g. "huấn luyện viên của Apollo Rainbow") in `second-person pronoun` - put long descriptive calls in `vocative/address form`. Do not store only the addressee nickname if the speaker's self-reference should also change. If age, school-year, seniority, family, rank, or teacher/student hierarchy is known, choose Vietnamese pronouns that reflect that hierarchy; do not use peer `tớ/cậu` for senior/junior or older/younger relationships. Do not mix modern polite/casual Vietnamese self-references such as `tôi`, `tớ`, `mình`, `em`, `anh`, or `chị` with the contemptuous/archaic second-person pronoun `ngươi`; for hostile archaic contempt, use a coherent pair such as `ta/ngươi`. For Vietnamese, the final reason field must explicitly state any known age, school-year, seniority, family, rank, or teacher/student hierarchy; do not summarize a hierarchical pair merely as peers/classmates. In the final reason field, record the social basis when known: direct address vs indirect reference scope, age/school-year/seniority, family relation, rank/status, setting, intimacy, hostility, deference, or exception to normal age hierarchy. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Do not duplicate these headings.)
 
+[RELATIONSHIP_CANDIDATES]
+{"relationships":[{"source":"canonical character","target":"canonical character","relationship_type":"parent | child | mentor | student | superior | subordinate | master | servant | sibling | ally | rival | spouse | peer | friend | enemy | colleague | romantic_partner | family | associated","direction":"directed | symmetric","scope":"durable | situational","hierarchy":"source_senior | source_junior | peer | unknown","intimacy":"brief label","register":"brief label","evidence_quote":"exact quote from LATEST SOURCE TEXT","confidence":0.0,"source_entity_type":"character","target_entity_type":"character","dialogue_turn_id":"optional candidate id","details":"concise current fact"}]}
+(Output valid JSON on one line. Include every new or changed relationship from DYNAMIC_STATE. Durable candidates require an exact source quote that identifies both participants and supports the relationship. Use situational scope for disguise, acting, roleplay, dreams, or quoted history. Weapons, artifacts, items, skills, spells, abilities, UI labels, and system terms are not characters and must not receive relationship edges. Return {"relationships":[]} when there are no relationship candidates.)
+
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
 (Classify only the supplied dialogue candidates. Infer from narration, direct dialogue tags, turn-taking, voice, and addressing forms in the latest source. CURRENT SCENE SPEAKER STATE is a weak continuity hint only; never use it as sole proof, and return Unknown when local evidence is unclear. Resolve titles and aliases through CURRENT GLOBAL LORE and IDENTITY_LINKS, but output only canonical character names already present in CURRENT GLOBAL LORE or NEW_CHARACTERS. Never invent a speaker. Confidence is from 0.0 to 1.0. Return {"turns":[],"state_after":{}} when there are no candidates or no current high-confidence speaker.)
@@ -7957,6 +8041,10 @@ Your output must follow this strict format:
 ## RELATIONSHIP EVOLUTION
 - Character A ↔ Character B: concise current relationship
 (Output both headings every time, but list only additions or changes. Omitted entries remain stored indefinitely. Remove an obsolete entry only with "- Speaker → Addressee: DELETE" or "- Character A ↔ Character B: DELETE". Addressing forms include names, titles, honorifics, pronouns, kinship terms, and formality choices needed for translation. For Vietnamese, every addressing entry must make the recommended target-language form a complete paired-address record with all applicable parts: `self-reference: ...; second-person pronoun: ...; vocative/address form: ...`. Use `none` only for a part that truly does not apply. Prefer a true Vietnamese paired-address choice in `self-reference` and `second-person pronoun` (e.g. tôi/cô, em/anh, chị/em, tớ/cậu, ta/ngươi) when relationship facts support one. Use a proper name or short title in `second-person pronoun` (e.g. Apollo, Tomio, Spe, huấn luyện viên, bác sĩ) only when no stable pronoun/kinship pair is known, or when the source consistently uses that name/title as the direct address; otherwise put names, titles, and longer calls in `vocative/address form`. Proven kinship, age, seniority, family, rank, or teacher/student hierarchy overrides name/title fallback. When a speaker naturally alternates or mixes address forms (e.g. calling someone both "anh" and "huấn luyện viên", or "cậu" and "Tomio"), list the acceptable variants separated by slashes only if both variants are actually supported by the source/context. Never put long descriptive background phrases or multi-word role explanations (e.g. "huấn luyện viên của Apollo Rainbow") in `second-person pronoun` - put long descriptive calls in `vocative/address form`. Do not store only the addressee nickname if the speaker's self-reference should also change. If age, school-year, seniority, family, rank, or teacher/student hierarchy is known, choose Vietnamese pronouns that reflect that hierarchy; do not use peer `tớ/cậu` for senior/junior or older/younger relationships. Do not mix modern polite/casual Vietnamese self-references such as `tôi`, `tớ`, `mình`, `em`, `anh`, or `chị` with the contemptuous/archaic second-person pronoun `ngươi`; for hostile archaic contempt, use a coherent pair such as `ta/ngươi`. For Vietnamese, the final reason field must explicitly state any known age, school-year, seniority, family, rank, or teacher/student hierarchy; do not summarize a hierarchical pair merely as peers/classmates. In the final reason field, record the social basis when known: direct address vs indirect reference scope, age/school-year/seniority, family relation, rank/status, setting, intimacy, hostility, deference, or exception to normal age hierarchy. Use plain Unicode arrows only. Never use LaTeX, backslashes, dollar signs, or ASCII arrows. Keep it concise and do not duplicate headings.)
+
+[RELATIONSHIP_CANDIDATES]
+{"relationships":[{"source":"canonical character","target":"canonical character","relationship_type":"parent | child | mentor | student | superior | subordinate | master | servant | sibling | ally | rival | spouse | peer | friend | enemy | colleague | romantic_partner | family | associated","direction":"directed | symmetric","scope":"durable | situational","hierarchy":"source_senior | source_junior | peer | unknown","intimacy":"brief label","register":"brief label","evidence_quote":"exact quote from LATEST SOURCE TEXT","confidence":0.0,"source_entity_type":"character","target_entity_type":"character","dialogue_turn_id":"optional candidate id","details":"concise current fact"}]}
+(Output valid JSON on one line. Include every new or changed relationship from DYNAMIC_STATE. Durable candidates require an exact source quote that identifies both participants and supports the relationship. Use situational scope for disguise, acting, roleplay, dreams, or quoted history. Weapons, artifacts, items, skills, spells, abilities, UI labels, and system terms are not characters and must not receive relationship edges. Return {"relationships":[]} when there are no relationship candidates.)
 
 [DIALOGUE_ATTRIBUTION]
 {"turns":[{"id":"exact candidate id","speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown","confidence":0.0}],"state_after":{"speaker":"canonical character name or Unknown","addressee":"canonical character name or Unknown"}}
@@ -8044,6 +8132,14 @@ def merge_new_lore(
         for alias, _ in alias_entries
         for alias_key in _character_alias_keys(alias)
     }
+    valid_character_targets = {
+        _plain_key(name): _canonical_display_name(name)
+        for name in _candidate_named_characters(lore, new_characters)
+    }
+    for alias_key, target in list(explicit_aliases.items()):
+        if _plain_key(target) not in valid_character_targets:
+            explicit_aliases.pop(alias_key, None)
+            alias_displays.pop(alias_key, None)
 
     alias_updates = [
         (raw_alias, raw_target, True)
@@ -8082,6 +8178,28 @@ def merge_new_lore(
             _is_invalid_context_key(target)
             or _character_names_match(raw_alias, target)
         ):
+            continue
+        if _plain_key(target) not in valid_character_targets:
+            logger.warning(
+                "[Novel Context] Skipped unsafe identity link '%s' -> '%s': "
+                "target is not a canonical character.",
+                _plain_key(raw_alias),
+                target,
+            )
+            continue
+        non_character_reason = _identity_endpoint_non_character_reason(
+            raw_alias,
+            lore,
+            new_characters,
+            new_glossary,
+        )
+        if non_character_reason:
+            logger.warning(
+                "[Novel Context] Skipped unsafe identity link '%s' -> '%s': %s.",
+                _plain_key(raw_alias),
+                target,
+                non_character_reason,
+            )
             continue
         already_linked = any(
             explicit_aliases.get(alias_key) == target
@@ -8431,6 +8549,7 @@ _CONTEXT_UPDATE_JSON_KEYS = {
     "glossary",
     "dynamic_state",
     "dialogue_attribution",
+    "relationship_candidates",
 }
 
 
@@ -8927,6 +9046,7 @@ async def update_novel_context_chunk(
     dialogue_turns: Optional[List[Dict[str, str]]] = None,
     current_dialogue_state: Optional[Dict[str, str]] = None,
     dialogue_attribution_sink: Optional[Dict[str, Any]] = None,
+    relationship_candidate_sink: Optional[Dict[str, Any]] = None,
     selective_context_view: bool = True,
     context_view_max_tokens: Optional[int] = None,
     custom_instructions: str = "",
@@ -9007,6 +9127,12 @@ async def update_novel_context_chunk(
         
         if not response or not response.content:
             logger.warning("Empty response received from LLM during novel context chunk update. Keeping current state.")
+            if relationship_candidate_sink is not None:
+                relationship_candidate_sink.clear()
+                relationship_candidate_sink.update({
+                    "candidates": [],
+                    "parse_status": "empty_response",
+                })
             if dialogue_attribution_sink is not None:
                 dialogue_attribution_sink.clear()
                 dialogue_attribution_sink.update(
@@ -9022,6 +9148,7 @@ async def update_novel_context_chunk(
         new_glossary = ""
         new_dynamic = current_dynamic_state
         dialogue_raw = ""
+        relationship_candidate_raw = ""
         
         import re
         chars_match = re.search(
@@ -9043,7 +9170,14 @@ async def update_novel_context_chunk(
             re.DOTALL,
         )
         dynamic_match = re.search(
-            r'\[DYNAMIC_STATE\]\s*(.*?)\s*(?=\[DIALOGUE_ATTRIBUTION\]|$)',
+            r'\[DYNAMIC_STATE\]\s*(.*?)\s*'
+            r'(?=\[RELATIONSHIP_CANDIDATES\]|\[DIALOGUE_ATTRIBUTION\]|$)',
+            content,
+            re.DOTALL,
+        )
+        relationship_candidate_match = re.search(
+            r'\[RELATIONSHIP_CANDIDATES\]\s*(.*?)\s*'
+            r'(?=\[DIALOGUE_ATTRIBUTION\]|$)',
             content,
             re.DOTALL,
         )
@@ -9061,8 +9195,114 @@ async def update_novel_context_chunk(
             new_glossary = glossary_match.group(1).strip()
         if dynamic_match:
             new_dynamic = dynamic_match.group(1).strip()
+        if relationship_candidate_match:
+            relationship_candidate_raw = relationship_candidate_match.group(1).strip()
         if dialogue_match:
             dialogue_raw = dialogue_match.group(1).strip()
+
+        relationship_candidates = []
+        relationship_parse_status = "absent"
+        if relationship_candidate_raw:
+            from src.utils.progress_logging import emit_progress_log
+            from src.utils.relationship_schema import (
+                parse_relationship_candidate_block,
+            )
+
+            relationship_candidates, relationship_parse_status = (
+                parse_relationship_candidate_block(relationship_candidate_raw)
+            )
+            if relationship_parse_status in {"invalid_json", "invalid_contract"}:
+                emit_progress_log(
+                    log_callback,
+                    "relationship_contract_retry",
+                    "Relationship candidate JSON was malformed; retrying the contract once.",
+                    level="warning",
+                    layer="relationship_reasoning",
+                    data={"parse_status": relationship_parse_status},
+                )
+                retry_prompt = (
+                    "Repair the relationship candidate payload below. Return only one "
+                    "valid JSON object with the shape "
+                    "{\"relationships\":[{\"source\":\"...\",\"target\":\"...\","
+                    "\"relationship_type\":\"...\",\"direction\":\"directed | symmetric\","
+                    "\"scope\":\"durable | situational\",\"hierarchy\":\"source_senior | "
+                    "source_junior | peer | unknown\",\"evidence_quote\":\"exact source quote\","
+                    "\"confidence\":0.0}]}. Do not add evidence or facts that were absent.\n\n"
+                    f"Malformed payload:\n{relationship_candidate_raw[:6000]}"
+                )
+                try:
+                    retry_response = await llm_client.generate(
+                        prompt=retry_prompt,
+                        system_prompt=(
+                            "You repair JSON syntax only. Preserve the proposed facts and "
+                            "return no prose or markdown."
+                        ),
+                    )
+                    retry_content = str(
+                        getattr(retry_response, "content", "") or ""
+                    ).strip()
+                    retry_candidates, retry_status = parse_relationship_candidate_block(
+                        retry_content
+                    )
+                    if retry_status == "json":
+                        relationship_candidates = retry_candidates
+                        relationship_parse_status = "json_repaired"
+                except Exception:
+                    relationship_parse_status = "invalid_json"
+            emit_progress_log(
+                log_callback,
+                "relationship_contract_parse",
+                "Relationship candidate contract "
+                f"({ 'source analysis' if translated_chunk is None else 'translation sync' }) "
+                f"parsed with {relationship_parse_status}.",
+                level=(
+                    "warning"
+                    if relationship_parse_status in {"invalid_json", "invalid_contract"}
+                    else "info"
+                ),
+                layer="relationship_reasoning",
+                data={
+                    "parse_status": relationship_parse_status,
+                    "candidate_count": len(relationship_candidates),
+                    "contract_version": "1.0",
+                    "phase": (
+                        "source_analysis"
+                        if translated_chunk is None
+                        else "translation_sync"
+                    ),
+                },
+            )
+            for candidate in (
+                relationship_candidates if translated_chunk is None else []
+            ):
+                emit_progress_log(
+                    log_callback,
+                    "relationship_candidate_extracted",
+                    f"Relationship candidate extracted: {candidate.source} -> "
+                    f"{candidate.target} [{candidate.relationship_type}].",
+                    layer="relationship_reasoning",
+                    data={
+                        "chunk_index": chunk_index - 1 if chunk_index > 0 else 0,
+                        "source": candidate.source,
+                        "target": candidate.target,
+                        "relationship_type": candidate.relationship_type,
+                        "scope": candidate.scope,
+                        "confidence": candidate.confidence,
+                        "parser_status": relationship_parse_status,
+                    },
+                )
+        if relationship_candidate_sink is not None:
+            relationship_candidate_sink.clear()
+            relationship_candidate_sink.update({
+                "candidates": [
+                    {
+                        **candidate.to_dict(),
+                        "parser_status": relationship_parse_status,
+                    }
+                    for candidate in relationship_candidates
+                ],
+                "parse_status": relationship_parse_status,
+            })
 
         source_backstop_gender_updates = infer_source_gender_updates(
             source_analysis_text,
@@ -9174,6 +9414,12 @@ async def update_novel_context_chunk(
         
     except Exception as e:
         logger.error(f"Error in update_novel_context_chunk: {e}")
+        if relationship_candidate_sink is not None:
+            relationship_candidate_sink.clear()
+            relationship_candidate_sink.update({
+                "candidates": [],
+                "parse_status": "update_failed",
+            })
         if dialogue_attribution_sink is not None:
             dialogue_attribution_sink.clear()
             dialogue_attribution_sink.update(

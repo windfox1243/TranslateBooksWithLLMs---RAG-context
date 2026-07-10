@@ -1346,9 +1346,6 @@ def _render_reflection_novel_context(
         options["novel_context"] = novel_context
 
     raw_context = str(options.get("novel_context") or novel_context or "")
-    if not raw_context.strip():
-        return ""
-
     active_speaker = None
     attribution = options.get("dialogue_attribution") or {}
     if isinstance(attribution, dict):
@@ -1356,30 +1353,42 @@ def _render_reflection_novel_context(
         if isinstance(state_after, dict):
             active_speaker = state_after.get("speaker")
 
-    try:
-        from src.utils.novel_context import render_novel_context_for_prompt
+    active_context = ""
+    if raw_context.strip():
+        try:
+            from src.utils.novel_context import render_novel_context_for_prompt
 
-        rendered = render_novel_context_for_prompt(
-            raw_context,
-            reference_text="\n".join(
-                part for part in (source_chunk, draft_translation) if part
-            ),
-            max_tokens=options.get("novel_context_prompt_max_tokens"),
-            selective=options.get("novel_context_selective_injection", True),
-            active_speaker=active_speaker,
-        )
-        active_context = rendered.strip() or raw_context.strip()
-    except Exception:
-        active_context = raw_context.strip()
+            rendered = render_novel_context_for_prompt(
+                raw_context,
+                reference_text="\n".join(
+                    part for part in (source_chunk, draft_translation) if part
+                ),
+                max_tokens=options.get("novel_context_prompt_max_tokens"),
+                selective=options.get("novel_context_selective_injection", True),
+                active_speaker=active_speaker,
+            )
+            active_context = rendered.strip() or raw_context.strip()
+        except Exception:
+            active_context = raw_context.strip()
     directed_context = str(options.get("directed_addressing_context") or "").strip()
+    relationship_context = str(options.get("relationship_context") or "").strip()
+    blocks = []
     if directed_context:
-        return (
+        blocks.append(
             "# STRUCTURED DIRECTED ADDRESSING RULES\n"
-            f"{directed_context}\n\n"
+            f"{directed_context}"
+        )
+    if relationship_context:
+        blocks.append(
+            "# STRUCTURED RELATIONSHIP CONTEXT\n"
+            f"{relationship_context}"
+        )
+    if active_context:
+        blocks.append(
             "# ACTIVE MARKDOWN NOVEL CONTEXT\n"
             f"{active_context}"
-        ).strip()
-    return active_context
+        )
+    return "\n\n".join(blocks).strip()
 
 
 async def _generate_editor_response(

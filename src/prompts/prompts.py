@@ -426,6 +426,23 @@ def _build_directed_addressing_section(prompt_options: dict) -> str:
 These pair-specific rules override markdown `## CURRENT ADDRESSING FORMS` for the same speaker/addressee pair. Use markdown novel context only when no structured rule matches the current pair."""
 
 
+def _build_relationship_context_section(prompt_options: dict) -> str:
+    """Build the accepted relationship graph prompt block in project mode."""
+
+    if not prompt_options:
+        return ""
+    relationship_context = str(
+        prompt_options.get("relationship_context") or ""
+    ).strip()
+    if not relationship_context:
+        return ""
+    return f"""# STRUCTURED RELATIONSHIP CONTEXT
+
+{relationship_context}
+
+Use only accepted graph facts. Situational facts apply only to the current scene. Locked facts are immutable. This block overrides conflicting markdown relationship claims; pair-specific structured addressing rules still have higher priority for actual address forms."""
+
+
 # ============================================================================
 # TRANSLATION PROMPT FUNCTIONS
 # ============================================================================
@@ -576,6 +593,7 @@ For consistency and natural flow, here's what came immediately before:
     # keeping it out of the system prompt lets the system prompt stay
     # stable and cacheable across chunks.
     directed_addressing_section = _build_directed_addressing_section(prompt_options)
+    relationship_context_section = _build_relationship_context_section(prompt_options)
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
     novel_context_section = _build_novel_context_section(
         prompt_options,
@@ -594,11 +612,13 @@ For consistency and natural flow, here's what came immediately before:
         novel_context_section = f"{novel_context_section}\n\n"
     if directed_addressing_section:
         directed_addressing_section = f"{directed_addressing_section}\n\n"
+    if relationship_context_section:
+        relationship_context_section = f"{relationship_context_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_translation_block_text}{directed_addressing_section}{novel_context_section}{glossary_section}{dialogue_section}# TEXT TO TRANSLATE
+    user_prompt = f"""{previous_translation_block_text}{directed_addressing_section}{relationship_context_section}{novel_context_section}{glossary_section}{dialogue_section}# TEXT TO TRANSLATE
 
 {INPUT_TAG_IN}
 {main_content}
@@ -873,6 +893,7 @@ For consistency and natural flow, here's what came immediately before:
 """
 
     directed_addressing_section = _build_directed_addressing_section(prompt_options)
+    relationship_context_section = _build_relationship_context_section(prompt_options)
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
     # Glossary block injected here (per-chunk dynamic) so the system prompt
     # stays cacheable across chunks.
@@ -894,11 +915,13 @@ For consistency and natural flow, here's what came immediately before:
         novel_context_section = f"{novel_context_section}\n\n"
     if directed_addressing_section:
         directed_addressing_section = f"{directed_addressing_section}\n\n"
+    if relationship_context_section:
+        relationship_context_section = f"{relationship_context_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_context_block}{directed_addressing_section}{novel_context_section}{glossary_section}{dialogue_section}# DRAFT TO REFINE
+    user_prompt = f"""{previous_context_block}{directed_addressing_section}{relationship_context_section}{novel_context_section}{glossary_section}{dialogue_section}# DRAFT TO REFINE
 
 The following is a rough {target_language} translation that needs significant improvement.
 Rewrite it with elegant, literary-quality {target_language} prose:
@@ -1040,6 +1063,7 @@ For continuity and consistency, here's the previous refined block:
     formatted_subtitles_text = "\n".join(formatted_subtitles)
 
     directed_addressing_section = _build_directed_addressing_section(prompt_options)
+    relationship_context_section = _build_relationship_context_section(prompt_options)
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
     novel_context_section = _build_novel_context_section(
         prompt_options,
@@ -1057,11 +1081,13 @@ For continuity and consistency, here's the previous refined block:
         novel_context_section = f"{novel_context_section}\n\n"
     if directed_addressing_section:
         directed_addressing_section = f"{directed_addressing_section}\n\n"
+    if relationship_context_section:
+        relationship_context_section = f"{relationship_context_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_refined_block_text}{directed_addressing_section}{novel_context_section}{glossary_section}{dialogue_section}# SUBTITLES TO REFINE
+    user_prompt = f"""{previous_refined_block_text}{directed_addressing_section}{relationship_context_section}{novel_context_section}{glossary_section}{dialogue_section}# SUBTITLES TO REFINE
 
 {INPUT_TAG_IN}
 {formatted_subtitles_text}
@@ -1195,6 +1221,7 @@ For continuity and consistency, here's the previous subtitle block:
     formatted_subtitles_text = "\n".join(formatted_subtitles)
 
     directed_addressing_section = _build_directed_addressing_section(prompt_options)
+    relationship_context_section = _build_relationship_context_section(prompt_options)
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
     # Novel context and glossary blocks live in the user prompt because they
     # vary per chunk/block.
@@ -1213,11 +1240,13 @@ For continuity and consistency, here's the previous subtitle block:
         novel_context_section = f"{novel_context_section}\n\n"
     if directed_addressing_section:
         directed_addressing_section = f"{directed_addressing_section}\n\n"
+    if relationship_context_section:
+        relationship_context_section = f"{relationship_context_section}\n\n"
     glossary_section = f"{glossary_block}\n" if glossary_block and glossary_block.strip() else ""
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_translation_block_text}{directed_addressing_section}{novel_context_section}{glossary_section}{dialogue_section}# SUBTITLES TO TRANSLATE
+    user_prompt = f"""{previous_translation_block_text}{directed_addressing_section}{relationship_context_section}{novel_context_section}{glossary_section}{dialogue_section}# SUBTITLES TO TRANSLATE
 
 {INPUT_TAG_IN}
 {formatted_subtitles_text}
