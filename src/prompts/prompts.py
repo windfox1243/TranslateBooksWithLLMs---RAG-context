@@ -12,8 +12,8 @@ CORRECTED_TAG_IN = "<CORRECTED_TAG_IN>"
 CORRECTED_TAG_OUT = "<CORRECTED_TAG_OUT>"
 REFLECTION_JSON_TAG_IN = "<REFLECTION_JSON>"
 REFLECTION_JSON_TAG_OUT = "</REFLECTION_JSON>"
-REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v2"
-REFLECTION_CONTRACT_VERSION = "reflection-json-v1"
+REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v3"
+REFLECTION_CONTRACT_VERSION = "editor-issue-v2"
 
 
 class PromptPair(NamedTuple):
@@ -54,7 +54,9 @@ def _build_reflection_json_contract_section() -> str:
 - Use status "needs_repair" when any omission, mistranslation, glossary error, pronoun bleed, gender mismatch, register issue, placeholder issue, format issue, or other actionable defect exists.
 - Do not include prose, markdown, bullets, or comments outside the JSON tags.
 - Keep issue instructions concise and directly repairable.
-- If a term replacement is required, put it in term_replacement as {{"source": "...", "target": "..."}}; otherwise use null.
+- For a direct local substitution, set draft_replacement to {{"draft": "exact current draft span", "replacement": "exact corrected target-language span"}}. Do not leave it null when a specific draft span must change.
+- Use glossary_update only for durable terminology that should apply to later chunks: {{"source": "...", "target": "..."}}. A one-off correction is not a glossary update.
+- term_replacement is a compatibility alias for glossary_update. Prefer glossary_update in new output.
 
 Required schema:
 {REFLECTION_JSON_TAG_IN}
@@ -75,6 +77,8 @@ Repair schema:
       "source_quote": "exact source evidence",
       "draft_quote": "problematic draft text or empty string",
       "instruction": "specific repair instruction",
+      "draft_replacement": {{"draft": "exact draft span", "replacement": "exact corrected span"}},
+      "glossary_update": null,
       "term_replacement": null
     }}
   ]
@@ -1541,6 +1545,7 @@ def generate_chunk_reflection_prompt(
     novel_context: str = "",
     custom_instructions: str = "",
     glossary_block: str = "",
+    deterministic_findings: str = "",
 ) -> PromptPair:
     """
     Generate a chunk reflection prompt acting as a Senior Translation Editor / Critic.
@@ -1607,6 +1612,13 @@ ADDITIONAL AUDIT OUTPUT RULES:
         user_sections.append(f"# CUSTOM INSTRUCTIONS & STYLE GUIDELINES:\n{custom_instructions.strip()}")
     if glossary_block and glossary_block.strip():
         user_sections.append(f"# GLOSSARY & TERM MAPPING:\n{glossary_block.strip()}")
+    if deterministic_findings and deterministic_findings.strip():
+        user_sections.append(
+            "# DETERMINISTIC SOURCE-RESIDUE FINDINGS (MANDATORY)\n"
+            "These findings were produced by a non-LLM validator. Resolve each "
+            "high-confidence span and report a needs_repair issue with an exact "
+            f"draft_replacement when possible:\n{deterministic_findings.strip()}"
+        )
     user_sections.append(f"# ACTIVE NOVEL LORE & ADDRESSING RULES (Background defaults apply ONLY when source text lacks an explicit spoken nickname/title. Explicit source nicknames like 'Spe-chan' take 100% priority over lore entries like 'Special'):\n{novel_context.strip() if novel_context.strip() else 'None'}")
     user_sections.append(f"# DRAFT TRANSLATION TO AUDIT:\n{draft_translation.strip()}")
     user_sections.append("Perform your rigorous Senior Editor audit now:")

@@ -1210,7 +1210,9 @@ window.NovelContextUI = {
     availableChunkIndices: [],
     globalAnchorChunkIndex: null,
     globalAnchorFullContent: '',
-    activeTabIndex: 0,
+    activeTabKey: 'general',
+    structuredAddressingContent: '',
+    structuredAddressingRequest: 0,
     localizedView: null,
     lastResyncState: null,
     _localeListenerBound: false,
@@ -1249,6 +1251,84 @@ window.NovelContextUI = {
             : body;
         this.renderContextTabs(content, isSnapshot, true);
     },
+
+    _sectionKey: function(title, titleKey = null, index = 0) {
+        if (titleKey) return titleKey.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+        const normalized = String(title || '').trim().toLowerCase();
+        if (normalized === 'current addressing forms') return 'current-addressing';
+        if (normalized === 'relationship evolution') return 'relationship-evolution';
+        return `${normalized.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'section'}-${index}`;
+    },
+
+    _structuralTitleKey: function(key) {
+        if (key === 'current-addressing') return 'translation:context_current_addressing_tab';
+        if (key === 'relationship-evolution') return 'translation:context_relationship_evolution_tab';
+        return null;
+    },
+
+    _ensureRawContextHeadings: function(content) {
+        let raw = String(content || '');
+        const missing = [];
+        if (!/^##\s+CURRENT ADDRESSING FORMS\s*$/im.test(raw)) {
+            missing.push('## CURRENT ADDRESSING FORMS');
+        }
+        if (!/^##\s+RELATIONSHIP EVOLUTION\s*$/im.test(raw)) {
+            missing.push('## RELATIONSHIP EVOLUTION');
+        }
+        if (!missing.length) return raw;
+        const block = missing.join('\n\n');
+        if (/---DYNAMIC_STATE_END---/.test(raw)) {
+            return raw.replace(
+                /---DYNAMIC_STATE_END---/,
+                `${block}\n\n---DYNAMIC_STATE_END---`
+            );
+        }
+        return `${raw.trim()}\n\n---DYNAMIC_STATE_START---\n${block}\n---DYNAMIC_STATE_END---`.trim();
+    },
+
+    _formatAddressingRules: function(result) {
+        const rules = Array.isArray(result?.rules) ? result.rules : [];
+        if (!rules.length) return t('translation:context_addressing_empty');
+        return rules.map(rule => {
+            const details = [
+                `${t('translation:context_addressing_self')}: ${rule.self_pronoun || t('translation:context_addressing_unknown')}`,
+                `${t('translation:context_addressing_target')}: ${rule.target_pronoun || t('translation:context_addressing_unknown')}`,
+                `${t('translation:context_addressing_vocative')}: ${rule.vocative || t('translation:context_addressing_unknown')}`,
+                `${t('translation:context_addressing_register')}: ${rule.register || t('translation:context_addressing_unknown')}`,
+                `${t('translation:context_addressing_scope')}: ${rule.scope || t('translation:context_addressing_unknown')}`
+            ];
+            const forms = Array.isArray(rule.source_forms)
+                ? rule.source_forms.map(item => (
+                    typeof item === 'string' ? item : item?.source_form
+                )).filter(Boolean)
+                : [];
+            details.push(
+                `${t('translation:context_addressing_source_forms')}: ${forms.join(', ') || t('translation:context_addressing_unknown')}`
+            );
+            const basis = Array.isArray(rule.social_basis) ? rule.social_basis.filter(Boolean) : [];
+            if (basis.length) {
+                details.push(`${t('translation:context_addressing_basis')}: ${basis.join(', ')}`);
+            }
+            return `${rule.speaker_name} -> ${rule.addressee_name}\n${details.map(item => `  ${item}`).join('\n')}`;
+        }).join('\n\n');
+    },
+
+    refreshStructuredAddressing: async function() {
+        const translationId = currentTranslationIdForContext();
+        if (!translationId) return;
+        const requestId = ++this.structuredAddressingRequest;
+        let content;
+        try {
+            const result = await ApiClient.getAddressingRules(translationId);
+            content = this._formatAddressingRules(result);
+        } catch (_error) {
+            content = t('translation:context_addressing_unavailable');
+        }
+        if (requestId !== this.structuredAddressingRequest) return;
+        this.structuredAddressingContent = content;
+        const pane = document.querySelector('[data-context-pane-key="current-addressing"]');
+        if (pane) pane.textContent = content;
+    },
     
     renderContextTabs: function(content, isSnapshot = false, preserveLocalizedView = false) {
         if (!preserveLocalizedView) {
@@ -1271,65 +1351,79 @@ window.NovelContextUI = {
         header.style.gap = '0.5rem';
         header.style.paddingBottom = '0.5rem';
 
-        // Split by markdown headers # or ##
+        // Split by markdown headers while retaining empty structural state.
         const sections = [];
         const regex = /^(#{1,3})\s*(.+)$/gm;
-        let match;
-        let lastIndex = 0;
-        let currentTitle = t('translation:context_general_tab');
-        let currentTitleKey = 'translation:context_general_tab';
-        
-        while ((match = regex.exec(content)) !== null) {
-            const textBefore = content.substring(lastIndex, match.index).trim();
-            const cleanText = textBefore
+        const matches = Array.from(String(content || '').matchAll(regex));
+        const cleanSection = value => String(value || '')
                 .replace(/---DYNAMIC_STATE_START---|---DYNAMIC_STATE_END---/g, '')
                 .replace(/^\s*\(.*?\)\s*$/gm, '')
                 .trim();
-            
-            // Push section only if it has content, or if it's the very first section and we have no other choice
-            if (cleanText) {
+        const preamble = cleanSection(String(content || '').substring(0, matches[0]?.index || 0));
+        if (preamble) {
+            sections.push({
+                key: 'general',
+                title: t('translation:context_general_tab'),
+                titleKey: 'translation:context_general_tab',
+                content: preamble
+            });
+        }
+        matches.forEach((match, index) => {
+            const nextIndex = index + 1 < matches.length
+                ? matches[index + 1].index
+                : String(content || '').length;
+            const title = match[2].trim();
+            const key = this._sectionKey(title, null, index);
+            const titleKey = this._structuralTitleKey(key);
+            const cleanText = cleanSection(
+                String(content || '').substring(match.index + match[0].length, nextIndex)
+            );
+            if (cleanText || titleKey) {
                 sections.push({
-                    title: currentTitle,
-                    titleKey: currentTitleKey,
-                    content: cleanText
+                    key,
+                    title: titleKey ? t(titleKey) : title,
+                    titleKey,
+                    content: (
+                        key === 'current-addressing' && !isSnapshot
+                            ? this.structuredAddressingContent || t('translation:context_addressing_empty')
+                            : cleanText || t('translation:context_structural_empty')
+                    )
                 });
             }
-            
-            currentTitle = match[2].trim();
-            currentTitleKey = null;
-            lastIndex = match.index + match[0].length;
-        }
-        
-        const lastText = content.substring(lastIndex).trim();
-        const cleanLast = lastText
-            .replace(/---DYNAMIC_STATE_START---|---DYNAMIC_STATE_END---/g, '')
-            .replace(/^\s*\(.*?\)\s*$/gm, '')
-            .trim();
-        if (cleanLast || sections.length === 0) {
+        });
+        if (!sections.some(section => section.key === 'current-addressing')) {
             sections.push({
-                title: currentTitle,
-                titleKey: currentTitleKey,
-                content: cleanLast
+                key: 'current-addressing',
+                title: t('translation:context_current_addressing_tab'),
+                titleKey: 'translation:context_current_addressing_tab',
+                content: !isSnapshot && this.structuredAddressingContent
+                    ? this.structuredAddressingContent
+                    : t('translation:context_addressing_empty')
+            });
+        }
+        if (!sections.some(section => section.key === 'relationship-evolution')) {
+            sections.push({
+                key: 'relationship-evolution',
+                title: t('translation:context_relationship_evolution_tab'),
+                titleKey: 'translation:context_relationship_evolution_tab',
+                content: t('translation:context_structural_empty')
             });
         }
 
         // Always add a raw view tab.
         sections.push({
+            key: 'raw',
             title: t('translation:context_raw_view_tab'),
             titleKey: 'translation:context_raw_view_tab',
-            content
+            content: this._ensureRawContextHeadings(content)
         });
 
         header.innerHTML = '';
         body.innerHTML = '';
 
         // Determine which tab should be active
-        const activeIdx = Number.isInteger(this.activeTabIndex)
-            && this.activeTabIndex >= 0
-            && this.activeTabIndex < sections.length
-            ? this.activeTabIndex
-            : 0;
-        this.activeTabIndex = activeIdx;
+        const activeIdx = Math.max(0, sections.findIndex(sec => sec.key === this.activeTabKey));
+        this.activeTabKey = sections[activeIdx].key;
 
         sections.forEach((sec, idx) => {
             const btn = document.createElement('button');
@@ -1347,9 +1441,10 @@ window.NovelContextUI = {
             const pane = document.createElement('div');
             pane.style.display = isActive ? 'block' : 'none';
             pane.textContent = sec.content;
+            pane.dataset.contextPaneKey = sec.key;
             
             btn.onclick = () => {
-                this.activeTabIndex = idx;
+                this.activeTabKey = sec.key;
                 Array.from(header.children).forEach(c => {
                     c.className = 'btn btn-sm btn-secondary';
                     c.style.background = 'transparent';
@@ -1379,6 +1474,9 @@ window.NovelContextUI = {
             header.appendChild(btn);
             body.appendChild(pane);
         });
+        if (!isSnapshot) {
+            this.refreshStructuredAddressing();
+        }
     },
 
     updateChunkSelector: function(chunkIndices) {
@@ -1801,19 +1899,33 @@ window.enableContextEdit = function() {
     let currentTitleKey = 'translation:context_general_tab';
     
     while ((match = regex.exec(content)) !== null) {
+        const currentKey = window.NovelContextUI._sectionKey(
+            currentTitle,
+            currentTitleKey,
+            sections.length
+        );
         sections.push({
-            title: currentTitle,
+            key: currentKey,
+            title: currentTitleKey ? t(currentTitleKey) : currentTitle,
             titleKey: currentTitleKey,
             fullHeader: currentHeaderFull,
             rawContent: content.substring(lastIndex, match.index)
         });
         currentHeaderFull = match[0];
         currentTitle = match[2].trim();
-        currentTitleKey = null;
+        currentTitleKey = window.NovelContextUI._structuralTitleKey(
+            window.NovelContextUI._sectionKey(currentTitle, null, sections.length)
+        );
         lastIndex = match.index + match[0].length;
     }
+    const finalKey = window.NovelContextUI._sectionKey(
+        currentTitle,
+        currentTitleKey,
+        sections.length
+    );
     sections.push({
-        title: currentTitle,
+        key: finalKey,
+        title: currentTitleKey ? t(currentTitleKey) : currentTitle,
         titleKey: currentTitleKey,
         fullHeader: currentHeaderFull,
         rawContent: content.substring(lastIndex)
@@ -1827,10 +1939,12 @@ window.enableContextEdit = function() {
             .replace(/---DYNAMIC_STATE_START---|---DYNAMIC_STATE_END---/g, '')
             .replace(/^\s*\(.*?\)\s*$/gm, '')
             .trim();
-        if (!cleanContent && idx < sections.length - 1) {
+        const keepEmpty = ['current-addressing', 'relationship-evolution'].includes(sec.key);
+        if (!cleanContent && idx < sections.length - 1 && !keepEmpty) {
             pendingHeader += sec.fullHeader + sec.rawContent;
         } else {
             groupedSections.push({
+                key: sec.key,
                 title: sec.title,
                 titleKey: sec.titleKey,
                 fullHeader: pendingHeader + sec.fullHeader,
@@ -1851,12 +1965,11 @@ window.enableContextEdit = function() {
     header.innerHTML = '';
     body.innerHTML = '';
     
-    const activeIdx = Number.isInteger(window.NovelContextUI.activeTabIndex)
-        && window.NovelContextUI.activeTabIndex >= 0
-        && window.NovelContextUI.activeTabIndex < groupedSections.length
-        ? window.NovelContextUI.activeTabIndex
-        : 0;
-    window.NovelContextUI.activeTabIndex = activeIdx;
+    const activeIdx = Math.max(
+        0,
+        groupedSections.findIndex(sec => sec.key === window.NovelContextUI.activeTabKey)
+    );
+    window.NovelContextUI.activeTabKey = groupedSections[activeIdx]?.key || 'general';
     
     function checkForChanges() {
         const isChanged = hasContextResyncEditorChanges();
@@ -1903,7 +2016,7 @@ window.enableContextEdit = function() {
         pane.appendChild(textarea);
         
         btn.onclick = () => {
-            window.NovelContextUI.activeTabIndex = idx;
+            window.NovelContextUI.activeTabKey = sec.key;
             Array.from(header.children).forEach(c => {
                 c.className = 'btn btn-sm btn-secondary';
                 c.style.background = 'transparent';

@@ -28,6 +28,16 @@ from src.utils.db_addressing import (
     sync_context_update_addressing_to_db,
     sync_markdown_addressing_to_db,
 )
+from src.utils.addressing_schema import context_contract_version
+from src.utils.relationship_sync import (
+    apply_relationship_graph_to_session,
+    build_relationship_prompt_context,
+    judge_ambiguous_relationship_candidates,
+    resolve_relationship_reasoning_mode,
+    sync_context_update_relationships_to_db,
+    sync_markdown_relationships_to_db,
+)
+from src.utils.progress_logging import emit_progress_log
 
 
 PARAGRAPH_SEPARATOR = "\n\n"
@@ -362,6 +372,8 @@ async def translate_paragraphs_plain(
 
     if prompt_options is None:
         prompt_options = {}
+    contract_version = context_contract_version(prompt_options)
+    relationship_mode = resolve_relationship_reasoning_mode(prompt_options)
 
     context_session = None
     checkpoint_context_data_by_index: Dict[int, Dict] = {}
@@ -491,6 +503,27 @@ async def translate_paragraphs_plain(
                 and checkpoint_manager
                 and translation_id
                 and hasattr(checkpoint_manager, "db")
+            ):
+                if relationship_mode != "off":
+                    sync_markdown_relationships_to_db(
+                        translation_id=translation_id,
+                        db=checkpoint_manager.db,
+                        context_or_dynamic_state=context_session.content,
+                        target_language=target_language,
+                        chunk_index=global_chunk_offset,
+                        trigger_source="job_context_load",
+                        log_callback=log_callback,
+                    )
+                    apply_relationship_graph_to_session(
+                        context_session,
+                        translation_id,
+                        checkpoint_manager.db,
+                    )
+            if (
+                context_session
+                and checkpoint_manager
+                and translation_id
+                and hasattr(checkpoint_manager, "db")
                 and prompt_options.get("use_db_directed_addressing", True)
             ):
                 sync_markdown_addressing_to_db(
@@ -542,6 +575,8 @@ async def translate_paragraphs_plain(
     previous_translation_context = ""
     failed_indices = set()
     reused_context_data_by_index: Dict[int, Dict] = {}
+    pending_addressing_by_index: Dict[int, Dict] = {}
+    pending_relationships_by_index: Dict[int, Dict] = {}
 
     async def _translate_chunk(i, analyze_context=True):
         """Translate one chunk. Reads previous_translation_context only in
@@ -583,6 +618,7 @@ async def translate_paragraphs_plain(
                     )
                     for change_log in change_logs:
                         log_callback("novel_context_log", change_log)
+                if log_callback and contract_version < 2:
                     log_callback(
                         "novel_context_state",
                         "Context updated",
@@ -598,15 +634,49 @@ async def translate_paragraphs_plain(
                     and hasattr(checkpoint_manager, "db")
                     and prompt_options.get("use_db_directed_addressing", True)
                 ):
-                    sync_context_update_addressing_to_db(
-                        translation_id=translation_id,
-                        db=checkpoint_manager.db,
-                        updated_context_or_dynamic_state=context_session.content,
-                        target_language=target_language,
-                        chunk_index=global_chunk_offset + i,
+                    pending_addressing_by_index[i] = {
+                        "content": context_session.content,
+                        "dialogue_attribution": context_session.dialogue_attribution,
+                        "candidates": list(context_session.addressing_candidates),
+                        "source_text": main_content,
+                    }
+                    apply_db_addressing_to_session(
+                        context_session,
+                        translation_id,
+                        checkpoint_manager.db,
+                    )
+                if (
+                    checkpoint_manager
+                    and translation_id
+                    and hasattr(checkpoint_manager, "db")
+                    and relationship_mode != "off"
+                ):
+                    locked_facts = [
+                        edge for edge in checkpoint_manager.db.get_relationship_edges(
+                            translation_id,
+                            statuses=["accepted"],
+                        )
+                        if edge.get("is_locked")
+                    ]
+                    judged = await judge_ambiguous_relationship_candidates(
+                        llm_client=llm_client,
+                        candidates=context_session.relationship_candidates,
+                        source_text=main_content,
+                        model_name=model_name,
+                        enabled=(
+                            prompt_options.get("use_relationship_llm_judge")
+                            in {True, "selective", "always"}
+                        ),
+                        locked_facts=locked_facts,
                         log_callback=log_callback,
                     )
-                    apply_db_addressing_to_session(
+                    pending_relationships_by_index[i] = {
+                        "content": context_session.content,
+                        "source_text": main_content,
+                        "candidates": judged,
+                        "parser_status": context_session.relationship_parse_status,
+                    }
+                    apply_relationship_graph_to_session(
                         context_session,
                         translation_id,
                         checkpoint_manager.db,
@@ -625,6 +695,8 @@ async def translate_paragraphs_plain(
             context_session.remember_source(main_content)
 
         unit_prompt_options = dict(prompt_options or {})
+        unit_prompt_options.setdefault("source_language", source_language)
+        unit_prompt_options.setdefault("target_language", target_language)
         directed_context = build_directed_addressing_prompt_context(
             translation_id=translation_id or "",
             db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
@@ -634,6 +706,16 @@ async def translate_paragraphs_plain(
         )
         if directed_context:
             unit_prompt_options["directed_addressing_context"] = directed_context
+        relationship_context = build_relationship_prompt_context(
+            translation_id=translation_id or "",
+            db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
+            target_language=target_language,
+            prompt_options=unit_prompt_options,
+            reference_text=main_content,
+            log_callback=log_callback,
+        )
+        if relationship_context:
+            unit_prompt_options["relationship_context"] = relationship_context
 
         translated = await generate_translation_request(
             main_content=main_content,
@@ -662,6 +744,22 @@ async def translate_paragraphs_plain(
             context_manager=context_manager,
             placeholder_format=None,
         )
+        if translated and (prompt_options or {}).get("reflection_mode"):
+            from src.core.translator import run_chunk_reflection_pass
+
+            translated = await run_chunk_reflection_pass(
+                source_chunk=main_content,
+                draft_translation=translated,
+                target_language=target_language,
+                model_name=model_name,
+                llm_client=llm_client,
+                novel_context=(prompt_options or {}).get("novel_context", ""),
+                custom_instructions=(prompt_options or {}).get("custom_instructions", ""),
+                glossary_block=(prompt_options or {}).get("glossary_block", ""),
+                log_callback=log_callback,
+                context_session=context_session,
+                prompt_options=unit_prompt_options,
+            )
         return ('done', translated)
 
     def _fill_remaining_with_source():
@@ -692,6 +790,75 @@ async def translate_paragraphs_plain(
             chunk_data=chunk_data,
             status='completed' if chunk_succeeded else 'partial',
         )
+
+    def _commit_context_state(i):
+        if not (
+            context_session
+            and checkpoint_manager
+            and translation_id
+            and hasattr(checkpoint_manager, "db")
+        ):
+            return
+        addressing = pending_addressing_by_index.pop(i, None)
+        relationships = pending_relationships_by_index.pop(i, None)
+        if not addressing and not relationships:
+            return
+        db = checkpoint_manager.db
+        with db.context_state_transaction():
+            if addressing and prompt_options.get(
+                "use_db_directed_addressing",
+                True,
+            ):
+                sync_context_update_addressing_to_db(
+                    translation_id=translation_id,
+                    db=db,
+                    updated_context_or_dynamic_state=addressing["content"],
+                    target_language=target_language,
+                    chunk_index=global_chunk_offset + i,
+                    log_callback=log_callback,
+                    dialogue_attribution=addressing.get("dialogue_attribution"),
+                    candidates=addressing.get("candidates"),
+                    source_text=addressing.get("source_text", ""),
+                    source_language=source_language,
+                    contract_version=contract_version,
+                )
+            if relationships and relationship_mode != "off":
+                sync_context_update_relationships_to_db(
+                    translation_id=translation_id,
+                    db=db,
+                    updated_context_or_dynamic_state=relationships["content"],
+                    source_text=relationships["source_text"],
+                    candidates=relationships.get("candidates"),
+                    parser_status=relationships.get("parser_status", "absent"),
+                    target_language=target_language,
+                    chunk_index=global_chunk_offset + i,
+                    log_callback=log_callback,
+                )
+        if addressing and prompt_options.get("use_db_directed_addressing", True):
+            apply_db_addressing_to_session(
+                context_session,
+                translation_id,
+                db,
+            )
+        if relationships and relationship_mode != "off":
+            apply_relationship_graph_to_session(
+                context_session,
+                translation_id,
+                db,
+            )
+        context_session.save()
+        if log_callback and contract_version >= 2:
+            emit_progress_log(
+                log_callback,
+                "novel_context_state",
+                "Context committed",
+                layer="novel_context",
+                data={
+                    "type": "novel_context_state",
+                    "content": context_session.content,
+                    "filename": context_session.path.name,
+                },
+            )
 
     pending = [
         index for index in range(len(chunks))
@@ -748,6 +915,8 @@ async def translate_paragraphs_plain(
                         " ".join(words[-25:]) if len(words) > 25 else cleaned
                     )
 
+        if chunk_succeeded:
+            _commit_context_state(i)
         _save_chunk_checkpoint(i, chunk_succeeded)
 
         stats.record_processed()
@@ -805,6 +974,8 @@ async def translate_paragraphs_plain(
                         f"Retry failed for chunk {i + 1}/{len(chunks)} ({exc}) - keeping original text",
                     )
                 translated_parts[i] = main_content
+                pending_addressing_by_index.pop(i, None)
+                pending_relationships_by_index.pop(i, None)
                 _save_chunk_checkpoint(i, False)
                 continue
 
@@ -830,6 +1001,11 @@ async def translate_paragraphs_plain(
             else:
                 translated_parts[i] = main_content
 
+            if chunk_succeeded:
+                _commit_context_state(i)
+            else:
+                pending_addressing_by_index.pop(i, None)
+                pending_relationships_by_index.pop(i, None)
             _save_chunk_checkpoint(i, chunk_succeeded)
             if stats_callback:
                 stats_callback(stats.to_dict())

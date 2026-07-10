@@ -18,6 +18,7 @@ from src.utils.relationship_projection import build_relationship_projection
 from src.utils.relationship_reasoning_engine import (
     RelationshipReasoningEngine,
     judge_relationship_candidate,
+    relationship_support_for_addressing,
 )
 from src.utils.relationship_schema import (
     RelationshipCandidate,
@@ -30,6 +31,7 @@ from src.utils.relationship_sync import (
     quarantine_incompatible_addressing_rules,
     resolve_relationship_reasoning_mode,
     sync_context_update_relationships_to_db,
+    judge_ambiguous_relationship_candidates,
     sync_markdown_relationships_to_db,
 )
 from src.utils.novel_context import update_novel_context_chunk
@@ -659,6 +661,120 @@ async def test_context_update_retries_malformed_relationship_json_once():
     assert sink["candidates"][0]["relationship_type"] == "friend"
 
 
+@pytest.mark.asyncio
+async def test_ambiguous_relationship_judge_is_batched_once_per_chunk():
+    class Judge:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate(self, **_kwargs):
+            self.calls += 1
+            return SimpleNamespace(content=json.dumps({
+                "decisions": [
+                    {"index": 0, "decision": "support", "confidence": 0.9, "reason": "Explicit."},
+                    {"index": 1, "decision": "uncertain", "confidence": 0.4, "reason": "Ambiguous."},
+                ],
+            }))
+
+    client = Judge()
+    candidates = [
+        RelationshipCandidate(
+            source="A",
+            target="B",
+            relationship_type="associated",
+            evidence_quote="A called B a colleague.",
+            confidence=0.6,
+        ),
+        RelationshipCandidate(
+            source="C",
+            target="D",
+            relationship_type="associated",
+            evidence_quote="C stood near D.",
+            confidence=0.5,
+        ),
+    ]
+    judged = await judge_ambiguous_relationship_candidates(
+        llm_client=client,
+        candidates=candidates,
+        source_text="A called B a colleague. C stood near D.",
+        model_name="test",
+        enabled=True,
+    )
+    assert client.calls == 1
+    assert [item["judge_decision"] for item in judged] == ["support", "uncertain"]
+
+
+def test_friend_and_older_sibling_chain_derives_social_seniority(relationship_db):
+    tx = "multi-hop-seniority"
+    engine = _engine_with_characters(relationship_db, tx, "A", "B", "C")
+    engine.register_node(tx, "A", gender="male")
+    engine.register_node(tx, "C", gender="female")
+    assert engine.merge_candidate(
+        tx,
+        0,
+        _manual_candidate(
+            "A",
+            "B",
+            "friend",
+            direction="symmetric",
+            hierarchy="peer",
+        ),
+    ).status == "accepted"
+    assert engine.merge_candidate(
+        tx,
+        1,
+        _manual_candidate(
+            "C",
+            "B",
+            "sibling",
+            direction="symmetric",
+            hierarchy="source_senior",
+            relative_age="source_older",
+        ),
+    ).status == "accepted"
+
+    support = relationship_support_for_addressing(
+        relationship_db,
+        tx,
+        "A",
+        "C",
+    )
+    assert support["derived"] is True
+    assert support["hierarchy"] == "source_junior"
+    assert support["confidence"] >= 0.72
+    assert len(support["path"]) == 2
+    assert relationship_db.get_relationship_derivations(tx)[0]["status"] == "accepted"
+
+    projection = build_relationship_projection(
+        tx,
+        relationship_db,
+        active_character_names=["A", "C"],
+        target_language="Vietnamese",
+    )
+    assert "Derived social seniority" in projection.prompt_text
+    assert "A -> C: hierarchy=source_junior" in projection.prompt_text
+    assert "default self=em, target=chị" in projection.prompt_text
+
+
+def test_internally_inconsistent_parent_seniority_is_quarantined(relationship_db):
+    tx = "inconsistent-parent"
+    engine = _engine_with_characters(relationship_db, tx, "Parent", "Child")
+    decision = engine.merge_candidate(
+        tx,
+        0,
+        _manual_candidate(
+            "Parent",
+            "Child",
+            "parent",
+            hierarchy="source_junior",
+            relative_age="source_younger",
+        ),
+    )
+    assert decision.status == "quarantined"
+    assert decision.validator == "semantic_hierarchy"
+    assert relationship_db.get_relationship_edges(tx, statuses=["accepted"]) == []
+
+
 def test_relationship_beta_routes_support_audit_lock_quarantine_and_delete(
     relationship_db,
     tmp_path,
@@ -712,6 +828,12 @@ def test_relationship_beta_routes_support_audit_lock_quarantine_and_delete(
         )
         assert audit.status_code == 200
         assert audit.get_json()["edges"][0]["status"] == "quarantined"
+
+        resolution = client.get(
+            f"/api/translation/{tx}/addressing-resolution?speaker=A&addressee=B"
+        )
+        assert resolution.status_code == 200
+        assert "resolution" in resolution.get_json()
 
         deleted = client.delete(
             f"/api/translation/{tx}/relationship-edges/{decision.edge_id}"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+import json
 import re
 from dataclasses import replace
 from typing import Any, Dict, Iterable, List, Optional
@@ -11,7 +13,6 @@ from src.utils.progress_logging import emit_progress_log
 from src.utils.relationship_projection import build_relationship_projection
 from src.utils.relationship_reasoning_engine import (
     RelationshipReasoningEngine,
-    judge_relationship_candidate,
     relationship_candidate_needs_llm_judge,
     relationship_support_for_addressing,
 )
@@ -111,6 +112,7 @@ def _register_context_nodes(
             translation_id,
             name,
             entity_type="character",
+            gender=str(profile.get("gender") or "unknown"),
         )
 
     object_terms: Dict[str, str] = {}
@@ -255,6 +257,8 @@ def quarantine_incompatible_addressing_rules(
 
     quarantined = 0
     for rule in list(db.get_addressing_rules(translation_id)):
+        if str(rule.get("scope") or "durable").casefold() == "situational":
+            continue
         support = relationship_support_for_addressing(
             db,
             translation_id,
@@ -493,7 +497,7 @@ async def judge_ambiguous_relationship_candidates(
     locked_facts: Optional[List[Dict[str, Any]]] = None,
     log_callback=None,
 ) -> List[Dict[str, Any]]:
-    """Run the opt-in LLM judge only for candidates that are ambiguous."""
+    """Classify all ambiguous candidates with at most one LLM call per chunk."""
 
     normalized: List[RelationshipCandidate] = []
     for item in candidates or []:
@@ -503,26 +507,118 @@ async def judge_ambiguous_relationship_candidates(
     if not enabled or not llm_client:
         return [candidate.to_dict() for candidate in normalized]
 
-    judged = []
-    for candidate in normalized:
-        if not relationship_candidate_needs_llm_judge(candidate):
+    ambiguous_indexes = [
+        index for index, candidate in enumerate(normalized)
+        if relationship_candidate_needs_llm_judge(candidate)
+    ]
+    if not ambiguous_indexes:
+        return [candidate.to_dict() for candidate in normalized]
+
+    contract = {
+        "decisions": [{
+            "index": 0,
+            "decision": "support | reject | uncertain",
+            "confidence": 0.0,
+            "reason": "brief evidence classification",
+        }],
+    }
+    candidate_payload = [
+        {"index": index, "candidate": normalized[index].to_dict()}
+        for index in ambiguous_indexes
+    ]
+    prompt = (
+        "Classify every proposed relationship against the source excerpt. "
+        "Do not infer from genre stereotypes, names, or world knowledge. Do not "
+        "change endpoints, relationship types, direction, or evidence. Return "
+        "only one JSON object matching this contract:\n"
+        f"{json.dumps(contract)}\n\n"
+        f"Candidates: {json.dumps(candidate_payload, ensure_ascii=False)}\n"
+        f"Locked facts: {json.dumps(locked_facts or [], ensure_ascii=False)}\n"
+        f"Source excerpt: {str(source_text or '')[:6000]}"
+    )
+    system_prompt = (
+        "You are a conservative relationship evidence classifier. Locked facts "
+        "are immutable. Use uncertain whenever the named participants, direction, "
+        "or social relationship are not explicit in the supplied source."
+    )
+    decisions: Dict[int, Dict[str, Any]] = {}
+    parse_status = "json"
+    try:
+        if hasattr(llm_client, "generate_async"):
+            response = llm_client.generate_async(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                model=model_name,
+                temperature=0.0,
+            )
+        else:
+            response = llm_client.generate(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                model=model_name,
+                temperature=0.0,
+            )
+        if inspect.isawaitable(response):
+            response = await response
+        raw = str(getattr(response, "content", "") or "").strip()
+        fence = re.search(
+            r"```(?:json)?\s*(.*?)```",
+            raw,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        if fence:
+            raw = fence.group(1).strip()
+        match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+        payload = json.loads(match.group(0) if match else raw)
+        rows = payload.get("decisions") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            raise ValueError("Missing decisions list")
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            try:
+                index = int(row.get("index"))
+            except (TypeError, ValueError):
+                continue
+            if index not in ambiguous_indexes or index in decisions:
+                continue
+            decision = str(row.get("decision") or "").strip().casefold()
+            if decision not in {"support", "reject", "uncertain"}:
+                decision = "uncertain"
+            try:
+                confidence = max(0.0, min(1.0, float(row.get("confidence") or 0.0)))
+            except (TypeError, ValueError):
+                confidence = 0.0
+            decisions[index] = {
+                "decision": decision,
+                "confidence": confidence,
+                "reason": str(row.get("reason") or "").strip()[:300],
+            }
+        if any(index not in decisions for index in ambiguous_indexes):
+            parse_status = "incomplete_json"
+    except Exception as exc:
+        parse_status = f"call_or_parse_failed:{type(exc).__name__}"
+
+    judged: List[RelationshipCandidate] = []
+    for index, candidate in enumerate(normalized):
+        if index not in ambiguous_indexes:
             judged.append(candidate)
             continue
-        try:
-            updated, result = await judge_relationship_candidate(
-                llm_client,
-                candidate,
-                source_text,
-                model_name=model_name,
-                locked_facts=locked_facts,
-            )
-        except Exception as exc:
-            updated = replace(
-                candidate,
-                judge_decision="uncertain",
-                judge_reason=f"Judge call failed: {type(exc).__name__}",
-            )
-            result = None
+        decision = decisions.get(index, {
+            "decision": "uncertain",
+            "confidence": 0.0,
+            "reason": "Batched judge did not return a valid decision.",
+        })
+        updated = replace(
+            candidate,
+            confidence=(
+                max(candidate.confidence, float(decision["confidence"]))
+                if decision["decision"] == "support"
+                else candidate.confidence
+            ),
+            judge_decision=str(decision["decision"]),
+            judge_reason=str(decision["reason"]),
+        )
         judged.append(updated)
         emit_progress_log(
             log_callback,
@@ -534,7 +630,7 @@ async def judge_ambiguous_relationship_candidates(
                 "source": candidate.source,
                 "target": candidate.target,
                 "decision": updated.judge_decision or "uncertain",
-                "parse_status": result.parse_status if result else "call_failed",
+                "parse_status": parse_status,
             },
         )
     return [candidate.to_dict() for candidate in judged]

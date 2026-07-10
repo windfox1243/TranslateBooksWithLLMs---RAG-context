@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Optional
 
 from src.persistence.database import Database
+from src.utils.language_profiles import get_language_profile
+from src.utils.relationship_reasoning_engine import relationship_support_for_addressing
 from src.utils.relationship_schema import RelationshipProjection, clean_relationship_text
 from src.utils.text_matching import active_label_matches_name, reference_mentions_label
 
@@ -82,6 +84,41 @@ def _render_addressing_rule(rule: Dict[str, Any]) -> str:
     )
 
 
+def _vietnamese_seniority_hint(support: Dict[str, Any]) -> str:
+    hierarchy = str(support.get("hierarchy") or "unknown")
+    source_gender = str(support.get("source_gender") or "unknown").casefold()
+    target_gender = str(support.get("target_gender") or "unknown").casefold()
+    if hierarchy == "source_junior":
+        target_form = "anh" if target_gender == "male" else "chị" if target_gender == "female" else "a senior kinship pronoun"
+        return f"default self=em, target={target_form}"
+    if hierarchy == "source_senior":
+        self_form = "anh" if source_gender == "male" else "chị" if source_gender == "female" else "a senior kinship pronoun"
+        return f"default self={self_form}, target=em"
+    return ""
+
+
+def _render_seniority_path(
+    source: str,
+    target: str,
+    support: Dict[str, Any],
+    target_language: str,
+) -> str:
+    path_types = [
+        str(item.get("relationship_type") or "associated")
+        for item in support.get("path") or []
+    ]
+    metadata = [
+        f"hierarchy={support.get('hierarchy')}",
+        f"confidence={float(support.get('confidence') or 0.0):.2f}",
+        f"path={' + '.join(path_types)}",
+    ]
+    if get_language_profile(target_language).addressing_family == "vietnamese":
+        hint = _vietnamese_seniority_hint(support)
+        if hint:
+            metadata.append(hint)
+    return f"- {source} -> {target}: {', '.join(metadata)}"
+
+
 def build_relationship_projection(
     translation_id: str,
     db: Optional[Database],
@@ -117,6 +154,37 @@ def build_relationship_projection(
         reverse=True,
     )
     selected = ranked[:max(0, int(max_edges))]
+
+    relevant_names: List[str] = []
+    for name in active_names:
+        node = db.get_relationship_node_by_name(translation_id, name)
+        if node and node.get("entity_type") == "character":
+            relevant_names.append(str(node.get("canonical_name") or name))
+    if not relevant_names:
+        for _score, _locked, edge, _reason in selected:
+            for key in ("source_name", "target_name"):
+                name = str(edge.get(key) or "")
+                if name and reference_mentions_label(name, reference_text, target_language):
+                    relevant_names.append(name)
+    relevant_names = list(dict.fromkeys(relevant_names))[:8]
+    derived_seniority = []
+    for source in relevant_names:
+        for target in relevant_names:
+            if source == target:
+                continue
+            support = relationship_support_for_addressing(
+                db,
+                translation_id,
+                source,
+                target,
+            )
+            if (
+                support.get("derived")
+                and not support.get("conflict")
+                and support.get("hierarchy") in {"source_senior", "source_junior"}
+                and float(support.get("confidence") or 0.0) >= 0.72
+            ):
+                derived_seniority.append((source, target, support))
 
     addressing_rules = []
     for rule in db.get_addressing_rules(translation_id):
@@ -163,6 +231,12 @@ def build_relationship_projection(
     if selected:
         lines.append("Accepted relationship facts:")
         lines.extend(_render_edge(edge) for _score, _locked, edge, _reason in selected)
+    if derived_seniority:
+        lines.extend(["", "Derived social seniority (use unless explicit scene evidence overrides it):"])
+        lines.extend(
+            _render_seniority_path(source, target, support, target_language)
+            for source, target, support in derived_seniority
+        )
     if addressing_rules:
         lines.extend(["", "Active directed addressing projections:"])
         lines.extend(_render_addressing_rule(rule) for rule in addressing_rules)
@@ -187,6 +261,11 @@ def build_relationship_projection(
         "label": f"{rule.get('speaker_name')} -> {rule.get('addressee_name')}",
         "reason": "active_pair" if active_names else "source_reference",
     } for rule in addressing_rules)
+    reasons.extend({
+        "entry_type": "derived_seniority",
+        "label": f"{source} -> {target}",
+        "reason": str(support.get("basis") or "derived_relationship_chain"),
+    } for source, target, support in derived_seniority)
     fallback_reasons = []
     if not lines:
         fallback_reasons.append(

@@ -14,6 +14,10 @@ from src.utils.progress_logging import emit_progress_log
 
 _PAIR_RE = re.compile(r"^\s*-\s*(?P<speaker>.+?)\s*(?:→|->)\s*(?P<addressee>.+?)\s*:\s*(?P<details>.+?)\s*$")
 _QUOTED_RE = re.compile(r'"([^"\n]{1,160})"')
+_REGISTER_VALUES = {
+    "neutral", "formal", "polite", "casual", "intimate", "hostile",
+    "vulgar", "archaic", "familial",
+}
 
 
 def _clean(value: Any) -> str:
@@ -33,7 +37,30 @@ def _field(details: str, *names: str) -> str:
     return ""
 
 
+def _quoted_field(details: str, *names: str) -> str:
+    """Read a quoted named field without relying on quote position."""
+
+    for name in names:
+        pattern = re.escape(name).replace(r"\ ", r"[-_\s]*")
+        match = re.search(
+            rf"(?:^|[|;]\s*){pattern}\s*[:=]?\s*\"(?P<value>[^\"\n]*)\"",
+            details,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return _clean(match.group("value"))
+    return ""
+
+
 def _target_form_from_details(details: str) -> str:
+    quoted_explicit = _quoted_field(
+        details,
+        "recommended target-language form",
+        "target-language form",
+        "target form",
+    )
+    if quoted_explicit:
+        return quoted_explicit
     explicit = _field(
         details,
         "recommended target-language form",
@@ -86,12 +113,29 @@ def parse_markdown_addressing_lines(markdown_text: str) -> List[AddressingUpdate
             second = target_form_details
         if not self_ref:
             self_ref = "unspecified"
-        register = "polite"
+        register = "neutral"
+        social_basis = []
         for part in [p.strip() for p in details.split("|") if p.strip()]:
             lowered = part.casefold()
             if not any(key in lowered for key in ("source form", "target", "self-reference", "second-person", "vocative")):
-                register = _clean(part).lower() or register
-                break
+                clean_part = _clean(part).strip(" \"'")
+                if clean_part.casefold() in _REGISTER_VALUES:
+                    register = clean_part.casefold()
+                elif clean_part:
+                    social_basis.extend(
+                        item.strip()
+                        for item in re.split(r"[,;]", clean_part)
+                        if item.strip()
+                    )
+        source_form = _quoted_field(details, "source form")
+        if not source_form:
+            compact_quotes = _QUOTED_RE.findall(details)
+            if (
+                compact_quotes
+                and "source form" not in details.casefold()
+                and "target-language form" not in details.casefold()
+            ):
+                source_form = _clean(compact_quotes[0])
         if speaker and addressee and second:
             deltas.append(
                 AddressingUpdateDelta(
@@ -103,6 +147,20 @@ def parse_markdown_addressing_lines(markdown_text: str) -> List[AddressingUpdate
                     register=register,
                     confidence=0.95,
                     evidence_quote=raw_line.strip(),
+                    source_forms=(
+                        [{
+                            "text": source_form,
+                            "usage": "direct_address",
+                            "evidence_quote": raw_line.strip(),
+                            "scope": "durable",
+                            "confidence": 0.95,
+                        }]
+                        if source_form and source_form.casefold() != "unknown"
+                        else []
+                    ),
+                    social_basis=social_basis,
+                    scope="durable",
+                    provenance="markdown_context",
                 )
             )
     return deltas
@@ -275,8 +333,79 @@ def sync_context_update_addressing_to_db(
     known_character_names: Optional[Iterable[str]] = None,
     active_character_names: Optional[Iterable[str]] = None,
     dialogue_attribution: Optional[Dict[str, Any]] = None,
+    candidates: Optional[Iterable[Any]] = None,
+    source_text: str = "",
+    source_language: str = "",
+    contract_version: int = 1,
 ) -> int:
     """Import addressing rules discovered by a context update into DB."""
+
+    if contract_version >= 2:
+        from src.utils.addressing_schema import AddressingCandidateV2
+
+        parsed = []
+        for item in candidates or []:
+            candidate = (
+                item
+                if isinstance(item, AddressingCandidateV2)
+                else AddressingCandidateV2.from_dict(
+                    item,
+                    source_language=source_language,
+                )
+            )
+            if candidate:
+                parsed.append(candidate)
+        if not parsed:
+            return 0
+        engine = ContextMergeEngine(db=db)
+        known_names = list(known_character_names or []) or (
+            _known_character_names_from_context(updated_context_or_dynamic_state)
+        )
+        active_names = list(active_character_names or []) + (
+            _active_names_from_dialogue(dialogue_attribution)
+        )
+        applied = 0
+        for candidate in parsed:
+            if candidate.action == "delete":
+                existing = next((
+                    rule for rule in db.get_addressing_rules(translation_id)
+                    if _clean(rule.get("speaker_name")).casefold()
+                    == candidate.speaker.casefold()
+                    and _clean(rule.get("addressee_name")).casefold()
+                    == candidate.addressee.casefold()
+                ), None)
+                if existing and not existing.get("is_locked"):
+                    applied += int(db.delete_addressing_rule(
+                        translation_id,
+                        candidate.speaker,
+                        candidate.addressee,
+                    ))
+                continue
+            applied += int(engine.apply_delta(
+                translation_id=translation_id,
+                chunk_index=chunk_index,
+                delta=candidate.to_delta(),
+                trigger_source="context_update_v2",
+                log_callback=log_callback,
+                target_language=target_language,
+                known_character_names=known_names,
+                active_character_names=active_names,
+                dialogue_attribution=dialogue_attribution,
+                source_text=source_text,
+                source_language=source_language,
+            ))
+        emit_progress_log(
+            log_callback,
+            "db_addressing_v2_imported",
+            f"Imported {applied}/{len(parsed)} structured addressing update(s).",
+            layer="db_addressing",
+            data={
+                "candidate_count": len(parsed),
+                "applied_count": applied,
+                "contract_version": 2,
+            },
+        )
+        return applied
 
     return sync_markdown_addressing_to_db(
         translation_id=translation_id,
@@ -373,6 +502,17 @@ def export_db_addressing_to_markdown(
         self_ref = _clean(rule.get("self_pronoun"))
         vocative = _clean(rule.get("vocative")) or "none"
         register = _clean(rule.get("register")) or "polite"
+        source_forms = [
+            _clean(value)
+            for value in rule.get("source_forms") or []
+            if _clean(value)
+        ]
+        source_form = source_forms[0] if source_forms else "unknown"
+        social_basis = [
+            _clean(value)
+            for value in rule.get("social_basis") or []
+            if _clean(value)
+        ]
         if self_ref and self_ref != "unspecified":
             target_form = (
                 f"self-reference: {self_ref}; second-person pronoun: {second}; "
@@ -381,8 +521,10 @@ def export_db_addressing_to_markdown(
         else:
             target_form = second
         lines.append(
-            f'- {speaker} → {addressee}: source form "" | '
-            f'recommended target-language form "{target_form}" | {register}'
+            f'- {speaker} → {addressee}: source form "{source_form}" | '
+            f'recommended target-language form "{target_form}" | '
+            f'{register}'
+            + (f"; {', '.join(social_basis)}" if social_basis else "")
         )
     return "\n".join(lines)
 
