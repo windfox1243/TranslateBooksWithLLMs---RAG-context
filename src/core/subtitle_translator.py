@@ -410,46 +410,58 @@ async def refine_subtitle_translations(
                 )
 
             try:
-                prompt_pair = generate_subtitle_refinement_block_prompt(
-                    subtitle_blocks=local_subtitle_tuples,
-                    previous_refined_block=previous_refined_block,
-                    target_language=target_language,
-                    additional_instructions=extra_instructions,
-                    glossary_block=glossary_block,
-                    prompt_options=local_prompt_options,
-                )
-
                 if log_callback and attempt > 0:
                     log_callback("srt_refinement_retry",
                                  f"Block {block_idx + 1}: retry attempt {attempt} "
                                  f"({len(local_subtitle_tuples) - len(block_refined)} subtitles still missing)")
 
-                llm_response = await llm_client.make_request(
-                    prompt_pair.user, model_name, system_prompt=prompt_pair.system
+                from src.core.translator import run_chunk_reflection_pass
+
+                draft_block = "\n".join(
+                    f"[{local_idx}]{text}"
+                    for local_idx, text in local_subtitle_tuples
+                )
+                source_queue = (prompt_options or {}).get("_refinement_source_queue") or []
+                source_chunk = (
+                    str(source_queue[block_idx])
+                    if block_idx < len(source_queue)
+                    else ""
+                )
+                local_prompt_options["editor_source_mode"] = (
+                    "checkpoint" if source_chunk.strip() else "monolingual"
                 )
 
-                if llm_response and llm_response.content:
-                    if log_callback:
-                        emit_progress_log(
-                            log_callback,
-                            "refinement_response",
-                            "Refinement response received",
-                            layer="subtitle_refinement",
-                            data={
-                                'response': llm_response.content,
-                                'model': model_name,
-                            },
-                        )
+                def validate_subtitle_repair(value):
+                    parsed_value = srt_processor.extract_block_translations_with_remapping(
+                        value,
+                        local_to_global,
+                    )
+                    if sorted(parsed_value) != sorted(group):
+                        return "adapter_subtitle_marker_sequence_changed"
+                    if any(not str(parsed_value[index] or "").strip() for index in group):
+                        return "adapter_subtitle_text_empty"
+                    return None
 
-                    refined_block_text = llm_client.extract_translation(llm_response.content)
-                    if refined_block_text:
-                        parsed = srt_processor.extract_block_translations_with_remapping(
-                            refined_block_text, local_to_global
-                        )
-                        # Merge only the newly recovered (non-empty) entries.
-                        for g_idx, text in parsed.items():
-                            if g_idx not in block_refined and text.strip():
-                                block_refined[g_idx] = text
+                refined_block_text = await run_chunk_reflection_pass(
+                    source_chunk=source_chunk,
+                    draft_translation=draft_block,
+                    target_language=target_language,
+                    model_name=model_name,
+                    llm_client=llm_client,
+                    novel_context=local_prompt_options.get("novel_context", ""),
+                    custom_instructions=extra_instructions,
+                    glossary_block=glossary_block,
+                    log_callback=log_callback,
+                    prompt_options=local_prompt_options,
+                    repair_validator=validate_subtitle_repair,
+                )
+                parsed = srt_processor.extract_block_translations_with_remapping(
+                    refined_block_text,
+                    local_to_global,
+                )
+                for g_idx, text in parsed.items():
+                    if g_idx not in block_refined and text.strip():
+                        block_refined[g_idx] = text
 
                 # All subtitles recovered? stop retrying.
                 if len(block_refined) == len(group):

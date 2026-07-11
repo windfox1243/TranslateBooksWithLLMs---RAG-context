@@ -5,6 +5,7 @@ import os
 import time
 import copy
 import threading
+import shutil
 from pathlib import Path
 from flask import Blueprint, request, jsonify
 
@@ -19,7 +20,10 @@ from src.config import (
     MIN_CHUNK_SIZE,
 )
 from src.tts.tts_config import TTSConfig
-from src.api.api_keys import resolve_api_key as _resolve_api_key
+from src.api.api_keys import (
+    provider_env_var,
+    resolve_api_key as _resolve_api_key,
+)
 from src.utils.unified_logger import get_logger
 
 logger = get_logger(__name__)
@@ -369,6 +373,85 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
 
     uploads_dir = Path(output_dir) / 'uploads'
 
+    def _context_revision(translation_id):
+        job = state_manager.checkpoint_manager.db.get_job(translation_id) or {}
+        try:
+            return int((job.get("config") or {}).get("context_revision", 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def _revision_conflict(translation_id, payload):
+        expected = payload.get("expected_revision")
+        current = _context_revision(translation_id)
+        if expected is None:
+            return None, current
+        try:
+            matches = int(expected) == current
+        except (TypeError, ValueError):
+            matches = False
+        if matches:
+            return None, current
+        return (jsonify({
+            "error": "Context revision changed; reload structured context before saving.",
+            "expected_revision": expected,
+            "current_revision": current,
+        }), 409), current
+
+    def _export_structured_context(translation_id):
+        """Export accepted structured state to markdown and the latest snapshot."""
+
+        db = state_manager.checkpoint_manager.db
+        job = db.get_job(translation_id) or {}
+        options = (job.get("config") or {}).get("prompt_options") or {}
+        filename = options.get("novel_context_file")
+        if not filename:
+            return False
+        from src.config import NOVEL_CONTEXTS_DIR
+        from src.utils.db_addressing import apply_db_addressing_to_context
+        from src.utils.relationship_sync import apply_relationship_graph_to_context
+        from src.utils.novel_context import (
+            compress_dynamic_state,
+            decode_context_snapshot,
+            load_novel_context,
+            normalize_novel_context_filename,
+            resolve_novel_context_path,
+            save_novel_context,
+        )
+
+        filename = normalize_novel_context_filename(filename)
+        path = resolve_novel_context_path(filename, NOVEL_CONTEXTS_DIR)
+        current = load_novel_context(path.name, path.parent)
+        updated = apply_db_addressing_to_context(current, translation_id, db)
+        updated = apply_relationship_graph_to_context(updated, translation_id, db)
+        save_novel_context(path.name, path.parent, updated)
+
+        chunks = db.get_chunks(translation_id)
+        if chunks:
+            latest = max(chunks, key=lambda item: item.get("chunk_index", -1))
+            chunk_data = dict(latest.get("chunk_data") or {})
+            snapshot = chunk_data.get("context_snapshot")
+            if snapshot:
+                snapshot_context, _global, _dynamic = decode_context_snapshot(
+                    snapshot,
+                    updated,
+                )
+                snapshot_context = apply_db_addressing_to_context(
+                    snapshot_context, translation_id, db, fallback_context=updated
+                )
+                snapshot_context = apply_relationship_graph_to_context(
+                    snapshot_context, translation_id, db, fallback_context=updated
+                )
+                chunk_data["context_snapshot"] = compress_dynamic_state(snapshot_context)
+                db.save_chunk(
+                    translation_id=translation_id,
+                    chunk_index=latest["chunk_index"],
+                    original_text=latest.get("original_text"),
+                    translated_text=latest.get("translated_text"),
+                    chunk_data=chunk_data,
+                    status=latest.get("status") or "completed",
+                )
+        return True
+
     def make_context_resync_auto_resume_callback(translation_id):
         def resume_cb():
             logger.info(
@@ -498,6 +581,28 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         translation_id = f"trans_{int(time.time() * 1000)}"
 
         prompt_options = _prompt_options_from_start_request(data)
+        editor_provider = str(prompt_options.get('editor_provider') or '').strip().lower()
+        editor_model = str(prompt_options.get('editor_model') or '').strip()
+        allowed_editor_providers = {
+            '', 'ollama', 'gemini', 'openai', 'openrouter', 'mistral',
+            'deepseek', 'poe', 'nim', 'litellm',
+        }
+        if editor_provider not in allowed_editor_providers:
+            return jsonify({"error": "Unsupported Senior Editor provider"}), 400
+        translation_provider = str(data.get('llm_provider') or 'ollama').lower()
+        if editor_provider and editor_provider != translation_provider and not editor_model:
+            return jsonify({
+                "error": "A Senior Editor model is required for a separate provider"
+            }), 400
+        if editor_provider not in {'', 'ollama', 'openai', 'litellm'}:
+            env_name = provider_env_var(editor_provider)
+            editor_key = _resolve_api_key(
+                data.get(f'{editor_provider}_api_key'), env_name,
+            )
+            if not editor_key:
+                return jsonify({
+                    "error": f"Senior Editor provider {editor_provider} requires an API key"
+                }), 400
         if (
             prompt_options.get('auto_update_context')
             and not prompt_options.get('novel_context_file')
@@ -538,6 +643,10 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             'gemini_api_key': _resolve_api_key(data.get('gemini_api_key'), 'GEMINI_API_KEY'),
             'openai_api_key': _resolve_api_key(data.get('openai_api_key'), 'OPENAI_API_KEY'),
             'openrouter_api_key': _resolve_api_key(data.get('openrouter_api_key'), 'OPENROUTER_API_KEY'),
+            'mistral_api_key': _resolve_api_key(data.get('mistral_api_key'), 'MISTRAL_API_KEY'),
+            'deepseek_api_key': _resolve_api_key(data.get('deepseek_api_key'), 'DEEPSEEK_API_KEY'),
+            'poe_api_key': _resolve_api_key(data.get('poe_api_key'), 'POE_API_KEY'),
+            'nim_api_key': _resolve_api_key(data.get('nim_api_key'), 'NIM_API_KEY'),
             # Prompt options (optional instructions to include in the system prompt)
             'prompt_options': prompt_options,
             # Auto-pause on rate limit toggle (request overrides .env default)
@@ -575,6 +684,14 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                 return jsonify({"error": path_error}), 403
             config['file_path'] = str(safe_path)
             config['file_type'] = data['file_type']
+            if data.get('refinement_original_path'):
+                original_path, original_error = PathValidator.validate_upload_path(
+                    data['refinement_original_path'],
+                    uploads_dir,
+                )
+                if original_error is not None:
+                    return jsonify({"error": original_error}), 403
+                config['refinement_original_path'] = str(original_path)
         else:
             config['text'] = data['text']
             config['file_type'] = data.get('file_type', 'txt')
@@ -1360,6 +1477,10 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "translation_id": translation_id,
             "active": _is_context_resync_active(translation_id),
             "resync_state": state,
+            "staging_state": (
+                state_manager.checkpoint_manager.db
+                .get_latest_context_resync_run(translation_id)
+            ),
         }), 200
 
     @bp.route('/api/translation/<translation_id>/context/resync/pause', methods=['POST'])
@@ -1480,6 +1601,86 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "resync_state": config['_context_resync'],
         }), 200
 
+    @bp.route('/api/translation/<translation_id>/addressing-rules', methods=['POST', 'PUT'])
+    @bp.route('/<translation_id>/addressing-rules', methods=['POST', 'PUT'])
+    def upsert_addressing_rule_route(translation_id):
+        """Create or update one user-owned directed addressing rule."""
+
+        data = request.get_json() or {}
+        conflict, _current_revision = _revision_conflict(translation_id, data)
+        if conflict:
+            return conflict
+        from src.utils.addressing_schema import AddressingCandidateV2
+        from src.utils.context_merge_engine import ContextMergeEngine
+
+        candidate = AddressingCandidateV2.from_dict(
+            data,
+            source_language=str(data.get("source_language") or ""),
+            provenance="user_manual",
+        )
+        if not candidate or candidate.action != "upsert":
+            return jsonify({"error": "A complete addressing rule is required"}), 400
+        candidate.confidence = max(candidate.confidence, 0.99)
+        db = state_manager.checkpoint_manager.db
+        known_names = [
+            str(node.get("canonical_name") or "")
+            for node in db.get_relationship_nodes(translation_id)
+        ]
+        engine = ContextMergeEngine(db=db)
+        with db.context_state_transaction():
+            applied = engine.apply_delta(
+                translation_id=translation_id,
+                chunk_index=-1,
+                delta=candidate.to_delta(),
+                trigger_source="user_manual",
+                target_language=str(data.get("target_language") or ""),
+                known_character_names=known_names,
+                active_character_names=[candidate.speaker, candidate.addressee],
+                source_text="",
+                source_language=str(data.get("source_language") or ""),
+            )
+            if not applied:
+                return jsonify({
+                    "error": "Addressing rule was rejected by deterministic validation"
+                }), 422
+            db.upsert_addressing_rule(
+                translation_id,
+                candidate.speaker,
+                candidate.addressee,
+                candidate.self_reference,
+                candidate.second_person,
+                vocative=candidate.vocative,
+                register=candidate.register,
+                social_basis=candidate.social_basis,
+                scope=candidate.scope,
+                contract_version=2,
+                confidence=max(candidate.confidence, 0.99),
+                is_locked=1 if data.get("is_locked", True) else 0,
+                chunk_index=-1,
+                notes=candidate.notes,
+            )
+            db.add_context_audit_log(
+                translation_id=translation_id,
+                chunk_index=-1,
+                speaker_name=candidate.speaker,
+                addressee_name=candidate.addressee,
+                old_state=None,
+                new_state={"status": "accepted", **candidate.to_dict()},
+                trigger_source="user_manual",
+                evidence_quote=candidate.evidence_quote,
+                confidence=max(candidate.confidence, 0.99),
+            )
+        _export_structured_context(translation_id)
+        revision = state_manager.checkpoint_manager.mark_refinement_stale(
+            translation_id
+        )
+        return jsonify({
+            "message": "Addressing rule saved",
+            "translation_id": translation_id,
+            "context_revision": revision,
+        }), 200
+
+    @bp.route('/api/translation/<translation_id>/addressing-rules', methods=['GET'])
     @bp.route('/<translation_id>/addressing-rules', methods=['GET'])
     def get_addressing_rules_route(translation_id):
         """Get directed character addressing rules for a translation job."""
@@ -1526,6 +1727,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             ))
         return jsonify({
             "translation_id": translation_id,
+            "context_revision": _context_revision(translation_id),
             "rules": rules,
             "count": len(rules),
             "rejections": rejections,
@@ -1652,6 +1854,59 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             }), 200
         return jsonify({"error": "Addressing rule not found or could not be deleted"}), 404
 
+    @bp.route('/api/translation/<translation_id>/relationship-edges', methods=['POST', 'PUT'])
+    @bp.route('/<translation_id>/relationship-edges', methods=['POST', 'PUT'])
+    def upsert_relationship_edge_route(translation_id):
+        """Create or update one locked-by-default manual relationship fact."""
+
+        data = request.get_json() or {}
+        conflict, _current_revision = _revision_conflict(translation_id, data)
+        if conflict:
+            return conflict
+        from src.utils.relationship_reasoning_engine import RelationshipReasoningEngine
+        from src.utils.relationship_schema import RelationshipCandidate
+
+        candidate = RelationshipCandidate.from_dict(
+            {**data, "provenance": "user_manual", "confidence": data.get("confidence", 1.0)},
+            default_provenance="user_manual",
+            parser_status="rest_api",
+        )
+        if not candidate:
+            return jsonify({"error": "A valid relationship candidate is required"}), 400
+        db = state_manager.checkpoint_manager.db
+        engine = RelationshipReasoningEngine(db=db)
+        with db.context_state_transaction():
+            decision = engine.merge_candidate(
+                translation_id,
+                -1,
+                candidate,
+                known_character_names=[candidate.source, candidate.target],
+                language=str(data.get("language") or ""),
+            )
+            if decision.status not in {"accepted", "unchanged"}:
+                return jsonify({
+                    "error": decision.reason,
+                    "status": decision.status,
+                    "validator": decision.validator,
+                }), 422
+            if decision.edge_id and data.get("is_locked", True):
+                db.set_relationship_edge_lock(
+                    translation_id,
+                    decision.edge_id,
+                    True,
+                )
+        _export_structured_context(translation_id)
+        revision = state_manager.checkpoint_manager.mark_refinement_stale(
+            translation_id
+        )
+        return jsonify({
+            "message": "Relationship edge saved",
+            "translation_id": translation_id,
+            "edge_id": decision.edge_id,
+            "status": decision.status,
+            "context_revision": revision,
+        }), 200
+
     @bp.route('/api/translation/<translation_id>/relationship-graph', methods=['GET'])
     @bp.route('/<translation_id>/relationship-graph', methods=['GET'])
     def get_relationship_graph_route(translation_id):
@@ -1664,11 +1919,68 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         edges = db.get_relationship_edges(translation_id, statuses=statuses)
         return jsonify({
             "translation_id": translation_id,
+            "context_revision": _context_revision(translation_id),
             "nodes": nodes,
             "edges": edges,
             "node_count": len(nodes),
             "edge_count": len(edges),
         }), 200
+
+    @bp.route('/api/translation/<translation_id>/editor-diagnostics', methods=['GET'])
+    @bp.route('/<translation_id>/editor-diagnostics', methods=['GET'])
+    def get_editor_diagnostics_route(translation_id):
+        """Return locally persisted Senior Editor outcomes for one job."""
+        job = state_manager.checkpoint_manager.get_job(translation_id)
+        if not job:
+            return jsonify({"error": "Translation job not found"}), 404
+        return jsonify(
+            state_manager.checkpoint_manager.db.get_editor_diagnostics(
+                translation_id
+            )
+        )
+
+    @bp.route(
+        '/api/translation/<translation_id>/chunks/<int:chunk_index>/retry-editor',
+        methods=['POST'],
+    )
+    @bp.route(
+        '/<translation_id>/chunks/<int:chunk_index>/retry-editor',
+        methods=['POST'],
+    )
+    def retry_editor_route(translation_id, chunk_index):
+        """Queue a preserved draft for editor-only retry on normal resume."""
+        checkpoint = state_manager.checkpoint_manager.load_checkpoint(translation_id)
+        if not checkpoint:
+            return jsonify({"error": "Translation job not found"}), 404
+        chunk = next((
+            item for item in checkpoint.get("chunks", [])
+            if int(item.get("chunk_index", -1)) == chunk_index
+        ), None)
+        if not chunk or not str(chunk.get("translated_text") or "").strip():
+            return jsonify({"error": "No preserved draft is available"}), 409
+        chunk_data = dict(chunk.get("chunk_data") or {})
+        chunk_data["editor_validation"] = {
+            "stage": "manual_retry",
+            "status": "review_required",
+            "final_reason_codes": ["manual_editor_retry_requested"],
+        }
+        saved = state_manager.checkpoint_manager.save_checkpoint(
+            translation_id=translation_id,
+            chunk_index=chunk_index,
+            original_text=chunk.get("original_text") or "",
+            translated_text=chunk.get("translated_text"),
+            chunk_data=chunk_data,
+            chunk_status="failed",
+        )
+        if not saved:
+            return jsonify({"error": "Could not queue editor retry"}), 500
+        state_manager.checkpoint_manager.mark_partial(translation_id)
+        return jsonify({
+            "success": True,
+            "translation_id": translation_id,
+            "chunk_index": chunk_index,
+            "status": "queued",
+        })
 
     @bp.route('/api/translation/<translation_id>/relationship-conflicts', methods=['GET'])
     @bp.route('/<translation_id>/relationship-conflicts', methods=['GET'])
@@ -1803,6 +2115,142 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "message": "Relationship edge deleted successfully",
             "translation_id": translation_id,
             "edge_id": edge_id,
+        }), 200
+
+    @bp.route('/api/translation/<translation_id>/recovery-preview', methods=['GET'])
+    @bp.route('/<translation_id>/recovery-preview', methods=['GET'])
+    def recovery_preview_route(translation_id):
+        """Preview a non-destructive editor/context recovery operation."""
+
+        if translation_id != "trans_1783673914101":
+            return jsonify({"error": "No dedicated recovery recipe exists for this job"}), 404
+        db = state_manager.checkpoint_manager.db
+        job = db.get_job(translation_id)
+        if not job:
+            return jsonify({"error": "Translation job not found"}), 404
+        chunks = db.get_chunks(translation_id)
+        failed = [
+            item.get("chunk_index") for item in chunks
+            if item.get("status") == "failed"
+        ]
+        completed = [
+            item.get("chunk_index") for item in chunks
+            if item.get("status") == "completed"
+        ]
+        pair_edges = [
+            edge for edge in db.get_relationship_edges(translation_id)
+            if {
+                str(edge.get("source_name") or "").casefold(),
+                str(edge.get("target_name") or "").casefold(),
+            } == {"frondier de roach", "enfer de roach"}
+        ]
+        config = job.get("config") or {}
+        return jsonify({
+            "translation_id": translation_id,
+            "backup_required": True,
+            "database_path": str(db.db_path),
+            "context_file": (config.get("prompt_options") or {}).get("novel_context_file"),
+            "output_path": config.get("output_filepath"),
+            "completed_chunks_preserved": completed,
+            "failed_chunks_reset": [index for index in failed if index in {2, 3, 4, 5}],
+            "relationship_edges_quarantined": [edge.get("id") for edge in pair_edges],
+            "relationship_correction": {
+                "source": "Enfer De Roach",
+                "target": "Frondier De Roach",
+                "relationship_type": "parent",
+                "hierarchy": "source_senior",
+                "relative_age": "source_older",
+                "rank_relation": "source_higher",
+                "is_locked": True,
+            },
+        }), 200
+
+    @bp.route('/api/translation/<translation_id>/recover-editor-context', methods=['POST'])
+    @bp.route('/<translation_id>/recover-editor-context', methods=['POST'])
+    def recover_editor_context_route(translation_id):
+        """Back up and repair the explicitly selected interrupted job."""
+
+        if translation_id != "trans_1783673914101":
+            return jsonify({"error": "No dedicated recovery recipe exists for this job"}), 404
+        data = request.get_json() or {}
+        if data.get("confirm") is not True:
+            return jsonify({"error": "Explicit recovery confirmation is required"}), 400
+        db = state_manager.checkpoint_manager.db
+        job = db.get_job(translation_id)
+        if not job:
+            return jsonify({"error": "Translation job not found"}), 404
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        backup_dir = Path(db.db_path).resolve().parent / "recovery_backups" / f"{translation_id}-{timestamp}"
+        backup_dir.mkdir(parents=True, exist_ok=False)
+        db.backup_to(str(backup_dir / "jobs.db"))
+        config = job.get("config") or {}
+        copied = []
+        output_path = config.get("output_filepath")
+        if output_path and Path(output_path).is_file():
+            target = backup_dir / Path(output_path).name
+            shutil.copy2(output_path, target)
+            copied.append(str(target))
+        context_name = (config.get("prompt_options") or {}).get("novel_context_file")
+        if context_name:
+            from src.config import NOVEL_CONTEXTS_DIR
+            from src.utils.novel_context import resolve_novel_context_path
+            context_path = resolve_novel_context_path(context_name, NOVEL_CONTEXTS_DIR)
+            if context_path.is_file():
+                target = backup_dir / context_path.name
+                shutil.copy2(context_path, target)
+                copied.append(str(target))
+
+        from src.utils.relationship_reasoning_engine import RelationshipReasoningEngine
+        from src.utils.relationship_schema import RelationshipCandidate
+        with db.context_state_transaction():
+            for edge in db.get_relationship_edges(translation_id):
+                if {
+                    str(edge.get("source_name") or "").casefold(),
+                    str(edge.get("target_name") or "").casefold(),
+                } == {"frondier de roach", "enfer de roach"} and not edge.get("is_locked"):
+                    db.set_relationship_edge_status(translation_id, edge["id"], "quarantined")
+            decision = RelationshipReasoningEngine(db=db).merge_candidate(
+                translation_id,
+                -1,
+                RelationshipCandidate(
+                    source="Enfer De Roach",
+                    target="Frondier De Roach",
+                    relationship_type="parent",
+                    direction="directed",
+                    hierarchy="source_senior",
+                    relative_age="source_older",
+                    rank_relation="source_higher",
+                    confidence=1.0,
+                    provenance="user_manual",
+                    details="Enfer De Roach is Frondier De Roach's father.",
+                ),
+                known_character_names=["Enfer De Roach", "Frondier De Roach"],
+            )
+            if decision.edge_id:
+                db.set_relationship_edge_lock(translation_id, decision.edge_id, True)
+            for chunk in db.get_chunks(translation_id):
+                if chunk.get("chunk_index") not in {2, 3, 4, 5} or chunk.get("status") != "failed":
+                    continue
+                chunk_data = dict(chunk.get("chunk_data") or {})
+                chunk_data.pop("editor_validation", None)
+                db.save_chunk(
+                    translation_id=translation_id,
+                    chunk_index=chunk["chunk_index"],
+                    original_text=chunk.get("original_text"),
+                    translated_text=None,
+                    chunk_data=chunk_data,
+                    status="failed",
+                )
+        _export_structured_context(translation_id)
+        state_manager.checkpoint_manager.mark_partial(translation_id)
+        revision = state_manager.checkpoint_manager.mark_refinement_stale(translation_id)
+        return jsonify({
+            "message": "Recovery prepared; resume the job to retry failed chunks.",
+            "translation_id": translation_id,
+            "backup_directory": str(backup_dir),
+            "backed_up_files": copied,
+            "context_revision": revision,
+            "resume_from_chunk": 2,
         }), 200
 
     return bp

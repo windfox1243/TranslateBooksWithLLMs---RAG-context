@@ -217,6 +217,36 @@ async def translate_file(
             deepseek_api_key=deepseek_api_key,
             poe_api_key=poe_api_key
         )
+        docx_prompt_options = dict(prompt_options or {})
+        editor_provider = str(
+            docx_prompt_options.get("editor_provider") or llm_provider
+        ).strip().casefold()
+        editor_model = str(
+            docx_prompt_options.get("editor_model") or model_name
+        ).strip()
+        editor_client = llm_client
+        if editor_provider != llm_provider.casefold() or editor_model != model_name:
+            editor_client = create_llm_provider(
+                provider_type=editor_provider,
+                endpoint=llm_api_endpoint,
+                model=editor_model,
+                gemini_api_key=gemini_api_key,
+                openai_api_key=openai_api_key,
+                openrouter_api_key=openrouter_api_key,
+                mistral_api_key=mistral_api_key,
+                deepseek_api_key=deepseek_api_key,
+                poe_api_key=poe_api_key,
+                nim_api_key=nim_api_key,
+            )
+        docx_prompt_options.update({
+            "_editor_llm_client": editor_client,
+            "editor_provider_resolved": editor_provider,
+            "editor_model_resolved": editor_model,
+            "llm_provider": llm_provider,
+            "model": model_name,
+            "translation_id": translation_id,
+            "file_type": "docx",
+        })
 
         result = await translate_docx_file(
             input_filepath=input_filepath,
@@ -228,7 +258,7 @@ async def translate_file(
             max_tokens_per_chunk=max_tokens_per_chunk,
             log_callback=log_callback,
             stats_callback=stats_callback,
-            prompt_options=prompt_options,
+            prompt_options=docx_prompt_options,
             max_retries=1,
             context_manager=None,
             check_interruption_callback=check_interruption_callback,

@@ -7,7 +7,7 @@ as well as common data structures like LLMResponse.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 import httpx
 
 from src.config import TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT, REQUEST_TIMEOUT
@@ -46,6 +46,20 @@ class LLMResponse:
     context_limit: int = 0  # Context limit that was set for this request
     was_truncated: bool = False  # True if response was truncated due to context limit
     was_fallback: bool = False  # True if raw response was used because tag extraction failed
+    finish_reason: str = ""
+    blocked_reason: str = ""
+    request_id: str = ""
+    structured_output_fallback: bool = False
+
+
+@dataclass(frozen=True)
+class LLMGenerationOptions:
+    """Per-request generation controls shared by every provider."""
+
+    temperature: Optional[float] = None
+    max_output_tokens: Optional[int] = None
+    response_schema: Optional[Dict[str, Any]] = None
+    stage: str = ""
 
 
 class LLMProvider(ABC):
@@ -119,7 +133,9 @@ class LLMProvider(ABC):
 
     @abstractmethod
     async def generate(self, prompt: str, timeout: int = REQUEST_TIMEOUT,
-                      system_prompt: Optional[str] = None) -> Optional["LLMResponse"]:
+                      system_prompt: Optional[str] = None,
+                      generation_options: Optional[LLMGenerationOptions] = None
+                      ) -> Optional["LLMResponse"]:
         """
         Generate text from prompt.
 

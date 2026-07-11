@@ -44,6 +44,7 @@ async def refine_docx_file(
     max_tokens_per_chunk: int = MAX_TOKENS_PER_CHUNK,
     checkpoint_manager: Optional[Any] = None,
     translation_id: Optional[str] = None,
+    refinement_original_path: Optional[str] = None,
 ) -> bool:
     """Run a refinement-only pass on an already-translated DOCX file."""
     from src.utils.relationship_sync import (
@@ -125,6 +126,56 @@ async def refine_docx_file(
         db_chunks = []
         if checkpoint_manager and translation_id:
             db_chunks = checkpoint_manager.db.get_chunks(translation_id) or []
+        checkpoint_sources = [
+            str(row.get("original_text") or "")
+            for row in sorted(
+                db_chunks,
+                key=lambda item: item.get("chunk_index", -1),
+            )
+            if row.get("status") == "completed"
+        ]
+        if checkpoint_sources:
+            prompt_options["_refinement_source_queue"] = checkpoint_sources
+            prompt_options["_refinement_source_cursor"] = 0
+        elif refinement_original_path:
+            try:
+                source_html, _source_metadata = converter.to_html(
+                    refinement_original_path
+                )
+                source_container = TranslationContainer()
+                source_preserver = source_container.tag_preserver
+                source_text, source_map = source_preserver.preserve_tags(source_html)
+                source_format = (
+                    source_preserver.placeholder_format.prefix,
+                    source_preserver.placeholder_format.suffix,
+                )
+                source_chunks = _create_chunks(
+                    source_text,
+                    source_map,
+                    max_tokens_per_chunk,
+                    None,
+                    source_container,
+                    chapter_mode=bool((prompt_options or {}).get("chapter_mode")),
+                )
+                if len(source_chunks) != len(chunks):
+                    raise ValueError("paired DOCX structural unit alignment differs")
+                prompt_options["_refinement_source_queue"] = [
+                    _globalize_chunk_text(chunk, source_format)
+                    for chunk in source_chunks
+                ]
+                prompt_options["_refinement_source_cursor"] = 0
+                if log_callback:
+                    log_callback(
+                        "refinement_source_aligned",
+                        f"Aligned {len(source_chunks)} paired DOCX source unit(s).",
+                    )
+            except (OSError, ValueError) as exc:
+                if log_callback:
+                    log_callback(
+                        "refinement_source_alignment_failed",
+                        f"Could not align paired DOCX source: {exc}",
+                    )
+                return False
 
         draft_globalized = [
             _globalize_chunk_text(chunk, placeholder_format)

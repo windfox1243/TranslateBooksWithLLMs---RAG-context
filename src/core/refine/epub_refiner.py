@@ -175,6 +175,7 @@ async def refine_epub_file(
     max_tokens_per_chunk: int = MAX_TOKENS_PER_CHUNK,
     checkpoint_manager: Optional[Any] = None,
     translation_id: Optional[str] = None,
+    refinement_original_path: Optional[str] = None,
 ) -> bool:
     """Run a refinement-only pass on an already-translated EPUB."""
     from src.utils.relationship_sync import (
@@ -234,6 +235,17 @@ async def refine_epub_file(
             db_chunks = []
             if checkpoint_manager and translation_id:
                 db_chunks = checkpoint_manager.db.get_chunks(translation_id) or []
+            checkpoint_sources = [
+                str(row.get("original_text") or "")
+                for row in sorted(
+                    db_chunks,
+                    key=lambda item: item.get("chunk_index", -1),
+                )
+                if row.get("status") == "completed"
+            ]
+            if checkpoint_sources:
+                prompt_options["_refinement_source_queue"] = checkpoint_sources
+                prompt_options["_refinement_source_cursor"] = 0
 
             # Pre-calculate the global refine chunk count so persisted snapshots
             # map consistently across all XHTML files.
@@ -277,6 +289,77 @@ async def refine_epub_file(
                         )
                 except Exception:
                     pass
+
+            if refinement_original_path and not checkpoint_sources:
+                source_units: List[str] = []
+                source_counts: List[int] = []
+                try:
+                    source_dir = os.path.join(temp_dir, "paired_source")
+                    os.makedirs(source_dir, exist_ok=True)
+                    _extract_epub(refinement_original_path, source_dir, log_callback)
+                    source_manifest = _parse_epub_manifest(source_dir, log_callback)
+                    source_files = source_manifest['content_files']
+                    if len(source_files) != len(content_files):
+                        raise ValueError("paired EPUB spine length differs")
+                    source_container = TranslationContainer()
+                    for source_href in source_files:
+                        source_path = os.path.join(
+                            source_manifest['opf_dir'],
+                            source_href,
+                        )
+                        parser = etree.XMLParser(recover=True, remove_blank_text=False)
+                        source_root = etree.parse(source_path, parser).getroot()
+                        source_body, source_element, source_preserver = _setup_translation(
+                            source_root,
+                            None,
+                            source_container,
+                        )
+                        if not source_body or source_element is None:
+                            source_counts.append(0)
+                            continue
+                        source_text, source_map, source_format = _preserve_tags(
+                            source_body,
+                            source_preserver,
+                            None,
+                            protect_technical=True,
+                        )
+                        chunk_budget, chunk_chapter_mode = _refine_chunking_options(
+                            prompt_options,
+                            max_tokens_per_chunk,
+                        )
+                        source_chunks = _create_chunks(
+                            source_text,
+                            source_map,
+                            chunk_budget,
+                            None,
+                            source_container,
+                            chapter_mode=chunk_chapter_mode,
+                        )
+                        source_counts.append(len(source_chunks))
+                        source_units.extend(
+                            _globalize_chunk_text(chunk, source_format)
+                            for chunk in source_chunks
+                        )
+                    translated_counts = [
+                        refine_chunk_counts.get(href, 0)
+                        for href in content_files
+                    ]
+                    if source_counts != translated_counts:
+                        raise ValueError("paired EPUB XHTML unit alignment differs")
+                    prompt_options["_refinement_source_queue"] = source_units
+                    prompt_options["_refinement_source_cursor"] = 0
+                    if log_callback:
+                        log_callback(
+                            "refinement_source_aligned",
+                            f"Aligned {len(source_units)} paired EPUB source unit(s).",
+                        )
+                except (OSError, ValueError, etree.XMLSyntaxError) as exc:
+                    if log_callback:
+                        log_callback(
+                            "refinement_source_alignment_failed",
+                            f"Could not align paired EPUB source: {exc}",
+                        )
+                    return False
 
             progress_total = total_refine_chunks or total_files
             if stats_callback:

@@ -86,8 +86,35 @@ def test_relationship_schema_migration_is_idempotent(tmp_path):
             "context_relationship_evidence",
             "context_relationship_conflicts",
         } <= tables
+        assert {
+            "context_resync_runs",
+            "context_resync_chunk_stage",
+        } <= tables
     finally:
         second.close()
+
+
+def test_context_resync_staging_does_not_change_live_chunks(relationship_db):
+    tx = "atomic-resync"
+    relationship_db.create_job(tx, "txt", {})
+    run_id = f"{tx}:0:test"
+    assert relationship_db.create_context_resync_run(run_id, tx, 0, "snapshot")
+    assert relationship_db.stage_context_resync_chunk(
+        run_id,
+        tx,
+        {
+            "chunk_index": 1,
+            "original_text": "Source",
+            "translated_text": "Draft",
+            "chunk_data": {"context_snapshot": "staged"},
+            "status": "completed",
+        },
+        relationship_candidates=[{"source": "A", "target": "B"}],
+    )
+    assert relationship_db.get_chunks(tx) == []
+    staged = relationship_db.get_context_resync_stage(run_id)
+    assert staged[0]["chunk_index"] == 1
+    assert staged[0]["relationship_candidates"][0]["source"] == "A"
 
 
 def test_project_is_default_and_shadow_never_projects(relationship_db):
@@ -773,6 +800,97 @@ def test_internally_inconsistent_parent_seniority_is_quarantined(relationship_db
     assert decision.status == "quarantined"
     assert decision.validator == "semantic_hierarchy"
     assert relationship_db.get_relationship_edges(tx, statuses=["accepted"]) == []
+
+
+def test_split_exact_evidence_canonicalizes_child_direction(relationship_db):
+    tx = "split-parent-evidence"
+    engine = _engine_with_characters(
+        relationship_db,
+        tx,
+        "Frondier De Roach",
+        "Enfer De Roach",
+    )
+    source = "It's from Lord Enfer.\n...My father?"
+    decision = engine.merge_candidate(
+        tx,
+        1,
+        RelationshipCandidate(
+            source="Frondier De Roach",
+            target="Enfer De Roach",
+            relationship_type="parent",
+            direction="directed",
+            hierarchy="source_junior",
+            relative_age="source_younger",
+            rank_relation="source_lower",
+            evidence_spans=[
+                {"quote": "It's from Lord Enfer.", "role": "target"},
+                {"quote": "...My father?", "role": "source"},
+            ],
+            confidence=0.96,
+            provenance="llm_context",
+            details="Frondier is the son of Enfer.",
+        ),
+        source_text=source,
+        known_character_names=["Frondier De Roach", "Enfer De Roach"],
+        active_character_names=["Frondier De Roach"],
+        language="English",
+    )
+    assert decision.status == "accepted"
+    edge = relationship_db.get_relationship_edges(tx, statuses=["accepted"])[0]
+    assert edge["source_name"] == "Frondier De Roach"
+    assert edge["target_name"] == "Enfer De Roach"
+    assert edge["relationship_type"] == "child"
+    assert len(relationship_db.get_relationship_evidence(tx)) == 2
+
+
+def test_manual_addressing_and_relationship_upsert_routes(relationship_db, tmp_path):
+    tx = "manual-routes"
+    relationship_db.create_job(tx, "txt", {"context_revision": 0})
+    _engine_with_characters(relationship_db, tx, "Alice", "Bob")
+    checkpoint_manager = SimpleNamespace(
+        db=relationship_db,
+        mark_refinement_stale=lambda _translation_id: 1,
+    )
+    state_manager = SimpleNamespace(checkpoint_manager=checkpoint_manager)
+    app = Flask(__name__)
+    app.register_blueprint(create_translation_blueprint(
+        state_manager,
+        lambda *_args, **_kwargs: None,
+        str(tmp_path),
+    ))
+
+    with app.test_client() as client:
+        addressing = client.put(
+            f"/api/translation/{tx}/addressing-rules",
+            json={
+                "speaker": "Alice",
+                "addressee": "Bob",
+                "self_reference": "I",
+                "second_person": "you",
+                "register": "neutral",
+                "source_forms": ["Bob"],
+                "notes": "Manual correction",
+                "expected_revision": 0,
+            },
+        )
+        assert addressing.status_code == 200
+        rule = relationship_db.get_addressing_rules(tx)[0]
+        assert rule["is_locked"] == 1
+        assert rule["notes"] == "Manual correction"
+
+        relationship = client.put(
+            f"/api/translation/{tx}/relationship-edges",
+            json={
+                "source": "Alice",
+                "target": "Bob",
+                "relationship_type": "friend",
+                "direction": "symmetric",
+                "expected_revision": 0,
+            },
+        )
+        assert relationship.status_code == 200
+        edge = relationship_db.get_relationship_edges(tx, statuses=["accepted"])[0]
+        assert edge["is_locked"] == 1
 
 
 def test_relationship_beta_routes_support_audit_lock_quarantine_and_delete(

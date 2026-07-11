@@ -21,7 +21,7 @@ Example usage:
 from .exceptions import ContextOverflowError, RepetitionLoopError, RateLimitError
 
 # Base classes
-from .base import LLMProvider, LLMResponse
+from .base import LLMGenerationOptions, LLMProvider, LLMResponse
 
 # Thinking system
 from .thinking.behavior import ThinkingBehavior, get_thinking_behavior_sync, get_model_warning_message
@@ -53,6 +53,7 @@ __all__ = [
     # Base
     'LLMProvider',
     'LLMResponse',
+    'LLMGenerationOptions',
 
     # Thinking
     'ThinkingBehavior',

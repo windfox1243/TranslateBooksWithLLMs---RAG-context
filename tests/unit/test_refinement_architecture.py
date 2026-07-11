@@ -815,7 +815,23 @@ async def test_standalone_refinement_rebuilds_context_before_refining(monkeypatc
     events = []
 
     class FakeClient:
-        async def generate(self, prompt, system_prompt=None):
+        async def generate(self, prompt, system_prompt=None, **_kwargs):
+            if "DRAFT TRANSLATION TO AUDIT" in prompt:
+                events.append("reflection")
+                return LLMResponse(content=(
+                    '<REFLECTION_JSON>{"status":"needs_repair","issues":[{'
+                    '"category":"style","severity":"major","source_quote":"",'
+                    '"draft_quote":"Mira greeted Rowan.",'
+                    '"instruction":"Polish the sentence.",'
+                    '"draft_replacement":{"draft":"Mira greeted Rowan.",'
+                    '"replacement":"Polished text"},"glossary_update":null,'
+                    '"term_replacement":null}]}</REFLECTION_JSON>'
+                ))
+            if "SENIOR EDITOR CRITIQUE" in prompt:
+                events.append("repair")
+                return LLMResponse(
+                    content="<TRANSLATION>Polished text</TRANSLATION>"
+                )
             events.append("context")
             return LLMResponse(
                 content=(
@@ -833,14 +849,7 @@ async def test_standalone_refinement_rebuilds_context_before_refining(monkeypatc
         async def close(self):
             return None
 
-    async def fake_refine_request(**kwargs):
-        events.append("refine")
-        context = kwargs["context_content"]
-        assert "Mira addresses Rowan formally." in context
-        return "Polished text", LLMResponse(content="<TRANSLATION>Polished text</TRANSLATION>")
-
     monkeypatch.setattr(translator, "create_llm_client", lambda *args, **kwargs: FakeClient())
-    monkeypatch.setattr(translator, "_make_refinement_request", fake_refine_request)
 
     tracker = RefinementContextTracker(
         prompt_options={
@@ -864,7 +873,7 @@ async def test_standalone_refinement_rebuilds_context_before_refining(monkeypatc
     )
 
     assert result == ["Polished text"]
-    assert events == ["context", "context", "refine"]
+    assert events == ["context", "context", "reflection"]
 
 
 @pytest.mark.asyncio
@@ -933,6 +942,32 @@ async def test_txt_refine_after_reuses_exact_translation_units(monkeypatch, tmp_
     assert output_path.read_text(encoding="utf-8").startswith(
         "One refined\nTwo refined"
     )
+
+
+@pytest.mark.asyncio
+async def test_txt_standalone_refinement_aligns_optional_original(monkeypatch, tmp_path):
+    from src.core.refine import txt_refiner
+
+    translated = tmp_path / "translated.txt"
+    original = tmp_path / "original.txt"
+    output = tmp_path / "refined.txt"
+    translated.write_text("Bonjour monde.", encoding="utf-8")
+    original.write_text("Hello world.", encoding="utf-8")
+    captured = {}
+
+    async def fake_refine_chunks(**kwargs):
+        captured.update(kwargs)
+        return kwargs["translated_chunks"]
+
+    monkeypatch.setattr(txt_refiner, "refine_chunks", fake_refine_chunks)
+    assert await txt_refiner.refine_txt_file(
+        input_filepath=str(translated),
+        output_filepath=str(output),
+        target_language="French",
+        refinement_original_path=str(original),
+        prompt_options={"source_language": "English"},
+    )
+    assert captured["original_chunks"][0]["source_content"] == "Hello world."
 
 
 @pytest.mark.asyncio

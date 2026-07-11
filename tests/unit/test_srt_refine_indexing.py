@@ -27,15 +27,42 @@ class FakeLLMClient:
     sent and only changes the casing of the text.
     """
 
+    def __init__(self):
+        self.draft = ""
+
     async def make_request(self, prompt, model_name, system_prompt=None):
-        match = re.search(
-            re.escape(INPUT_TAG_IN) + r"\n(.*?)\n" + re.escape(INPUT_TAG_OUT),
-            prompt,
-            re.DOTALL,
-        )
-        assert match, "user prompt does not contain a SOURCE_TEXT block"
+        if "DRAFT TRANSLATION TO AUDIT" in prompt:
+            match = re.search(
+                r"# DRAFT TRANSLATION TO AUDIT:\n(.*?)\n\nPerform",
+                prompt,
+                re.DOTALL,
+            )
+            assert match
+            self.draft = match.group(1).strip()
+            replacement = self.draft.upper()
+            import json
+            payload = {
+                "status": "needs_repair",
+                "issues": [{
+                    "category": "style",
+                    "severity": "major",
+                    "source_quote": "",
+                    "draft_quote": self.draft,
+                    "instruction": "Use the required uppercase test style.",
+                    "draft_replacement": {
+                        "draft": self.draft,
+                        "replacement": replacement,
+                    },
+                    "glossary_update": None,
+                    "term_replacement": None,
+                }],
+            }
+            return FakeLLMResponse(
+                f"<REFLECTION_JSON>{json.dumps(payload)}</REFLECTION_JSON>"
+            )
+        assert "SENIOR EDITOR CRITIQUE" in prompt
         refined_lines = []
-        for line in match.group(1).split("\n"):
+        for line in self.draft.split("\n"):
             marker = re.match(r"^(\[\d+\])(.*)$", line)
             if marker:
                 refined_lines.append(f"{marker.group(1)}{marker.group(2).upper()}")

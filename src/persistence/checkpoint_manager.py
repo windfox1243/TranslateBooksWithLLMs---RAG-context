@@ -252,7 +252,8 @@ class CheckpointManager:
         total_chunks: Optional[int] = None,
         completed_chunks: Optional[int] = None,
         failed_chunks: Optional[int] = None,
-        epub_accumulated_stats: Optional[Dict[str, Any]] = None
+        epub_accumulated_stats: Optional[Dict[str, Any]] = None,
+        chunk_status: Optional[str] = None,
     ) -> bool:
         """
         Save a checkpoint after translating a chunk.
@@ -272,7 +273,7 @@ class CheckpointManager:
             True if saved successfully
         """
         # Save chunk
-        chunk_status = 'completed' if translated_text else 'failed'
+        chunk_status = chunk_status or ('completed' if translated_text else 'failed')
         chunk_saved = self.db.save_chunk(
             translation_id,
             chunk_index,

@@ -141,6 +141,49 @@ export const ApiClient = {
         return await apiRequest(`/api/translation/${translationId}/addressing-rules`);
     },
 
+    async saveAddressingRule(translationId, rule) {
+        return await apiRequest(`/api/translation/${translationId}/addressing-rules`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(rule)
+        });
+    },
+
+    async getRelationshipGraph(translationId) {
+        return await apiRequest(`/api/translation/${translationId}/relationship-graph`);
+    },
+
+    async saveRelationshipEdge(translationId, edge) {
+        return await apiRequest(`/api/translation/${translationId}/relationship-edges`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(edge)
+        });
+    },
+
+    async getRecoveryPreview(translationId) {
+        return await apiRequest(`/api/translation/${translationId}/recovery-preview`);
+    },
+
+    async recoverEditorContext(translationId) {
+        return await apiRequest(`/api/translation/${translationId}/recover-editor-context`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirm: true })
+        });
+    },
+
+    async getEditorDiagnostics(translationId) {
+        return await apiRequest(`/api/translation/${translationId}/editor-diagnostics`);
+    },
+
+    async retrySeniorEditor(translationId, chunkIndex) {
+        return await apiRequest(
+            `/api/translation/${translationId}/chunks/${chunkIndex}/retry-editor`,
+            { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+        );
+    },
+
     /**
      * Get all active translations
      * @returns {Promise<Object>} Active translations list

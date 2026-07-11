@@ -10,7 +10,7 @@ import asyncio
 import json
 import httpx
 
-from ..base import LLMProvider, LLMResponse
+from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
 from ..exceptions import ContextOverflowError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 from ..utils.context_detection import ContextDetector
@@ -79,7 +79,9 @@ class OpenAICompatibleProvider(LLMProvider):
         return endpoint
 
     async def generate(self, prompt: str, timeout: int = REQUEST_TIMEOUT,
-                      system_prompt: Optional[str] = None) -> Optional[LLMResponse]:
+                      system_prompt: Optional[str] = None,
+                      generation_options: Optional[LLMGenerationOptions] = None
+                      ) -> Optional[LLMResponse]:
         """
         Generate text using an OpenAI compatible API.
 
@@ -102,6 +104,19 @@ class OpenAICompatibleProvider(LLMProvider):
             "messages": messages,
             "stream": False,
         }
+        if generation_options and generation_options.temperature is not None:
+            payload["temperature"] = generation_options.temperature
+        if generation_options and generation_options.max_output_tokens:
+            payload["max_tokens"] = int(generation_options.max_output_tokens)
+        if generation_options and generation_options.response_schema:
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "senior_editor_result",
+                    "strict": True,
+                    "schema": generation_options.response_schema,
+                },
+            }
 
         # Only add thinking-disable params for local servers (llama.cpp, vLLM, LM Studio)
         # Skip for official OpenAI API and cloud providers (NVIDIA NIM, etc.)
@@ -149,7 +164,11 @@ class OpenAICompatibleProvider(LLMProvider):
                     completion_tokens=completion_tokens,
                     context_used=context_used,
                     context_limit=self.context_window,
-                    was_truncated=False  # OpenAI API doesn't provide truncation info
+                    was_truncated=False,
+                    finish_reason=str(
+                        response_json.get("choices", [{}])[0].get("finish_reason") or ""
+                    ),
+                    request_id=str(getattr(response, "headers", {}).get("x-request-id") or ""),
                 )
 
             except httpx.TimeoutException as e:

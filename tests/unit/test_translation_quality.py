@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.core.translator import ReflectionValidationError, run_chunk_reflection_pass
-from src.utils.translation_quality import find_source_residue
+from src.utils.translation_quality import find_source_residue, validate_editor_repair
 
 
 @pytest.mark.parametrize(
@@ -45,6 +45,57 @@ def test_source_residue_excludes_names_markup_and_preserved_gram():
         glossary_terms={"Gram": "Gram"},
     )
     assert findings == []
+
+
+def test_source_residue_excludes_fragments_of_protected_name():
+    findings = find_source_residue(
+        "Frondier de Roach entered the room.",
+        "Frondier de Roach bước vào phòng.",
+        source_language="English",
+        target_language="Vietnamese",
+        protected_terms=["Frondier de Roach"],
+    )
+    assert findings == []
+
+
+def test_source_residue_does_not_block_generic_two_word_loan_phrase():
+    findings = find_source_residue(
+        "The recent game over was final.",
+        "Lần game over vừa rồi là cuối cùng.",
+        source_language="English",
+        target_language="Vietnamese",
+    )
+    assert findings == []
+
+
+def test_editor_repair_validates_only_the_located_pronoun_occurrence():
+    errors = validate_editor_repair(
+        "Ông nói với anh ấy.",
+        [{
+            "draft_quote": "Anh nói với anh ấy.",
+            "draft_replacement": {"draft": "Anh", "replacement": "Ông"},
+        }],
+        draft_text="Anh nói với anh ấy.",
+        source_text="He spoke with him.",
+        source_language="English",
+        target_language="Vietnamese",
+    )
+    assert errors == []
+
+
+def test_editor_repair_rejects_ambiguous_issue_locator():
+    errors = validate_editor_repair(
+        "Ông nói với anh ấy.",
+        [{
+            "draft_quote": "anh",
+            "draft_replacement": {"draft": "anh", "replacement": "ông"},
+        }],
+        draft_text="Anh nói với anh ấy.",
+        source_text="He spoke with him.",
+        source_language="English",
+        target_language="Vietnamese",
+    )
+    assert any(item.startswith("issue_locator_ambiguous") for item in errors)
 
 
 @pytest.mark.asyncio
@@ -121,17 +172,18 @@ async def test_incomplete_editor_replacement_contract_retries_once():
         },
     )
     assert repaired == "Anh, lại đây."
-    assert client.calls == 3
+    # The corrected exact issue is applied locally; no full-chunk repair call.
+    assert client.calls == 2
 
 
 @pytest.mark.asyncio
-async def test_unresolved_major_repair_fails_contract_v2_chunk():
+async def test_unresolved_semantic_repair_preserves_valid_draft_for_review():
     critique = (
         '{"status":"needs_repair","issues":[{'
-        '"category":"mistranslation","severity":"major",'
-        '"source_quote":"Brother","draft_quote":"Brother",'
-        '"instruction":"Translate the address term.",'
-        '"draft_replacement":{"draft":"Brother","replacement":"Anh"},'
+        '"category":"omission","severity":"major",'
+        '"source_quote":"Come here.","draft_quote":"",'
+        '"instruction":"Restore an omitted detail.",'
+        '"draft_replacement":null,'
         '"glossary_update":null}]}'
     )
 
@@ -139,8 +191,8 @@ async def test_unresolved_major_repair_fails_contract_v2_chunk():
         def __init__(self):
             self.responses = [
                 critique,
-                "<TRANSLATION>Brother, lại đây.</TRANSLATION>",
-                "<TRANSLATION>Brother, lại đây.</TRANSLATION>",
+                "",
+                "",
             ]
             self.calls = 0
 
@@ -149,16 +201,55 @@ async def test_unresolved_major_repair_fails_contract_v2_chunk():
             self.calls += 1
             return SimpleNamespace(content=response)
 
-    with pytest.raises(ReflectionValidationError):
-        await run_chunk_reflection_pass(
-            source_chunk="Brother, come here.",
-            draft_translation="Brother, lại đây.",
-            target_language="Vietnamese",
-            model_name="test",
-            llm_client=Client(),
-            prompt_options={
-                "context_contract_version": 2,
-                "source_language": "English",
-                "source_residue_validation": True,
-            },
-        )
+    result = await run_chunk_reflection_pass(
+        source_chunk="Come here.",
+        draft_translation="Lại đây.",
+        target_language="Vietnamese",
+        model_name="test",
+        llm_client=Client(),
+        prompt_options={
+            "context_contract_version": 2,
+            "source_language": "English",
+            "source_residue_validation": True,
+        },
+    )
+    assert result == "Lại đây."
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_locator_is_corrected_before_any_repair_call():
+    ambiguous = (
+        '{"status":"needs_repair","issues":[{'
+        '"issue_id":"pronoun-1","category":"pronoun","severity":"major",'
+        '"confidence":0.95,"source_quote":"He spoke with him.",'
+        '"draft_quote":"anh","instruction":"Use the senior form.",'
+        '"draft_replacement":{"draft":"anh","replacement":"ông"},'
+        '"glossary_update":null}]}'
+    )
+    corrected = ambiguous.replace(
+        '"draft_quote":"anh"',
+        '"draft_quote":"Anh nói với anh ấy."',
+    ).replace('"draft":"anh"', '"draft":"Anh"')
+
+    class Client:
+        def __init__(self):
+            self.responses = [ambiguous, corrected]
+            self.calls = []
+
+        async def generate_async(self, **kwargs):
+            self.calls.append(kwargs)
+            return SimpleNamespace(content=self.responses[len(self.calls) - 1])
+
+    client = Client()
+    result = await run_chunk_reflection_pass(
+        source_chunk="He spoke with him.",
+        draft_translation="Anh nói với anh ấy.",
+        target_language="Vietnamese",
+        model_name="test",
+        llm_client=client,
+        prompt_options={"source_language": "English"},
+    )
+    assert result == "ông nói với anh ấy."
+    assert len(client.calls) == 2
+    assert client.calls[0]["temperature"] == 0.2
+    assert client.calls[1]["temperature"] == 0.0

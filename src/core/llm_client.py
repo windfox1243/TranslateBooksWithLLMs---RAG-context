@@ -1,10 +1,12 @@
 """
 Centralized LLM client for all API communication
 """
+import inspect
 from typing import Optional, Dict, Any
 
 from src.config import API_ENDPOINT, DEFAULT_MODEL
-from src.core.llm import create_llm_provider, LLMProvider, ContextOverflowError, RepetitionLoopError, LLMResponse
+from src.core.llm import (create_llm_provider, LLMGenerationOptions, LLMProvider,
+                          ContextOverflowError, RepetitionLoopError, LLMResponse)
 
 # Re-export for convenience
 __all__ = ['LLMClient', 'default_client', 'create_llm_client', 'ContextOverflowError', 'RepetitionLoopError', 'LLMResponse']
@@ -47,7 +49,8 @@ class LLMClient:
         self.provider_kwargs['context_window'] = value
 
     async def make_request(self, prompt: str, model: Optional[str] = None,
-                          timeout: Optional[int] = None, system_prompt: Optional[str] = None) -> Optional[LLMResponse]:
+                          timeout: Optional[int] = None, system_prompt: Optional[str] = None,
+                          generation_options: Optional[LLMGenerationOptions] = None) -> Optional[LLMResponse]:
         """
         Make a request to the LLM API with error handling and retries.
 
@@ -66,16 +69,30 @@ class LLMClient:
         if model:
             provider.model = model
 
+        kwargs = {"system_prompt": system_prompt}
+        if "generation_options" in inspect.signature(provider.generate).parameters:
+            kwargs["generation_options"] = generation_options
         if timeout:
-            return await provider.generate(prompt, timeout, system_prompt=system_prompt)
-        else:
-            return await provider.generate(prompt, system_prompt=system_prompt)
+            return await provider.generate(prompt, timeout, **kwargs)
+        return await provider.generate(prompt, **kwargs)
 
     async def generate(self, prompt: str, system_prompt: Optional[str] = None,
                        timeout: Optional[int] = None, model: Optional[str] = None,
-                       temperature: Optional[float] = None) -> Optional[LLMResponse]:
+                       temperature: Optional[float] = None,
+                       max_output_tokens: Optional[int] = None,
+                       response_schema: Optional[Dict[str, Any]] = None,
+                       stage: str = "") -> Optional[LLMResponse]:
         """Generate a response from the LLM (alias for make_request)."""
-        return await self.make_request(prompt, model=model, timeout=timeout, system_prompt=system_prompt)
+        options = LLMGenerationOptions(
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            response_schema=response_schema,
+            stage=stage,
+        )
+        return await self.make_request(
+            prompt, model=model, timeout=timeout, system_prompt=system_prompt,
+            generation_options=options,
+        )
 
     generate_async = generate
     

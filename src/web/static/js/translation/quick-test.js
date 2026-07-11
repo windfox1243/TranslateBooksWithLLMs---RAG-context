@@ -81,6 +81,8 @@ function readPromptOptions() {
         chapter_mode: !!($('chapterMode')?.checked),
         novel_context_file: (DomHelpers.getValue('novelContextSelect') || '').trim(),
         reflection_mode: !!($('enableReflection')?.checked),
+        editor_provider: DomHelpers.getValue('editorProvider') || '',
+        editor_model: (DomHelpers.getValue('editorModel') || '').trim(),
     };
 }
 

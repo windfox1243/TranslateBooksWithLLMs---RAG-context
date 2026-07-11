@@ -911,12 +911,12 @@ async def test_resync_context_snapshots_logic():
         # Verify update_novel_context_chunk was called for chunk 1
         mock_update.assert_called_once()
         
-        # Verify database save_chunk was called to store the new compressed context snapshot
-        mock_db.save_chunk.assert_called_once()
-        args, kwargs = mock_db.save_chunk.call_args
-        assert kwargs['translation_id'] == translation_id
-        assert kwargs['chunk_index'] == 1
-        assert 'context_snapshot' in kwargs['chunk_data']
+        # Resync writes to persistent staging before atomic activation.
+        mock_db.stage_context_resync_chunk.assert_called_once()
+        args, kwargs = mock_db.stage_context_resync_chunk.call_args
+        assert args[1] == translation_id
+        assert args[2]['chunk_index'] == 1
+        assert 'context_snapshot' in args[2]['chunk_data']
         
         # Verify logging appends logs successfully
         assert mock_state_mgr.append_log.called
@@ -1149,11 +1149,11 @@ async def test_global_only_resync_propagates_lore_without_llm(monkeypatch, tmp_p
     state_manager.restore_job_from_checkpoint.assert_called_once_with("job")
     llm_client.assert_not_called()
     update_context.assert_not_called()
-    assert checkpoint_manager.db.save_chunk.call_count == 2
+    assert checkpoint_manager.db.stage_context_resync_chunk.call_count == 2
 
     saved_snapshots = {
-        call.kwargs["chunk_index"]: call.kwargs["chunk_data"]["context_snapshot"]
-        for call in checkpoint_manager.db.save_chunk.call_args_list
+        call.args[2]["chunk_index"]: call.args[2]["chunk_data"]["context_snapshot"]
+        for call in checkpoint_manager.db.stage_context_resync_chunk.call_args_list
     }
     _, chunk_one_global, chunk_one_dynamic = decode_context_snapshot(
         saved_snapshots[1],

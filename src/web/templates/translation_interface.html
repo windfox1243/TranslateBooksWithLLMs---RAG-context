@@ -483,6 +483,10 @@
                     <p data-i18n="translation:drop_files_refine_support">Polish an existing translation — same language in, same language out</p>
                     <input type="file" id="fileInputRefine" accept=".txt,.epub,.srt,.docx" style="display: none;" onchange="handleFileSelectRefine(event)" multiple>
                 </div>
+                <div style="margin-top: 8px; display: flex; justify-content: flex-end;">
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('fileInputRefineOriginal').click()" data-i18n="translation:pair_refinement_source">Pair original source</button>
+                    <input type="file" id="fileInputRefineOriginal" accept=".txt,.epub,.srt,.docx" style="display: none;" onchange="handleRefinementOriginalSelect(event)">
+                </div>
 
                 <!-- File Info Section (Batch Files) -->
                 <div id="fileInfo" class="hidden" style="margin-bottom: 20px; margin-top: 20px;">
@@ -1189,6 +1193,30 @@
                         <p data-i18n-html="settings:enable_chunk_reflection_help" style="margin: 5px 0 0 0; font-size: 0.8125rem; color: var(--text-muted-light);">
                             Runs a 2-pass Senior Translation Editor reflection pass after each chunk to fix line omissions, dialogue pronoun leaks, and register mismatches before saving.
                         </p>
+                        <div id="editorModelOptions" style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; margin-top: 12px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="editorProvider" data-i18n="settings:editor_provider_label">Senior Editor provider</label>
+                                <div class="neu-inset-light">
+                                    <select class="form-control" id="editorProvider">
+                                        <option value="" data-i18n="settings:editor_provider_inherit">Use translation provider</option>
+                                        <option value="ollama" data-i18n="settings:provider_name_ollama">Ollama</option>
+                                        <option value="gemini" data-i18n="settings:provider_name_gemini">Gemini</option>
+                                        <option value="openai" data-i18n="settings:provider_name_openai">OpenAI-Compatible</option>
+                                        <option value="openrouter" data-i18n="settings:provider_name_openrouter">OpenRouter</option>
+                                        <option value="mistral" data-i18n="settings:provider_name_mistral">Mistral</option>
+                                        <option value="deepseek" data-i18n="settings:provider_name_deepseek">DeepSeek</option>
+                                        <option value="poe" data-i18n="settings:provider_name_poe">Poe</option>
+                                        <option value="nim" data-i18n="settings:provider_name_nim">NVIDIA NIM</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="editorModel" data-i18n="settings:editor_model_label">Senior Editor model</label>
+                                <div class="neu-inset-light">
+                                    <input type="text" class="form-control" id="editorModel" data-i18n-attr="placeholder:settings:editor_model_inherit" placeholder="Use translation model">
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

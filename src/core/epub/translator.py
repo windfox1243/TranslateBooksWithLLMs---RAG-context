@@ -152,6 +152,41 @@ async def translate_epub_file(
     if llm_client is None:
         return False
 
+    prompt_options = dict(prompt_options or {})
+    editor_provider = str(
+        prompt_options.get("editor_provider") or llm_provider
+    ).strip().casefold()
+    editor_model = str(
+        prompt_options.get("editor_model") or model_name
+    ).strip()
+    editor_llm_client = llm_client
+    if editor_provider != llm_provider.casefold() or editor_model != model_name:
+        editor_llm_client = _create_llm_client(
+            llm_provider=editor_provider,
+            model_name=editor_model,
+            gemini_api_key=gemini_api_key,
+            openai_api_key=openai_api_key,
+            openrouter_api_key=openrouter_api_key,
+            mistral_api_key=mistral_api_key,
+            deepseek_api_key=deepseek_api_key,
+            poe_api_key=poe_api_key,
+            nim_api_key=nim_api_key,
+            cli_api_endpoint=cli_api_endpoint,
+            initial_context=initial_context,
+            log_callback=log_callback,
+        )
+        if editor_llm_client is None:
+            return False
+    prompt_options.update({
+        "_editor_llm_client": editor_llm_client,
+        "editor_provider_resolved": editor_provider,
+        "editor_model_resolved": editor_model,
+        "llm_provider": llm_provider,
+        "model": model_name,
+        "translation_id": translation_id,
+        "file_type": "epub",
+    })
+
     # Resolve effective parallel workers (local providers are forced back to 1).
     # translate_file() already logged the effective count; this re-resolve is
     # idempotent and covers the direct-call path (CLI EPUB goes through here).

@@ -76,6 +76,8 @@ function getTranslationConfig(file) {
         auto_update_context: DomHelpers.getElement('autoUpdateContext')?.checked || false,
         bypass_context_gating: DomHelpers.getElement('bypassContextGating')?.checked || false,
         reflection_mode: DomHelpers.getElement('enableReflection')?.checked || false,
+        editor_provider: DomHelpers.getValue('editorProvider') || '',
+        editor_model: (DomHelpers.getValue('editorModel') || '').trim(),
         input_filename: file.name
     };
 
@@ -109,6 +111,7 @@ function getTranslationConfig(file) {
         bilingual_output: DomHelpers.getElement('bilingualMode')?.checked || false,
         refine_only: operation === 'refine',
         refine_after: refineAfter,
+        refinement_original_path: file.refinementOriginalPath || null,
         auto_pause_on_rate_limit: !(DomHelpers.getElement('disableAutoPause')?.checked || false),
         // Parallel chunk translation; only honored for cloud providers (the
         // backend forces local providers back to 1).

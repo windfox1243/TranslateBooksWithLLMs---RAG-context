@@ -21,7 +21,7 @@ import asyncio
 from typing import Optional, Union, List
 
 from src.config import REQUEST_TIMEOUT, MAX_TRANSLATION_ATTEMPTS, TEMPERATURE
-from ..base import LLMProvider, LLMResponse
+from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
 from ..exceptions import ContextOverflowError
 
 
@@ -93,6 +93,7 @@ class LiteLLMProvider(LLMProvider):
         prompt: str,
         timeout: int = REQUEST_TIMEOUT,
         system_prompt: Optional[str] = None,
+        generation_options: Optional[LLMGenerationOptions] = None,
     ) -> Optional[LLMResponse]:
         """
         Generate text via LiteLLM.
@@ -123,6 +124,19 @@ class LiteLLMProvider(LLMProvider):
         messages.append({"role": "user", "content": prompt})
 
         kwargs = self._build_kwargs()
+        if generation_options and generation_options.temperature is not None:
+            kwargs["temperature"] = generation_options.temperature
+        if generation_options and generation_options.max_output_tokens:
+            kwargs["max_tokens"] = int(generation_options.max_output_tokens)
+        if generation_options and generation_options.response_schema:
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "senior_editor_result",
+                    "strict": True,
+                    "schema": generation_options.response_schema,
+                },
+            }
 
         for attempt in range(MAX_TRANSLATION_ATTEMPTS):
             try:
@@ -151,6 +165,8 @@ class LiteLLMProvider(LLMProvider):
                     context_used=prompt_tokens + completion_tokens,
                     context_limit=0,  # Unknown across providers; not enforced here.
                     was_truncated=False,
+                    finish_reason=str(getattr(choice, "finish_reason", "") or ""),
+                    request_id=str(getattr(response, "id", "") or ""),
                 )
 
             except Exception as e:

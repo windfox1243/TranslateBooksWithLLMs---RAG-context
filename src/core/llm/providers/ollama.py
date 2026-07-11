@@ -11,7 +11,7 @@ import json
 import re
 import httpx
 
-from ..base import LLMProvider, LLMResponse
+from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
 from ..exceptions import ContextOverflowError, RepetitionLoopError
 from ..thinking.cache import get_thinking_cache
 from ..thinking.detection import detect_repetition_loop
@@ -24,6 +24,7 @@ from src.config import (
     REQUEST_TIMEOUT,
     OLLAMA_NUM_CTX,
     MAX_TRANSLATION_ATTEMPTS,
+    TEMPERATURE,
     UNCONTROLLABLE_THINKING_MODELS,
     CONTROLLABLE_THINKING_MODELS,
     REPETITION_MIN_COUNT_STREAMING
@@ -233,7 +234,9 @@ class OllamaProvider(LLMProvider):
         print(f"{CYAN}[INFO] Using think=true to cleanly separate thinking from content{RESET}\n")
 
     async def generate(self, prompt: str, timeout: int = REQUEST_TIMEOUT,
-                      system_prompt: Optional[str] = None) -> Optional[LLMResponse]:
+                      system_prompt: Optional[str] = None,
+                      generation_options: Optional[LLMGenerationOptions] = None
+                      ) -> Optional[LLMResponse]:
         """
         Generate text using Ollama Chat API with streaming for real-time token monitoring.
 
@@ -280,9 +283,20 @@ class OllamaProvider(LLMProvider):
             "stream": True,  # Enable streaming for real-time token monitoring
             "options": {
                 "num_ctx": self.context_window,
-                "truncate": False
+                "truncate": False,
+                "temperature": (
+                    generation_options.temperature
+                    if generation_options and generation_options.temperature is not None
+                    else TEMPERATURE
+                ),
             },
         }
+        if generation_options and generation_options.max_output_tokens:
+            payload["options"]["num_predict"] = int(
+                generation_options.max_output_tokens
+            )
+        if generation_options and generation_options.response_schema:
+            payload["format"] = generation_options.response_schema
 
         # Only add think param if model supports it
         if self._supports_think_param:
@@ -670,5 +684,3 @@ class OllamaProvider(LLMProvider):
                 self.log_callback("warning",
                     f"Failed to query model context size: {e}. Using configured value.")
             return self.context_window
-
-

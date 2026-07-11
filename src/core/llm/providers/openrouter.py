@@ -17,7 +17,7 @@ import asyncio
 import json
 
 from src.config import REQUEST_TIMEOUT, MAX_TRANSLATION_ATTEMPTS
-from ..base import LLMProvider, LLMResponse
+from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
 from ..exceptions import ContextOverflowError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 
@@ -207,7 +207,9 @@ class OpenRouterProvider(LLMProvider):
                 for m in self.FALLBACK_MODELS]
 
     async def generate(self, prompt: str, timeout: int = REQUEST_TIMEOUT,
-                      system_prompt: Optional[str] = None) -> Optional[LLMResponse]:
+                      system_prompt: Optional[str] = None,
+                      generation_options: Optional[LLMGenerationOptions] = None
+                      ) -> Optional[LLMResponse]:
         """
         Generate text using OpenRouter API with cost tracking.
 
@@ -235,6 +237,19 @@ class OpenRouterProvider(LLMProvider):
             "thinking": False,
             "enable_thinking": False,
         }
+        if generation_options and generation_options.temperature is not None:
+            payload["temperature"] = generation_options.temperature
+        if generation_options and generation_options.max_output_tokens:
+            payload["max_tokens"] = int(generation_options.max_output_tokens)
+        if generation_options and generation_options.response_schema:
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "senior_editor_result",
+                    "strict": True,
+                    "schema": generation_options.response_schema,
+                },
+            }
 
         client = await self._get_client()
         # 429s have their own budget (rate_limit_events): rotating to a spare
@@ -310,7 +325,11 @@ class OpenRouterProvider(LLMProvider):
                     completion_tokens=completion_tokens,
                     context_used=prompt_tokens + completion_tokens,
                     context_limit=0,  # OpenRouter manages context internally
-                    was_truncated=False
+                    was_truncated=False,
+                    finish_reason=str(
+                        result.get("choices", [{}])[0].get("finish_reason") or ""
+                    ),
+                    request_id=str(getattr(response, "headers", {}).get("x-request-id") or ""),
                 )
 
             except httpx.TimeoutException as e:

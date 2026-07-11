@@ -120,6 +120,7 @@ class AddressingCandidateV2:
     source_forms: List[AddressingSourceForm] = field(default_factory=list)
     register: str = "neutral"
     social_basis: List[str] = field(default_factory=list)
+    notes: str = ""
     scope: str = "durable"
     evidence_quote: str = ""
     dialogue_turn_id: str = ""
@@ -219,6 +220,7 @@ class AddressingCandidateV2:
             source_forms=source_forms,
             register=register,
             social_basis=social_basis,
+            notes=_clean(data.get("notes"), 500),
             scope=scope,
             evidence_quote=evidence_quote,
             dialogue_turn_id=_clean(data.get("dialogue_turn_id"), 120),
