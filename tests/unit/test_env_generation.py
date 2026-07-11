@@ -49,6 +49,7 @@ def test_launcher_first_run_writes_compact_env_with_reference_copy(
     )
 
     old_cwd = Path.cwd()
+    old_config_root = os.environ.get("TRANSLATEBOOK_CONFIG_DIR")
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(exe_dir / "TranslateBook.exe"))
     monkeypatch.setattr(sys, "_MEIPASS", str(bundle_dir), raising=False)
@@ -56,6 +57,10 @@ def test_launcher_first_run_writes_compact_env_with_reference_copy(
         launcher.setup_working_directory()
     finally:
         os.chdir(old_cwd)
+        if old_config_root is None:
+            os.environ.pop("TRANSLATEBOOK_CONFIG_DIR", None)
+        else:
+            os.environ["TRANSLATEBOOK_CONFIG_DIR"] = old_config_root
 
     data_dir = exe_dir / "TranslateBook_Data"
     env_text = (data_dir / ".env").read_text(encoding="utf-8")

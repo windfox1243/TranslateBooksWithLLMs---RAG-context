@@ -78,56 +78,20 @@ class TestFrontendInitializationSequence:
 
     def test_settings_manager_does_not_trigger_change_event(self, js_files):
         """
-        Verify that SettingsManager.loadLocalPreferences() does NOT trigger
-        the 'change' event when restoring the provider.
-        
-        This was the root cause of the bug - triggering 'change' caused
-        immediate model loading with the wrong endpoint.
+        Provider restoration belongs to FormManager's server-config path;
+        SettingsManager must not restore a browser-local provider at all.
         """
         settings_manager = js_files["settings_manager"]
         assert settings_manager.exists(), f"settings-manager.js not found at {settings_manager}"
         
         content = settings_manager.read_text(encoding='utf-8')
         
-        # Find the loadLocalPreferences method and the provider restoration code
-        # Look for the pattern where lastProvider is restored
-        provider_restore_pattern = r'if\s*\(\s*prefs\.lastProvider\s*\)\s*\{[^}]+providerSelect\.value\s*=\s*prefs\.lastProvider;'
-        match = re.search(provider_restore_pattern, content, re.DOTALL)
-        
-        assert match, "Could not find lastProvider restoration code in SettingsManager"
-        
-        # Get the code block after providerSelect.value = prefs.lastProvider
-        start_pos = match.end()
-        # Find the closing brace of this if block
-        brace_count = 1
-        pos = start_pos
-        while brace_count > 0 and pos < len(content):
-            if content[pos] == '{':
-                brace_count += 1
-            elif content[pos] == '}':
-                brace_count -= 1
-            pos += 1
-        
-        provider_restore_block = content[start_pos:pos]
-        
-        # The fix: should NOT have dispatchEvent(new Event('change'))
-        # It should have a comment explaining why we don't trigger the event
-        has_comment_explaining_fix = (
-            "don't trigger" in provider_restore_block.lower() or
-            "don't trigger" in provider_restore_block.lower() or
-            "wait for" in provider_restore_block.lower() or
-            "defaultConfigLoaded" in provider_restore_block
-        )
-        
-        has_dispatch_event = "dispatchEvent" in provider_restore_block
-        
-        assert not has_dispatch_event, \
-            "BUG REGRESSION: SettingsManager still triggers 'change' event when restoring provider. " \
-            "This causes model loading with wrong endpoint before server config is loaded."
-        
-        assert has_comment_explaining_fix, \
-            "SettingsManager should have a comment explaining why it doesn't trigger 'change' event, " \
-            "and mention the fix for GitHub issue #108."
+        assert "prefs.lastProvider" not in content
+        assert "providerSelect.value = prefs.lastProvider" not in content
+
+        form_manager = js_files["form_manager"].read_text(encoding='utf-8')
+        assert "DomHelpers.setValue('llmProvider', config.llm_provider)" in form_manager
+        assert ".env-backed endpoints are authoritative" in form_manager
 
     def test_provider_manager_waits_for_default_config_loaded(self, js_files):
         """

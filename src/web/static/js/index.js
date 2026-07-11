@@ -27,6 +27,7 @@ import { GlossaryManager } from './glossary/glossary-manager.js';
 // Provider Modules
 // ========================================
 import { ProviderManager } from './providers/provider-manager.js';
+import { EditorModelManager } from './providers/editor-model-manager.js';
 import { ModelDetector } from './providers/model-detector.js';
 import { CostEstimator } from './providers/cost-estimator.js';
 
@@ -423,6 +424,7 @@ async function initializeModules() {
     StatusManager.initialize();
     initializePreviewHeight();
     ProviderManager.initialize();
+    EditorModelManager.initialize();
     ModelDetector.initialize();
     // FileUpload must initialize before CostEstimator so its `change` listeners
     // on source/target language fire first and recreate the file <li>s (with

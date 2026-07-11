@@ -506,6 +506,58 @@ def test_frontend_start_and_batch_configs_keep_reflection_and_file_languages() -
     assert "target_language: targetLanguageVal" in batch_controller
 
 
+def test_editor_model_picker_is_conditional_searchable_and_inheritable() -> None:
+    """Senior Editor controls share model inventory and cannot leak while disabled."""
+    template = (ROOT / "src" / "web" / "templates" / "translation_interface.html").read_text(
+        encoding="utf-8"
+    )
+    manager = (JS_DIR / "providers" / "editor-model-manager.js").read_text(encoding="utf-8")
+    form_manager = (JS_DIR / "ui" / "form-manager.js").read_text(encoding="utf-8")
+    settings_manager = (JS_DIR / "core" / "settings-manager.js").read_text(encoding="utf-8")
+
+    assert 'id="editorModelOptions" style="display: none;' in template
+    assert '<select class="form-control" id="editorModel">' in template
+    assert 'id="editorModel" data-i18n-attr' not in template
+    assert "ApiClient.getModels(provider" in manager
+    assert "populateModelSelectInto(model, models" in manager
+    assert "container.style.display = enabled ? 'grid' : 'none'" in manager
+    assert "DomHelpers.getValue('editorProvider') || DomHelpers.getValue('llmProvider')" in manager
+    assert "editorProvider: DomHelpers.getValue('editorProvider') || ''" in settings_manager
+    assert "editorModel: DomHelpers.getValue('editorModel') || ''" in settings_manager
+    assert "editor_provider: DomHelpers.getElement('enableReflection')?.checked" in form_manager
+
+
+def test_env_backed_provider_fields_are_not_restored_from_local_storage() -> None:
+    """Browser preferences must not override provider/model defaults saved in .env."""
+    form_manager = (JS_DIR / "ui" / "form-manager.js").read_text(encoding="utf-8")
+    settings_manager = (JS_DIR / "core" / "settings-manager.js").read_text(encoding="utf-8")
+
+    assert "DomHelpers.setValue('llmProvider', config.llm_provider)" in form_manager
+    assert "window.__pendingModelSelection = config.default_model" in form_manager
+    provider_manager = (JS_DIR / "providers" / "provider-manager.js").read_text(encoding="utf-8")
+    assert "this.updateProviderDisplay(DomHelpers.getValue('llmProvider'))" in provider_manager
+    assert "if (prefs.lastProvider)" not in settings_manager
+    assert "if (prefs.lastApiEndpoint)" not in settings_manager
+
+
+def test_all_settings_help_keys_exist_in_every_locale() -> None:
+    required = {
+        "ai_provider_help",
+        "api_endpoint_help",
+        "api_key_help",
+        "model_help",
+        "auto_update_context_help",
+        "bypass_context_gating_help",
+        "editor_provider_help",
+        "editor_model_help",
+        "notifications_method_help",
+        "notifications_events_help",
+    }
+    for locale_dir in sorted(LOCALES_DIR.iterdir()):
+        settings = json.loads((locale_dir / "settings.json").read_text(encoding="utf-8"))
+        assert required <= settings.keys(), f"Missing Settings help keys for {locale_dir.name}"
+
+
 def test_obsolete_llm_sanitizer_setting_removed_from_web_settings_surface() -> None:
     """The removed sanitizer flag must not be persisted by web settings APIs."""
     settings_manager = (JS_DIR / "core" / "settings-manager.js").read_text(encoding="utf-8")

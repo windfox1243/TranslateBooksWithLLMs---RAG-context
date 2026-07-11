@@ -19,6 +19,11 @@ def setup_working_directory():
         app_data_dir = exe_dir / 'TranslateBook_Data'
         app_data_dir.mkdir(exist_ok=True)
 
+        # Publish the resolved configuration root before importing any project
+        # modules. This keeps .env discovery independent of launch shortcuts,
+        # inherited working directories, and PyInstaller extraction paths.
+        os.environ['TRANSLATEBOOK_CONFIG_DIR'] = str(app_data_dir)
+
         # Change working directory to app data folder
         os.chdir(app_data_dir)
 
@@ -77,6 +82,7 @@ def setup_working_directory():
 
     else:
         # Running as normal Python script
+        os.environ.setdefault('TRANSLATEBOOK_CONFIG_DIR', str(Path.cwd()))
         print("[DEV] Running as Python script (development mode)")
 
 if __name__ == '__main__':
@@ -86,6 +92,29 @@ if __name__ == '__main__':
 
         # Import and start the server
         from translation_api import start_server
+        from src import config as app_config
+        from src.core.llm.base import normalize_api_keys
+
+        key_counts = {
+            provider: len(normalize_api_keys(getattr(app_config, attr, '')))
+            for provider, attr in (
+                ('gemini', 'GEMINI_API_KEY'),
+                ('openai', 'OPENAI_API_KEY'),
+                ('openrouter', 'OPENROUTER_API_KEY'),
+                ('mistral', 'MISTRAL_API_KEY'),
+                ('deepseek', 'DEEPSEEK_API_KEY'),
+                ('poe', 'POE_API_KEY'),
+                ('nim', 'NIM_API_KEY'),
+            )
+        }
+        configured = ', '.join(
+            f'{provider}={count}' for provider, count in key_counts.items() if count
+        ) or 'none'
+        print(
+            f"[CONFIG] .env={app_config.ENV_FILE} "
+            f"exists={app_config.ENV_FILE.exists()} "
+            f"provider={app_config.LLM_PROVIDER} configured_keys={configured}"
+        )
         start_server()
 
     except KeyboardInterrupt:

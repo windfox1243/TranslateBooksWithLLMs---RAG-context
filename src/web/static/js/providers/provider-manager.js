@@ -263,6 +263,7 @@ export const ProviderManager = {
             console.log('[ProviderManager] Waiting for defaultConfigLoaded event');
             window.addEventListener('defaultConfigLoaded', () => {
                 console.log('[ProviderManager] Server config loaded, now loading models with correct endpoint');
+                this.updateProviderDisplay(DomHelpers.getValue('llmProvider'));
                 this.toggleProviderSettings(true);
             }, { once: true });
         }

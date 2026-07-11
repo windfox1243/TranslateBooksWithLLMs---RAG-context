@@ -2,8 +2,8 @@
  * Settings Manager - User preferences persistence
  *
  * Handles saving/loading user preferences via:
- * 1. localStorage for quick preferences (last model, provider, languages)
- * 2. Server API for sensitive data (API keys saved to .env)
+ * 1. localStorage for per-browser translation options and languages
+ * 2. Server API for provider defaults and sensitive data saved to .env
  */
 
 import { ApiClient } from './api-client.js';
@@ -133,6 +133,8 @@ export const SettingsManager = {
             { id: 'plainTextMode', event: 'change' },
             { id: 'chapterMode', event: 'change' },
             { id: 'enableReflection', event: 'change' },
+            { id: 'editorProvider', event: 'change' },
+            { id: 'editorModel', event: 'change' },
             { id: 'customInstructionSelect', event: 'change' },
             { id: 'novelContextSelect', event: 'change' },
             { id: 'autoUpdateContext', event: 'change' }
@@ -289,12 +291,6 @@ export const SettingsManager = {
     loadLocalPreferences() {
         const prefs = this.getLocalPreferences();
 
-        // Apply last model (after models are loaded)
-        if (prefs.lastModel) {
-            // Store for later application after models load
-            window.__pendingModelSelection = prefs.lastModel;
-        }
-
         // Apply last languages
         if (prefs.lastSourceLanguage) {
             this._setLanguage('sourceLang', 'customSourceLang', prefs.lastSourceLanguage);
@@ -303,32 +299,9 @@ export const SettingsManager = {
             this._setLanguage('targetLang', 'customTargetLang', prefs.lastTargetLanguage);
         }
 
-        // Apply API endpoints BEFORE setting provider (so models load with correct endpoint)
-        if (prefs.lastApiEndpoint) {
-            DomHelpers.setValue('apiEndpoint', prefs.lastApiEndpoint);
-        }
-        if (prefs.lastOpenaiEndpoint) {
-            DomHelpers.setValue('openaiEndpoint', prefs.lastOpenaiEndpoint);
-        }
-
-        // Apply output filename pattern (naming convention)
-        if (prefs.outputFilenamePattern) {
-            DomHelpers.setValue('outputFilenamePattern', prefs.outputFilenamePattern);
-        }
-
-        // Apply last provider AFTER endpoints are set
-        // NOTE: We set the provider value but DON'T trigger the change event here.
-        // The change event would trigger model loading, but we need to wait for
-        // FormManager.loadDefaultConfig() to complete and update the endpoint
-        // from the server configuration first (fixes GitHub issue #108 part 2).
-        if (prefs.lastProvider) {
-            const providerSelect = DomHelpers.getElement('llmProvider');
-            if (providerSelect) {
-                providerSelect.value = prefs.lastProvider;
-                // Don't trigger change event - ProviderManager will handle model loading
-                // after the 'defaultConfigLoaded' event is dispatched
-            }
-        }
+        // Provider, model, endpoints, and output naming are .env-backed fields.
+        // Legacy localStorage copies are intentionally ignored so browser state
+        // cannot hide the packaged application's current configuration.
 
         // Apply TTS Enabled setting
         if (prefs.ttsEnabled !== undefined) {
@@ -373,6 +346,12 @@ export const SettingsManager = {
             if (enableReflectionCheckbox) {
                 enableReflectionCheckbox.checked = prefs.enableReflection;
             }
+        }
+        if (prefs.editorProvider !== undefined || prefs.editorModel !== undefined) {
+            window.__pendingEditorSelection = {
+                provider: prefs.editorProvider || '',
+                model: prefs.editorModel || '',
+            };
         }
         // Note: disableAutoPause is now loaded from .env via /api/config in FormManager,
         // not from localStorage.
@@ -454,19 +433,16 @@ export const SettingsManager = {
         const enableReflectionCheckbox = DomHelpers.getElement('enableReflection');
 
         const prefs = {
-            lastProvider: DomHelpers.getValue('llmProvider'),
-            lastModel: DomHelpers.getValue('model'),
             lastSourceLanguage: this._getLanguageValue('sourceLang', 'customSourceLang'),
             lastTargetLanguage: this._getLanguageValue('targetLang', 'customTargetLang'),
-            lastApiEndpoint: DomHelpers.getValue('apiEndpoint'),
-            lastOpenaiEndpoint: DomHelpers.getValue('openaiEndpoint'),
-            outputFilenamePattern: DomHelpers.getValue('outputFilenamePattern'),
             ttsEnabled: ttsEnabledCheckbox ? ttsEnabledCheckbox.checked : false,
             textCleanup: textCleanupCheckbox ? textCleanupCheckbox.checked : false,
             bilingualMode: bilingualModeCheckbox ? bilingualModeCheckbox.checked : false,
             plainTextMode: plainTextModeCheckbox ? plainTextModeCheckbox.checked : false,
             chapterMode: chapterModeCheckbox ? chapterModeCheckbox.checked : false,
             enableReflection: enableReflectionCheckbox ? enableReflectionCheckbox.checked : false,
+            editorProvider: DomHelpers.getValue('editorProvider') || '',
+            editorModel: DomHelpers.getValue('editorModel') || '',
             customInstructionFile: DomHelpers.getValue('customInstructionSelect') || '',
             novelContextFile: DomHelpers.getValue('novelContextSelect') || '',
             autoUpdateContext: DomHelpers.getElement('autoUpdateContext')?.checked || false
@@ -732,8 +708,6 @@ export const SettingsManager = {
      * @param {string} endpointType - 'ollama' or 'openai'
      */
     markEndpointCustomized(endpointType) {
-        const key = endpointType === 'openai' ? 'openaiEndpointCustomized' : 'apiEndpointCustomized';
-        this.saveLocalPreferences({ [key]: true });
         this.updateEndpointBadge(endpointType, true);
     },
 
@@ -743,10 +717,8 @@ export const SettingsManager = {
      * @returns {boolean}
      */
     isEndpointCustomized(endpointType) {
-        const prefs = this.getLocalPreferences();
-        return endpointType === 'openai' 
-            ? prefs.openaiEndpointCustomized 
-            : prefs.apiEndpointCustomized;
+        const badgeId = endpointType === 'openai' ? 'openaiEndpointBadge' : 'apiEndpointBadge';
+        return DomHelpers.getElement(badgeId)?.style.display !== 'none';
     },
 
     /**
@@ -756,17 +728,8 @@ export const SettingsManager = {
      */
     resetEndpointToServerDefault(endpointType, serverValue) {
         const inputId = endpointType === 'openai' ? 'openaiEndpoint' : 'apiEndpoint';
-        const key = endpointType === 'openai' ? 'openaiEndpointCustomized' : 'apiEndpointCustomized';
-        const storageKey = endpointType === 'openai' ? 'lastOpenaiEndpoint' : 'lastApiEndpoint';
-        
         // Update input field
         DomHelpers.setValue(inputId, serverValue);
-        
-        // Clear customized flag
-        const prefs = this.getLocalPreferences();
-        delete prefs[key];
-        delete prefs[storageKey];
-        this.saveLocalPreferences(prefs);
         
         // Update badge
         this.updateEndpointBadge(endpointType, false);
@@ -806,23 +769,9 @@ export const SettingsManager = {
      * @param {Object} serverConfig - The config from /api/config
      */
     initializeEndpointBadges(serverConfig) {
-        const prefs = this.getLocalPreferences();
-        
-        // Check Ollama endpoint
-        if (prefs.apiEndpointCustomized && prefs.lastApiEndpoint) {
-            const serverEndpoint = serverConfig.ollama_api_endpoint || serverConfig.api_endpoint;
-            if (prefs.lastApiEndpoint !== serverEndpoint) {
-                this.updateEndpointBadge('ollama', true);
-            }
-        }
-        
-        // Check OpenAI endpoint
-        if (prefs.openaiEndpointCustomized && prefs.lastOpenaiEndpoint) {
-            const serverEndpoint = serverConfig.openai_api_endpoint;
-            if (prefs.lastOpenaiEndpoint !== serverEndpoint) {
-                this.updateEndpointBadge('openai', true);
-            }
-        }
+        void serverConfig;
+        this.updateEndpointBadge('ollama', false);
+        this.updateEndpointBadge('openai', false);
     }
 };
 

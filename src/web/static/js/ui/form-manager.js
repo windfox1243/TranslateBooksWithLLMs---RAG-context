@@ -13,6 +13,7 @@ import { ApiKeyUtils } from '../utils/api-key-utils.js';
 import { TranslationTracker } from '../translation/translation-tracker.js';
 import { SettingsManager } from '../core/settings-manager.js';
 import { ProviderManager } from '../providers/provider-manager.js';
+import { EditorModelManager } from '../providers/editor-model-manager.js';
 import { GlossaryManager } from '../glossary/glossary-manager.js';
 import { t } from '../i18n/i18n.js';
 
@@ -68,10 +69,11 @@ export const FormManager = {
      */
     initialize() {
         this.setupEventListeners();
-        this.loadDefaultConfig();
+        this.defaultConfigPromise = this.loadDefaultConfig();
         this.loadCustomInstructions();
         this.loadNovelContexts();
         this.loadProfiles();
+        return this.defaultConfigPromise;
     },
 
     /**
@@ -431,6 +433,16 @@ export const FormManager = {
             // Store config in state first so other modules can access it
             StateManager.setState('ui.defaultConfig', config);
 
+            // Provider/model defaults saved to .env are authoritative. Apply
+            // the provider before ProviderManager receives the loaded event so
+            // it lists models and reveals the matching configured-key field.
+            if (config.llm_provider) {
+                DomHelpers.setValue('llmProvider', config.llm_provider);
+            }
+            if (config.default_model) {
+                window.__pendingModelSelection = config.default_model;
+            }
+
             // Set target language from server config if available
             // This fixes GitHub issue #108: DEFAULT_TARGET_LANGUAGE was ignored
             // Only override if server has a default target language configured
@@ -447,36 +459,18 @@ export const FormManager = {
                 : '';  // Empty = auto-detect from file
             setDefaultLanguage('sourceLang', 'customSourceLang', sourceLanguage)
 
-            // Set provider-specific API endpoints with smart merge:
-            // - If user has customized endpoint, keep it and show badge
-            // - Otherwise use server default (.env)
-            // Ollama endpoint (for Ollama provider)
+            // .env-backed endpoints are authoritative at startup. Edits remain
+            // usable for the current session and become durable only after Save.
             const ollamaEndpoint = config.ollama_api_endpoint || config.api_endpoint;
             if (ollamaEndpoint) {
-                const prefs = SettingsManager.getLocalPreferences();
-                // Check if user has a customized endpoint
-                if (prefs.apiEndpointCustomized && prefs.lastApiEndpoint) {
-                    // User customized - keep their value but show badge
-                    SettingsManager.updateEndpointBadge('ollama', true);
-                    console.log('[FormManager] Using customized Ollama endpoint:', prefs.lastApiEndpoint);
-                } else {
-                    // Use server default
-                    DomHelpers.setValue('apiEndpoint', ollamaEndpoint);
-                }
+                DomHelpers.setValue('apiEndpoint', ollamaEndpoint);
+                SettingsManager.updateEndpointBadge('ollama', false);
             }
             
             // OpenAI endpoint (for OpenAI-compatible providers like OpenAI, LM Studio)
             if (config.openai_api_endpoint) {
-                const prefs = SettingsManager.getLocalPreferences();
-                // Check if user has a customized endpoint
-                if (prefs.openaiEndpointCustomized && prefs.lastOpenaiEndpoint) {
-                    // User customized - keep their value but show badge
-                    SettingsManager.updateEndpointBadge('openai', true);
-                    console.log('[FormManager] Using customized OpenAI endpoint:', prefs.lastOpenaiEndpoint);
-                } else {
-                    // Use server default
-                    DomHelpers.setValue('openaiEndpoint', config.openai_api_endpoint);
-                }
+                DomHelpers.setValue('openaiEndpoint', config.openai_api_endpoint);
+                SettingsManager.updateEndpointBadge('openai', false);
             }
             
             // Output filename pattern (naming convention)
@@ -879,8 +873,12 @@ export const FormManager = {
                 auto_update_context: DomHelpers.getElement('autoUpdateContext')?.checked || false,
                 bypass_context_gating: DomHelpers.getElement('bypassContextGating')?.checked || false,
                 reflection_mode: DomHelpers.getElement('enableReflection')?.checked || false,
-                editor_provider: DomHelpers.getValue('editorProvider') || '',
-                editor_model: (DomHelpers.getValue('editorModel') || '').trim()
+                editor_provider: DomHelpers.getElement('enableReflection')?.checked
+                    ? (DomHelpers.getValue('editorProvider') || '')
+                    : '',
+                editor_model: DomHelpers.getElement('enableReflection')?.checked
+                    ? (DomHelpers.getValue('editorModel') || '').trim()
+                    : ''
             },
             // Bilingual output (original + translation interleaved)
             bilingual_output: DomHelpers.getElement('bilingualMode')?.checked || false,
@@ -1055,11 +1053,11 @@ window.loadSelectedProfile = async function() {
             const element = document.getElementById(id);
             if (element && value !== undefined) element.checked = value;
         });
-        if (data.editor_provider !== undefined) {
-            DomHelpers.setValue('editorProvider', data.editor_provider || '');
-        }
-        if (data.editor_model !== undefined) {
-            DomHelpers.setValue('editorModel', data.editor_model || '');
+        if (data.editor_provider !== undefined || data.editor_model !== undefined) {
+            EditorModelManager.setSelection(
+                data.editor_provider || '',
+                data.editor_model || '',
+            );
         }
 
         const valueFields = {

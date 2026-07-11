@@ -76,8 +76,12 @@ function getTranslationConfig(file) {
         auto_update_context: DomHelpers.getElement('autoUpdateContext')?.checked || false,
         bypass_context_gating: DomHelpers.getElement('bypassContextGating')?.checked || false,
         reflection_mode: DomHelpers.getElement('enableReflection')?.checked || false,
-        editor_provider: DomHelpers.getValue('editorProvider') || '',
-        editor_model: (DomHelpers.getValue('editorModel') || '').trim(),
+        editor_provider: DomHelpers.getElement('enableReflection')?.checked
+            ? (DomHelpers.getValue('editorProvider') || '')
+            : '',
+        editor_model: DomHelpers.getElement('enableReflection')?.checked
+            ? (DomHelpers.getValue('editorModel') || '').trim()
+            : '',
         input_filename: file.name
     };
 
