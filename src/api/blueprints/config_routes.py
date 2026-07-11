@@ -44,7 +44,7 @@ def get_base_path():
 
 def get_config_path():
     """Get base path for configuration files (.env)"""
-    return os.getcwd()
+    return str(_config.CONFIG_DIR)
 
 import src.config as _config
 from src.config import reload_config
@@ -208,6 +208,7 @@ def create_config_blueprint(server_session_id=None):
             "ollama_api_endpoint": _config.OLLAMA_API_ENDPOINT,
             "openai_api_endpoint": _config.OPENAI_API_ENDPOINT,
             "default_model": _config.DEFAULT_MODEL,
+            "llm_provider": _config.LLM_PROVIDER,
             "default_source_language": _config.DEFAULT_SOURCE_LANGUAGE,
             "default_target_language": _config.DEFAULT_TARGET_LANGUAGE,
             "timeout": _config.REQUEST_TIMEOUT,
@@ -242,6 +243,7 @@ def create_config_blueprint(server_session_id=None):
             "max_parallel_translations": int(_config.MAX_PARALLEL_TRANSLATIONS),
             "disable_auto_pause": str(_config.DISABLE_AUTO_PAUSE).strip().lower() == 'true',
             "bypass_context_gating": bool(_config.BYPASS_CONTEXT_GATING),
+            "enable_chunk_reflection": str(_config.ENABLE_CHUNK_REFLECTION).strip().lower() == 'true',
             # Webhook notifications — returned as-is for editing. URLs and tokens
             # only ever travel between this server and the same-origin browser
             # session that already controls the .env on disk.

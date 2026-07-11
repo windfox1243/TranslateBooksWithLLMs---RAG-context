@@ -39,11 +39,12 @@ class TestOllamaEndpointInitializationBug:
     """
 
     @pytest.fixture
-    def app(self):
+    def app(self, monkeypatch):
         """Create a Flask app for testing with remote Ollama config."""
         # Set test values BEFORE importing Flask app components
-        os.environ['OLLAMA_API_ENDPOINT'] = 'http://192.168.1.4:11434/api/generate'
-        os.environ['API_ENDPOINT'] = 'http://192.168.1.4:11434/api/generate'
+        monkeypatch.delenv('TRANSLATEBOOK_CONFIG_DIR', raising=False)
+        monkeypatch.setenv('OLLAMA_API_ENDPOINT', 'http://192.168.1.4:11434/api/generate')
+        monkeypatch.setenv('API_ENDPOINT', 'http://192.168.1.4:11434/api/generate')
         
         # Import and reload config to pick up test values
         import importlib
@@ -60,9 +61,6 @@ class TestOllamaEndpointInitializationBug:
         
         yield app
         
-        # Cleanup: restore original values after test
-        del os.environ['OLLAMA_API_ENDPOINT']
-        del os.environ['API_ENDPOINT']
 
     def test_api_config_response_contains_ollama_endpoint(self, app):
         """

@@ -520,6 +520,14 @@ body {
     font-size: inherit;
 }
 
+.setting-help {
+    display: block;
+    margin-top: 0.4rem;
+    color: var(--text-muted-light);
+    font-size: 0.6875rem;
+    line-height: 1.4;
+}
+
 .form-control {
     width: 100%;
     box-sizing: border-box;
@@ -3961,4 +3969,3 @@ html.dark .file-test-btn { color: #a5b4fc; }
     vertical-align: middle;
     animation: spin 0.8s linear infinite;
 }
-

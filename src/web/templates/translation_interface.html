@@ -883,6 +883,7 @@
                                     <option value="nim">NVIDIA NIM (Cloud API)</option>
                                 </select>
                             </div>
+                            <small class="setting-help" data-i18n="settings:ai_provider_help">Select the service used for draft translation. Saved .env credentials remain hidden.</small>
                         </div>
 
                         <!-- Ollama Endpoint -->
@@ -897,6 +898,7 @@
                                     <span class="material-symbols-outlined" style="font-size: 18px;">restart_alt</span>
                                 </button>
                             </div>
+                            <small class="setting-help" data-i18n="settings:api_endpoint_help">Address of the local or compatible model server.</small>
                         </div>
 
                         <!-- Gemini API Key -->
@@ -905,6 +907,7 @@
                             <div class="neu-inset-light">
                                 <input type="password" class="form-control" id="geminiApiKey" data-i18n-attr="placeholder:settings:api_key_placeholder_gemini;title:settings:api_key_rotation_tip" placeholder="Enter Gemini API key" autocomplete="new-password" title="Tip: enter several keys separated by commas to enable automatic rotation on rate-limit (HTTP 429) — useful to chain free-tier accounts.">
                             </div>
+                            <small class="setting-help" data-i18n="settings:api_key_help">Leave blank to keep using the configured .env key; entered values are saved only when you click Save Settings.</small>
                         </div>
 
                         <!-- OpenAI API Key -->
@@ -913,6 +916,7 @@
                             <div class="neu-inset-light">
                                 <input type="password" class="form-control" id="openaiApiKey" data-i18n-attr="placeholder:settings:api_key_placeholder_openai;title:settings:api_key_rotation_tip" placeholder="Enter OpenAI API key" autocomplete="new-password" title="Tip: enter several keys separated by commas to enable automatic rotation on rate-limit (HTTP 429) — useful to chain free-tier accounts.">
                             </div>
+                            <small class="setting-help" data-i18n="settings:api_key_help">Leave blank to keep using the configured .env key; entered values are saved only when you click Save Settings.</small>
                         </div>
 
                         <!-- OpenRouter API Key -->
@@ -921,6 +925,7 @@
                             <div class="neu-inset-light">
                                 <input type="password" class="form-control" id="openrouterApiKey" data-i18n-attr="placeholder:settings:api_key_placeholder_openrouter;title:settings:api_key_rotation_tip" placeholder="sk-or-v1-..." autocomplete="new-password" title="Tip: enter several keys separated by commas to enable automatic rotation on rate-limit (HTTP 429) — useful to chain free-tier accounts.">
                             </div>
+                            <small class="setting-help" data-i18n="settings:api_key_help">Leave blank to keep using the configured .env key; entered values are saved only when you click Save Settings.</small>
                         </div>
 
                         <!-- Mistral API Key -->
@@ -929,6 +934,7 @@
                             <div class="neu-inset-light">
                                 <input type="password" class="form-control" id="mistralApiKey" data-i18n-attr="placeholder:settings:api_key_placeholder_mistral;title:settings:api_key_rotation_tip" placeholder="Enter Mistral API key" autocomplete="new-password" title="Tip: enter several keys separated by commas to enable automatic rotation on rate-limit (HTTP 429) — useful to chain free-tier accounts.">
                             </div>
+                            <small class="setting-help" data-i18n="settings:api_key_help">Leave blank to keep using the configured .env key; entered values are saved only when you click Save Settings.</small>
                         </div>
 
                         <!-- DeepSeek API Key -->
@@ -937,6 +943,7 @@
                             <div class="neu-inset-light">
                                 <input type="password" class="form-control" id="deepseekApiKey" data-i18n-attr="placeholder:settings:api_key_placeholder_deepseek;title:settings:api_key_rotation_tip" placeholder="Enter DeepSeek API key" autocomplete="new-password" title="Tip: enter several keys separated by commas to enable automatic rotation on rate-limit (HTTP 429) — useful to chain free-tier accounts.">
                             </div>
+                            <small class="setting-help" data-i18n="settings:api_key_help">Leave blank to keep using the configured .env key; entered values are saved only when you click Save Settings.</small>
                         </div>
 
                         <!-- Poe API Key -->
@@ -945,6 +952,7 @@
                             <div class="neu-inset-light">
                                 <input type="password" class="form-control" id="poeApiKey" data-i18n-attr="placeholder:settings:api_key_placeholder_poe;title:settings:api_key_rotation_tip" placeholder="Get key at poe.com/api_key" autocomplete="new-password" title="Tip: enter several keys separated by commas to enable automatic rotation on rate-limit (HTTP 429) — useful to chain free-tier accounts.">
                             </div>
+                            <small class="setting-help" data-i18n="settings:api_key_help">Leave blank to keep using the configured .env key; entered values are saved only when you click Save Settings.</small>
                         </div>
 
                         <!-- NVIDIA NIM API Key -->
@@ -953,6 +961,7 @@
                             <div class="neu-inset-light">
                                 <input type="password" class="form-control" id="nimApiKey" data-i18n-attr="placeholder:settings:api_key_placeholder_nim;title:settings:api_key_rotation_tip" placeholder="Get key at build.nvidia.com" autocomplete="new-password" title="Tip: enter several keys separated by commas to enable automatic rotation on rate-limit (HTTP 429) — useful to chain free-tier accounts.">
                             </div>
+                            <small class="setting-help" data-i18n="settings:api_key_help">Leave blank to keep using the configured .env key; entered values are saved only when you click Save Settings.</small>
                         </div>
                     </div>
 
@@ -965,6 +974,7 @@
                                     <option value="" data-i18n="common:loading">Loading...</option>
                                 </select>
                             </div>
+                            <small class="setting-help" data-i18n="settings:model_help">Choose the model that creates the first translation draft.</small>
                             <!-- Thinking model warning -->
                             <div id="thinkingModelWarning" style="display: none; margin-top: 8px; padding: 8px 10px; background: #fee2e2; border-left: 3px solid #ef4444; border-radius: 8px;">
                                 <p id="thinkingModelWarningText" style="margin: 0; font-size: 13px; color: #991b1b; white-space: pre-line;"></p>
@@ -988,6 +998,7 @@
                                     <span class="material-symbols-outlined" style="font-size: 18px;">restart_alt</span>
                                 </button>
                             </div>
+                            <small class="setting-help" data-i18n="settings:api_endpoint_help">Address of the local or compatible model server.</small>
                             <small data-i18n="settings:openai_local_servers_hint" style="color: var(--text-muted-light); font-size: 0.75rem; margin-top: 0.5rem; display: block;">Local servers: llama.cpp (8080), LM Studio (1234), vLLM, etc.</small>
                         </div>
                     </div>
@@ -1178,12 +1189,14 @@
                                 Auto-update context file after translating each chunk
                             </label>
                         </div>
+                        <small class="setting-help" data-i18n="settings:auto_update_context_help">Persist validated character, relationship, glossary, and addressing updates after each successful chunk.</small>
                         <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
                             <input type="checkbox" id="bypassContextGating" style="width: 16px; height: 16px; margin: 0; cursor: pointer;">
                             <label for="bypassContextGating" data-i18n="settings:bypass_context_gating_label" style="font-size: 0.8125rem; color: var(--text-dark); cursor: pointer; margin-bottom: 0;">
                                 Bypass context validation (directly trust LLM gender & corrections)
                             </label>
                         </div>
+                        <small class="setting-help" data-i18n="settings:bypass_context_gating_help">High risk: accepts model-proposed context changes without normal deterministic validation.</small>
                         <div style="display: flex; align-items: center; gap: 8px; margin-top: 12px;">
                             <input type="checkbox" id="enableReflection" style="width: 16px; height: 16px; margin: 0; cursor: pointer;">
                             <label for="enableReflection" data-i18n="settings:enable_reflection_label" style="font-size: 0.8125rem; color: var(--text-dark); cursor: pointer; margin-bottom: 0;">
@@ -1193,7 +1206,7 @@
                         <p data-i18n-html="settings:enable_chunk_reflection_help" style="margin: 5px 0 0 0; font-size: 0.8125rem; color: var(--text-muted-light);">
                             Runs a 2-pass Senior Translation Editor reflection pass after each chunk to fix line omissions, dialogue pronoun leaks, and register mismatches before saving.
                         </p>
-                        <div id="editorModelOptions" style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; margin-top: 12px;">
+                        <div id="editorModelOptions" style="display: none; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; margin-top: 12px;">
                             <div class="form-group" style="margin-bottom: 0;">
                                 <label for="editorProvider" data-i18n="settings:editor_provider_label">Senior Editor provider</label>
                                 <div class="neu-inset-light">
@@ -1209,12 +1222,16 @@
                                         <option value="nim" data-i18n="settings:provider_name_nim">NVIDIA NIM</option>
                                     </select>
                                 </div>
+                                <small class="setting-help" data-i18n="settings:editor_provider_help">Inherit the draft provider or select a separately configured provider for quality review.</small>
                             </div>
                             <div class="form-group" style="margin-bottom: 0;">
                                 <label for="editorModel" data-i18n="settings:editor_model_label">Senior Editor model</label>
                                 <div class="neu-inset-light">
-                                    <input type="text" class="form-control" id="editorModel" data-i18n-attr="placeholder:settings:editor_model_inherit" placeholder="Use translation model">
+                                    <select class="form-control" id="editorModel">
+                                        <option value="" data-i18n="settings:editor_model_inherit">Use translation model</option>
+                                    </select>
                                 </div>
+                                <small class="setting-help" data-i18n="settings:editor_model_help">Inherit the draft model or choose another available model for reflection and repair.</small>
                             </div>
                         </div>
                     </div>
@@ -1273,6 +1290,7 @@
                                     <option value="PUT">PUT</option>
                                 </select>
                             </div>
+                            <small class="setting-help" data-i18n="settings:notifications_method_help">Use the HTTP method required by the receiving service.</small>
                         </div>
                     </div>
 
@@ -1315,6 +1333,7 @@
                                 <span data-i18n-html="settings:notifications_event_interruption"><strong>Interruption</strong> — paused / rate-limit</span>
                             </label>
                         </div>
+                        <small class="setting-help" data-i18n="settings:notifications_events_help">Only selected job outcomes trigger a webhook request.</small>
                     </div>
 
                     <!-- Timeout -->

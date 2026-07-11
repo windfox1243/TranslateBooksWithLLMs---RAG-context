@@ -24,6 +24,23 @@
 
 ### Fixed
 
+- **Packaged `.env` Initialization**:
+  The executable now resolves one explicit `TranslateBook_Data` configuration
+  root before importing the application. Provider, model, endpoints, reflection
+  defaults, and masked key status load from `.env` without stale browser or
+  inherited process values hiding the configured provider.
+
+- **Senior Editor Model Selection**:
+  Senior Editor controls now appear only when reflection is enabled and use the
+  same searchable provider-backed model inventory as draft translation. Empty
+  selections continue to inherit the draft provider and model, with credentials
+  remaining centralized in `.env`.
+
+- **Settings Guidance and Reactivity**:
+  Previously unexplained provider, endpoint, API-key, model, context, editor,
+  and notification controls now include concise help text that updates live
+  across all seven interface locales.
+
 - **False Senior Editor Failures**:
   Ambiguous locators are corrected before repair, exact non-overlapping edits
   are applied locally, and validation checks the selected occurrence rather

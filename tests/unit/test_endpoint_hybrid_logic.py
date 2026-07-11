@@ -38,27 +38,15 @@ class TestEndpointHybridLogic:
         """Get path to HTML template."""
         return Path(__file__).parent.parent.parent / "src" / "web" / "templates" / "translation_interface.html"
 
-    def test_settings_manager_tracks_customized_state(self, js_files):
+    def test_settings_manager_tracks_customized_state_for_current_session(self, js_files):
         """
-        Verify SettingsManager tracks whether endpoints are customized.
-        
-        Should have:
-        - apiEndpointCustomized in LOCAL_SETTINGS
-        - openaiEndpointCustomized in LOCAL_SETTINGS
-        - markEndpointCustomized() method
-        - isEndpointCustomized() method
-        - resetEndpointToServerDefault() method
+        Unsaved endpoint edits are visible for the current session but must not
+        be restored over the authoritative .env value on the next startup.
         """
         settings_manager = js_files["settings_manager"]
         assert settings_manager.exists(), f"settings-manager.js not found"
         
         content = settings_manager.read_text(encoding='utf-8')
-        
-        # Check that customized flags are in LOCAL_SETTINGS
-        assert "apiEndpointCustomized" in content, \
-            "SettingsManager should track apiEndpointCustomized in localStorage"
-        assert "openaiEndpointCustomized" in content, \
-            "SettingsManager should track openaiEndpointCustomized in localStorage"
         
         # Check for the methods
         assert "markEndpointCustomized" in content, \
@@ -67,6 +55,8 @@ class TestEndpointHybridLogic:
             "SettingsManager should have isEndpointCustomized() method"
         assert "resetEndpointToServerDefault" in content, \
             "SettingsManager should have resetEndpointToServerDefault() method"
+        assert "saveLocalPreferences({ [key]: true })" not in content
+        assert "prefs.apiEndpointCustomized" not in content
 
     def test_settings_manager_updates_badges(self, js_files):
         """
@@ -100,26 +90,19 @@ class TestEndpointHybridLogic:
         assert "apiEndpoint" in content and "addEventListener" in content, \
             "FormManager should listen for endpoint input changes"
 
-    def test_form_manager_smart_merge_logic(self, js_files):
+    def test_form_manager_uses_env_endpoint_on_startup(self, js_files):
         """
-        Verify FormManager uses smart merge for endpoints:
-        - If customized: keep localStorage value and show badge
-        - If not customized: use server default
+        The server .env endpoint wins over stale browser state on every startup.
         """
         form_manager = js_files["form_manager"]
         content = form_manager.read_text(encoding='utf-8')
         
-        # Should check for customized flag
-        assert "apiEndpointCustomized" in content, \
-            "FormManager should check apiEndpointCustomized flag"
-        
-        # Should have logic to decide between localStorage and server
-        assert "lastApiEndpoint" in content, \
-            "FormManager should consider lastApiEndpoint from localStorage"
-        
-        # Should call updateEndpointBadge
+        assert "prefs.apiEndpointCustomized" not in content
+        assert "prefs.lastApiEndpoint" not in content
+        assert "DomHelpers.setValue('apiEndpoint', ollamaEndpoint)" in content
+        assert "DomHelpers.setValue('openaiEndpoint', config.openai_api_endpoint)" in content
         assert "updateEndpointBadge" in content, \
-            "FormManager should update badge visibility based on customization"
+            "FormManager should clear stale customization badges"
 
     def test_html_has_badge_and_reset_button(self, html_file):
         """

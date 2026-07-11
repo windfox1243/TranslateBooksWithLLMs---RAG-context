@@ -19,12 +19,23 @@ if _debug_mode:
     _config_logger.setLevel(logging.DEBUG)
     _config_logger.debug("🔍 DEBUG_MODE enabled - verbose logging active")
 
-# Get config directory (current working directory)
-_config_dir = Path.cwd()
+# Resolve configuration independently of later cwd changes. The executable
+# launcher sets TRANSLATEBOOK_CONFIG_DIR before importing application modules;
+# direct source entrypoints retain their historical cwd-based behavior.
+_is_frozen = getattr(sys, 'frozen', False)
+_configured_root = os.getenv('TRANSLATEBOOK_CONFIG_DIR', '').strip()
+if _configured_root:
+    _config_dir = Path(_configured_root).expanduser().resolve()
+elif _is_frozen:
+    _config_dir = (Path(sys.executable).parent / 'TranslateBook_Data').resolve()
+else:
+    _config_dir = Path.cwd()
 
 # Check if .env file exists and provide helpful guidance
 _env_file = _config_dir / '.env'
 _env_example = _config_dir / '.env.example'
+CONFIG_DIR = _config_dir
+ENV_FILE = _env_file
 _env_exists = _env_file.exists()
 _cwd = Path.cwd()
 
@@ -37,8 +48,6 @@ if _debug_mode:
 # later by warn_env_config_missing(), which the entrypoints call AFTER they
 # have resolved their effective settings — so the warning shows the real CLI
 # arguments (provider, endpoint, model) instead of import-time defaults (#187).
-_is_frozen = getattr(sys, 'frozen', False)
-
 # Path to Novel_Contexts and Custom_Instructions directory.
 # In frozen mode, they live inside TranslateBook_Data next to the executable.
 # In development mode, we also want to read and write to TranslateBook_Data
@@ -63,8 +72,11 @@ if ENV_FILE_MISSING and _is_frozen and _debug_mode:
     # Running as executable - silently use defaults
     _config_logger.debug("⚠️  .env not found, using defaults (executable mode)")
 
-# Load .env file if it exists
-_dotenv_result = load_dotenv(_env_file)
+# The packaged app owns its process, so its explicit data-directory .env must
+# win over stale inherited variables. Source entrypoints preserve conventional
+# process-environment precedence unless an explicit config root was supplied.
+_dotenv_override = _is_frozen or bool(_configured_root)
+_dotenv_result = load_dotenv(_env_file, override=_dotenv_override)
 if _debug_mode:
     _config_logger.debug(f"📁 load_dotenv() returned: {_dotenv_result}")
     _config_logger.debug(f"📁 Loaded .env from: {_env_file.absolute()}")

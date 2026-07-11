@@ -940,8 +940,8 @@ function buildRunPayload({ defer = false } = {}) {
         text_cleanup: $('textCleanup')?.checked || false,
         novel_context_file: ($('novelContextSelect')?.value || '').trim(),
         reflection_mode: $('enableReflection')?.checked || false,
-        editor_provider: $('editorProvider')?.value || '',
-        editor_model: ($('editorModel')?.value || '').trim(),
+        editor_provider: $('enableReflection')?.checked ? ($('editorProvider')?.value || '') : '',
+        editor_model: $('enableReflection')?.checked ? ($('editorModel')?.value || '').trim() : '',
     };
 
     const payload = {
