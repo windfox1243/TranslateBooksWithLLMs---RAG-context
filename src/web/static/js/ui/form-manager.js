@@ -1071,6 +1071,7 @@ window.loadSelectedProfile = async function() {
                 data.editor_model || '',
             );
         }
+        EditorModelManager.setGenerationSettings(data);
 
         const valueFields = {
             parallelWorkers: data.parallel_workers,
@@ -1121,6 +1122,11 @@ window.promptSaveProfile = async function() {
         reflection_mode: !!formData.prompt_options?.reflection_mode,
         editor_provider: formData.prompt_options?.editor_provider || '',
         editor_model: formData.prompt_options?.editor_model || '',
+        draft_thinking_level: formData.prompt_options?.draft_thinking_level || 'auto',
+        editor_thinking_level: formData.prompt_options?.editor_thinking_level || 'auto',
+        editor_max_output_tokens: String(
+            formData.prompt_options?.editor_max_output_tokens || 'auto'
+        ),
         plain_text_mode: !!formData.prompt_options?.plain_text_mode,
         chapter_mode: !!formData.prompt_options?.chapter_mode,
         auto_pause_on_rate_limit: formData.auto_pause_on_rate_limit,

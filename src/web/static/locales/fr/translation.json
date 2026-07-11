@@ -333,6 +333,7 @@
   "editor_diagnostics_legacy": "Cette tâche ne contient aucun diagnostic classifié de l'éditeur principal.",
   "editor_diagnostics_summary": "Exécutions : {{total}} · réparées : {{repaired}} · à vérifier : {{review}} · bloquées : {{blocked}}",
   "editor_diagnostics_run": "Segment {{chunk}} · {{outcome}} · {{reason}}",
+  "editor_diagnostics_tokens": "Jetons : entrée {{prompt}} · sortie {{completion}} · raisonnement {{thinking}} · total {{total}}",
   "editor_retry": "Relancer l'éditeur",
   "editor_retry_queued": "Nouvelle tentative de l'éditeur mise en file. Reprenez la tâche pour l'exécuter."
 }

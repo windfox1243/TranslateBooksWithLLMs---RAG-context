@@ -985,6 +985,16 @@
                         </button>
                     </div>
 
+                    <div id="draftThinkingOptions" class="form-group" style="display: none; margin-bottom: 15px;">
+                        <label for="draftThinkingLevel" data-i18n="settings:draft_thinking_label">Draft reasoning effort</label>
+                        <div class="neu-inset-light">
+                            <select class="form-control" id="draftThinkingLevel">
+                                <option value="auto" data-i18n="settings:thinking_mode_auto">Auto (provider default)</option>
+                            </select>
+                        </div>
+                        <small class="setting-help" data-i18n="settings:draft_thinking_help">Available choices are detected from the selected provider and model. Auto preserves the provider default.</small>
+                    </div>
+
                     <!-- OpenAI Endpoint Row (shown only for OpenAI provider) -->
                     <div id="openaiEndpointRow" style="display: none; margin-bottom: 15px;">
                         <div class="form-group" style="margin-bottom: 0;">
@@ -1244,6 +1254,32 @@
                                     <input type="password" class="form-control" id="editorApiKey" autocomplete="new-password" data-i18n-attr="placeholder:settings:editor_api_key_placeholder" placeholder="Leave blank to use the provider key from .env">
                                 </div>
                                 <small class="setting-help" data-i18n="settings:editor_api_key_help">Uses the selected provider's standard .env key. Enter a value to override it for this session, or save settings to update .env.</small>
+                            </div>
+                            <div id="editorThinkingOptions" class="form-group" style="display: none; margin-bottom: 0;">
+                                <label for="editorThinkingLevel" data-i18n="settings:editor_thinking_label">Senior Editor reasoning effort</label>
+                                <div class="neu-inset-light">
+                                    <select class="form-control" id="editorThinkingLevel">
+                                        <option value="auto" data-i18n="settings:thinking_mode_auto">Auto (minimal for editing)</option>
+                                    </select>
+                                </div>
+                                <small class="setting-help" data-i18n="settings:editor_thinking_help">Auto uses the lowest supported reasoning setting so structured output retains enough tokens.</small>
+                            </div>
+                            <div id="editorOutputOptions" class="form-group" style="display: none; margin-bottom: 0;">
+                                <label for="editorOutputBudget" data-i18n="settings:editor_output_budget_label">Senior Editor output allowance</label>
+                                <div class="neu-inset-light">
+                                    <select class="form-control" id="editorOutputBudget">
+                                        <option value="auto" data-i18n="settings:output_budget_auto">Auto (recommended)</option>
+                                        <option value="4096">4,096</option>
+                                        <option value="8192">8,192</option>
+                                        <option value="16384">16,384</option>
+                                        <option value="model_max" data-i18n="settings:output_budget_model_max">Model maximum</option>
+                                        <option value="custom" data-i18n="settings:output_budget_custom">Custom</option>
+                                    </select>
+                                </div>
+                                <div id="editorCustomOutputContainer" class="neu-inset-light" style="display: none; margin-top: 8px;">
+                                    <input type="number" class="form-control" id="editorCustomOutputTokens" min="1024" max="65536" step="256" value="8192" data-i18n-attr="title:settings:editor_custom_output_title" title="Custom output-token allowance">
+                                </div>
+                                <small class="setting-help" data-i18n="settings:editor_output_budget_help">Auto reserves output for reasoning and JSON. A MAX_TOKENS response retries once with a larger allowance and reduced reasoning.</small>
                             </div>
                         </div>
                     </div>

@@ -107,7 +107,13 @@ class OpenAICompatibleProvider(LLMProvider):
         if generation_options and generation_options.temperature is not None:
             payload["temperature"] = generation_options.temperature
         if generation_options and generation_options.max_output_tokens:
-            payload["max_tokens"] = int(generation_options.max_output_tokens)
+            token_field = (
+                "max_completion_tokens"
+                if generation_options.reasoning_effort
+                and self._is_official_openai_endpoint()
+                else "max_tokens"
+            )
+            payload[token_field] = int(generation_options.max_output_tokens)
         if generation_options and generation_options.response_schema:
             payload["response_format"] = {
                 "type": "json_schema",
@@ -117,6 +123,12 @@ class OpenAICompatibleProvider(LLMProvider):
                     "schema": generation_options.response_schema,
                 },
             }
+        if (
+            generation_options
+            and generation_options.reasoning_effort
+            and self._is_official_openai_endpoint()
+        ):
+            payload["reasoning_effort"] = generation_options.reasoning_effort
 
         # Only add thinking-disable params for local servers (llama.cpp, vLLM, LM Studio)
         # Skip for official OpenAI API and cloud providers (NVIDIA NIM, etc.)
@@ -152,6 +164,13 @@ class OpenAICompatibleProvider(LLMProvider):
                 prompt_tokens = usage.get("prompt_tokens", 0)
                 completion_tokens = usage.get("completion_tokens", 0)
                 context_used = prompt_tokens + completion_tokens
+                completion_details = usage.get("completion_tokens_details") or {}
+                thinking_tokens = int(
+                    completion_details.get("reasoning_tokens", 0) or 0
+                )
+                total_tokens = int(
+                    usage.get("total_tokens", context_used) or context_used
+                )
 
                 if self.log_callback and (prompt_tokens or completion_tokens):
                     self.log_callback("token_usage",
@@ -169,6 +188,8 @@ class OpenAICompatibleProvider(LLMProvider):
                         response_json.get("choices", [{}])[0].get("finish_reason") or ""
                     ),
                     request_id=str(getattr(response, "headers", {}).get("x-request-id") or ""),
+                    thinking_tokens=thinking_tokens,
+                    total_tokens=total_tokens,
                 )
 
             except httpx.TimeoutException as e:

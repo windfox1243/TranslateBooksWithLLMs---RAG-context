@@ -114,14 +114,27 @@ class GeminiProvider(LLMProvider):
         super().__init__(model, api_keys=api_key, provider_name="gemini")
         self.api_endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-    def _is_thinking_model(self) -> bool:
-        """Check if the current model supports thinking mode (Gemini 2.5+)."""
-        return "2.5" in self.model
+    def _get_thinking_config(
+        self,
+        generation_options: Optional[LLMGenerationOptions],
+    ) -> dict:
+        """Return explicitly resolved Gemini thinking controls."""
 
-    def _get_thinking_config(self) -> dict:
-        """Return thinkingConfig to disable thinking for supported models."""
-        if self._is_thinking_model():
-            return {"thinkingConfig": {"thinkingBudget": 0}}
+        if generation_options and generation_options.thinking_level:
+            return {
+                "thinkingConfig": {
+                    "thinkingLevel": generation_options.thinking_level,
+                }
+            }
+        if (
+            generation_options
+            and generation_options.thinking_budget is not None
+        ):
+            return {
+                "thinkingConfig": {
+                    "thinkingBudget": int(generation_options.thinking_budget),
+                }
+            }
         return {}
 
     async def get_available_models(self) -> list[dict]:
@@ -217,7 +230,7 @@ class GeminiProvider(LLMProvider):
                     if generation_options and generation_options.temperature is not None
                     else TEMPERATURE
                 ),
-                **self._get_thinking_config()
+                **self._get_thinking_config(generation_options)
             },
             "safetySettings": [
                 {"category": category, "threshold": GEMINI_SAFETY_THRESHOLD}
@@ -307,12 +320,17 @@ class GeminiProvider(LLMProvider):
                 usage_metadata = response_json.get("usageMetadata", {})
                 prompt_tokens = usage_metadata.get("promptTokenCount", 0)
                 completion_tokens = usage_metadata.get("candidatesTokenCount", 0)
+                thinking_tokens = usage_metadata.get("thoughtsTokenCount", 0)
+                total_tokens = usage_metadata.get(
+                    "totalTokenCount",
+                    prompt_tokens + completion_tokens + thinking_tokens,
+                )
 
                 return LLMResponse(
                     content=response_text,
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
-                    context_used=prompt_tokens + completion_tokens,
+                    context_used=total_tokens,
                     context_limit=0,  # Gemini manages context internally
                     was_truncated=was_truncated,
                     finish_reason=finish_reason,
@@ -320,6 +338,8 @@ class GeminiProvider(LLMProvider):
                     request_id=str(
                         getattr(response, "headers", {}).get("x-request-id") or ""
                     ),
+                    thinking_tokens=thinking_tokens,
+                    total_tokens=total_tokens,
                 )
 
             except httpx.TimeoutException as e:

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from types import SimpleNamespace
+import sqlite3
 
 from flask import Flask
 
@@ -76,3 +77,56 @@ def test_compaction_endpoint_refuses_active_job(tmp_path):
     response = app.test_client().post('/api/maintenance/jobs-db/compact', json={})
     assert response.status_code == 409
     assert response.get_json()["active_jobs"] == ["job-1"]
+
+
+def test_editor_diagnostics_persist_thinking_token_breakdown(tmp_path):
+    db = Database(str(tmp_path / "jobs.db"))
+    assert db.create_job("job-1", "txt", {})
+    run_id = db.create_editor_run({
+        "translation_id": "job-1",
+        "chunk_index": 0,
+        "phase": "translation",
+        "outcome": "running",
+    })
+    assert db.add_editor_attempt(run_id, {
+        "attempt_index": 1,
+        "stage": "reflection",
+        "prompt_tokens": 100,
+        "completion_tokens": 60,
+        "thinking_tokens": 3936,
+        "total_tokens": 4096,
+    })
+    assert db.finish_editor_run(run_id, {
+        "outcome": "no_issues",
+        "prompt_tokens": 100,
+        "completion_tokens": 60,
+        "thinking_tokens": 3936,
+        "total_tokens": 4096,
+    })
+    conn = db._get_connection()
+    attempt = conn.execute(
+        "SELECT thinking_tokens,total_tokens FROM editor_attempts"
+    ).fetchone()
+    run = conn.execute(
+        "SELECT thinking_tokens,total_tokens FROM editor_runs"
+    ).fetchone()
+    assert tuple(attempt) == (3936, 4096)
+    assert tuple(run) == (3936, 4096)
+
+
+def test_editor_token_columns_migrate_existing_database(tmp_path):
+    path = tmp_path / "jobs.db"
+    db = Database(str(path))
+    db.close()
+    with sqlite3.connect(path) as conn:
+        for table in ("editor_runs", "editor_attempts"):
+            conn.execute(f"ALTER TABLE {table} DROP COLUMN thinking_tokens")
+            conn.execute(f"ALTER TABLE {table} DROP COLUMN total_tokens")
+    migrated = Database(str(path))
+    for table in ("editor_runs", "editor_attempts"):
+        columns = {
+            row[1] for row in migrated._get_connection().execute(
+                f"PRAGMA table_info({table})"
+            )
+        }
+        assert {"thinking_tokens", "total_tokens"} <= columns

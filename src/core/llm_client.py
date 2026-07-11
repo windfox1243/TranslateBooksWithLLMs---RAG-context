@@ -2,6 +2,7 @@
 Centralized LLM client for all API communication
 """
 import inspect
+from dataclasses import replace
 from typing import Optional, Dict, Any
 
 from src.config import API_ENDPOINT, DEFAULT_MODEL
@@ -17,6 +18,9 @@ class LLMClient:
     
     def __init__(self, provider_type: str = "ollama", **kwargs):
         self.provider_type = provider_type
+        self.default_generation_options = kwargs.pop(
+            "default_generation_options", None
+        )
         self.provider_kwargs = kwargs
         self._provider: Optional[LLMProvider] = None
         
@@ -69,6 +73,45 @@ class LLMClient:
         if model:
             provider.model = model
 
+        if self.default_generation_options is not None:
+            defaults = self.default_generation_options
+            if generation_options is None:
+                generation_options = defaults
+            else:
+                generation_options = replace(
+                    generation_options,
+                    temperature=(
+                        generation_options.temperature
+                        if generation_options.temperature is not None
+                        else defaults.temperature
+                    ),
+                    max_output_tokens=(
+                        generation_options.max_output_tokens
+                        if generation_options.max_output_tokens is not None
+                        else defaults.max_output_tokens
+                    ),
+                    thinking_level=(
+                        generation_options.thinking_level
+                        if generation_options.thinking_level is not None
+                        else defaults.thinking_level
+                    ),
+                    thinking_budget=(
+                        generation_options.thinking_budget
+                        if generation_options.thinking_budget is not None
+                        else defaults.thinking_budget
+                    ),
+                    thinking_enabled=(
+                        generation_options.thinking_enabled
+                        if generation_options.thinking_enabled is not None
+                        else defaults.thinking_enabled
+                    ),
+                    reasoning_effort=(
+                        generation_options.reasoning_effort
+                        if generation_options.reasoning_effort is not None
+                        else defaults.reasoning_effort
+                    ),
+                )
+
         kwargs = {"system_prompt": system_prompt}
         if "generation_options" in inspect.signature(provider.generate).parameters:
             kwargs["generation_options"] = generation_options
@@ -81,13 +124,21 @@ class LLMClient:
                        temperature: Optional[float] = None,
                        max_output_tokens: Optional[int] = None,
                        response_schema: Optional[Dict[str, Any]] = None,
-                       stage: str = "") -> Optional[LLMResponse]:
+                       stage: str = "",
+                       thinking_level: Optional[str] = None,
+                       thinking_budget: Optional[int] = None,
+                       thinking_enabled: Optional[bool] = None,
+                       reasoning_effort: Optional[str] = None) -> Optional[LLMResponse]:
         """Generate a response from the LLM (alias for make_request)."""
         options = LLMGenerationOptions(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
             response_schema=response_schema,
             stage=stage,
+            thinking_level=thinking_level,
+            thinking_budget=thinking_budget,
+            thinking_enabled=thinking_enabled,
+            reasoning_effort=reasoning_effort,
         )
         return await self.make_request(
             prompt, model=model, timeout=timeout, system_prompt=system_prompt,

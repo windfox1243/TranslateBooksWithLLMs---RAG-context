@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.15.0-beta.34 - 2026-07-12
+
+### Added
+
+- **Model-Aware Reasoning Controls**:
+  Draft and Senior Editor settings now expose only the reasoning modes supported
+  by the selected Gemini, Ollama, official OpenAI, or OpenRouter model. Unknown
+  and OpenAI-compatible endpoints retain the provider default without sending
+  speculative parameters.
+
+- **Senior Editor Output Allowance**:
+  Editor output can use an automatic allowance, a fixed allowance, a reported
+  model maximum, or a bounded custom value. A truncated editor response receives
+  one adaptive retry with a larger output allowance and lower reasoning effort.
+
+- **Reasoning Diagnostics**:
+  Provider-reported thinking and total token counts are stored with editor runs
+  and displayed in diagnostics. Existing databases receive the new columns
+  through the normal startup migration.
+
+### Fixed
+
+- **Gemini MAX_TOKENS Recovery**:
+  Gemini 3 Flash Senior Editor calls default to minimal thinking and preserve
+  more of the response budget for JSON output. A `MAX_TOKENS` response no longer
+  immediately fails the chunk when a safe larger retry is available.
+
+- **Generation Settings Across Workflows**:
+  Profiles, normal jobs, batch jobs, samples, quick tests, and resumed jobs now
+  carry the same draft and editor reasoning configuration without persisting
+  credentials.
+
+### Tests
+
+- Added provider payload, capability classification, adaptive truncation retry,
+  token accounting, profile persistence, and database migration regressions.
+
 ## 1.15.0-beta.33 - 2026-07-12
 
 ### Fixed

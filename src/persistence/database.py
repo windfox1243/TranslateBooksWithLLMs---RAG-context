@@ -424,6 +424,8 @@ class Database:
                     deterministic_count INTEGER NOT NULL DEFAULT 0,
                     prompt_tokens INTEGER NOT NULL DEFAULT 0,
                     completion_tokens INTEGER NOT NULL DEFAULT 0,
+                    thinking_tokens INTEGER NOT NULL DEFAULT 0,
+                    total_tokens INTEGER NOT NULL DEFAULT 0,
                     was_truncated INTEGER NOT NULL DEFAULT 0,
                     finish_reason TEXT,
                     blocked_reason TEXT,
@@ -444,6 +446,8 @@ class Database:
                     reason_codes JSON,
                     prompt_tokens INTEGER NOT NULL DEFAULT 0,
                     completion_tokens INTEGER NOT NULL DEFAULT 0,
+                    thinking_tokens INTEGER NOT NULL DEFAULT 0,
+                    total_tokens INTEGER NOT NULL DEFAULT 0,
                     was_truncated INTEGER NOT NULL DEFAULT 0,
                     finish_reason TEXT,
                     blocked_reason TEXT,
@@ -453,6 +457,17 @@ class Database:
                     FOREIGN KEY (run_id) REFERENCES editor_runs(id) ON DELETE CASCADE
                 )
             """)
+
+            # Token-detail migration for databases created before beta.34.
+            for table in ("editor_runs", "editor_attempts"):
+                cursor.execute(f"PRAGMA table_info({table})")
+                existing_columns = {row[1] for row in cursor.fetchall()}
+                for column in ("thinking_tokens", "total_tokens"):
+                    if column not in existing_columns:
+                        cursor.execute(
+                            f"ALTER TABLE {table} ADD COLUMN {column} "
+                            "INTEGER NOT NULL DEFAULT 0"
+                        )
 
             # Create indexes for performance
             cursor.execute("""
@@ -1186,7 +1201,8 @@ class Database:
         fields = (
             "run_id", "attempt_index", "stage", "parse_status",
             "failure_class", "reason_codes", "prompt_tokens",
-            "completion_tokens", "was_truncated", "finish_reason",
+            "completion_tokens", "thinking_tokens", "total_tokens",
+            "was_truncated", "finish_reason",
             "blocked_reason", "response_hash", "excerpts",
         )
         values = [
@@ -1198,6 +1214,8 @@ class Database:
             json.dumps(payload.get("reason_codes") or [], ensure_ascii=False),
             int(payload.get("prompt_tokens", 0) or 0),
             int(payload.get("completion_tokens", 0) or 0),
+            int(payload.get("thinking_tokens", 0) or 0),
+            int(payload.get("total_tokens", 0) or 0),
             int(bool(payload.get("was_truncated"))),
             payload.get("finish_reason"),
             payload.get("blocked_reason"),
@@ -1228,7 +1246,8 @@ class Database:
                     UPDATE editor_runs SET parse_status = ?, outcome = ?,
                         failure_class = ?, issue_count = ?,
                         deterministic_count = ?, prompt_tokens = ?,
-                        completion_tokens = ?, was_truncated = ?,
+                        completion_tokens = ?, thinking_tokens = ?,
+                        total_tokens = ?, was_truncated = ?,
                         finish_reason = ?, blocked_reason = ?, response_hash = ?,
                         diagnostics = ?, completed_at = CURRENT_TIMESTAMP
                     WHERE id = ?
@@ -1241,6 +1260,8 @@ class Database:
                         int(payload.get("deterministic_count", 0) or 0),
                         int(payload.get("prompt_tokens", 0) or 0),
                         int(payload.get("completion_tokens", 0) or 0),
+                        int(payload.get("thinking_tokens", 0) or 0),
+                        int(payload.get("total_tokens", 0) or 0),
                         int(bool(payload.get("was_truncated"))),
                         payload.get("finish_reason"),
                         payload.get("blocked_reason"),

@@ -27,6 +27,8 @@ STRING_FIELDS = {
     "target_language": 100,
     "llm_provider": 50,
     "model": 200,
+    "editor_provider": 50,
+    "editor_model": 200,
     "llm_api_endpoint": 2048,
     "glossary": 100,
     "custom_instruction_file": 255,
@@ -36,11 +38,16 @@ STRING_FIELDS = {
     "tts_format": 20,
     "tts_bitrate": 20,
     "output_filename_pattern": 500,
+    "draft_thinking_level": 20,
+    "editor_thinking_level": 20,
+    "editor_max_output_tokens": 20,
 }
 BOOLEAN_FIELDS = {
     "bilingual_output",
     "text_cleanup",
     "auto_update_context",
+    "bypass_context_gating",
+    "reflection_mode",
     "plain_text_mode",
     "chapter_mode",
     "auto_pause_on_rate_limit",
@@ -139,6 +146,23 @@ def _normalize_profile(data) -> dict:
         if not minimum <= value <= maximum:
             raise ValueError(f"{field} must be between {minimum} and {maximum}")
         normalized[field] = value
+
+    allowed_thinking = {
+        "auto", "off", "on", "minimal", "low", "medium", "high", "dynamic",
+    }
+    for field in ("draft_thinking_level", "editor_thinking_level"):
+        if field in normalized and normalized[field] not in allowed_thinking:
+            raise ValueError(f"{field} is invalid")
+    output_setting = normalized.get("editor_max_output_tokens")
+    if output_setting not in (None, "auto", "model_max"):
+        try:
+            output_value = int(output_setting)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("editor_max_output_tokens is invalid") from exc
+        if not 1024 <= output_value <= 65536:
+            raise ValueError(
+                "editor_max_output_tokens must be between 1024 and 65536"
+            )
 
     return normalized
 

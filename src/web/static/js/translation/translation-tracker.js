@@ -1397,6 +1397,17 @@ window.NovelContextUI = {
                 reason: run.failure_class || '-'
             });
             row.appendChild(label);
+            const tokens = document.createElement('div');
+            tokens.style.fontSize = '0.75rem';
+            tokens.style.color = 'var(--text-muted-light)';
+            tokens.style.marginTop = '0.25rem';
+            tokens.textContent = t('translation:editor_diagnostics_tokens', {
+                prompt: run.prompt_tokens || 0,
+                completion: run.completion_tokens || 0,
+                thinking: run.thinking_tokens || 0,
+                total: run.total_tokens || 0
+            });
+            row.appendChild(tokens);
             if (run.outcome === 'draft_kept_review' && Number(run.chunk_index) >= 0) {
                 const retry = document.createElement('button');
                 retry.type = 'button';

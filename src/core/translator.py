@@ -1534,6 +1534,10 @@ async def _generate_editor_response(
     max_output_tokens: Optional[int] = None,
     response_schema: Optional[Dict[str, Any]] = None,
     stage: str = "",
+    thinking_level: Optional[str] = None,
+    thinking_budget: Optional[int] = None,
+    thinking_enabled: Optional[bool] = None,
+    reasoning_effort: Optional[str] = None,
 ):
     """Call the available LLM client method for reflection/repair."""
     if hasattr(llm_client, "generate_async"):
@@ -1545,6 +1549,10 @@ async def _generate_editor_response(
             max_output_tokens=max_output_tokens,
             response_schema=response_schema,
             stage=stage,
+            thinking_level=thinking_level,
+            thinking_budget=thinking_budget,
+            thinking_enabled=thinking_enabled,
+            reasoning_effort=reasoning_effort,
         )
     elif hasattr(llm_client, "generate"):
         from src.core.llm import LLMGenerationOptions
@@ -1561,6 +1569,10 @@ async def _generate_editor_response(
                 max_output_tokens=max_output_tokens,
                 response_schema=response_schema,
                 stage=stage,
+                thinking_level=thinking_level,
+                thinking_budget=thinking_budget,
+                thinking_enabled=thinking_enabled,
+                reasoning_effort=reasoning_effort,
             )
         result = llm_client.generate(prompt, **kwargs)
     elif hasattr(llm_client, "make_request"):
@@ -1574,6 +1586,10 @@ async def _generate_editor_response(
                 max_output_tokens=max_output_tokens,
                 response_schema=response_schema,
                 stage=stage,
+                thinking_level=thinking_level,
+                thinking_budget=thinking_budget,
+                thinking_enabled=thinking_enabled,
+                reasoning_effort=reasoning_effort,
             )
         result = llm_client.make_request(prompt, model_name, **kwargs)
     else:
@@ -1605,6 +1621,11 @@ async def run_chunk_reflection_pass(
         generate_chunk_repair_prompt,
     )
     from src.core.llm import TranslationExtractor
+    from src.core.llm.generation_controls import (
+        adaptive_retry_output_tokens,
+        resolve_editor_output_tokens,
+        resolve_thinking_controls,
+    )
     from src.utils.addressing_schema import context_contract_version
     from src.utils.translation_quality import (
         apply_local_editor_patches,
@@ -1630,6 +1651,24 @@ async def run_chunk_reflection_pass(
         or options.get("llm_provider")
         or "unknown"
     ).casefold()
+    editor_endpoint = str(options.get("editor_api_endpoint") or "")
+    requested_thinking_mode = options.get("editor_thinking_level") or "auto"
+    editor_controls = resolve_thinking_controls(
+        editor_provider,
+        editor_model,
+        requested_thinking_mode,
+        role="editor",
+        endpoint=editor_endpoint,
+        reasoning_supported=bool(options.get("editor_reasoning_supported")),
+    )
+    editor_output_limit = options.get("editor_model_output_limit")
+    editor_output_tokens = resolve_editor_output_tokens(
+        editor_provider,
+        editor_model,
+        options.get("editor_max_output_tokens"),
+        editor_controls.get("mode"),
+        reported_limit=editor_output_limit,
+    )
     schema_capability_key = (editor_provider, editor_model.casefold())
     recorder = EditorRunRecorder(
         options,
@@ -1640,6 +1679,9 @@ async def run_chunk_reflection_pass(
     request_index = 0
     total_prompt_tokens = 0
     total_completion_tokens = 0
+    total_thinking_tokens = 0
+    total_tokens = 0
+    truncation_retry_used = False
 
     def record_attempt(
         stage: str,
@@ -1652,11 +1694,19 @@ async def run_chunk_reflection_pass(
         issues: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         nonlocal request_index, total_prompt_tokens, total_completion_tokens
+        nonlocal total_thinking_tokens, total_tokens
         request_index += 1
         prompt_tokens = int(getattr(response, "prompt_tokens", 0) or 0)
         completion_tokens = int(getattr(response, "completion_tokens", 0) or 0)
+        thinking_tokens = int(getattr(response, "thinking_tokens", 0) or 0)
+        attempt_total = int(
+            getattr(response, "total_tokens", 0)
+            or prompt_tokens + completion_tokens + thinking_tokens
+        )
         total_prompt_tokens += prompt_tokens
         total_completion_tokens += completion_tokens
+        total_thinking_tokens += thinking_tokens
+        total_tokens += attempt_total
         recorder.attempt({
             "attempt_index": request_index,
             "stage": stage,
@@ -1665,6 +1715,8 @@ async def run_chunk_reflection_pass(
             "reason_codes": reason_codes or [],
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
+            "thinking_tokens": thinking_tokens,
+            "total_tokens": attempt_total,
             "was_truncated": bool(getattr(response, "was_truncated", False)),
             "finish_reason": str(getattr(response, "finish_reason", "") or ""),
             "blocked_reason": str(getattr(response, "blocked_reason", "") or ""),
@@ -1677,6 +1729,8 @@ async def run_chunk_reflection_pass(
             outcome,
             prompt_tokens=total_prompt_tokens,
             completion_tokens=total_completion_tokens,
+            thinking_tokens=total_thinking_tokens,
+            total_tokens=total_tokens,
             deterministic_count=sum(
                 1 for finding in residue_findings if finding.blocking
             ),
@@ -1692,6 +1746,7 @@ async def run_chunk_reflection_pass(
         stage: str,
         structured: bool = False,
     ) -> Any:
+        nonlocal truncation_retry_used
         schema = (
             REFLECTION_RESPONSE_SCHEMA
             if structured and options.get("editor_native_schema", True)
@@ -1699,6 +1754,73 @@ async def run_chunk_reflection_pass(
             else None
         )
         disable_native_schema = False
+
+        async def retry_truncated(response: Any, active_schema: Any) -> Any:
+            nonlocal truncation_retry_used
+            if (
+                response is None
+                or getattr(response, "was_truncated", False) is not True
+                or truncation_retry_used
+            ):
+                return response
+            truncation_retry_used = True
+            raw = str(getattr(response, "content", "") or "")
+            record_attempt(
+                f"{stage}_max_tokens",
+                response,
+                raw,
+                parse_status=(
+                    parse_reflection_result(raw).parse_status
+                    if structured else ""
+                ),
+                failure_class="provider_truncated",
+                reason_codes=["adaptive_output_retry"],
+            )
+            retry_tokens = adaptive_retry_output_tokens(
+                max_output_tokens,
+                editor_output_limit,
+            )
+            retry_controls = resolve_thinking_controls(
+                editor_provider,
+                editor_model,
+                "minimal",
+                role="editor",
+                endpoint=editor_endpoint,
+                reasoning_supported=bool(options.get("editor_reasoning_supported")),
+            )
+            if log_callback:
+                emit_progress_log(
+                    log_callback,
+                    "editor_truncation_retry",
+                    (
+                        "Senior Editor exhausted its output allowance; retrying "
+                        f"with {retry_tokens} tokens and reduced reasoning."
+                    ),
+                    level="warning",
+                    layer="senior_editor_reflection",
+                    data={
+                        "previous_output_tokens": max_output_tokens,
+                        "retry_output_tokens": retry_tokens,
+                        "thinking_mode": retry_controls.get("mode"),
+                    },
+                )
+            return await _generate_editor_response(
+                llm_client=editor_client,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                model_name=editor_model,
+                temperature=0.0,
+                max_output_tokens=retry_tokens,
+                response_schema=active_schema,
+                stage=f"{stage}_max_tokens_retry",
+                **{
+                    key: retry_controls.get(key) for key in (
+                        "thinking_level", "thinking_budget",
+                        "thinking_enabled", "reasoning_effort",
+                    )
+                },
+            )
+
         try:
             response = await _generate_editor_response(
                 llm_client=editor_client,
@@ -1709,9 +1831,15 @@ async def run_chunk_reflection_pass(
                 max_output_tokens=max_output_tokens,
                 response_schema=schema,
                 stage=stage,
+                **{
+                    key: editor_controls.get(key) for key in (
+                        "thinking_level", "thinking_budget",
+                        "thinking_enabled", "reasoning_effort",
+                    )
+                },
             )
             if response is not None or schema is None:
-                return response
+                return await retry_truncated(response, schema)
             record_attempt(
                 f"{stage}_schema_fallback", None, "",
                 failure_class="transport",
@@ -1745,13 +1873,19 @@ async def run_chunk_reflection_pass(
             max_output_tokens=max_output_tokens,
             response_schema=None,
             stage=f"{stage}_tagged_fallback",
+            **{
+                key: editor_controls.get(key) for key in (
+                    "thinking_level", "thinking_budget",
+                    "thinking_enabled", "reasoning_effort",
+                )
+            },
         )
         if response is not None:
             try:
                 response.structured_output_fallback = True
             except Exception:
                 pass
-        return response
+        return await retry_truncated(response, None)
     source_available = bool(source_chunk and source_chunk.strip()) and str(
         options.get("editor_source_mode") or "checkpoint"
     ).casefold() != "monolingual"
@@ -1844,7 +1978,7 @@ async def run_chunk_reflection_pass(
             prompt=reflection_pair.user,
             system_prompt=reflection_pair.system,
             temperature=0.2,
-            max_output_tokens=2048,
+            max_output_tokens=editor_output_tokens,
             stage="reflection",
             structured=True,
         )
@@ -1929,7 +2063,7 @@ async def run_chunk_reflection_pass(
                 prompt=retry_user_prompt,
                 system_prompt=reflection_pair.system,
                 temperature=0.0,
-                max_output_tokens=2048,
+                max_output_tokens=editor_output_tokens,
                 stage="reflection_contract_retry",
                 structured=True,
             )
@@ -2116,7 +2250,7 @@ async def run_chunk_reflection_pass(
                 prompt=locator_retry_prompt,
                 system_prompt=reflection_pair.system,
                 temperature=0.0,
-                max_output_tokens=2048,
+                max_output_tokens=editor_output_tokens,
                 stage="locator_retry",
                 structured=True,
             )
@@ -2306,7 +2440,7 @@ async def run_chunk_reflection_pass(
                 system_prompt=repair_pair.system,
                 temperature=0.3 if repair_attempt == 0 else 0.0,
                 max_output_tokens=max(
-                    2048,
+                    editor_output_tokens,
                     min(16384, len(draft_translation) // 3 + 1024),
                 ),
                 stage=f"repair_{repair_attempt + 1}",

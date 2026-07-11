@@ -26,9 +26,22 @@ function addInheritOption(select, key) {
     select.insertBefore(option, select.firstChild);
 }
 
+const THINKING_MODE_KEYS = {
+    auto: 'settings:thinking_mode_auto',
+    off: 'settings:thinking_mode_off',
+    on: 'settings:thinking_mode_on',
+    minimal: 'settings:thinking_mode_minimal',
+    low: 'settings:thinking_mode_low',
+    medium: 'settings:thinking_mode_medium',
+    high: 'settings:thinking_mode_high',
+    dynamic: 'settings:thinking_mode_dynamic',
+};
+
 export const EditorModelManager = {
     initialized: false,
     loadSequence: 0,
+    generationSequence: 0,
+    pendingGenerationSettings: {},
 
     initialize() {
         if (this.initialized) return;
@@ -43,18 +56,29 @@ export const EditorModelManager = {
             onChange: () => {
                 this.syncCredential();
                 this.loadModels();
+                this.syncGenerationControls();
             },
         });
         attachModelSearchable(model, {
             placeholder: t('settings:search_models_placeholder'),
-            onChange: () => window.dispatchEvent(new CustomEvent('editorModelChanged')),
+            onChange: () => {
+                window.dispatchEvent(new CustomEvent('editorModelChanged'));
+                this.syncGenerationControls();
+            },
         });
 
         enabled.addEventListener('change', () => this.syncVisibility());
         DomHelpers.getElement('llmProvider')?.addEventListener('change', () => {
             this.syncCredential();
             if (!provider.value) this.loadModels();
+            this.syncGenerationControls();
         });
+        DomHelpers.getElement('model')?.addEventListener(
+            'change', () => this.syncGenerationControls()
+        );
+        DomHelpers.getElement('editorOutputBudget')?.addEventListener(
+            'change', () => this.syncCustomOutputVisibility()
+        );
         window.addEventListener('defaultConfigLoaded', () => this.syncVisibility());
         window.addEventListener('localeChanged', () => this.refreshLocalizedDisplay());
 
@@ -62,6 +86,138 @@ export const EditorModelManager = {
         this.setSelection(pending.provider || provider.value, pending.model || model.value, false);
         delete window.__pendingEditorSelection;
         this.syncVisibility();
+    },
+
+    selectedOutputLimit(selectId) {
+        const select = DomHelpers.getElement(selectId);
+        const option = select?.selectedOptions?.[0];
+        return parseInt(option?.dataset?.outputTokenLimit || '0', 10) || 0;
+    },
+
+    withSelectedModelMetadata(selectId, capabilities) {
+        const select = DomHelpers.getElement(selectId);
+        const raw = select?.selectedOptions?.[0]?.dataset?.reasoning;
+        if (!raw) return capabilities;
+        try {
+            const reasoning = JSON.parse(raw);
+            const efforts = Array.isArray(reasoning?.supported_efforts)
+                ? reasoning.supported_efforts.map((value) => value === 'none' ? 'off' : value)
+                : [];
+            if (!efforts.length) return capabilities;
+            const modes = ['auto', ...efforts.filter((value) => value !== 'off')];
+            if (!reasoning.mandatory && efforts.includes('off')) modes.splice(1, 0, 'off');
+            return {
+                ...(capabilities || {}),
+                thinking_supported: true,
+                thinking_control: 'effort',
+                thinking_modes: [...new Set(modes)],
+                default_thinking_mode: reasoning.default_effort || 'auto',
+                can_disable_thinking: !reasoning.mandatory,
+            };
+        } catch (_error) {
+            return capabilities;
+        }
+    },
+
+    renderThinkingModes(containerId, selectId, capabilities, enabled = true) {
+        const container = DomHelpers.getElement(containerId);
+        const select = DomHelpers.getElement(selectId);
+        if (!container || !select) return;
+        const supported = enabled && !!capabilities?.thinking_supported;
+        container.dataset.thinkingSupported = supported ? 'true' : 'false';
+        container.style.display = supported ? 'block' : 'none';
+        if (!supported) {
+            select.replaceChildren();
+            const option = document.createElement('option');
+            option.value = 'auto';
+            option.dataset.i18n = THINKING_MODE_KEYS.auto;
+            option.textContent = t(THINKING_MODE_KEYS.auto);
+            select.appendChild(option);
+            select.value = 'auto';
+            return;
+        }
+
+        const previous = this.pendingGenerationSettings[selectId]
+            || select.value
+            || 'auto';
+        select.replaceChildren();
+        (capabilities.thinking_modes || ['auto']).forEach((mode) => {
+            const option = document.createElement('option');
+            option.value = mode;
+            option.dataset.i18n = THINKING_MODE_KEYS[mode] || THINKING_MODE_KEYS.auto;
+            option.textContent = t(option.dataset.i18n);
+            select.appendChild(option);
+        });
+        select.value = Array.from(select.options).some((option) => option.value === previous)
+            ? previous
+            : 'auto';
+        delete this.pendingGenerationSettings[selectId];
+        container.dataset.outputTokenLimit = String(
+            capabilities.output_token_limit || ''
+        );
+        applyToDOM(container);
+    },
+
+    async syncGenerationControls() {
+        const sequence = ++this.generationSequence;
+        const draftProvider = DomHelpers.getValue('llmProvider') || 'ollama';
+        const draftModel = (DomHelpers.getValue('model') || '').trim();
+        const editorProvider = this.effectiveProvider();
+        const editorModel = this.effectiveModel();
+        const reflectionEnabled = !!DomHelpers.getElement('enableReflection')?.checked;
+
+        const load = async (provider, model, endpoint) => {
+            if (!model) return null;
+            try {
+                return await ApiClient.getGenerationCapabilities(provider, model, endpoint);
+            } catch (_error) {
+                return null;
+            }
+        };
+        const [draftCapabilities, editorCapabilities] = await Promise.all([
+            load(draftProvider, draftModel, this.effectiveEndpoint(draftProvider)),
+            reflectionEnabled
+                ? load(editorProvider, editorModel, this.effectiveEndpoint(editorProvider))
+                : Promise.resolve(null),
+        ]);
+        if (sequence !== this.generationSequence) return;
+
+        const resolvedDraftCapabilities = this.withSelectedModelMetadata(
+            'model', draftCapabilities
+        );
+        const resolvedEditorCapabilities = this.withSelectedModelMetadata(
+            'editorModel', editorCapabilities
+        );
+        this.renderThinkingModes(
+            'draftThinkingOptions', 'draftThinkingLevel', resolvedDraftCapabilities, true
+        );
+        this.renderThinkingModes(
+            'editorThinkingOptions', 'editorThinkingLevel',
+            resolvedEditorCapabilities, reflectionEnabled
+        );
+        const output = DomHelpers.getElement('editorOutputOptions');
+        if (output) {
+            output.style.display = reflectionEnabled ? 'block' : 'none';
+            const outputLimit = (
+                this.selectedOutputLimit('editorModel')
+                || resolvedEditorCapabilities?.output_token_limit
+                || 0
+            );
+            output.dataset.outputTokenLimit = String(outputLimit || '');
+            const modelMax = DomHelpers.getElement('editorOutputBudget')
+                ?.querySelector('option[value="model_max"]');
+            if (modelMax) modelMax.disabled = !outputLimit;
+            if (!outputLimit && DomHelpers.getValue('editorOutputBudget') === 'model_max') {
+                DomHelpers.setValue('editorOutputBudget', 'auto');
+            }
+        }
+        this.syncCustomOutputVisibility();
+    },
+
+    syncCustomOutputVisibility() {
+        const custom = DomHelpers.getElement('editorCustomOutputContainer');
+        const selected = DomHelpers.getValue('editorOutputBudget') || 'auto';
+        if (custom) custom.style.display = selected === 'custom' ? 'block' : 'none';
     },
 
     effectiveProvider() {
@@ -132,14 +288,39 @@ export const EditorModelManager = {
 
     requestConfig() {
         const enabled = !!DomHelpers.getElement('enableReflection')?.checked;
-        if (!enabled) return { promptOptions: {}, credentials: {} };
+        const promptOptions = {
+            draft_thinking_level: DomHelpers.getValue('draftThinkingLevel') || 'auto',
+            draft_reasoning_supported: (
+                DomHelpers.getElement('draftThinkingOptions')?.dataset?.thinkingSupported
+                === 'true'
+            ),
+        };
+        if (!enabled) return { promptOptions, credentials: {} };
         const provider = DomHelpers.getValue('editorProvider') || '';
         const effectiveProvider = this.effectiveProvider();
-        const promptOptions = {
+        const budgetMode = DomHelpers.getValue('editorOutputBudget') || 'auto';
+        const outputBudget = budgetMode === 'custom'
+            ? String(parseInt(DomHelpers.getValue('editorCustomOutputTokens'), 10) || 8192)
+            : budgetMode;
+        Object.assign(promptOptions, {
             editor_provider: provider,
             editor_model: (DomHelpers.getValue('editorModel') || '').trim(),
             editor_api_endpoint: this.effectiveEndpoint(effectiveProvider),
-        };
+            editor_thinking_level: DomHelpers.getValue('editorThinkingLevel') || 'auto',
+            editor_reasoning_supported: (
+                DomHelpers.getElement('editorThinkingOptions')?.dataset?.thinkingSupported
+                === 'true'
+            ),
+            editor_max_output_tokens: outputBudget,
+            editor_model_output_limit: (
+                this.selectedOutputLimit('editorModel')
+                || parseInt(
+                    DomHelpers.getElement('editorOutputOptions')?.dataset?.outputTokenLimit || '0',
+                    10,
+                )
+                || 0
+            ),
+        });
         const credentials = {};
         if (this.usesSeparateProvider() && ApiKeyUtils.getFieldIdForProvider(effectiveProvider)) {
             credentials[`${effectiveProvider}_api_key`] = ApiKeyUtils.getValue('editorApiKey');
@@ -185,6 +366,7 @@ export const EditorModelManager = {
             }
             applyToDOM(model);
             SearchableSelectFactory.get('editorModel')?.refresh();
+            this.syncGenerationControls();
         } catch (error) {
             if (sequence !== this.loadSequence) return;
             console.error('[EditorModelManager] Model fetch failed', error);
@@ -199,6 +381,7 @@ export const EditorModelManager = {
         if (container) container.style.display = enabled ? 'grid' : 'none';
         this.syncCredential();
         if (enabled) this.loadModels();
+        this.syncGenerationControls();
     },
 
     setSelection(providerValue = '', modelValue = '', reload = true) {
@@ -220,11 +403,32 @@ export const EditorModelManager = {
         SearchableSelectFactory.get('editorModel')?.refresh();
         if (reload && DomHelpers.getElement('enableReflection')?.checked) this.loadModels();
         this.syncCredential();
+        this.syncGenerationControls();
+    },
+
+    setGenerationSettings(settings = {}) {
+        if (settings.draft_thinking_level) {
+            this.pendingGenerationSettings.draftThinkingLevel = settings.draft_thinking_level;
+        }
+        if (settings.editor_thinking_level) {
+            this.pendingGenerationSettings.editorThinkingLevel = settings.editor_thinking_level;
+        }
+        const budget = String(settings.editor_max_output_tokens || 'auto');
+        const standard = ['auto', '4096', '8192', '16384', 'model_max'];
+        if (standard.includes(budget)) {
+            DomHelpers.setValue('editorOutputBudget', budget);
+        } else if (/^\d+$/.test(budget)) {
+            DomHelpers.setValue('editorOutputBudget', 'custom');
+            DomHelpers.setValue('editorCustomOutputTokens', budget);
+        }
+        this.syncCustomOutputVisibility();
+        this.syncGenerationControls();
     },
 
     refreshLocalizedDisplay() {
         SearchableSelectFactory.get('editorProvider')?.refresh();
         SearchableSelectFactory.get('editorModel')?.refresh();
         this.syncCredential();
+        this.syncGenerationControls();
     },
 };

@@ -50,6 +50,8 @@ class LLMResponse:
     blocked_reason: str = ""
     request_id: str = ""
     structured_output_fallback: bool = False
+    thinking_tokens: int = 0
+    total_tokens: int = 0
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,10 @@ class LLMGenerationOptions:
     max_output_tokens: Optional[int] = None
     response_schema: Optional[Dict[str, Any]] = None
     stage: str = ""
+    thinking_level: Optional[str] = None
+    thinking_budget: Optional[int] = None
+    thinking_enabled: Optional[bool] = None
+    reasoning_effort: Optional[str] = None
 
 
 class LLMProvider(ABC):

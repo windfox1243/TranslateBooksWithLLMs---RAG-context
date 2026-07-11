@@ -333,6 +333,7 @@
   "editor_diagnostics_legacy": "此任务没有已分类的高级编辑诊断。",
   "editor_diagnostics_summary": "运行：{{total}} · 已修复：{{repaired}} · 待检查：{{review}} · 已阻止：{{blocked}}",
   "editor_diagnostics_run": "分块 {{chunk}} · {{outcome}} · {{reason}}",
+  "editor_diagnostics_tokens": "令牌：输入 {{prompt}} · 输出 {{completion}} · 推理 {{thinking}} · 总计 {{total}}",
   "editor_retry": "重试编辑器",
   "editor_retry_queued": "高级编辑重试已排队。请恢复任务以执行。"
 }

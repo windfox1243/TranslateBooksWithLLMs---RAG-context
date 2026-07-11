@@ -41,6 +41,13 @@ def test_profile_round_trip_preserves_all_non_secret_settings(profile_client):
         "tts_format": "mp3",
         "tts_bitrate": "128k",
         "output_filename_pattern": "{originalName}-{targetLang}.{ext}",
+        "reflection_mode": True,
+        "bypass_context_gating": True,
+        "editor_provider": "gemini",
+        "editor_model": "gemini-3-flash-preview",
+        "draft_thinking_level": "low",
+        "editor_thinking_level": "minimal",
+        "editor_max_output_tokens": "8192",
         "translation_id": "old-job",
         "resume_from_index": 42,
         "context_snapshot": "old-snapshot",
@@ -66,6 +73,9 @@ def test_profile_round_trip_preserves_all_non_secret_settings(profile_client):
     assert returned["plain_text_mode"] is True
     assert returned["chapter_mode"] is True
     assert returned["parallel_workers"] == 4
+    assert returned["draft_thinking_level"] == "low"
+    assert returned["editor_thinking_level"] == "minimal"
+    assert returned["editor_max_output_tokens"] == "8192"
 
 
 @pytest.mark.parametrize(

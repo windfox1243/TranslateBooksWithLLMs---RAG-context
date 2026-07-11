@@ -177,6 +177,11 @@ export const ApiClient = {
         return await apiRequest(`/api/translation/${translationId}/editor-diagnostics`);
     },
 
+    async getGenerationCapabilities(provider, model, endpoint = '') {
+        const params = new URLSearchParams({ provider, model, endpoint });
+        return await apiRequest(`/api/model/generation-capabilities?${params}`);
+    },
+
     async retrySeniorEditor(translationId, chunkIndex) {
         return await apiRequest(
             `/api/translation/${translationId}/chunks/${chunkIndex}/retry-editor`,

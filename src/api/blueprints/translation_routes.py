@@ -66,6 +66,36 @@ def _prompt_options_from_start_request(data):
             str(getattr(_config, 'ENABLE_CHUNK_REFLECTION', 'false')).lower()
             == 'true'
         )
+    from src.core.llm.generation_controls import normalize_thinking_mode
+
+    prompt_options['draft_thinking_level'] = normalize_thinking_mode(
+        prompt_options.get('draft_thinking_level')
+    )
+    prompt_options['editor_thinking_level'] = normalize_thinking_mode(
+        prompt_options.get('editor_thinking_level')
+    )
+    raw_output = str(
+        prompt_options.get('editor_max_output_tokens') or 'auto'
+    ).strip().casefold()
+    if raw_output not in {'auto', 'model_max'}:
+        try:
+            raw_output = str(max(1024, min(int(raw_output), 65536)))
+        except (TypeError, ValueError):
+            raw_output = 'auto'
+    prompt_options['editor_max_output_tokens'] = raw_output
+    try:
+        prompt_options['editor_model_output_limit'] = max(
+            0,
+            min(int(prompt_options.get('editor_model_output_limit') or 0), 65536),
+        )
+    except (TypeError, ValueError):
+        prompt_options['editor_model_output_limit'] = 0
+    prompt_options['draft_reasoning_supported'] = bool(
+        prompt_options.get('draft_reasoning_supported')
+    )
+    prompt_options['editor_reasoning_supported'] = bool(
+        prompt_options.get('editor_reasoning_supported')
+    )
     return prompt_options
 
 
@@ -279,7 +309,9 @@ def _apply_resume_overrides(config, overrides):
         if isinstance(prompt_options_overrides, dict) and prompt_options_overrides:
             existing_opts = config.get('prompt_options') or {}
             existing_opts.update(prompt_options_overrides)
-            config['prompt_options'] = existing_opts
+            config['prompt_options'] = _prompt_options_from_start_request({
+                'prompt_options': existing_opts,
+            })
 
     _rehydrate_resume_credentials(config, overrides)
 

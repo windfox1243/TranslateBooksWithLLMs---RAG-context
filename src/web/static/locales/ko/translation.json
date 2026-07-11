@@ -333,6 +333,7 @@
   "editor_diagnostics_legacy": "이 작업에는 분류된 수석 편집기 진단이 없습니다.",
   "editor_diagnostics_summary": "실행: {{total}} · 수정: {{repaired}} · 검토: {{review}} · 차단: {{blocked}}",
   "editor_diagnostics_run": "청크 {{chunk}} · {{outcome}} · {{reason}}",
+  "editor_diagnostics_tokens": "토큰: 입력 {{prompt}} · 출력 {{completion}} · 추론 {{thinking}} · 합계 {{total}}",
   "editor_retry": "편집기 재시도",
   "editor_retry_queued": "수석 편집기 재시도가 대기열에 추가되었습니다. 작업을 재개해 실행하세요."
 }

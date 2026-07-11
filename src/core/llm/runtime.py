@@ -9,6 +9,8 @@ from typing import Any, Mapping, Optional
 import src.config as config
 from src.common.provider_metadata import KEY_REQUIRED_PROVIDERS, provider_env_var
 from src.core.llm_client import LLMClient
+from src.core.llm import LLMGenerationOptions
+from src.core.llm.generation_controls import resolve_thinking_controls
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,7 @@ def create_runtime_client(
     *,
     context_window: Optional[int] = None,
     log_callback: Optional[Any] = None,
+    default_generation_options: Optional[LLMGenerationOptions] = None,
 ) -> LLMClient:
     """Create an isolated client from a resolved provider specification."""
 
@@ -82,6 +85,7 @@ def create_runtime_client(
         "api_endpoint": spec.api_endpoint,
         "context_window": context_window,
         "log_callback": log_callback,
+        "default_generation_options": default_generation_options,
     }
     if spec.api_key:
         kwargs["api_key"] = spec.api_key
@@ -119,13 +123,43 @@ def build_draft_and_editor_clients(
         credentials=credentials,
     )
     draft_client = create_runtime_client(
-        draft_spec, context_window=context_window, log_callback=log_callback,
+        draft_spec,
+        context_window=context_window,
+        log_callback=log_callback,
+        default_generation_options=LLMGenerationOptions(**{
+            key: value for key, value in resolve_thinking_controls(
+                draft_spec.provider,
+                draft_spec.model,
+                options.get("draft_thinking_level"),
+                role="draft",
+                endpoint=draft_spec.api_endpoint,
+                reasoning_supported=bool(options.get("draft_reasoning_supported")),
+            ).items() if key in {
+                "thinking_level", "thinking_budget", "thinking_enabled",
+                "reasoning_effort",
+            }
+        }),
     )
     editor_client = (
         draft_client
         if editor_spec.same_model_as(draft_spec)
         else create_runtime_client(
-            editor_spec, context_window=context_window, log_callback=log_callback,
+            editor_spec,
+            context_window=context_window,
+            log_callback=log_callback,
+            default_generation_options=LLMGenerationOptions(**{
+                key: value for key, value in resolve_thinking_controls(
+                    editor_spec.provider,
+                    editor_spec.model,
+                    options.get("editor_thinking_level"),
+                    role="editor",
+                    endpoint=editor_spec.api_endpoint,
+                    reasoning_supported=bool(options.get("editor_reasoning_supported")),
+                ).items() if key in {
+                    "thinking_level", "thinking_budget", "thinking_enabled",
+                    "reasoning_effort",
+                }
+            }),
         )
     )
     return draft_client, editor_client, draft_spec, editor_spec

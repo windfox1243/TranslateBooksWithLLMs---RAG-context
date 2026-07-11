@@ -333,6 +333,7 @@
   "editor_diagnostics_legacy": "このジョブには分類済みのシニアエディター診断がありません。",
   "editor_diagnostics_summary": "実行：{{total}} · 修正：{{repaired}} · 要確認：{{review}} · ブロック：{{blocked}}",
   "editor_diagnostics_run": "チャンク {{chunk}} · {{outcome}} · {{reason}}",
+  "editor_diagnostics_tokens": "トークン：入力 {{prompt}} · 出力 {{completion}} · 推論 {{thinking}} · 合計 {{total}}",
   "editor_retry": "エディターを再試行",
   "editor_retry_queued": "シニアエディターの再試行を予約しました。ジョブを再開して実行してください。"
 }

@@ -81,6 +81,7 @@ export function populateModelSelectInto(selectEl, models, defaultModel = null, p
             if (m.description) parts.push(m.description);
             parts.push(`Input: ${m.inputTokenLimit || 'N/A'} tokens, Output: ${m.outputTokenLimit || 'N/A'} tokens`);
             opt.title = parts.join(' | ');
+            if (m.outputTokenLimit) opt.dataset.outputTokenLimit = m.outputTokenLimit;
             if (m.name === defaultModel) { opt.selected = true; defaultFound = true; }
             selectEl.appendChild(opt);
         });
@@ -134,6 +135,12 @@ export function populateModelSelectInto(selectEl, models, defaultModel = null, p
             const tip = [];
             if (m.context_length) tip.push(`Context: ${m.context_length} tokens`);
             if (m.description) tip.push(m.description);
+            if (m.output_token_limit) {
+                opt.dataset.outputTokenLimit = m.output_token_limit;
+            }
+            if (m.reasoning) {
+                opt.dataset.reasoning = JSON.stringify(m.reasoning);
+            }
             if (tip.length) opt.title = tip.join(' | ');
             if (modelId === defaultModel) { opt.selected = true; defaultFound = true; }
             (optgroup || selectEl).appendChild(opt);
