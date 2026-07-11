@@ -26,6 +26,12 @@ class RepetitionLoopError(Exception):
     pass
 
 
+class StructuredOutputSchemaError(RuntimeError):
+    """Raised when a provider deterministically rejects an output schema."""
+
+    pass
+
+
 class RateLimitError(Exception):
     """
     Raised when the API returns HTTP 429 (Too Many Requests) and all retry

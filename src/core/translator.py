@@ -21,7 +21,12 @@ from src.prompts.prompts import (
     generate_refinement_prompt,
 )
 from .llm_client import default_client, create_llm_client, LLMResponse
-from .llm import ContextOverflowError, RepetitionLoopError, RateLimitError
+from .llm import (
+    ContextOverflowError,
+    RateLimitError,
+    RepetitionLoopError,
+)
+from .llm.exceptions import StructuredOutputSchemaError
 from .post_processor import clean_translated_text
 from .context_optimizer import (
     AdaptiveContextManager,
@@ -1693,6 +1698,7 @@ async def run_chunk_reflection_pass(
             and schema_capability_key not in _EDITOR_SCHEMA_UNSUPPORTED
             else None
         )
+        disable_native_schema = False
         try:
             response = await _generate_editor_response(
                 llm_client=editor_client,
@@ -1706,15 +1712,30 @@ async def run_chunk_reflection_pass(
             )
             if response is not None or schema is None:
                 return response
+            record_attempt(
+                f"{stage}_schema_fallback", None, "",
+                failure_class="transport",
+                reason_codes=["native_schema_request_failed"],
+            )
+        except StructuredOutputSchemaError as exc:
+            if schema is None:
+                raise
+            disable_native_schema = True
+            record_attempt(
+                f"{stage}_schema_fallback", None, "",
+                failure_class="schema",
+                reason_codes=[f"native_schema_rejected:{type(exc).__name__}"],
+            )
         except Exception as exc:
             if schema is None:
                 raise
             record_attempt(
                 f"{stage}_schema_fallback", None, "",
                 failure_class="transport",
-                reason_codes=[f"native_schema_rejected:{type(exc).__name__}"],
+                reason_codes=[f"native_schema_request_failed:{type(exc).__name__}"],
             )
-        _EDITOR_SCHEMA_UNSUPPORTED.add(schema_capability_key)
+        if disable_native_schema:
+            _EDITOR_SCHEMA_UNSUPPORTED.add(schema_capability_key)
         response = await _generate_editor_response(
             llm_client=editor_client,
             prompt=prompt,
