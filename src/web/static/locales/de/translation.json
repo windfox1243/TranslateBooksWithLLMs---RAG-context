@@ -333,6 +333,7 @@
   "editor_diagnostics_legacy": "Für diesen Auftrag sind keine klassifizierten Senior-Editor-Diagnosen vorhanden.",
   "editor_diagnostics_summary": "Läufe: {{total}} · repariert: {{repaired}} · Prüfung: {{review}} · blockiert: {{blocked}}",
   "editor_diagnostics_run": "Abschnitt {{chunk}} · {{outcome}} · {{reason}}",
+  "editor_diagnostics_tokens": "Tokens: Eingabe {{prompt}} · Ausgabe {{completion}} · Denken {{thinking}} · Gesamt {{total}}",
   "editor_retry": "Editor erneut ausführen",
   "editor_retry_queued": "Editor-Wiederholung eingereiht. Setzen Sie den Auftrag fort, um sie auszuführen."
 }

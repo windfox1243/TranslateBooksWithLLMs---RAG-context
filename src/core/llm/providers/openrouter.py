@@ -179,6 +179,10 @@ class OpenRouterProvider(LLMProvider):
                     "id": model_id,
                     "name": display_name,
                     "context_length": model.get("context_length", 0),
+                    "output_token_limit": (
+                        model.get("top_provider", {})
+                        .get("max_completion_tokens")
+                    ),
                     "pricing": {
                         "prompt": prompt_price,
                         "completion": completion_price,
@@ -187,6 +191,7 @@ class OpenRouterProvider(LLMProvider):
                     },
                     "total_price": prompt_price + completion_price,
                     "is_free": is_free,
+                    "reasoning": model.get("reasoning"),
                 })
 
             # Sort: paid models by price ascending, free models last (shared 20 req/min limit)
@@ -229,13 +234,10 @@ class OpenRouterProvider(LLMProvider):
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        # thinking/enable_thinking forwarded to underlying models (DeepSeek, Qwen, etc.)
         payload = {
             "model": self.model,
             "messages": messages,
             "stream": False,
-            "thinking": False,
-            "enable_thinking": False,
         }
         if generation_options and generation_options.temperature is not None:
             payload["temperature"] = generation_options.temperature
@@ -249,6 +251,11 @@ class OpenRouterProvider(LLMProvider):
                     "strict": True,
                     "schema": generation_options.response_schema,
                 },
+            }
+        if generation_options and generation_options.reasoning_effort:
+            payload["reasoning"] = {
+                "effort": generation_options.reasoning_effort,
+                "exclude": True,
             }
 
         client = await self._get_client()
@@ -286,6 +293,15 @@ class OpenRouterProvider(LLMProvider):
                 usage = result.get("usage", {})
                 prompt_tokens = usage.get("prompt_tokens", 0)
                 completion_tokens = usage.get("completion_tokens", 0)
+                completion_details = usage.get("completion_tokens_details") or {}
+                thinking_tokens = int(
+                    completion_details.get("reasoning_tokens", 0) or 0
+                )
+                total_tokens = int(
+                    usage.get(
+                        "total_tokens", prompt_tokens + completion_tokens
+                    ) or 0
+                )
 
                 if not response_text.strip():
                     print(f"[OpenRouter] WARN: Empty response from model '{self.model}' "
@@ -323,13 +339,15 @@ class OpenRouterProvider(LLMProvider):
                     content=response_text,
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
-                    context_used=prompt_tokens + completion_tokens,
+                    context_used=total_tokens,
                     context_limit=0,  # OpenRouter manages context internally
                     was_truncated=False,
                     finish_reason=str(
                         result.get("choices", [{}])[0].get("finish_reason") or ""
                     ),
                     request_id=str(getattr(response, "headers", {}).get("x-request-id") or ""),
+                    thinking_tokens=thinking_tokens,
+                    total_tokens=total_tokens,
                 )
 
             except httpx.TimeoutException as e:

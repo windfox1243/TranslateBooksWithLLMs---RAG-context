@@ -755,6 +755,21 @@ def create_config_blueprint(server_session_id=None):
         except Exception as e:
             return jsonify({"warning": None, "behavior": None, "error": str(e)})
 
+    @bp.route('/api/model/generation-capabilities', methods=['GET'])
+    def get_model_generation_capabilities():
+        """Return safe, non-billable generation controls for one model."""
+
+        from src.core.llm.generation_controls import generation_capabilities
+
+        provider = request.args.get('provider', '')
+        model = request.args.get('model', '')
+        endpoint = request.args.get('endpoint', '')
+        return jsonify(generation_capabilities(
+            provider,
+            model,
+            endpoint=endpoint,
+        ).to_dict())
+
     @bp.route('/api/custom-instructions', methods=['GET'])
     def get_custom_instructions():
         """List available custom instruction files from Custom_Instructions/ folder.

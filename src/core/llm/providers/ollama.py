@@ -298,8 +298,15 @@ class OllamaProvider(LLMProvider):
         if generation_options and generation_options.response_schema:
             payload["format"] = generation_options.response_schema
 
-        # Only add think param if model supports it
-        if self._supports_think_param:
+        # Explicit per-request controls take priority over auto-detection.
+        if generation_options and generation_options.thinking_level:
+            payload["think"] = generation_options.thinking_level
+        elif (
+            generation_options
+            and generation_options.thinking_enabled is not None
+        ):
+            payload["think"] = bool(generation_options.thinking_enabled)
+        elif self._supports_think_param:
             if self._thinking_behavior == ThinkingBehavior.UNCONTROLLABLE:
                 # For uncontrollable models, use think=true to get clean separation
                 payload["think"] = True

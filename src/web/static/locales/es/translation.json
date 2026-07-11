@@ -333,6 +333,7 @@
   "editor_diagnostics_legacy": "Este trabajo no tiene diagnóstico clasificado del editor principal.",
   "editor_diagnostics_summary": "Ejecuciones: {{total}} · reparadas: {{repaired}} · revisión: {{review}} · bloqueadas: {{blocked}}",
   "editor_diagnostics_run": "Fragmento {{chunk}} · {{outcome}} · {{reason}}",
+  "editor_diagnostics_tokens": "Tokens: entrada {{prompt}} · salida {{completion}} · razonamiento {{thinking}} · total {{total}}",
   "editor_retry": "Reintentar editor",
   "editor_retry_queued": "Reintento del editor en cola. Reanuda el trabajo para ejecutarlo."
 }

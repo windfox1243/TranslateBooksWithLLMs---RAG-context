@@ -25,6 +25,8 @@ class _GeminiResponse:
             "usageMetadata": {
                 "promptTokenCount": 3,
                 "candidatesTokenCount": 4,
+                "thoughtsTokenCount": 5,
+                "totalTokenCount": 12,
             },
         }
 
@@ -61,6 +63,8 @@ async def test_gemini_sends_editor_contract_as_json_schema(monkeypatch):
     )
 
     assert result.content == '{"status":"no_issues","issues":[]}'
+    assert result.thinking_tokens == 5
+    assert result.total_tokens == 12
     generation_config = sent_payloads[0]["generationConfig"]
     assert generation_config["responseMimeType"] == "application/json"
     assert "responseSchema" not in generation_config
@@ -193,3 +197,53 @@ async def test_editor_does_not_cache_empty_schema_requests(
     assert seen_schemas[0] is REFLECTION_RESPONSE_SCHEMA
     assert seen_schemas[1] is None
     assert seen_schemas[2] is REFLECTION_RESPONSE_SCHEMA
+
+
+@pytest.mark.asyncio
+async def test_editor_retries_truncation_with_more_output_and_less_thinking(
+    clear_editor_schema_capabilities,
+):
+    from src.core.translator import run_chunk_reflection_pass
+
+    truncated = LLMResponse(
+        content='{',
+        prompt_tokens=100,
+        completion_tokens=60,
+        thinking_tokens=3936,
+        total_tokens=4096,
+        was_truncated=True,
+        finish_reason="MAX_TOKENS",
+    )
+    complete = LLMResponse(
+        content='{"status":"no_issues","issues":[]}',
+        prompt_tokens=100,
+        completion_tokens=20,
+        thinking_tokens=40,
+        total_tokens=160,
+        finish_reason="STOP",
+    )
+    client = MagicMock()
+    client.generate_async = AsyncMock(side_effect=[truncated, complete])
+
+    result = await run_chunk_reflection_pass(
+        source_chunk="Hello.",
+        draft_translation="Bonjour.",
+        target_language="French",
+        model_name="gemini-3-flash-preview",
+        llm_client=client,
+        prompt_options={
+            "editor_provider_resolved": "gemini",
+            "editor_model_resolved": "gemini-3-flash-preview",
+            "editor_thinking_level": "auto",
+            "editor_max_output_tokens": "auto",
+        },
+    )
+
+    assert result == "Bonjour."
+    assert client.generate_async.await_count == 2
+    first = client.generate_async.call_args_list[0].kwargs
+    retry = client.generate_async.call_args_list[1].kwargs
+    assert first["max_output_tokens"] == 4096
+    assert first["thinking_level"] == "minimal"
+    assert retry["max_output_tokens"] == 8192
+    assert retry["thinking_level"] == "minimal"

@@ -333,6 +333,7 @@
   "editor_diagnostics_legacy": "This job has no classified Senior Editor diagnostics.",
   "editor_diagnostics_summary": "Runs: {{total}} · repaired: {{repaired}} · review: {{review}} · blocked: {{blocked}}",
   "editor_diagnostics_run": "Chunk {{chunk}} · {{outcome}} · {{reason}}",
+  "editor_diagnostics_tokens": "Tokens: input {{prompt}} · output {{completion}} · thinking {{thinking}} · total {{total}}",
   "editor_retry": "Retry editor",
   "editor_retry_queued": "Senior Editor retry queued. Resume the job to run it."
 }

@@ -28,6 +28,8 @@ from src.config import (
 from src.core.glossary import build_glossary_block, filter_glossary
 from src.core.glossary.models import GlossaryConfig
 from src.core.llm.factory import create_llm_provider
+from src.core.llm import LLMGenerationOptions
+from src.core.llm.generation_controls import resolve_thinking_controls
 from src.core.pricing.pricing_data import get_default_pricing
 from src.core.sampling import cap_chunk_text, select_sample_indices
 from src.api.api_keys import provider_env_var as _provider_env_var
@@ -312,6 +314,7 @@ async def _execute_cell(
     prompt_pair,
     column: Dict[str, Any],
     ref_text: str,
+    prompt_options: Dict[str, Any],
     state: "SampleStateManager",
     socketio,
 ) -> Optional[str]:
@@ -329,10 +332,26 @@ async def _execute_cell(
     provider = None
     try:
         provider = _instantiate_provider(column)
+        controls = resolve_thinking_controls(
+            column.get("provider", "ollama"),
+            column.get("model", ""),
+            prompt_options.get("draft_thinking_level"),
+            role="draft",
+            endpoint=column.get("api_endpoint") or "",
+            reasoning_supported=bool(
+                prompt_options.get("draft_reasoning_supported")
+            ),
+        )
         response = await provider.generate(
             prompt=prompt_pair.user,
             system_prompt=prompt_pair.system,
             timeout=REQUEST_TIMEOUT,
+            generation_options=LLMGenerationOptions(**{
+                key: controls.get(key) for key in (
+                    "thinking_level", "thinking_budget",
+                    "thinking_enabled", "reasoning_effort",
+                )
+            }),
         )
         latency_ms = int((time.perf_counter() - started) * 1000)
 
@@ -428,6 +447,7 @@ async def _run_cell_translate(
     return await _execute_cell(
         sample_id=sample_id, row=row, col=col, phase="translate",
         prompt_pair=prompt_pair, column=column, ref_text=item["source_text"],
+        prompt_options=prompt_options,
         state=state, socketio=socketio,
     )
 
@@ -463,6 +483,7 @@ async def _run_cell_refine(
     await _execute_cell(
         sample_id=sample_id, row=row, col=col, phase="refine",
         prompt_pair=prompt_pair, column=column, ref_text=draft_text,
+        prompt_options=prompt_options,
         state=state, socketio=socketio,
     )
 
