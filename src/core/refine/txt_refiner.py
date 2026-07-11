@@ -38,6 +38,7 @@ async def refine_txt_file(
     prompt_options: Optional[Dict[str, Any]] = None,
     checkpoint_manager: Optional[Any] = None,
     translation_id: Optional[str] = None,
+    refinement_original_path: Optional[str] = None,
 ) -> bool:
     """Run a refinement-only pass on an already-translated text file.
 
@@ -156,6 +157,9 @@ async def refine_txt_file(
                 "dialogue_attribution": chunk_data.get(
                     "dialogue_attribution"
                 ),
+                "source_content": str(
+                    completed_rows[index].get("original_text") or ""
+                ),
             })
         if log_callback:
             log_callback(
@@ -175,6 +179,45 @@ async def refine_txt_file(
             "context_after": "",
         }]
         total_chunks = 1
+
+    if refinement_original_path and not completed_rows:
+        try:
+            async with aiofiles.open(
+                refinement_original_path,
+                'r',
+                encoding='utf-8',
+            ) as source_file:
+                original_text = await source_file.read()
+            source_chunks = split_text_into_chunks(
+                original_text,
+                max_tokens_per_chunk=max_tokens_per_chunk,
+                soft_limit_ratio=soft_limit_ratio,
+                chapter_mode=bool((prompt_options or {}).get('chapter_mode')),
+            )
+            if len(source_chunks) != len(structured_chunks):
+                if log_callback:
+                    log_callback(
+                        "refinement_source_alignment_failed",
+                        "Paired TXT source does not align with the translated refinement units.",
+                    )
+                return False
+            for translated_unit, source_unit in zip(structured_chunks, source_chunks):
+                translated_unit["source_content"] = source_unit.get(
+                    "main_content",
+                    "",
+                )
+            if log_callback:
+                log_callback(
+                    "refinement_source_aligned",
+                    f"Aligned {len(source_chunks)} paired TXT source unit(s).",
+                )
+        except (OSError, UnicodeError) as exc:
+            if log_callback:
+                log_callback(
+                    "refinement_source_alignment_failed",
+                    f"Could not read paired TXT source: {exc}",
+                )
+            return False
 
     if stats_callback:
         stats_callback({'total_chunks': total_chunks, 'completed_chunks': 0, 'failed_chunks': 0})

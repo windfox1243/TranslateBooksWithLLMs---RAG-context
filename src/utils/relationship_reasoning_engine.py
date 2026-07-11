@@ -18,6 +18,7 @@ from src.utils.relationship_schema import (
     RelationshipJudgeResult,
     RelationshipMergeDecision,
     clean_relationship_text,
+    default_relationship_hierarchy,
     normalize_relationship_name,
 )
 from src.utils.text_matching import active_label_matches_name, reference_mentions_label
@@ -47,6 +48,44 @@ _HARD_CONFLICTS = {
     "master": {"servant"},
     "servant": {"master"},
 }
+
+_INVERSE_RELATIONSHIPS = {
+    "parent": "child",
+    "child": "parent",
+    "mentor": "student",
+    "student": "mentor",
+    "master": "servant",
+    "servant": "master",
+    "superior": "subordinate",
+    "subordinate": "superior",
+}
+
+
+def _candidate_evidence_quotes(candidate: RelationshipCandidate) -> list[str]:
+    quotes = [
+        str(item.get("quote") or "").strip()
+        for item in candidate.evidence_spans or []
+        if isinstance(item, dict)
+    ]
+    if candidate.evidence_quote and candidate.evidence_quote not in quotes:
+        quotes.insert(0, candidate.evidence_quote)
+    return [quote for quote in quotes if quote]
+
+
+def _explicit_inverse_role(candidate: RelationshipCandidate) -> bool:
+    details = normalize_relationship_name(candidate.details)
+    cues = {
+        "parent": {" child ", " son ", " daughter "},
+        "child": {" parent ", " father ", " mother "},
+        "mentor": {" student ", " pupil "},
+        "student": {" mentor ", " teacher "},
+        "master": {" servant "},
+        "servant": {" master "},
+        "superior": {" subordinate "},
+        "subordinate": {" superior "},
+    }.get(candidate.relationship_type, set())
+    padded = f" {details} "
+    return any(cue in padded for cue in cues)
 
 
 def _names_match(candidate: str, known: str, language: str = "") -> bool:
@@ -397,6 +436,37 @@ class RelationshipReasoningEngine:
             source=source_node["canonical_name"],
             target=target_node["canonical_name"],
         )
+        if not trusted and _explicit_inverse_role(candidate):
+            inverse_type = _INVERSE_RELATIONSHIPS.get(candidate.relationship_type)
+            inverse_hierarchy = {
+                "source_senior": "source_junior",
+                "source_junior": "source_senior",
+            }.get(default_relationship_hierarchy(candidate.relationship_type))
+            supplied_signals = [
+                value for value in (
+                    candidate.hierarchy if candidate.hierarchy != "unknown" else None,
+                    {
+                        "source_older": "source_senior",
+                        "source_younger": "source_junior",
+                        "same_age": "peer",
+                    }.get(candidate.relative_age),
+                    {
+                        "source_higher": "source_senior",
+                        "source_lower": "source_junior",
+                        "equal": "peer",
+                    }.get(candidate.rank_relation),
+                ) if value
+            ]
+            if inverse_type and supplied_signals and set(supplied_signals) == {inverse_hierarchy}:
+                candidate = replace(
+                    candidate,
+                    relationship_type=inverse_type,
+                    direction="directed",
+                    judge_reason=(
+                        f"Canonicalized inverse role from {_INVERSE_RELATIONSHIPS[inverse_type]} "
+                        f"to {inverse_type}; evidence and hierarchy signals agree."
+                    ),
+                )
         expected_hierarchy = {
             "parent": "source_senior",
             "mentor": "source_senior",
@@ -562,7 +632,8 @@ class RelationshipReasoningEngine:
             )
 
         if candidate.scope == "durable" and not trusted:
-            if not candidate.evidence_quote:
+            evidence_quotes = _candidate_evidence_quotes(candidate)
+            if not evidence_quotes:
                 edge_id = self._quarantine_edge(
                     translation_id, chunk_index, candidate, source_node, target_node,
                 )
@@ -572,17 +643,21 @@ class RelationshipReasoningEngine:
                     reason="A new durable LLM relationship requires an exact source evidence quote.",
                     edge_id=edge_id, log_callback=log_callback,
                 )
-            if not _quote_is_source_supported(candidate.evidence_quote, source_text):
+            unsupported_quotes = [
+                quote for quote in evidence_quotes
+                if not _quote_is_source_supported(quote, source_text)
+            ]
+            if unsupported_quotes:
                 edge_id = self._quarantine_edge(
                     translation_id, chunk_index, candidate, source_node, target_node,
                 )
                 return self._record_conflict(
                     translation_id, chunk_index, candidate,
                     status="quarantined", validator="source_evidence",
-                    reason="The proposed evidence quote is not present in the source chunk.",
+                    reason="One or more proposed evidence spans are not present in the source chunk.",
                     edge_id=edge_id, log_callback=log_callback,
                 )
-            participant_text = f"{candidate.evidence_quote}\n{source_text}"
+            participant_text = "\n".join([*evidence_quotes, source_text])
             source_supported = any(
                 reference_mentions_label(label, participant_text, language)
                 for label in [candidate.source, *(source_node.get("aliases") or [])]
@@ -593,6 +668,37 @@ class RelationshipReasoningEngine:
                 for label in [candidate.target, *(target_node.get("aliases") or [])]
                 if label
             )
+            evidence_roles = {
+                str(item.get("role") or "").casefold()
+                for item in candidate.evidence_spans or []
+                if isinstance(item, dict)
+            }
+            known_keys = {
+                normalize_relationship_name(name)
+                for name in known_names
+            }
+            if (
+                "source" in evidence_roles
+                and normalize_relationship_name(candidate.source) in known_keys
+            ):
+                source_supported = True
+            if (
+                "target" in evidence_roles
+                and normalize_relationship_name(candidate.target) in known_keys
+            ):
+                target_supported = True
+            if "source" in evidence_roles and any(
+                normalize_relationship_name(name)
+                == normalize_relationship_name(candidate.source)
+                for name in active_names
+            ):
+                source_supported = True
+            if "target" in evidence_roles and any(
+                normalize_relationship_name(name)
+                == normalize_relationship_name(candidate.target)
+                for name in active_names
+            ):
+                target_supported = True
             if not (source_supported and target_supported):
                 edge_id = self._quarantine_edge(
                     translation_id, chunk_index, candidate, source_node, target_node,
@@ -694,17 +800,20 @@ class RelationshipReasoningEngine:
 
         if same_edge and not _edge_changed(same_edge, candidate) and same_edge.get("status") == "accepted":
             evidence_id = None
-            if candidate.evidence_quote:
+            for span in candidate.evidence_spans or [{"quote": candidate.evidence_quote}]:
+                quote = str(span.get("quote") or "").strip()
+                if not quote:
+                    continue
                 evidence_id = self.db.add_relationship_evidence(
                     translation_id=translation_id,
                     edge_id=same_edge["id"],
                     chunk_index=chunk_index,
-                    evidence_quote=candidate.evidence_quote,
+                    evidence_quote=quote,
                     provenance=candidate.provenance,
                     parser_status=candidate.parser_status,
                     confidence=candidate.confidence,
                     file_id=candidate.file_id,
-                    dialogue_turn_id=candidate.dialogue_turn_id,
+                    dialogue_turn_id=str(span.get("dialogue_turn_id") or candidate.dialogue_turn_id),
                 )
             return RelationshipMergeDecision(
                 status="unchanged", reason="Relationship already matches accepted graph state.",
@@ -737,17 +846,22 @@ class RelationshipReasoningEngine:
                 reason="Relationship graph persistence failed.",
                 severity="error", log_callback=log_callback,
             )
-        evidence_id = self.db.add_relationship_evidence(
-            translation_id=translation_id,
-            edge_id=edge_id,
-            chunk_index=chunk_index,
-            evidence_quote=candidate.evidence_quote,
-            provenance=candidate.provenance,
-            parser_status=candidate.parser_status,
-            confidence=candidate.confidence,
-            file_id=candidate.file_id,
-            dialogue_turn_id=candidate.dialogue_turn_id,
-        )
+        evidence_id = None
+        for span in candidate.evidence_spans or [{"quote": candidate.evidence_quote}]:
+            quote = str(span.get("quote") or "").strip()
+            if not quote:
+                continue
+            evidence_id = self.db.add_relationship_evidence(
+                translation_id=translation_id,
+                edge_id=edge_id,
+                chunk_index=chunk_index,
+                evidence_quote=quote,
+                provenance=candidate.provenance,
+                parser_status=candidate.parser_status,
+                confidence=candidate.confidence,
+                file_id=candidate.file_id,
+                dialogue_turn_id=str(span.get("dialogue_turn_id") or candidate.dialogue_turn_id),
+            )
         self._log(
             log_callback,
             "relationship_accepted",

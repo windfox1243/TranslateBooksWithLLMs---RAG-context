@@ -538,28 +538,42 @@ async def translate_chunk_with_fallback(
         if validation_result:
             # Optional 2-pass Senior Translation Editor reflection & repair pass
             if translated and (prompt_options or {}).get("reflection_mode"):
-                from src.core.translator import run_chunk_reflection_pass
+                from src.core.translator import (
+                    ReflectionValidationError,
+                    run_chunk_reflection_pass,
+                )
                 reflection_options = dict(prompt_options or {})
                 reflection_options.setdefault("source_language", source_language)
                 reflection_options.setdefault("target_language", target_language)
-                repaired = await run_chunk_reflection_pass(
-                    source_chunk=chunk_text,
-                    draft_translation=translated,
-                    target_language=target_language,
-                    model_name=model_name,
-                    llm_client=llm_client,
-                    novel_context=(prompt_options or {}).get("novel_context", ""),
-                    custom_instructions=(prompt_options or {}).get("custom_instructions", ""),
-                    glossary_block=(prompt_options or {}).get("glossary_block", ""),
-                    log_callback=log_callback,
-                    context_session=(prompt_options or {}).get("context_session"),
-                    prompt_options=reflection_options,
-                    repair_validator=lambda repaired: (
-                        None
-                        if validate_placeholders(repaired, local_tag_map)
-                        else "placeholder mismatch"
-                    ),
-                )
+                try:
+                    repaired = await run_chunk_reflection_pass(
+                        source_chunk=chunk_text,
+                        draft_translation=translated,
+                        target_language=target_language,
+                        model_name=model_name,
+                        llm_client=llm_client,
+                        novel_context=(prompt_options or {}).get("novel_context", ""),
+                        custom_instructions=(prompt_options or {}).get("custom_instructions", ""),
+                        glossary_block=(prompt_options or {}).get("glossary_block", ""),
+                        log_callback=log_callback,
+                        context_session=(prompt_options or {}).get("context_session"),
+                        prompt_options=reflection_options,
+                        repair_validator=lambda repaired: (
+                            None
+                            if validate_placeholders(repaired, local_tag_map)
+                            else "adapter_placeholder_validation_failed"
+                        ),
+                    )
+                except ReflectionValidationError as exc:
+                    preserved = placeholder_mgr.restore_to_global(
+                        translated,
+                        global_indices,
+                    )
+                    return _ChunkTranslationOutcome(
+                        preserved,
+                        succeeded=False,
+                        editor_validation=exc.diagnostics,
+                    )
                 if repaired and validate_placeholders(repaired, local_tag_map):
                     translated = repaired
                 elif log_callback:
@@ -674,9 +688,15 @@ async def translate_chunk_with_fallback(
 class _ChunkTranslationOutcome(str):
     """String-compatible chunk result carrying whether translation succeeded."""
 
-    def __new__(cls, value: str, succeeded: bool):
+    def __new__(
+        cls,
+        value: str,
+        succeeded: bool,
+        editor_validation: Optional[Dict[str, Any]] = None,
+    ):
         instance = super().__new__(cls, value)
         instance.succeeded = succeeded
+        instance.editor_validation = editor_validation
         return instance
 
 
@@ -1371,6 +1391,15 @@ async def _translate_all_chunks_with_checkpoint(
             except Exception:
                 pass
         chunk_prompt_options = dict(prompt_options or {})
+        chunk_prompt_options.update({
+            "translation_id": translation_id or "",
+            "jobs_db_path": getattr(
+                getattr(checkpoint_manager, "db", None), "db_path", None,
+            ),
+            "chunk_index": i,
+            "file_type": "epub",
+            "editor_phase": "translation",
+        })
         directed_context = build_directed_addressing_prompt_context(
             translation_id=translation_id or "",
             db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
@@ -1516,6 +1545,8 @@ async def _translate_all_chunks_with_checkpoint(
 
         # Save translation chunk checkpoint to SQLite for the context snapshot dropdown
         ctx_snapshot, dialogue_attribution, chunk_data = _context_data_for_save(i)
+        if getattr(translated_text, "editor_validation", None):
+            chunk_data["editor_validation"] = translated_text.editor_validation
         chunks[i]['context_snapshot'] = ctx_snapshot
         chunks[i]['dialogue_attribution'] = dialogue_attribution
         
@@ -2453,110 +2484,63 @@ async def _refine_epub_chunks(
         else:
             local_prompt_options.pop("dialogue_attribution", None)
 
-        # Generate refinement prompt using text with LOCAL indices
-        prompt_pair = generate_post_processing_prompt(
-            translated_text=prompt_text_for_refinement,
-            target_language=target_language,
-            context_before=prompt_context_before,
-            context_after=prompt_context_after,
-            additional_instructions=refinement_instructions,
-            has_placeholders=not hide_refinement_placeholders,
-            placeholder_format=placeholder_format,
-            prompt_options=local_prompt_options
+        source_queue = (prompt_options or {}).get("_refinement_source_queue") or []
+        source_cursor = int((prompt_options or {}).get("_refinement_source_cursor", 0) or 0)
+        source_chunk = (
+            str(source_queue[source_cursor])
+            if source_cursor < len(source_queue)
+            else str(chunk_dict.get("source_content") or "")
+        )
+        if prompt_options is not None:
+            prompt_options["_refinement_source_cursor"] = source_cursor + 1
+        local_prompt_options["editor_source_mode"] = (
+            "checkpoint" if source_chunk.strip() else "monolingual"
         )
 
-        # Make refinement request
+        # Run the shared structured Senior Editor and validate adapter structure.
         try:
-            # Log the refinement request (like translation does)
-            if log_callback:
-                emit_progress_log(
-                    log_callback,
-                    "refinement_request",
-                    "Sending refinement request to LLM",
-                    layer="xhtml_refinement",
-                    data={
-                        'system_prompt': prompt_pair.system,
-                        'user_prompt': prompt_pair.user,
-                        'model': model_name,
-                    },
-                )
+            from src.core.translator import run_chunk_reflection_pass
 
-            # Set context from manager if available
-            if context_manager and hasattr(llm_client, 'context_window'):
-                new_ctx = context_manager.get_context_size()
-                if llm_client.context_window != new_ctx:
-                    llm_client.context_window = new_ctx
+            def validate_refined_xhtml(value):
+                if not hide_refinement_placeholders and local_tag_map:
+                    if not validate_placeholders(value, local_tag_map):
+                        return "adapter_placeholder_validation_failed"
+                return None
 
-            import time
-            start_time = time.time()
-            llm_response = await llm_client.make_request(
-                prompt_pair.user, model_name, system_prompt=prompt_pair.system
+            refined_text = await run_chunk_reflection_pass(
+                source_chunk=source_chunk,
+                draft_translation=prompt_text_for_refinement,
+                target_language=target_language,
+                model_name=model_name,
+                llm_client=llm_client,
+                novel_context=local_prompt_options.get("novel_context", ""),
+                custom_instructions=refinement_instructions,
+                glossary_block=str(local_prompt_options.get("glossary_block") or ""),
+                log_callback=log_callback,
+                prompt_options=local_prompt_options,
+                repair_validator=validate_refined_xhtml,
             )
-            execution_time = time.time() - start_time
-
-            # Log the response (like translation does)
-            if log_callback and llm_response:
-                emit_progress_log(
-                    log_callback,
-                    "refinement_response",
-                    "Refinement response received",
-                    layer="xhtml_refinement",
-                    data={
-                        'response': llm_response.content,
-                        'execution_time': execution_time,
-                        'model': model_name,
-                        'tokens': {
-                            'prompt': llm_response.prompt_tokens,
-                            'completion': llm_response.completion_tokens,
-                            'total': llm_response.context_used,
-                            'limit': llm_response.context_limit,
-                        },
-                    },
+            if hide_refinement_placeholders:
+                from .token_alignment_fallback import TokenAlignmentFallback
+                refined_plain_text = _remove_placeholders_by_format(
+                    refined_text,
+                    placeholder_format,
                 )
-
-            if llm_response and llm_response.content:
-                # Extract refined text
-                refined_text = llm_client.extract_translation(llm_response.content)
-
-                if refined_text:
-                    if hide_refinement_placeholders:
-                        from .token_alignment_fallback import TokenAlignmentFallback
-                        refined_plain_text = _remove_placeholders_by_format(
-                            refined_text,
-                            placeholder_format,
-                        )
-                        refined_text = TokenAlignmentFallback().align_and_insert_placeholders(
-                            text_for_refinement,
-                            refined_plain_text,
-                            local_placeholders,
-                        )
-
-                    # CRITICAL: Validate placeholders before accepting refinement
-                    # refined_text should have LOCAL indices (0, 1, 2...) matching local_tag_map
-                    if local_tag_map and not validate_placeholders(refined_text, local_tag_map):
-                        _log_error(log_callback, "epub_refinement_placeholder_corruption",
-                                    f"Chunk {idx + 1}/{total_chunks}: refinement corrupted placeholders, using original translation")
-                        refined_chunks.append(translated_text)
-                    else:
-                        # Validation passed! Now convert LOCAL indices back to GLOBAL indices
-                        refined_with_global_indices = _restore_local_placeholders_to_global(
-                            refined_text,
-                            global_indices,
-                            placeholder_format,
-                        )
-
-                        refined_chunks.append(refined_with_global_indices)
-                        if log_callback:
-                            log_callback("epub_chunk_refined", f"Chunk {idx + 1}/{total_chunks} refined successfully")
-                else:
-                    # Fallback to original translation if extraction fails
-                    refined_chunks.append(translated_text)
-                    if log_callback:
-                        log_callback("epub_refinement_fallback", f"Chunk {idx + 1}/{total_chunks}: using original translation")
-            else:
-                # Fallback to original translation if request fails
-                refined_chunks.append(translated_text)
-                _log_error(log_callback, "epub_refinement_failed", f"Chunk {idx + 1}/{total_chunks}: refinement failed, using original")
+                refined_text = TokenAlignmentFallback().align_and_insert_placeholders(
+                    text_for_refinement,
+                    refined_plain_text,
+                    local_placeholders,
+                )
+            if local_tag_map and not validate_placeholders(refined_text, local_tag_map):
+                raise ValueError("adapter_placeholder_validation_failed")
+            refined_with_global_indices = _restore_local_placeholders_to_global(
+                refined_text,
+                global_indices,
+                placeholder_format,
+            )
+            refined_chunks.append(refined_with_global_indices)
+            if log_callback:
+                log_callback("epub_chunk_refined", f"Chunk {idx + 1}/{total_chunks} refined successfully")
 
         except Exception as e:
             # Re-raise RateLimitError to trigger auto-pause

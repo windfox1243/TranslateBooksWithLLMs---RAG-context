@@ -375,7 +375,11 @@ class ContextMergeEngine:
                 )
 
         # Rule 1: User Lock Override
-        if existing and existing.get("is_locked"):
+        if (
+            existing
+            and existing.get("is_locked")
+            and trigger_source not in {"manual", "rest_api", "user_manual"}
+        ):
             return reject("locked by user.")
 
         # Rule 2: Confidence Threshold Check

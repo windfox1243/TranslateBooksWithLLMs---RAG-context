@@ -745,21 +745,27 @@ async def translate_paragraphs_plain(
             placeholder_format=None,
         )
         if translated and (prompt_options or {}).get("reflection_mode"):
-            from src.core.translator import run_chunk_reflection_pass
-
-            translated = await run_chunk_reflection_pass(
-                source_chunk=main_content,
-                draft_translation=translated,
-                target_language=target_language,
-                model_name=model_name,
-                llm_client=llm_client,
-                novel_context=(prompt_options or {}).get("novel_context", ""),
-                custom_instructions=(prompt_options or {}).get("custom_instructions", ""),
-                glossary_block=(prompt_options or {}).get("glossary_block", ""),
-                log_callback=log_callback,
-                context_session=context_session,
-                prompt_options=unit_prompt_options,
+            from src.core.translator import (
+                ReflectionValidationError,
+                run_chunk_reflection_pass,
             )
+
+            try:
+                translated = await run_chunk_reflection_pass(
+                    source_chunk=main_content,
+                    draft_translation=translated,
+                    target_language=target_language,
+                    model_name=model_name,
+                    llm_client=llm_client,
+                    novel_context=(prompt_options or {}).get("novel_context", ""),
+                    custom_instructions=(prompt_options or {}).get("custom_instructions", ""),
+                    glossary_block=(prompt_options or {}).get("glossary_block", ""),
+                    log_callback=log_callback,
+                    context_session=context_session,
+                    prompt_options=unit_prompt_options,
+                )
+            except ReflectionValidationError as exc:
+                return ('editor_failed', exc)
         return ('done', translated)
 
     def _fill_remaining_with_source():
@@ -767,7 +773,7 @@ async def translate_paragraphs_plain(
             if translated_parts[j] is None:
                 translated_parts[j] = chunks[j].get('main_content', '')
 
-    def _save_chunk_checkpoint(i, chunk_succeeded):
+    def _save_chunk_checkpoint(i, chunk_succeeded, editor_error=None):
         if not (
             checkpoint_manager
             and translation_id
@@ -782,13 +788,17 @@ async def translate_paragraphs_plain(
             )
         if chunk_data.get('context_snapshot'):
             checkpoint_context_data_by_index[i] = dict(chunk_data)
+        preserved_draft = getattr(editor_error, "draft_translation", "")
+        diagnostics = getattr(editor_error, "diagnostics", None)
+        if diagnostics:
+            chunk_data["editor_validation"] = diagnostics
         checkpoint_manager.db.save_chunk(
             translation_id=translation_id,
             chunk_index=global_chunk_offset + i,
             original_text=chunks[i].get('main_content', ''),
-            translated_text=translated_parts[i],
+            translated_text=preserved_draft or translated_parts[i],
             chunk_data=chunk_data,
-            status='completed' if chunk_succeeded else 'partial',
+            status='completed' if chunk_succeeded else 'failed',
         )
 
     def _commit_context_state(i):
@@ -893,6 +903,18 @@ async def translate_paragraphs_plain(
                 translated_parts[i] = value
                 stats.successful_first_try += 1
                 chunk_succeeded = True
+            elif kind == 'editor_failed':
+                translated_parts[i] = main_content
+                failed_indices.add(i)
+                stats.failed_chunks = len(failed_indices)
+                _save_chunk_checkpoint(i, False, value)
+                if log_callback:
+                    log_callback(
+                        "plain_text_editor_failed",
+                        f"Chunk {i + 1}/{len(chunks)} failed Senior Editor validation; the draft was preserved for retry.",
+                    )
+                processed += 1
+                continue
             elif value is None:
                 if log_callback:
                     log_callback(
@@ -985,6 +1007,10 @@ async def translate_paragraphs_plain(
                 chunk_succeeded = True
                 failed_indices.discard(i)
                 stats.failed_chunks = len(failed_indices)
+            elif kind == 'editor_failed':
+                translated_parts[i] = main_content
+                _save_chunk_checkpoint(i, False, value)
+                continue
             elif value is not None:
                 cleaned = clean_translated_text(value)
                 cleaned = strip_hallucinated_markup(

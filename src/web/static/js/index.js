@@ -464,6 +464,7 @@ async function initializeModules() {
 // File Upload
 window.handleFileSelect = FileUpload.handleFileSelect.bind(FileUpload);
 window.handleFileSelectRefine = FileUpload.handleFileSelectRefine.bind(FileUpload);
+window.handleRefinementOriginalSelect = FileUpload.handleRefinementOriginalSelect.bind(FileUpload);
 window.resetFiles = () => {
     FileUpload.clearAll();
     DomHelpers.hide('fileInfo');

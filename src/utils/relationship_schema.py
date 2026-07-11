@@ -174,6 +174,7 @@ class RelationshipCandidate:
     intimacy: str = "unknown"
     register: str = "neutral"
     evidence_quote: str = ""
+    evidence_spans: List[Dict[str, str]] = field(default_factory=list)
     confidence: float = 0.5
     provenance: str = "llm_context"
     source_entity_type: str = "character"
@@ -233,6 +234,33 @@ class RelationshipCandidate:
         self.intimacy = clean_relationship_text(self.intimacy, 80) or "unknown"
         self.register = clean_relationship_text(self.register, 80) or "neutral"
         self.evidence_quote = clean_relationship_text(self.evidence_quote)
+        cleaned_spans = []
+        for item in self.evidence_spans or []:
+            if isinstance(item, str):
+                item = {"quote": item}
+            if not isinstance(item, dict):
+                continue
+            quote = clean_relationship_text(
+                item.get("quote") or item.get("evidence_quote")
+            )
+            if not quote or any(span["quote"] == quote for span in cleaned_spans):
+                continue
+            cleaned_spans.append({
+                "quote": quote,
+                "role": clean_relationship_text(item.get("role"), 80),
+                "dialogue_turn_id": clean_relationship_text(
+                    item.get("dialogue_turn_id"), 120
+                ),
+            })
+        if not cleaned_spans and self.evidence_quote:
+            cleaned_spans.append({
+                "quote": self.evidence_quote,
+                "role": "",
+                "dialogue_turn_id": self.dialogue_turn_id,
+            })
+        self.evidence_spans = cleaned_spans
+        if not self.evidence_quote and cleaned_spans:
+            self.evidence_quote = cleaned_spans[0]["quote"]
         self.provenance = clean_relationship_text(self.provenance, 80) or "llm_context"
         self.source_entity_type = classify_entity_type(
             self.source_entity_type,
@@ -286,6 +314,7 @@ class RelationshipCandidate:
             intimacy=str(data.get("intimacy") or "unknown"),
             register=str(data.get("register") or "neutral"),
             evidence_quote=str(data.get("evidence_quote") or data.get("evidence") or ""),
+            evidence_spans=list(data.get("evidence_spans") or []),
             confidence=data.get("confidence", 0.5),
             provenance=str(data.get("provenance") or default_provenance),
             source_entity_type=str(data.get("source_entity_type") or "character"),

@@ -1207,12 +1207,16 @@ export const TranslationTracker = {
 window.NovelContextUI = {
     latestContent: '',
     displayedContent: '',
+    displayedIsSnapshot: false,
     availableChunkIndices: [],
     globalAnchorChunkIndex: null,
     globalAnchorFullContent: '',
     activeTabKey: 'general',
     structuredAddressingContent: '',
+    structuredAddressingResult: null,
     structuredAddressingRequest: 0,
+    structuredRelationshipResult: null,
+    editorDiagnosticsResult: null,
     localizedView: null,
     lastResyncState: null,
     _localeListenerBound: false,
@@ -1227,6 +1231,12 @@ window.NovelContextUI = {
             // active edit form because that would discard unsaved changes.
             if (this.localizedView && !this.isEditing) {
                 this._renderLocalizedView();
+            } else if (this.displayedContent && !this.isEditing) {
+                this.renderContextTabs(
+                    this.displayedContent,
+                    this.displayedIsSnapshot,
+                    true
+                );
             }
             updateContextResyncControls(this.lastResyncState);
         });
@@ -1263,6 +1273,7 @@ window.NovelContextUI = {
     _structuralTitleKey: function(key) {
         if (key === 'current-addressing') return 'translation:context_current_addressing_tab';
         if (key === 'relationship-evolution') return 'translation:context_relationship_evolution_tab';
+        if (key === 'editor-diagnostics') return 'translation:editor_diagnostics_tab';
         return null;
     },
 
@@ -1320,6 +1331,7 @@ window.NovelContextUI = {
         let content;
         try {
             const result = await ApiClient.getAddressingRules(translationId);
+            this.structuredAddressingResult = result;
             content = this._formatAddressingRules(result);
         } catch (_error) {
             content = t('translation:context_addressing_unavailable');
@@ -1327,7 +1339,255 @@ window.NovelContextUI = {
         if (requestId !== this.structuredAddressingRequest) return;
         this.structuredAddressingContent = content;
         const pane = document.querySelector('[data-context-pane-key="current-addressing"]');
-        if (pane) pane.textContent = content;
+        if (pane) this._renderStructuredPane(pane, 'addressing');
+    },
+
+    refreshStructuredRelationships: async function() {
+        const translationId = currentTranslationIdForContext();
+        if (!translationId) return;
+        try {
+            this.structuredRelationshipResult = await ApiClient.getRelationshipGraph(
+                translationId
+            );
+        } catch (_error) {
+            this.structuredRelationshipResult = null;
+        }
+        const pane = document.querySelector('[data-context-pane-key="relationship-evolution"]');
+        if (pane) this._renderStructuredPane(pane, 'relationship');
+    },
+
+    refreshEditorDiagnostics: async function() {
+        const translationId = currentTranslationIdForContext();
+        if (!translationId) return;
+        try {
+            this.editorDiagnosticsResult = await ApiClient.getEditorDiagnostics(
+                translationId
+            );
+        } catch (_error) {
+            this.editorDiagnosticsResult = null;
+        }
+        const pane = document.querySelector('[data-context-pane-key="editor-diagnostics"]');
+        if (pane) this._renderEditorDiagnostics(pane);
+    },
+
+    _renderEditorDiagnostics: function(pane) {
+        pane.textContent = '';
+        const result = this.editorDiagnosticsResult;
+        if (!result || result.classification === 'legacy_unclassified') {
+            pane.textContent = t('translation:editor_diagnostics_legacy');
+            return;
+        }
+        const summary = document.createElement('p');
+        const outcomes = result.summary?.outcomes || {};
+        summary.textContent = t('translation:editor_diagnostics_summary', {
+            total: result.summary?.total || 0,
+            repaired: outcomes.repaired || 0,
+            review: outcomes.draft_kept_review || 0,
+            blocked: outcomes.blocked || 0
+        });
+        pane.appendChild(summary);
+        (result.runs || []).slice().reverse().forEach(run => {
+            const row = document.createElement('div');
+            row.style.padding = '0.6rem 0';
+            row.style.borderTop = '1px solid var(--border-color)';
+            const label = document.createElement('span');
+            label.textContent = t('translation:editor_diagnostics_run', {
+                chunk: Number(run.chunk_index) + 1,
+                outcome: run.outcome,
+                reason: run.failure_class || '-'
+            });
+            row.appendChild(label);
+            if (run.outcome === 'draft_kept_review' && Number(run.chunk_index) >= 0) {
+                const retry = document.createElement('button');
+                retry.type = 'button';
+                retry.className = 'btn btn-sm btn-secondary';
+                retry.style.marginLeft = '0.75rem';
+                retry.textContent = t('translation:editor_retry');
+                retry.onclick = async () => {
+                    await ApiClient.retrySeniorEditor(
+                        currentTranslationIdForContext(), run.chunk_index
+                    );
+                    MessageLogger.showMessage(
+                        t('translation:editor_retry_queued'), 'success'
+                    );
+                };
+                row.appendChild(retry);
+            }
+            pane.appendChild(row);
+        });
+    },
+
+    _renderStructuredPane: function(pane, kind) {
+        pane.textContent = '';
+        const toolbar = document.createElement('div');
+        toolbar.style.display = 'flex';
+        toolbar.style.justifyContent = 'flex-end';
+        toolbar.style.marginBottom = '0.75rem';
+        const addButton = document.createElement('button');
+        addButton.type = 'button';
+        addButton.className = 'btn btn-sm btn-primary';
+        addButton.textContent = `+ ${t(kind === 'addressing'
+            ? 'translation:context_add_addressing'
+            : 'translation:context_add_relationship')}`;
+        addButton.onclick = () => this._openStructuredEditor(kind, null);
+        toolbar.appendChild(addButton);
+        if (kind === 'relationship' && currentTranslationIdForContext() === 'trans_1783673914101') {
+            const recoveryButton = document.createElement('button');
+            recoveryButton.type = 'button';
+            recoveryButton.className = 'btn btn-sm btn-secondary';
+            recoveryButton.style.marginLeft = '0.5rem';
+            recoveryButton.textContent = t('translation:context_recovery_preview');
+            recoveryButton.onclick = async () => {
+                try {
+                    const translationId = currentTranslationIdForContext();
+                    const preview = await ApiClient.getRecoveryPreview(translationId);
+                    const confirmed = window.confirm(t('translation:context_recovery_confirm', {
+                        completed: preview.completed_chunks_preserved.join(', ') || '-',
+                        failed: preview.failed_chunks_reset.join(', ') || '-',
+                        edges: preview.relationship_edges_quarantined.join(', ') || '-'
+                    }));
+                    if (!confirmed) return;
+                    const result = await ApiClient.recoverEditorContext(translationId);
+                    MessageLogger.showMessage(t('translation:context_recovery_ready', {
+                        path: result.backup_directory
+                    }), 'success');
+                    await this.refreshStructuredRelationships();
+                    await this.refreshStructuredAddressing();
+                } catch (error) {
+                    MessageLogger.showMessage(t('translation:context_structured_save_failed', { error: error.message }), 'error');
+                }
+            };
+            toolbar.appendChild(recoveryButton);
+        }
+        pane.appendChild(toolbar);
+
+        const records = kind === 'addressing'
+            ? (this.structuredAddressingResult?.rules || [])
+            : (this.structuredRelationshipResult?.edges || []).filter(edge => edge.status === 'accepted' && edge.relationship_type !== 'addressing');
+        if (!records.length) {
+            const empty = document.createElement('p');
+            empty.textContent = t(kind === 'addressing'
+                ? 'translation:context_addressing_empty'
+                : 'translation:context_relationship_empty');
+            pane.appendChild(empty);
+            return;
+        }
+        records.forEach(record => {
+            const row = document.createElement('div');
+            row.style.display = 'grid';
+            row.style.gridTemplateColumns = 'minmax(0, 1fr) auto';
+            row.style.gap = '0.75rem';
+            row.style.padding = '0.75rem 0';
+            row.style.borderBottom = '1px solid var(--border-color)';
+            const text = document.createElement('pre');
+            text.style.margin = '0';
+            text.style.whiteSpace = 'pre-wrap';
+            text.textContent = kind === 'addressing'
+                ? this._formatAddressingRules({ rules: [record] })
+                : `${record.source_name} -> ${record.target_name}\n  ${record.relationship_type} | ${record.hierarchy} | ${record.scope}`;
+            const editButton = document.createElement('button');
+            editButton.type = 'button';
+            editButton.className = 'btn btn-sm btn-secondary';
+            editButton.textContent = t('translation:context_edit_structured');
+            editButton.onclick = () => this._openStructuredEditor(kind, record);
+            row.append(text, editButton);
+            pane.appendChild(row);
+        });
+    },
+
+    _openStructuredEditor: function(kind, record) {
+        document.getElementById('structuredContextEditor')?.remove();
+        const dialog = document.createElement('dialog');
+        dialog.id = 'structuredContextEditor';
+        dialog.style.width = 'min(560px, calc(100vw - 2rem))';
+        dialog.style.border = '1px solid var(--border-color)';
+        dialog.style.borderRadius = '6px';
+        dialog.style.padding = '1rem';
+        const form = document.createElement('form');
+        form.method = 'dialog';
+        const title = document.createElement('h3');
+        title.textContent = t(kind === 'addressing'
+            ? 'translation:context_addressing_editor_title'
+            : 'translation:context_relationship_editor_title');
+        form.appendChild(title);
+        const values = kind === 'addressing' ? {
+            speaker: record?.speaker_name || '', addressee: record?.addressee_name || '',
+            self_reference: record?.self_pronoun || '', second_person: record?.target_pronoun || '',
+            vocative: record?.vocative || '', register: record?.register || 'neutral',
+            scope: record?.scope || 'durable', social_basis: (record?.social_basis || []).join(', '),
+            source_forms: (record?.source_forms || []).map(item => typeof item === 'string' ? item : item.source_form).filter(Boolean).join(', '),
+            notes: record?.notes || ''
+        } : {
+            source: record?.source_name || '', target: record?.target_name || '',
+            relationship_type: record?.relationship_type || 'associated', direction: record?.direction || 'directed',
+            hierarchy: record?.hierarchy || 'unknown', relative_age: record?.relative_age || 'unknown',
+            rank_relation: record?.rank_relation || 'unknown', scope: record?.scope || 'durable',
+            details: record?.details || ''
+        };
+        Object.entries(values).forEach(([name, value]) => {
+            const label = document.createElement('label');
+            label.style.display = 'block';
+            label.style.margin = '0.5rem 0';
+            const caption = document.createElement('span');
+            caption.textContent = t(`translation:context_field_${name}`);
+            caption.style.display = 'block';
+            const input = document.createElement('input');
+            input.name = name;
+            input.value = value;
+            input.required = ['speaker', 'addressee', 'source', 'target', 'self_reference', 'second_person'].includes(name);
+            input.style.width = '100%';
+            label.append(caption, input);
+            form.appendChild(label);
+        });
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.justifyContent = 'flex-end';
+        actions.style.gap = '0.5rem';
+        actions.style.marginTop = '1rem';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'btn btn-secondary';
+        cancel.textContent = t('translation:context_cancel');
+        cancel.onclick = () => dialog.close();
+        const save = document.createElement('button');
+        save.type = 'submit';
+        save.className = 'btn btn-primary';
+        save.textContent = t('translation:context_save');
+        actions.append(cancel, save);
+        form.appendChild(actions);
+        form.onsubmit = async event => {
+            event.preventDefault();
+            const payload = Object.fromEntries(new FormData(form).entries());
+            payload.expected_revision = kind === 'addressing'
+                ? this.structuredAddressingResult?.context_revision
+                : this.structuredRelationshipResult?.context_revision;
+            payload.is_locked = true;
+            if (kind === 'addressing') {
+                payload.social_basis = payload.social_basis.split(',').map(item => item.trim()).filter(Boolean);
+                payload.source_forms = payload.source_forms.split(',').map(item => item.trim()).filter(Boolean);
+            } else {
+                payload.confidence = 1.0;
+                payload.provenance = 'user_manual';
+            }
+            try {
+                const translationId = currentTranslationIdForContext();
+                if (kind === 'addressing') {
+                    await ApiClient.saveAddressingRule(translationId, payload);
+                    await this.refreshStructuredAddressing();
+                } else {
+                    await ApiClient.saveRelationshipEdge(translationId, payload);
+                    await this.refreshStructuredRelationships();
+                }
+                dialog.close();
+                MessageLogger.showMessage(t('translation:context_structured_saved'), 'success');
+            } catch (error) {
+                MessageLogger.showMessage(t('translation:context_structured_save_failed', { error: error.message }), 'error');
+            }
+        };
+        dialog.appendChild(form);
+        document.body.appendChild(dialog);
+        dialog.addEventListener('close', () => dialog.remove());
+        dialog.showModal();
     },
     
     renderContextTabs: function(content, isSnapshot = false, preserveLocalizedView = false) {
@@ -1338,6 +1598,7 @@ window.NovelContextUI = {
             this.latestContent = content;
         }
         this.displayedContent = content;
+        this.displayedIsSnapshot = isSnapshot;
         const header = document.getElementById('contextTabsHeader');
         const body = document.getElementById('contextTabsBody');
         if (!header || !body) return;
@@ -1409,6 +1670,14 @@ window.NovelContextUI = {
                 content: t('translation:context_structural_empty')
             });
         }
+        if (!isSnapshot) {
+            sections.push({
+                key: 'editor-diagnostics',
+                title: t('translation:editor_diagnostics_tab'),
+                titleKey: 'translation:editor_diagnostics_tab',
+                content: t('translation:editor_diagnostics_loading')
+            });
+        }
 
         // Always add a raw view tab.
         sections.push({
@@ -1473,9 +1742,20 @@ window.NovelContextUI = {
             
             header.appendChild(btn);
             body.appendChild(pane);
+            if (!isSnapshot && sec.key === 'current-addressing') {
+                this._renderStructuredPane(pane, 'addressing');
+            }
+            if (!isSnapshot && sec.key === 'relationship-evolution') {
+                this._renderStructuredPane(pane, 'relationship');
+            }
+            if (!isSnapshot && sec.key === 'editor-diagnostics') {
+                this._renderEditorDiagnostics(pane);
+            }
         });
         if (!isSnapshot) {
             this.refreshStructuredAddressing();
+            this.refreshStructuredRelationships();
+            this.refreshEditorDiagnostics();
         }
     },
 

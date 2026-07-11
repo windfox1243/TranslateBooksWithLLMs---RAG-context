@@ -878,7 +878,9 @@ export const FormManager = {
                 novel_context_file: DomHelpers.getValue('novelContextSelect') || '',
                 auto_update_context: DomHelpers.getElement('autoUpdateContext')?.checked || false,
                 bypass_context_gating: DomHelpers.getElement('bypassContextGating')?.checked || false,
-                reflection_mode: DomHelpers.getElement('enableReflection')?.checked || false
+                reflection_mode: DomHelpers.getElement('enableReflection')?.checked || false,
+                editor_provider: DomHelpers.getValue('editorProvider') || '',
+                editor_model: (DomHelpers.getValue('editorModel') || '').trim()
             },
             // Bilingual output (original + translation interleaved)
             bilingual_output: DomHelpers.getElement('bilingualMode')?.checked || false,
@@ -1053,6 +1055,12 @@ window.loadSelectedProfile = async function() {
             const element = document.getElementById(id);
             if (element && value !== undefined) element.checked = value;
         });
+        if (data.editor_provider !== undefined) {
+            DomHelpers.setValue('editorProvider', data.editor_provider || '');
+        }
+        if (data.editor_model !== undefined) {
+            DomHelpers.setValue('editorModel', data.editor_model || '');
+        }
 
         const valueFields = {
             parallelWorkers: data.parallel_workers,
@@ -1101,6 +1109,8 @@ window.promptSaveProfile = async function() {
         auto_update_context: !!formData.prompt_options?.auto_update_context,
         bypass_context_gating: !!formData.prompt_options?.bypass_context_gating,
         reflection_mode: !!formData.prompt_options?.reflection_mode,
+        editor_provider: formData.prompt_options?.editor_provider || '',
+        editor_model: formData.prompt_options?.editor_model || '',
         plain_text_mode: !!formData.prompt_options?.plain_text_mode,
         chapter_mode: !!formData.prompt_options?.chapter_mode,
         auto_pause_on_rate_limit: formData.auto_pause_on_rate_limit,

@@ -9,6 +9,7 @@ import time
 from contextlib import contextmanager
 from typing import Optional, Dict, List, Any
 import threading
+from pathlib import Path
 
 
 def sanitize_config_secrets(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -167,6 +168,7 @@ class Database:
                     vocative TEXT,
                     register TEXT,
                     social_basis JSON,
+                    notes TEXT,
                     scope TEXT NOT NULL DEFAULT 'durable',
                     contract_version INTEGER NOT NULL DEFAULT 1,
                     confidence REAL DEFAULT 1.0,
@@ -182,6 +184,7 @@ class Database:
                 ("social_basis", "JSON"),
                 ("scope", "TEXT NOT NULL DEFAULT 'durable'"),
                 ("contract_version", "INTEGER NOT NULL DEFAULT 1"),
+                ("notes", "TEXT"),
             ):
                 if column not in addressing_columns:
                     cursor.execute(
@@ -350,6 +353,88 @@ class Database:
                 )
             """)
 
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_resync_runs (
+                    run_id TEXT PRIMARY KEY,
+                    translation_id TEXT NOT NULL,
+                    start_chunk_index INTEGER NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'staging',
+                    initial_snapshot TEXT,
+                    final_context TEXT,
+                    last_processed_chunk INTEGER NOT NULL DEFAULT -1,
+                    error TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_resync_chunk_stage (
+                    run_id TEXT NOT NULL,
+                    translation_id TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    original_text TEXT,
+                    translated_text TEXT,
+                    chunk_data JSON,
+                    status TEXT NOT NULL,
+                    relationship_candidates JSON,
+                    addressing_candidates JSON,
+                    parser_status TEXT,
+                    PRIMARY KEY (run_id, chunk_index),
+                    FOREIGN KEY (run_id) REFERENCES context_resync_runs(run_id)
+                        ON DELETE CASCADE
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS editor_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    translation_id TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    phase TEXT NOT NULL DEFAULT 'translation',
+                    provider TEXT,
+                    model TEXT,
+                    source_language TEXT,
+                    target_language TEXT,
+                    file_type TEXT,
+                    prompt_version TEXT,
+                    contract_version TEXT,
+                    parse_status TEXT,
+                    outcome TEXT NOT NULL DEFAULT 'running',
+                    failure_class TEXT,
+                    issue_count INTEGER NOT NULL DEFAULT 0,
+                    deterministic_count INTEGER NOT NULL DEFAULT 0,
+                    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                    completion_tokens INTEGER NOT NULL DEFAULT 0,
+                    was_truncated INTEGER NOT NULL DEFAULT 0,
+                    finish_reason TEXT,
+                    blocked_reason TEXT,
+                    response_hash TEXT,
+                    diagnostics JSON,
+                    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TIMESTAMP
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS editor_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id INTEGER NOT NULL,
+                    attempt_index INTEGER NOT NULL,
+                    stage TEXT NOT NULL,
+                    parse_status TEXT,
+                    failure_class TEXT,
+                    reason_codes JSON,
+                    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                    completion_tokens INTEGER NOT NULL DEFAULT 0,
+                    was_truncated INTEGER NOT NULL DEFAULT 0,
+                    finish_reason TEXT,
+                    blocked_reason TEXT,
+                    response_hash TEXT,
+                    excerpts JSON,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (run_id) REFERENCES editor_runs(id) ON DELETE CASCADE
+                )
+            """)
+
             # Create indexes for performance
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_jobs_status
@@ -403,6 +488,18 @@ class Database:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_relationship_conflicts_translation
                 ON context_relationship_conflicts(translation_id, status, chunk_index)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_context_resync_translation
+                ON context_resync_runs(translation_id, status)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_editor_runs_translation
+                ON editor_runs(translation_id, chunk_index, outcome)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_editor_attempts_run
+                ON editor_attempts(run_id, attempt_index)
             """)
 
             conn.commit()
@@ -915,6 +1012,8 @@ class Database:
                 cursor = conn.cursor()
 
                 for table in (
+                    "editor_attempts",
+                    "editor_runs",
                     "context_relationship_derivations",
                     "context_relationship_conflicts",
                     "context_relationship_evidence",
@@ -925,10 +1024,17 @@ class Database:
                     "context_addressing_rules",
                     "context_entities",
                 ):
-                    cursor.execute(
-                        f"DELETE FROM {table} WHERE translation_id = ?",
-                        (translation_id,),
-                    )
+                    if table == "editor_attempts":
+                        cursor.execute(
+                            "DELETE FROM editor_attempts WHERE run_id IN "
+                            "(SELECT id FROM editor_runs WHERE translation_id = ?)",
+                            (translation_id,),
+                        )
+                    else:
+                        cursor.execute(
+                            f"DELETE FROM {table} WHERE translation_id = ?",
+                            (translation_id,),
+                        )
                 cursor.execute(
                     "DELETE FROM translation_jobs WHERE translation_id = ?",
                     (translation_id,)
@@ -939,6 +1045,142 @@ class Database:
             except Exception as e:
                 print(f"Error deleting job: {e}")
                 return False
+
+    def create_editor_run(self, payload: Dict[str, Any]) -> Optional[int]:
+        """Create one locally persisted Senior Editor run."""
+        fields = (
+            "translation_id", "chunk_index", "phase", "provider", "model",
+            "source_language", "target_language", "file_type",
+            "prompt_version", "contract_version", "outcome",
+        )
+        values = [payload.get(field) for field in fields]
+        with self._lock:
+            try:
+                cursor = self._get_connection().cursor()
+                cursor.execute(
+                    f"INSERT INTO editor_runs ({','.join(fields)}) VALUES "
+                    f"({','.join('?' for _ in fields)})",
+                    values,
+                )
+                self._commit_connection(self._get_connection())
+                return int(cursor.lastrowid)
+            except Exception as exc:
+                print(f"Error creating editor run: {exc}")
+                return None
+
+    def add_editor_attempt(self, run_id: int, payload: Dict[str, Any]) -> bool:
+        """Append a bounded diagnostic record for one editor request."""
+        fields = (
+            "run_id", "attempt_index", "stage", "parse_status",
+            "failure_class", "reason_codes", "prompt_tokens",
+            "completion_tokens", "was_truncated", "finish_reason",
+            "blocked_reason", "response_hash", "excerpts",
+        )
+        values = [
+            run_id,
+            int(payload.get("attempt_index", 0)),
+            payload.get("stage") or "unknown",
+            payload.get("parse_status"),
+            payload.get("failure_class"),
+            json.dumps(payload.get("reason_codes") or [], ensure_ascii=False),
+            int(payload.get("prompt_tokens", 0) or 0),
+            int(payload.get("completion_tokens", 0) or 0),
+            int(bool(payload.get("was_truncated"))),
+            payload.get("finish_reason"),
+            payload.get("blocked_reason"),
+            payload.get("response_hash"),
+            json.dumps(payload.get("excerpts") or [], ensure_ascii=False),
+        ]
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                conn.execute(
+                    f"INSERT INTO editor_attempts ({','.join(fields)}) VALUES "
+                    f"({','.join('?' for _ in fields)})",
+                    values,
+                )
+                self._commit_connection(conn)
+                return True
+            except Exception as exc:
+                print(f"Error saving editor attempt: {exc}")
+                return False
+
+    def finish_editor_run(self, run_id: int, payload: Dict[str, Any]) -> bool:
+        """Finalize one editor run with a classified outcome."""
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                conn.execute(
+                    """
+                    UPDATE editor_runs SET parse_status = ?, outcome = ?,
+                        failure_class = ?, issue_count = ?,
+                        deterministic_count = ?, prompt_tokens = ?,
+                        completion_tokens = ?, was_truncated = ?,
+                        finish_reason = ?, blocked_reason = ?, response_hash = ?,
+                        diagnostics = ?, completed_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (
+                        payload.get("parse_status"),
+                        payload.get("outcome") or "draft_kept_review",
+                        payload.get("failure_class"),
+                        int(payload.get("issue_count", 0) or 0),
+                        int(payload.get("deterministic_count", 0) or 0),
+                        int(payload.get("prompt_tokens", 0) or 0),
+                        int(payload.get("completion_tokens", 0) or 0),
+                        int(bool(payload.get("was_truncated"))),
+                        payload.get("finish_reason"),
+                        payload.get("blocked_reason"),
+                        payload.get("response_hash"),
+                        json.dumps(payload.get("diagnostics") or {}, ensure_ascii=False),
+                        int(run_id),
+                    ),
+                )
+                self._commit_connection(conn)
+                return True
+            except Exception as exc:
+                print(f"Error finishing editor run: {exc}")
+                return False
+
+    def get_editor_diagnostics(self, translation_id: str) -> Dict[str, Any]:
+        """Return aggregate and per-run editor diagnostics for a job."""
+        with self._lock:
+            conn = self._get_connection()
+            rows = [dict(row) for row in conn.execute(
+                "SELECT * FROM editor_runs WHERE translation_id = ? ORDER BY id",
+                (translation_id,),
+            ).fetchall()]
+            if not rows:
+                return {
+                    "translation_id": translation_id,
+                    "classification": "legacy_unclassified",
+                    "summary": {"total": 0},
+                    "runs": [],
+                }
+            outcomes: Dict[str, int] = {}
+            failures: Dict[str, int] = {}
+            for row in rows:
+                outcomes[row.get("outcome") or "unknown"] = (
+                    outcomes.get(row.get("outcome") or "unknown", 0) + 1
+                )
+                if row.get("failure_class"):
+                    failures[row["failure_class"]] = failures.get(
+                        row["failure_class"], 0
+                    ) + 1
+                try:
+                    row["diagnostics"] = json.loads(row.get("diagnostics") or "{}")
+                except (TypeError, ValueError):
+                    row["diagnostics"] = {}
+            return {
+                "translation_id": translation_id,
+                "classification": "classified",
+                "summary": {
+                    "total": len(rows),
+                    "outcomes": outcomes,
+                    "failure_classes": failures,
+                },
+                "runs": rows,
+            }
 
     def upsert_addressing_rule(
         self,
@@ -954,7 +1196,8 @@ class Database:
         contract_version: int = 1,
         confidence: float = 1.0,
         is_locked: int = 0,
-        chunk_index: int = 0
+        chunk_index: int = 0,
+        notes: str = "",
     ) -> bool:
         """Upsert a directed addressing rule for a speaker-addressee pair."""
         with self._lock:
@@ -965,15 +1208,16 @@ class Database:
                     INSERT INTO context_addressing_rules (
                         translation_id, speaker_name, addressee_name,
                         self_pronoun, target_pronoun, vocative, register,
-                        social_basis, scope, contract_version, confidence,
+                        social_basis, notes, scope, contract_version, confidence,
                         is_locked, last_chunk_index, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(translation_id, speaker_name, addressee_name) DO UPDATE SET
                         self_pronoun = excluded.self_pronoun,
                         target_pronoun = excluded.target_pronoun,
                         vocative = excluded.vocative,
                         register = excluded.register,
                         social_basis = excluded.social_basis,
+                        notes = excluded.notes,
                         scope = excluded.scope,
                         contract_version = MAX(
                             context_addressing_rules.contract_version,
@@ -987,6 +1231,7 @@ class Database:
                     translation_id, speaker_name, addressee_name,
                     self_pronoun, target_pronoun, vocative or "", register or "polite",
                     json.dumps(social_basis or [], ensure_ascii=False),
+                    notes or "",
                     scope or "durable", int(contract_version or 1),
                     confidence, is_locked, chunk_index
                 ))
@@ -1004,7 +1249,7 @@ class Database:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT id, speaker_name, addressee_name, self_pronoun,
-                           target_pronoun, vocative, register, social_basis,
+                           target_pronoun, vocative, register, social_basis, notes,
                            scope, contract_version, confidence, is_locked,
                            last_chunk_index, updated_at
                     FROM context_addressing_rules
@@ -1854,6 +2099,160 @@ class Database:
             except Exception as e:
                 print(f"Error getting relationship derivations: {e}")
                 return []
+
+    def create_context_resync_run(
+        self,
+        run_id: str,
+        translation_id: str,
+        start_chunk_index: int,
+        initial_snapshot: str,
+    ) -> bool:
+        """Create or reset a persisted context-resync staging run."""
+
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                conn.execute("DELETE FROM context_resync_chunk_stage WHERE run_id = ?", (run_id,))
+                conn.execute("""
+                    INSERT INTO context_resync_runs (
+                        run_id, translation_id, start_chunk_index, status,
+                        initial_snapshot, last_processed_chunk, updated_at
+                    ) VALUES (?, ?, ?, 'staging', ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(run_id) DO UPDATE SET
+                        status = 'staging', initial_snapshot = excluded.initial_snapshot,
+                        final_context = NULL, error = NULL,
+                        last_processed_chunk = excluded.last_processed_chunk,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (
+                    run_id, translation_id, start_chunk_index,
+                    initial_snapshot, start_chunk_index,
+                ))
+                self._commit_connection(conn)
+                return True
+            except Exception as exc:
+                print(f"Error creating context resync run: {exc}")
+                return False
+
+    def stage_context_resync_chunk(
+        self,
+        run_id: str,
+        translation_id: str,
+        chunk: Dict[str, Any],
+        *,
+        relationship_candidates: Optional[List[Dict[str, Any]]] = None,
+        addressing_candidates: Optional[List[Dict[str, Any]]] = None,
+        parser_status: str = "absent",
+    ) -> bool:
+        """Persist one replayed chunk without changing the live timeline."""
+
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                conn.execute("""
+                    INSERT INTO context_resync_chunk_stage (
+                        run_id, translation_id, chunk_index, original_text,
+                        translated_text, chunk_data, status,
+                        relationship_candidates, addressing_candidates,
+                        parser_status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(run_id, chunk_index) DO UPDATE SET
+                        original_text = excluded.original_text,
+                        translated_text = excluded.translated_text,
+                        chunk_data = excluded.chunk_data,
+                        status = excluded.status,
+                        relationship_candidates = excluded.relationship_candidates,
+                        addressing_candidates = excluded.addressing_candidates,
+                        parser_status = excluded.parser_status
+                """, (
+                    run_id, translation_id, int(chunk.get("chunk_index", -1)),
+                    chunk.get("original_text"), chunk.get("translated_text"),
+                    json.dumps(chunk.get("chunk_data") or {}, ensure_ascii=False),
+                    chunk.get("status") or "completed",
+                    json.dumps(relationship_candidates or [], ensure_ascii=False),
+                    json.dumps(addressing_candidates or [], ensure_ascii=False),
+                    parser_status or "absent",
+                ))
+                conn.execute("""
+                    UPDATE context_resync_runs SET last_processed_chunk = ?,
+                        updated_at = CURRENT_TIMESTAMP WHERE run_id = ?
+                """, (int(chunk.get("chunk_index", -1)), run_id))
+                self._commit_connection(conn)
+                return True
+            except Exception as exc:
+                print(f"Error staging context resync chunk: {exc}")
+                return False
+
+    def get_context_resync_stage(self, run_id: str) -> List[Dict[str, Any]]:
+        """Return decoded staged chunks for one resync run."""
+
+        with self._lock:
+            conn = self._get_connection()
+            rows = conn.execute("""
+                SELECT * FROM context_resync_chunk_stage
+                WHERE run_id = ? ORDER BY chunk_index
+            """, (run_id,)).fetchall()
+            result = []
+            for row in rows:
+                item = dict(row)
+                for source_key, target_key, fallback in (
+                    ("chunk_data", "chunk_data", {}),
+                    ("relationship_candidates", "relationship_candidates", []),
+                    ("addressing_candidates", "addressing_candidates", []),
+                ):
+                    try:
+                        item[target_key] = json.loads(item.get(source_key) or "null") or fallback
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        item[target_key] = fallback
+                result.append(item)
+            return result
+
+    def finish_context_resync_run(
+        self,
+        run_id: str,
+        status: str,
+        *,
+        final_context: str = "",
+        error: str = "",
+    ) -> bool:
+        """Record the terminal or resumable state of a resync run."""
+
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.execute("""
+                UPDATE context_resync_runs SET status = ?, final_context = ?,
+                    error = ?, updated_at = CURRENT_TIMESTAMP WHERE run_id = ?
+            """, (status, final_context or None, error or None, run_id))
+            self._commit_connection(conn)
+            return cursor.rowcount > 0
+
+    def get_latest_context_resync_run(
+        self,
+        translation_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Return the latest persisted staging/activation record for a job."""
+
+        with self._lock:
+            row = self._get_connection().execute("""
+                SELECT run_id, translation_id, start_chunk_index, status,
+                       last_processed_chunk, error, created_at, updated_at
+                FROM context_resync_runs WHERE translation_id = ?
+                ORDER BY created_at DESC, rowid DESC LIMIT 1
+            """, (translation_id,)).fetchone()
+            return dict(row) if row else None
+
+    def backup_to(self, destination: str) -> str:
+        """Create a consistent SQLite backup while the live database is open."""
+
+        target = Path(destination).resolve()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            source_conn = self._get_connection()
+            backup_conn = sqlite3.connect(str(target))
+            try:
+                source_conn.backup(backup_conn)
+            finally:
+                backup_conn.close()
+        return str(target)
 
     def close(self):
         """Close database connection."""

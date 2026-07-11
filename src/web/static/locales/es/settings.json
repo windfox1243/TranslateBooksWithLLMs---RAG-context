@@ -213,5 +213,17 @@
   "auto_update_context_label": "Actualizar automáticamente el archivo de contexto tras traducir cada fragmento",
   "bypass_context_gating_label": "Omitir la validación de contexto (confiar directamente en el género y correcciones del LLM)",
   "enable_reflection_label": "Habilitar motor de reflexión y reparación de 2 pasadas (Revisión de calidad)",
-  "novel_context_help": "Mantén los géneros de los personajes, formas de tratamiento (relaciones) y glosarios persistentes en un archivo <code>.txt</code> para mejorar la consistencia de la traducción. Nota: La actualización automática fuerza la traducción secuencial (1 hilo)."
+  "novel_context_help": "Mantén los géneros de los personajes, formas de tratamiento (relaciones) y glosarios persistentes en un archivo <code>.txt</code> para mejorar la consistencia de la traducción. Nota: La actualización automática fuerza la traducción secuencial (1 hilo).",
+  "editor_provider_label": "Proveedor del editor principal",
+  "editor_provider_inherit": "Usar proveedor de traducción",
+  "editor_model_label": "Modelo del editor principal",
+  "editor_model_inherit": "Usar modelo de traducción",
+  "provider_name_ollama": "Ollama",
+  "provider_name_gemini": "Gemini",
+  "provider_name_openai": "OpenAI-Compatible",
+  "provider_name_openrouter": "OpenRouter",
+  "provider_name_mistral": "Mistral",
+  "provider_name_deepseek": "DeepSeek",
+  "provider_name_poe": "Poe",
+  "provider_name_nim": "NVIDIA NIM"
 }

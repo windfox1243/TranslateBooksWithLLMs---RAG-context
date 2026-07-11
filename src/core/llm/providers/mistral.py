@@ -17,7 +17,7 @@ import asyncio
 import json
 
 from src.config import REQUEST_TIMEOUT, MAX_TRANSLATION_ATTEMPTS, TEMPERATURE
-from ..base import LLMProvider, LLMResponse
+from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
 from ..exceptions import ContextOverflowError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 
@@ -185,7 +185,8 @@ class MistralProvider(LLMProvider):
         self,
         prompt: str,
         timeout: int = REQUEST_TIMEOUT,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        generation_options: Optional[LLMGenerationOptions] = None,
     ) -> Optional[LLMResponse]:
         """
         Generate text using Mistral API.
@@ -210,9 +211,15 @@ class MistralProvider(LLMProvider):
         payload = {
             "model": self.model,
             "messages": messages,
-            "temperature": TEMPERATURE,
+            "temperature": (
+                generation_options.temperature
+                if generation_options and generation_options.temperature is not None
+                else TEMPERATURE
+            ),
             "stream": False
         }
+        if generation_options and generation_options.max_output_tokens:
+            payload["max_tokens"] = int(generation_options.max_output_tokens)
 
         client = await self._get_client()
         # 429s have their own budget (rate_limit_events): rotating to a spare
@@ -268,7 +275,11 @@ class MistralProvider(LLMProvider):
                     completion_tokens=completion_tokens,
                     context_used=prompt_tokens + completion_tokens,
                     context_limit=self._get_context_limit(),
-                    was_truncated=False
+                    was_truncated=False,
+                    finish_reason=str(
+                        result.get("choices", [{}])[0].get("finish_reason") or ""
+                    ),
+                    request_id=str(getattr(response, "headers", {}).get("x-request-id") or ""),
                 )
 
             except httpx.TimeoutException as e:

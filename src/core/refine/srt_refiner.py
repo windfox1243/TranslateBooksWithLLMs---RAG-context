@@ -77,6 +77,7 @@ async def refine_srt_file(
     prompt_options: Optional[Dict[str, Any]] = None,
     checkpoint_manager: Optional[Any] = None,
     translation_id: Optional[str] = None,
+    refinement_original_path: Optional[str] = None,
 ) -> bool:
     """Run a refinement-only pass on an already-translated SRT file."""
     from src.utils.relationship_sync import (
@@ -157,6 +158,16 @@ async def refine_srt_file(
     db_chunks = []
     if checkpoint_manager and translation_id:
         db_chunks = checkpoint_manager.db.get_chunks(translation_id) or []
+    checkpoint_sources = [
+        str(row.get("original_text") or "")
+        for row in sorted(
+            db_chunks,
+            key=lambda item: item.get("chunk_index", -1),
+        )
+        if row.get("status") == "completed"
+    ]
+    if checkpoint_sources:
+        prompt_options["_refinement_source_queue"] = checkpoint_sources
 
     # Phase-1 checkpoints persist the exact subtitle indices in each block.
     # Reuse them for refine-after so context snapshots and marker groups remain
@@ -172,6 +183,44 @@ async def refine_srt_file(
                 "refine_chunk_alignment_exact",
                 f"Reusing {len(refine_blocks)} subtitle blocks for exact refinement/context alignment.",
             )
+    if refinement_original_path and not checkpoint_sources:
+        try:
+            async with aiofiles.open(
+                refinement_original_path,
+                'r',
+                encoding='utf-8',
+            ) as original_file:
+                original_content = await original_file.read()
+            if not srt_processor.validate_srt(original_content):
+                raise ValueError("paired source is not valid SRT")
+            original_subtitles = srt_processor.parse_srt(original_content)
+            if len(original_subtitles) != len(subtitles):
+                raise ValueError("paired source cue count differs")
+            for source_subtitle, draft_subtitle in zip(original_subtitles, subtitles):
+                if (
+                    source_subtitle.get("start_time") != draft_subtitle.get("start_time")
+                    or source_subtitle.get("end_time") != draft_subtitle.get("end_time")
+                ):
+                    raise ValueError("paired source timestamps differ")
+            prompt_options["_refinement_source_queue"] = [
+                "\n".join(
+                    f"[{local_index}]{original_subtitles[subtitle_positions[id(item)]].get('text', '')}"
+                    for local_index, item in enumerate(block)
+                )
+                for block in refine_blocks
+            ]
+            if log_callback:
+                log_callback(
+                    "refinement_source_aligned",
+                    f"Aligned {len(refine_blocks)} paired SRT source block(s).",
+                )
+        except (OSError, UnicodeError, ValueError) as exc:
+            if log_callback:
+                log_callback(
+                    "refinement_source_alignment_failed",
+                    f"Could not align paired SRT source: {exc}",
+                )
+            return False
         
     from src.utils.novel_context import (
         RefinementContextTracker,

@@ -1,5 +1,59 @@
 # Changelog
 
+## 1.15.0-beta.31 - 2026-07-11
+
+### Added
+
+- **Classified Senior Editor Diagnostics**:
+  Every editor run and attempt now records a local outcome, stable failure
+  class, model metadata, token usage, parse status, bounded evidence excerpts,
+  and retry history. A reactive diagnostics view exposes review-required units
+  and queues editor-only retries without storing complete prompts or book text.
+
+- **Cross-Provider Senior Editor**:
+  Translation, batch, resume, quick-test, and refinement configuration can use
+  a separate Senior Editor provider and model. Empty selections inherit the
+  translation model, credentials remain environment-backed, and separate
+  clients prevent model changes from racing translation workers.
+
+- **Editor Issue Contract v3**:
+  Structured reflection now includes stable issue IDs, confidence, unique
+  contextual draft locators, exact replacements, and a twelve-issue limit.
+  Native JSON schema output is used where supported with an audited tagged-JSON
+  compatibility fallback.
+
+### Fixed
+
+- **False Senior Editor Failures**:
+  Ambiguous locators are corrected before repair, exact non-overlapping edits
+  are applied locally, and validation checks the selected occurrence rather
+  than global word counts. A valid draft is preserved for review when only LLM
+  judgment remains uncertain; deterministic residue remains a hard gate.
+
+- **Ignored Editor Generation Controls**:
+  Per-request temperature, output limits, finish reasons, blocked status, and
+  truncation metadata now pass through the shared LLM client and providers.
+  Contract and repair retries therefore run at the requested deterministic
+  temperature instead of silently inheriting translation settings.
+
+- **Language-Biased Residue Detection**:
+  Protected names, aliases, glossary terms, markup, URLs, and preserved terms
+  are interval-masked before scanning. Social-address residue is sourced from
+  language profiles, while uncertain same-script copied phrases are review
+  evidence rather than automatic blockers.
+
+- **Editor, Context, and Refinement Recovery**:
+  Editor-failed drafts retain structured checkpoint diagnostics, relationship
+  evidence supports canonical inverse direction, addressing and relationship
+  state is manually editable, resync activation is staged atomically, and
+  refine-after/refine-only paths share the structured Senior Editor runner.
+
+### Tests
+
+- Added provider-option, diagnostics lifecycle, unique-locator, local-patch,
+  draft-preservation, multilingual residue, atomic resync, relationship,
+  addressing, refinement, adapter, and seven-locale reactivity regressions.
+
 ## 1.15.0-beta.30 - 2026-07-10
 
 ### Added

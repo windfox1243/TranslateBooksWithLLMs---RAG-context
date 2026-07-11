@@ -20,6 +20,7 @@ async def refine_file(
     llm_provider: str,
     checkpoint_manager: Any = None,
     translation_id: Optional[str] = None,
+    refinement_original_path: Optional[str] = None,
     log_callback: Optional[Callable] = None,
     stats_callback: Optional[Callable] = None,
     check_interruption_callback: Optional[Callable] = None,
@@ -47,6 +48,46 @@ async def refine_file(
     """
     if prompt_options is None:
         prompt_options = {}
+    else:
+        prompt_options = dict(prompt_options)
+
+    editor_provider = str(
+        prompt_options.get("editor_provider") or llm_provider
+    ).strip().casefold()
+    editor_model = str(
+        prompt_options.get("editor_model") or model_name
+    ).strip()
+    if editor_provider != llm_provider.casefold() or editor_model != model_name:
+        from src.core.llm_client import create_llm_client
+
+        editor_client = create_llm_client(
+            editor_provider,
+            gemini_api_key,
+            llm_api_endpoint or "",
+            editor_model,
+            openai_api_key,
+            openrouter_api_key,
+            mistral_api_key,
+            deepseek_api_key,
+            poe_api_key=poe_api_key,
+            nim_api_key=nim_api_key,
+            context_window=context_window,
+            log_callback=log_callback,
+        )
+        if editor_client is None:
+            raise ValueError("Could not initialize the configured Senior Editor")
+        prompt_options["_editor_llm_client"] = editor_client
+    prompt_options.update({
+        "editor_provider_resolved": editor_provider,
+        "editor_model_resolved": editor_model,
+        "llm_provider": llm_provider,
+        "model": model_name,
+        "translation_id": translation_id,
+        "editor_phase": "refinement",
+        "jobs_db_path": getattr(
+            getattr(checkpoint_manager, "db", None), "db_path", None,
+        ),
+    })
 
     # Load novel context if a file is specified
     novel_context_file = prompt_options.get('novel_context_file')
@@ -105,6 +146,7 @@ async def refine_file(
     if log_callback and detected_type != ext.lstrip('.'):
         log_callback("file_type_detected",
                      f"📄 File with extension '{ext}' detected as '{detected_type.upper()}' format")
+    prompt_options["file_type"] = detected_type
 
     if detected_type == 'txt':
         from src.core.refine.txt_refiner import refine_txt_file
@@ -132,6 +174,7 @@ async def refine_file(
             prompt_options=prompt_options,
             checkpoint_manager=checkpoint_manager,
             translation_id=translation_id,
+            refinement_original_path=refinement_original_path,
         )
 
     if detected_type == 'epub':
@@ -159,6 +202,7 @@ async def refine_file(
             prompt_options=prompt_options,
             checkpoint_manager=checkpoint_manager,
             translation_id=translation_id,
+            refinement_original_path=refinement_original_path,
         )
 
     if detected_type == 'docx':
@@ -186,6 +230,7 @@ async def refine_file(
             prompt_options=prompt_options,
             checkpoint_manager=checkpoint_manager,
             translation_id=translation_id,
+            refinement_original_path=refinement_original_path,
         )
 
     if detected_type == 'srt':
@@ -210,6 +255,7 @@ async def refine_file(
             prompt_options=prompt_options,
             checkpoint_manager=checkpoint_manager,
             translation_id=translation_id,
+            refinement_original_path=refinement_original_path,
         )
 
     supported = ', '.join(['txt', 'epub', 'srt', 'docx'])

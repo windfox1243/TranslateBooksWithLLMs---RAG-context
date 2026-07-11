@@ -552,6 +552,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 max_tokens_per_chunk=config.get('max_tokens_per_chunk'),
                 prompt_options=refinement_prompt_options,
                 soft_limit_ratio=config.get('soft_limit_ratio'),
+                refinement_original_path=config.get('refinement_original_path'),
             )
             refinement_failed_chunks = (
                 state_manager.get_translation_field(
@@ -742,6 +743,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                     max_tokens_per_chunk=config.get('max_tokens_per_chunk'),
                     prompt_options=refinement_prompt_options,
                     soft_limit_ratio=config.get('soft_limit_ratio'),
+                    refinement_original_path=config.get('refinement_original_path'),
                 )
                 refinement_failed_chunks = (
                     state_manager.get_translation_field(

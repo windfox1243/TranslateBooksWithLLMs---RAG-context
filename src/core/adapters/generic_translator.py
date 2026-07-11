@@ -152,6 +152,7 @@ class GenericTranslator:
 
             # 3. Check for checkpoint and resume
             restored_completed = set()
+            failed_editor_drafts_by_index = {}
             checkpoint_data = self.checkpoint_manager.load_checkpoint(self.translation_id)
             continuation_base_id = self.adapter.config.get('continuation_base_id')
             continuation_context_seed = None
@@ -189,6 +190,14 @@ class GenericTranslator:
                 restored_completed = {
                     c['chunk_index'] for c in checkpoint_data.get('chunks', [])
                     if c.get('status') == 'completed'
+                    and 0 <= c.get('chunk_index', -1) < total_units
+                }
+                failed_editor_drafts_by_index = {
+                    c['chunk_index']: c.get('translated_text')
+                    for c in checkpoint_data.get('chunks', [])
+                    if c.get('status') == 'failed'
+                    and c.get('translated_text')
+                    and (c.get('chunk_data') or {}).get('editor_validation')
                     and 0 <= c.get('chunk_index', -1) < total_units
                 }
                 if log_callback:
@@ -233,18 +242,35 @@ class GenericTranslator:
             from src.core.llm_client import LLMClient
             from src.core.translator import generate_translation_request
 
+            prompt_options = llm_kwargs.get('prompt_options', {})
             llm_client = LLMClient(
                 provider_type=llm_provider,
                 model=model_name,
                 **llm_kwargs
             )
+            editor_provider = str(
+                prompt_options.get("editor_provider") or llm_provider
+            ).strip().casefold()
+            editor_model = str(
+                prompt_options.get("editor_model") or model_name
+            ).strip()
+            editor_llm_client = llm_client
+            if editor_provider != llm_provider.casefold() or editor_model != model_name:
+                editor_kwargs = {
+                    key: value for key, value in llm_kwargs.items()
+                    if key != "prompt_options"
+                }
+                editor_llm_client = LLMClient(
+                    provider_type=editor_provider,
+                    model=editor_model,
+                    **editor_kwargs,
+                )
 
             # 6. Translate each unit (sequentially, or with continuous concurrency)
             from src.config import resolve_parallel_workers, UNIT_VALIDATION_RETRIES
             from src.core.common.parallel import iter_ordered_concurrent
             from src.core.llm.exceptions import RateLimitError
 
-            prompt_options = llm_kwargs.get('prompt_options', {})
             chapter_mode = bool(
                 prompt_options.get("chapter_mode")
                 and self.adapter.format_name == "txt"
@@ -657,6 +683,21 @@ class GenericTranslator:
                     unit_prompt_options = dict(attempt_options or {})
                     unit_prompt_options.setdefault("source_language", source_language)
                     unit_prompt_options.setdefault("target_language", target_language)
+                    unit_prompt_options.update({
+                        "_editor_llm_client": editor_llm_client,
+                        "editor_provider_resolved": editor_provider,
+                        "editor_model_resolved": editor_model,
+                        "llm_provider": llm_provider,
+                        "model": model_name,
+                        "translation_id": self.translation_id,
+                        "jobs_db_path": getattr(
+                            getattr(self.checkpoint_manager, "db", None),
+                            "db_path", None,
+                        ),
+                        "chunk_index": i,
+                        "file_type": self.adapter.format_name,
+                        "editor_phase": "translation",
+                    })
                     if context_session:
                         unit_prompt_options.setdefault(
                             "active_character_names",
@@ -693,29 +734,36 @@ class GenericTranslator:
                     )
                     if relationship_context:
                         unit_prompt_options["relationship_context"] = relationship_context
-                    result = await generate_translation_request(
-                        main_content=unit.content,
-                        context_before=unit.context_before,
-                        context_after=unit.context_after,
-                        previous_translation_context=(
-                            last_context
-                            if (
-                                sequential
-                                and (
-                                    not chapter_mode
-                                    or i == 0
-                                    or same_previous_chapter
+                    result = failed_editor_drafts_by_index.pop(i, None)
+                    if result and log_callback:
+                        log_callback(
+                            "editor_draft_retry",
+                            f"Retrying Senior Editor for preserved draft of unit {i+1}/{total_units}.",
+                        )
+                    if not result:
+                        result = await generate_translation_request(
+                            main_content=unit.content,
+                            context_before=unit.context_before,
+                            context_after=unit.context_after,
+                            previous_translation_context=(
+                                last_context
+                                if (
+                                    sequential
+                                    and (
+                                        not chapter_mode
+                                        or i == 0
+                                        or same_previous_chapter
+                                    )
                                 )
-                            )
-                            else ""
-                        ),
-                        source_language=source_language,
-                        target_language=target_language,
-                        model=model_name,
-                        llm_client=llm_client,
-                        log_callback=log_callback,
-                        prompt_options=unit_prompt_options
-                    )
+                                else ""
+                            ),
+                            source_language=source_language,
+                            target_language=target_language,
+                            model=model_name,
+                            llm_client=llm_client,
+                            log_callback=log_callback,
+                            prompt_options=unit_prompt_options
+                        )
 
                     # API failure / empty result: existing failure semantics.
                     if not result:
@@ -795,7 +843,7 @@ class GenericTranslator:
                                 f"Could not save partial output: {str(e)}")
                 self.checkpoint_manager.mark_paused(self.translation_id)
 
-            def _record_failure(i, unit):
+            def _record_failure(i, unit, error=None):
                 nonlocal failed_count
                 if log_callback:
                     log_callback("unit_failed", f"Failed to translate unit {i+1}/{total_units}")
@@ -804,14 +852,30 @@ class GenericTranslator:
                 if i not in failed_indices:
                     failed_count += 1
                     failed_indices.add(i)
+                diagnostics = getattr(error, "diagnostics", None)
+                preserved_draft = getattr(error, "draft_translation", "")
+                chunk_data = dict(unit.metadata or {})
+                if diagnostics:
+                    chunk_data["editor_validation"] = diagnostics
+                    failed_editor_drafts_by_index[i] = preserved_draft
+                    if log_callback:
+                        log_callback(
+                            "editor_validation_diagnostics",
+                            "Senior Editor validation reasons: "
+                            + "; ".join(
+                                str(item)
+                                for item in diagnostics.get("final_reason_codes", [])[:3]
+                            ),
+                        )
                 self.checkpoint_manager.save_checkpoint(
                     translation_id=self.translation_id,
                     chunk_index=i,
                     original_text=unit.content,
-                    translated_text=None,
-                    chunk_data=unit.metadata,
+                    translated_text=preserved_draft or None,
+                    chunk_data=chunk_data,
                     total_chunks=total_units,
-                    failed_chunks=failed_count
+                    failed_chunks=failed_count,
+                    chunk_status='failed',
                 )
                 if stats_callback:
                     stats_callback({
@@ -1032,7 +1096,7 @@ class GenericTranslator:
                     if log_callback:
                         log_callback("unit_error",
                             f"Error translating unit {i+1}/{total_units}: {str(result)}")
-                    _record_failure(i, unit)
+                    _record_failure(i, unit, result)
                     next_index = i + 1
                     continue
 
@@ -1057,7 +1121,7 @@ class GenericTranslator:
                         if log_callback:
                             log_callback("save_failed",
                                 f"Failed to save translation for unit {unit.unit_id}")
-                        _record_failure(i, unit)
+                        _record_failure(i, unit, result)
                         next_index = i + 1
                         continue
 
@@ -1134,7 +1198,7 @@ class GenericTranslator:
                                 "unit_error",
                                 f"Retry failed for unit {i+1}/{total_units}: {str(result)}",
                             )
-                        _record_failure(i, unit)
+                        _record_failure(i, unit, result)
                         continue
 
                     if isinstance(result, _ValidationFailed):
@@ -1340,6 +1404,10 @@ async def _resync_context_snapshots_async(
         sync_context_update_relationships_to_db,
         sync_markdown_relationships_to_db,
     )
+    from src.utils.db_addressing import (
+        sync_context_update_addressing_to_db,
+        sync_markdown_addressing_to_db,
+    )
     
     state_manager = get_state_manager()
     logger = get_logger("context_resync")
@@ -1535,14 +1603,102 @@ async def _resync_context_snapshots_async(
     relationship_mode = resolve_relationship_reasoning_mode(
         config.get('prompt_options') or {}
     )
-    if relationship_mode != "off":
-        sync_markdown_relationships_to_db(
-            translation_id=translation_id,
-            db=state_manager.checkpoint_manager.db,
-            context_or_dynamic_state=current_full_context,
-            target_language=config.get('target_language') or "",
-            chunk_index=start_chunk_index,
-            trigger_source="manual_context",
+    db = state_manager.checkpoint_manager.db
+    run_id = f"{translation_id}:{start_chunk_index}:{int(time.time() * 1000)}"
+    if not db.create_context_resync_run(
+        run_id,
+        translation_id,
+        start_chunk_index,
+        initial_compressed_snapshot,
+    ):
+        append_and_emit("❌ Could not create atomic context resync staging state.")
+        return False
+
+    def activate_staged_timeline(final_context):
+        staged = db.get_context_resync_stage(run_id)
+        options = config.get('prompt_options') or {}
+        contract_version = int(options.get("context_contract_version", 1) or 1)
+        with db.context_state_transaction():
+            if not global_only_resync:
+                for rule in db.get_addressing_rules(translation_id):
+                    if not rule.get("is_locked") and int(rule.get("last_chunk_index") or 0) >= start_chunk_index:
+                        db.delete_addressing_rule(
+                            translation_id,
+                            str(rule.get("speaker_name") or ""),
+                            str(rule.get("addressee_name") or ""),
+                        )
+                for edge in db.get_relationship_edges(translation_id):
+                    if not edge.get("is_locked") and int(edge.get("last_chunk_index") or 0) >= start_chunk_index:
+                        db.set_relationship_edge_status(
+                            translation_id,
+                            edge["id"],
+                            "superseded",
+                        )
+            if relationship_mode != "off":
+                sync_markdown_relationships_to_db(
+                    translation_id=translation_id,
+                    db=db,
+                    context_or_dynamic_state=current_full_context,
+                    target_language=config.get('target_language') or "",
+                    chunk_index=start_chunk_index,
+                    trigger_source="manual_context",
+                )
+            if options.get("use_db_directed_addressing", True):
+                sync_markdown_addressing_to_db(
+                    translation_id=translation_id,
+                    db=db,
+                    context_or_dynamic_state=current_full_context,
+                    target_language=config.get('target_language') or "",
+                    chunk_index=start_chunk_index,
+                    trigger_source="manual_context",
+                )
+            for item in staged:
+                db.save_chunk(
+                    translation_id=translation_id,
+                    chunk_index=item["chunk_index"],
+                    original_text=item.get("original_text"),
+                    translated_text=item.get("translated_text"),
+                    chunk_data=item.get("chunk_data") or {},
+                    status=item.get("status") or "completed",
+                )
+                if item.get("status") != "completed" or global_only_resync:
+                    continue
+                snapshot_context, _snapshot_global, _snapshot_dynamic = decode_context_snapshot(
+                    (item.get("chunk_data") or {}).get("context_snapshot"),
+                    final_context,
+                )
+                dialogue = (item.get("chunk_data") or {}).get("dialogue_attribution") or {}
+                if relationship_mode != "off":
+                    sync_context_update_relationships_to_db(
+                        translation_id=translation_id,
+                        db=db,
+                        updated_context_or_dynamic_state=snapshot_context,
+                        source_text=item.get("original_text") or "",
+                        candidates=item.get("relationship_candidates") or [],
+                        parser_status=item.get("parser_status") or "absent",
+                        target_language=config.get('target_language') or "",
+                        chunk_index=item["chunk_index"],
+                        active_character_names=list(
+                            (dialogue.get("state_after") or {}).values()
+                        ),
+                    )
+                if options.get("use_db_directed_addressing", True):
+                    sync_context_update_addressing_to_db(
+                        translation_id=translation_id,
+                        db=db,
+                        updated_context_or_dynamic_state=snapshot_context,
+                        target_language=config.get('target_language') or "",
+                        chunk_index=item["chunk_index"],
+                        dialogue_attribution=dialogue,
+                        candidates=item.get("addressing_candidates") or [],
+                        source_text=item.get("original_text") or "",
+                        source_language=config.get('source_language') or "",
+                        contract_version=contract_version,
+                    )
+        db.finish_context_resync_run(
+            run_id,
+            "completed",
+            final_context=final_context,
         )
     initial_chunk = next(
         (
@@ -1632,13 +1788,16 @@ async def _resync_context_snapshots_async(
                         c['chunk_data']['context_snapshot'] = (
                             compress_dynamic_state(latest_full_context)
                         )
-                        state_manager.checkpoint_manager.db.save_chunk(
-                            translation_id=translation_id,
-                            chunk_index=idx,
-                            original_text=c.get('original_text'),
-                            translated_text=c.get('translated_text'),
-                            chunk_data=c.get('chunk_data'),
-                            status=c.get('status') or 'completed',
+                        db.stage_context_resync_chunk(
+                            run_id,
+                            translation_id,
+                            {
+                                "chunk_index": idx,
+                                "original_text": c.get('original_text'),
+                                "translated_text": c.get('translated_text'),
+                                "chunk_data": c.get('chunk_data'),
+                                "status": c.get('status') or 'completed',
+                            },
                         )
                         snapshot_saved = True
                         progress_state = _save_resync_state({
@@ -1684,6 +1843,7 @@ async def _resync_context_snapshots_async(
                     )
                     return False
 
+            activate_staged_timeline(latest_full_context)
             if path:
                 try:
                     save_novel_context(path.name, path.parent, latest_full_context)
@@ -1713,6 +1873,7 @@ async def _resync_context_snapshots_async(
         if not latest_completed or start_chunk_index != max(latest_completed):
             append_and_emit("❌ The selected context snapshot is not available.")
             return False
+        activate_staged_timeline(current_full_context)
         if path:
             try:
                 save_novel_context(path.name, path.parent, current_full_context)
@@ -1776,6 +1937,7 @@ async def _resync_context_snapshots_async(
         for c in completed_chunks
         if c.get('chunk_index', -1) <= start_chunk_index
     ]
+    new_full_context = current_full_context
     for chunk in chunks_to_process:
         idx = chunk['chunk_index']
         source_text = chunk.get('original_text') or ''
@@ -1790,6 +1952,22 @@ async def _resync_context_snapshots_async(
                 paused_state,
             )
             return False
+        if (chunk.get('status') or 'completed') != 'completed':
+            db.stage_context_resync_chunk(
+                run_id,
+                translation_id,
+                {
+                    "chunk_index": idx,
+                    "original_text": chunk.get('original_text'),
+                    "translated_text": chunk.get('translated_text'),
+                    "chunk_data": chunk.get('chunk_data') or {},
+                    "status": chunk.get('status') or 'failed',
+                },
+            )
+            append_and_emit(
+                f"Skipped context state from failed chunk {idx + 1}; it will be reconsidered after a successful retry."
+            )
+            continue
         
         try:
             msg_resync = f"Resyncing chunk {idx + 1} from the saved context timeline..."
@@ -1803,6 +1981,7 @@ async def _resync_context_snapshots_async(
 
             dialogue_sink = {}
             relationship_sink = {}
+            addressing_sink = {}
             dialogue_turns = detect_dialogue_turns(source_text)
             chunk_data = chunk.get('chunk_data') or {}
             scene_key = chunk_data.get('chapter_index')
@@ -1835,6 +2014,7 @@ async def _resync_context_snapshots_async(
                 current_dialogue_state=current_dialogue_state,
                 dialogue_attribution_sink=dialogue_sink,
                 relationship_candidate_sink=relationship_sink,
+                addressing_candidate_sink=addressing_sink,
                 selective_context_view=(
                     (config.get('prompt_options') or {}).get(
                         "novel_context_selective_update",
@@ -1900,31 +2080,21 @@ async def _resync_context_snapshots_async(
                             c['chunk_data'] = {}
                         c['chunk_data']['context_snapshot'] = new_compressed
                         c['chunk_data']['dialogue_attribution'] = dialogue_sink
-                        state_manager.checkpoint_manager.db.save_chunk(
-                            translation_id=translation_id,
-                            chunk_index=idx,
-                            original_text=c.get('original_text'),
-                            translated_text=c.get('translated_text'),
-                            chunk_data=c.get('chunk_data'),
-                            status=c.get('status') or 'completed'
-                        )
+                        staged_relationships = relationship_sink.get("candidates") or []
                         if (
                             relationship_mode != "off"
                             and (c.get('status') or 'completed') == 'completed'
                         ):
                             locked_facts = [
-                                edge for edge in (
-                                    state_manager.checkpoint_manager.db
-                                    .get_relationship_edges(
-                                        translation_id,
-                                        statuses=["accepted"],
-                                    )
+                                edge for edge in db.get_relationship_edges(
+                                    translation_id,
+                                    statuses=["accepted"],
                                 )
                                 if edge.get("is_locked")
                             ]
-                            judged_candidates = await judge_ambiguous_relationship_candidates(
+                            judged = await judge_ambiguous_relationship_candidates(
                                 llm_client=llm_client,
-                                candidates=relationship_sink.get("candidates") or [],
+                                candidates=staged_relationships,
                                 source_text=source_text,
                                 model_name=model_name,
                                 enabled=bool(
@@ -1935,22 +2105,21 @@ async def _resync_context_snapshots_async(
                                 ),
                                 locked_facts=locked_facts,
                             )
-                            sync_context_update_relationships_to_db(
-                                translation_id=translation_id,
-                                db=state_manager.checkpoint_manager.db,
-                                updated_context_or_dynamic_state=new_full_context,
-                                source_text=source_text,
-                                candidates=judged_candidates,
-                                parser_status=relationship_sink.get(
-                                    "parse_status",
-                                    "absent",
-                                ),
-                                target_language=config.get('target_language') or "",
-                                chunk_index=idx,
-                                active_character_names=list(
-                                    (dialogue_sink.get("state_after") or {}).values()
-                                ),
-                            )
+                            staged_relationships = [item.to_dict() for item in judged]
+                        db.stage_context_resync_chunk(
+                            run_id,
+                            translation_id,
+                            {
+                                "chunk_index": idx,
+                                "original_text": c.get('original_text'),
+                                "translated_text": c.get('translated_text'),
+                                "chunk_data": c.get('chunk_data'),
+                                "status": c.get('status') or 'completed',
+                            },
+                            relationship_candidates=staged_relationships,
+                            addressing_candidates=addressing_sink.get("candidates") or [],
+                            parser_status=relationship_sink.get("parse_status", "absent"),
+                        )
                         snapshot_saved = True
                         _save_resync_state({
                             "status": "running",
@@ -1961,20 +2130,6 @@ async def _resync_context_snapshots_async(
                     append_and_emit(f"❌ Chunk {idx} disappeared during resync.")
                     return False
                 
-                # If this is the last completed chunk, update the file
-                latest_completed = [
-                    c.get('chunk_index')
-                    for c in latest_cp['chunks']
-                    if c.get('status') in ('completed', 'partial', 'failed')
-                ]
-                if path and latest_completed and idx == max(latest_completed):
-                    try:
-                        save_novel_context(path.name, path.parent, new_full_context)
-                    except Exception as e:
-                        err_msg = f"Failed to update context file: {e}"
-                        logger.error(err_msg)
-                        append_and_emit(f"❌ {err_msg}")
-                        return False
                 if _pause_requested():
                     paused_state = _save_resync_state({
                         "status": "paused",
@@ -1984,6 +2139,11 @@ async def _resync_context_snapshots_async(
                     append_and_emit(
                         "⏸️ Context resync paused. Resume it after changing model settings.",
                         paused_state,
+                    )
+                    db.finish_context_resync_run(
+                        run_id,
+                        "paused",
+                        final_context=new_full_context,
                     )
                     return False
                         
@@ -1997,9 +2157,18 @@ async def _resync_context_snapshots_async(
                 "error": str(e),
             })
             append_and_emit(f"❌ {err_msg}")
+            db.finish_context_resync_run(
+                run_id,
+                "failed",
+                final_context=new_full_context,
+                error=str(e),
+            )
             return False
             
     msg_end = "Background context resync completed."
+    activate_staged_timeline(new_full_context)
+    if path:
+        save_novel_context(path.name, path.parent, new_full_context)
     logger.info(msg_end)
     completed_state = _save_resync_state({
         "status": "completed",

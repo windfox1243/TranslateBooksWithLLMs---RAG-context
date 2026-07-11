@@ -18,7 +18,17 @@ class _PlaceholderDroppingClient:
 
     async def make_request(self, user_prompt, model_name, system_prompt=None):
         self.seen_user_prompt = user_prompt
-        return _FakeResponse("Xin chao polished world")
+        if "DRAFT TRANSLATION TO AUDIT" in user_prompt:
+            return _FakeResponse(
+                '<REFLECTION_JSON>{"status":"needs_repair","issues":[{'
+                '"category":"style","severity":"major","source_quote":"",'
+                '"draft_quote":"Xin chao world",'
+                '"instruction":"Polish the sentence.",'
+                '"draft_replacement":{"draft":"Xin chao world",'
+                '"replacement":"Xin chao polished world"},'
+                '"glossary_update":null,"term_replacement":null}]}</REFLECTION_JSON>'
+            )
+        return _FakeResponse("<TRANSLATION>Xin chao polished world</TRANSLATION>")
 
     def extract_translation(self, content):
         return content

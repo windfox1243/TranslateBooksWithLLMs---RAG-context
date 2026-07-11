@@ -213,5 +213,17 @@
   "auto_update_context_label": "各チャンクの翻訳後にコンテキストファイルを自動更新する",
   "bypass_context_gating_label": "コンテキスト検証をバイパスする（LLMが識別した性別と修正を直接信頼する）",
   "enable_reflection_label": "2パスリフレクション＆修正エンジンを有効化（シニアエディターの品質レビュー）",
-  "novel_context_help": "キャラクターの性別、呼称（関係性）、用語集を <code>.txt</code> ファイルに保存し、翻訳の一貫性を向上させます。注意：自動更新を有効にすると、順次翻訳（スレッド数1）が強制されます。"
+  "novel_context_help": "キャラクターの性別、呼称（関係性）、用語集を <code>.txt</code> ファイルに保存し、翻訳の一貫性を向上させます。注意：自動更新を有効にすると、順次翻訳（スレッド数1）が強制されます。",
+  "editor_provider_label": "シニアエディターのプロバイダー",
+  "editor_provider_inherit": "翻訳プロバイダーを使用",
+  "editor_model_label": "シニアエディターのモデル",
+  "editor_model_inherit": "翻訳モデルを使用",
+  "provider_name_ollama": "Ollama",
+  "provider_name_gemini": "Gemini",
+  "provider_name_openai": "OpenAI-Compatible",
+  "provider_name_openrouter": "OpenRouter",
+  "provider_name_mistral": "Mistral",
+  "provider_name_deepseek": "DeepSeek",
+  "provider_name_poe": "Poe",
+  "provider_name_nim": "NVIDIA NIM"
 }

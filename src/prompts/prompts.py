@@ -12,8 +12,70 @@ CORRECTED_TAG_IN = "<CORRECTED_TAG_IN>"
 CORRECTED_TAG_OUT = "<CORRECTED_TAG_OUT>"
 REFLECTION_JSON_TAG_IN = "<REFLECTION_JSON>"
 REFLECTION_JSON_TAG_OUT = "</REFLECTION_JSON>"
-REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v3"
-REFLECTION_CONTRACT_VERSION = "editor-issue-v2"
+REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v4"
+REFLECTION_CONTRACT_VERSION = "editor-issue-v3"
+
+REFLECTION_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "status": {"type": "string", "enum": ["no_issues", "needs_repair"]},
+        "issues": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "issue_id": {"type": "string"},
+                    "category": {"type": "string"},
+                    "severity": {
+                        "type": "string",
+                        "enum": ["blocker", "major", "minor"],
+                    },
+                    "confidence": {"type": "number"},
+                    "source_quote": {"type": "string"},
+                    "draft_quote": {"type": "string"},
+                    "instruction": {"type": "string"},
+                    "draft_replacement": {
+                        "anyOf": [
+                            {"type": "null"},
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "draft": {"type": "string"},
+                                    "replacement": {"type": "string"},
+                                },
+                                "required": ["draft", "replacement"],
+                                "additionalProperties": False,
+                            },
+                        ]
+                    },
+                    "glossary_update": {
+                        "anyOf": [
+                            {"type": "null"},
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "source": {"type": "string"},
+                                    "target": {"type": "string"},
+                                },
+                                "required": ["source", "target"],
+                                "additionalProperties": False,
+                            },
+                        ]
+                    },
+                },
+                "required": [
+                    "issue_id", "category", "severity", "confidence",
+                    "source_quote", "draft_quote", "instruction",
+                    "draft_replacement", "glossary_update",
+                ],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["status", "issues"],
+    "additionalProperties": False,
+}
 
 
 class PromptPair(NamedTuple):
@@ -51,9 +113,12 @@ def _build_reflection_json_contract_section() -> str:
     return f"""STRICT OUTPUT CONTRACT:
 - Output exactly one JSON object inside {REFLECTION_JSON_TAG_IN} and {REFLECTION_JSON_TAG_OUT}.
 - Use status "no_issues" only when no repair is needed.
-- Use status "needs_repair" when any omission, mistranslation, glossary error, pronoun bleed, gender mismatch, register issue, placeholder issue, format issue, or other actionable defect exists.
+- Use status "needs_repair" when any omission, mistranslation, glossary error, pronoun bleed, gender mismatch, register issue, style issue, fluency issue, consistency issue, placeholder issue, format issue, or other actionable defect exists.
 - Do not include prose, markdown, bullets, or comments outside the JSON tags.
 - Keep issue instructions concise and directly repairable.
+- Return at most 12 issues, ordered by severity and confidence.
+- Give every issue a stable issue_id and confidence from 0.0 to 1.0.
+- For a direct edit, draft_quote must be an exact, unique contextual span from the current draft. Expand it until it occurs exactly once and contains the draft_replacement.draft text.
 - For a direct local substitution, set draft_replacement to {{"draft": "exact current draft span", "replacement": "exact corrected target-language span"}}. Do not leave it null when a specific draft span must change.
 - Use glossary_update only for durable terminology that should apply to later chunks: {{"source": "...", "target": "..."}}. A one-off correction is not a glossary update.
 - term_replacement is a compatibility alias for glossary_update. Prefer glossary_update in new output.
@@ -74,6 +139,8 @@ Repair schema:
     {{
       "category": "omission",
       "severity": "major",
+      "issue_id": "issue-1",
+      "confidence": 0.95,
       "source_quote": "exact source evidence",
       "draft_quote": "problematic draft text or empty string",
       "instruction": "specific repair instruction",
@@ -1546,6 +1613,7 @@ def generate_chunk_reflection_prompt(
     custom_instructions: str = "",
     glossary_block: str = "",
     deterministic_findings: str = "",
+    source_available: bool = True,
 ) -> PromptPair:
     """
     Generate a chunk reflection prompt acting as a Senior Translation Editor / Critic.
@@ -1563,8 +1631,13 @@ def generate_chunk_reflection_prompt(
 
     reflection_contract = _build_reflection_json_contract_section()
 
+    source_mode = (
+        "Perform bilingual source-fidelity and target-language quality review."
+        if source_available
+        else "Perform monolingual target-language style, fluency, consistency, glossary, relationship, and formatting review. Do not claim omissions, mistranslations, or source residue because no aligned source is available."
+    )
     system_prompt = f"""You are an uncompromising, ultra-rigorous Senior Literary Translation Editor specializing in {target_lang}.
-Your task is to perform an adversarial quality review of a draft translation against its original source text and active novel lore.
+{source_mode}
 
 RIGOROUS 4-STEP AUDIT PROCEDURE:
 0. EXPLICIT SOURCE INTENT & TARGET LOCALIZATION (CRITICAL RULE):
@@ -1607,7 +1680,11 @@ ADDITIONAL AUDIT OUTPUT RULES:
 - DO NOT flag internal monologue or 1st-person character thoughts as pronoun bleed.
 - DO NOT flag stuttering, hesitations, or emotional vocal quirks present in source dialogue as register flaws."""
 
-    user_sections = [f"# RAW SOURCE CHUNK:\n{source_chunk.strip()}"]
+    user_sections = [
+        f"# RAW SOURCE CHUNK:\n{source_chunk.strip()}"
+        if source_available
+        else "# SOURCE CAPABILITY:\nMonolingual review only; no aligned source chunk is available."
+    ]
     if custom_instructions and custom_instructions.strip():
         user_sections.append(f"# CUSTOM INSTRUCTIONS & STYLE GUIDELINES:\n{custom_instructions.strip()}")
     if glossary_block and glossary_block.strip():
@@ -1636,6 +1713,7 @@ def generate_chunk_repair_prompt(
     custom_instructions: str = "",
     glossary_block: str = "",
     novel_context: str = "",
+    source_available: bool = True,
 ) -> PromptPair:
     """
     Generate a chunk repair prompt applying critique feedback to produce the final pristine chunk.
@@ -1648,10 +1726,14 @@ Preserve unflagged wording wherever possible.
 Preserve every tag, placeholder, subtitle marker, line marker, and structural marker exactly unless the critique explicitly identifies it as wrong.
 Output ONLY the final repaired translation text inside {translate_tag_in} and {translate_tag_out} tags."""
 
-    user_sections = [
-        f"# ORIGINAL SOURCE CHUNK:\n{source_chunk.strip()}",
-        f"# DRAFT TRANSLATION:\n{draft_translation.strip()}",
-    ]
+    user_sections = []
+    if source_available:
+        user_sections.append(f"# ORIGINAL SOURCE CHUNK:\n{source_chunk.strip()}")
+    else:
+        user_sections.append(
+            "# SOURCE CAPABILITY:\nMonolingual repair only; preserve meaning and do not invent source-fidelity corrections."
+        )
+    user_sections.append(f"# DRAFT TRANSLATION:\n{draft_translation.strip()}")
     if custom_instructions and custom_instructions.strip():
         user_sections.append(f"# CUSTOM INSTRUCTIONS & STYLE GUIDELINES:\n{custom_instructions.strip()}")
     if glossary_block and glossary_block.strip():

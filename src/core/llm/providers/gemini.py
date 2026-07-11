@@ -20,7 +20,7 @@ from src.config import (
     TEMPERATURE,
     GEMINI_SAFETY_THRESHOLD,
 )
-from ..base import LLMProvider, LLMResponse
+from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
 from ..exceptions import ContextOverflowError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 
@@ -149,7 +149,9 @@ class GeminiProvider(LLMProvider):
             raise RuntimeError(f"Error fetching Gemini models: {e}") from e
 
     async def generate(self, prompt: str, timeout: int = REQUEST_TIMEOUT,
-                      system_prompt: Optional[str] = None) -> Optional[LLMResponse]:
+                      system_prompt: Optional[str] = None,
+                      generation_options: Optional[LLMGenerationOptions] = None
+                      ) -> Optional[LLMResponse]:
         """
         Generate text using Gemini API.
 
@@ -172,7 +174,11 @@ class GeminiProvider(LLMProvider):
                 }]
             }],
             "generationConfig": {
-                "temperature": TEMPERATURE,
+                "temperature": (
+                    generation_options.temperature
+                    if generation_options and generation_options.temperature is not None
+                    else TEMPERATURE
+                ),
                 **self._get_thinking_config()
             },
             "safetySettings": [
@@ -180,6 +186,15 @@ class GeminiProvider(LLMProvider):
                 for category in _GEMINI_HARM_CATEGORIES
             ],
         }
+        if generation_options and generation_options.max_output_tokens:
+            payload["generationConfig"]["maxOutputTokens"] = int(
+                generation_options.max_output_tokens
+            )
+        if generation_options and generation_options.response_schema:
+            payload["generationConfig"].update({
+                "responseMimeType": "application/json",
+                "responseSchema": generation_options.response_schema,
+            })
 
         # Add system instruction if provided (Gemini API supports systemInstruction field)
         if system_prompt:
@@ -213,6 +228,7 @@ class GeminiProvider(LLMProvider):
                 # Extract text from Gemini response structure
                 response_text = ""
                 was_truncated = False
+                finish_reason = ""
                 # When the input prompt itself is blocked, Gemini returns 200
                 # with no candidates and promptFeedback.blockReason populated.
                 # Surface this so the empty response isn't silently treated as
@@ -258,7 +274,12 @@ class GeminiProvider(LLMProvider):
                     completion_tokens=completion_tokens,
                     context_used=prompt_tokens + completion_tokens,
                     context_limit=0,  # Gemini manages context internally
-                    was_truncated=was_truncated
+                    was_truncated=was_truncated,
+                    finish_reason=finish_reason,
+                    blocked_reason=str(prompt_feedback.get("blockReason") or ""),
+                    request_id=str(
+                        getattr(response, "headers", {}).get("x-request-id") or ""
+                    ),
                 )
 
             except httpx.TimeoutException as e:

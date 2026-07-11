@@ -34,6 +34,7 @@ class LanguageProfile:
     has_grammatical_gender: bool = False
     prompt_style: str = "generic"
     neutral_fallback: bool = False
+    residue_social_terms: FrozenSet[str] = field(default_factory=frozenset)
 
 
 @dataclass(frozen=True)
@@ -72,18 +73,18 @@ THAI_POLICY = TextMatchPolicy(no_space_script=True)
 
 
 _PROFILES: Dict[str, LanguageProfile] = {
-    "en": LanguageProfile("en", "English", frozenset({"english", "en"}), script="latin", match_policy=LATIN_POLICY),
-    "fr": LanguageProfile("fr", "French", frozenset({"french", "fr", "français", "francais"}), script="latin", match_policy=LATIN_POLICY, addressing_family="romance", has_formality_register=True, has_grammatical_gender=True, prompt_style="romance"),
-    "es": LanguageProfile("es", "Spanish", frozenset({"spanish", "es", "español", "espanol"}), script="latin", match_policy=LATIN_POLICY, addressing_family="romance", has_formality_register=True, has_grammatical_gender=True, prompt_style="romance"),
-    "de": LanguageProfile("de", "German", frozenset({"german", "de", "deutsch"}), script="latin", match_policy=LATIN_POLICY, addressing_family="germanic", has_formality_register=True, has_grammatical_gender=True, prompt_style="germanic"),
-    "vi": LanguageProfile("vi", "Vietnamese", frozenset({"vietnamese", "vietnamien", "viet", "vi", "tiếng việt", "tieng viet"}), script="latin", match_policy=LATIN_POLICY, addressing_family="vietnamese", has_formality_register=True, prompt_style="vietnamese"),
-    "zh": LanguageProfile("zh", "Chinese", frozenset({"chinese", "zh", "zh-cn", "zh-tw", "中文", "汉语", "漢語"}), script="cjk", match_policy=CJK_POLICY, addressing_family="chinese", prompt_style="chinese"),
-    "ja": LanguageProfile("ja", "Japanese", frozenset({"japanese", "ja", "nihongo", "日本語"}), script="cjk", match_policy=CJK_POLICY, addressing_family="japanese", has_formality_register=True, prompt_style="japanese"),
-    "ko": LanguageProfile("ko", "Korean", frozenset({"korean", "ko", "hangul", "한국어", "tiếng hàn"}), script="hangul", match_policy=HANGUL_POLICY, addressing_family="korean", has_formality_register=True, prompt_style="korean"),
-    "ar": LanguageProfile("ar", "Arabic", frozenset({"arabic", "ar", "العربية"}), script="rtl", match_policy=RTL_POLICY, rtl=True, prompt_style="rtl"),
-    "ru": LanguageProfile("ru", "Russian", frozenset({"russian", "ru", "русский"}), script="cyrillic", match_policy=LATIN_POLICY, has_grammatical_gender=True),
-    "hi": LanguageProfile("hi", "Hindi", frozenset({"hindi", "hi", "हिन्दी", "हिंदी"}), script="indic", match_policy=TextMatchPolicy(no_space_script=False), has_grammatical_gender=True),
-    "th": LanguageProfile("th", "Thai", frozenset({"thai", "th", "ไทย"}), script="thai", match_policy=THAI_POLICY),
+    "en": LanguageProfile("en", "English", frozenset({"english", "en"}), script="latin", match_policy=LATIN_POLICY, residue_social_terms=frozenset({"aunt", "brother", "captain", "commander", "dad", "daughter", "elder", "father", "lord", "master", "mother", "professor", "senior", "sister", "son", "teacher", "uncle", "younger"})),
+    "fr": LanguageProfile("fr", "French", frozenset({"french", "fr", "français", "francais"}), script="latin", match_policy=LATIN_POLICY, addressing_family="romance", has_formality_register=True, has_grammatical_gender=True, prompt_style="romance", residue_social_terms=frozenset({"frère", "soeur", "père", "mère", "oncle", "tante", "maître", "professeur"})),
+    "es": LanguageProfile("es", "Spanish", frozenset({"spanish", "es", "español", "espanol"}), script="latin", match_policy=LATIN_POLICY, addressing_family="romance", has_formality_register=True, has_grammatical_gender=True, prompt_style="romance", residue_social_terms=frozenset({"hermano", "hermana", "padre", "madre", "tío", "tía", "maestro", "profesor"})),
+    "de": LanguageProfile("de", "German", frozenset({"german", "de", "deutsch"}), script="latin", match_policy=LATIN_POLICY, addressing_family="germanic", has_formality_register=True, has_grammatical_gender=True, prompt_style="germanic", residue_social_terms=frozenset({"bruder", "schwester", "vater", "mutter", "onkel", "tante", "meister", "lehrer"})),
+    "vi": LanguageProfile("vi", "Vietnamese", frozenset({"vietnamese", "vietnamien", "viet", "vi", "tiếng việt", "tieng viet"}), script="latin", match_policy=LATIN_POLICY, addressing_family="vietnamese", has_formality_register=True, prompt_style="vietnamese", residue_social_terms=frozenset({"anh", "chị", "em", "ông", "bà", "cha", "mẹ", "thầy", "cô"})),
+    "zh": LanguageProfile("zh", "Chinese", frozenset({"chinese", "zh", "zh-cn", "zh-tw", "中文", "汉语", "漢語"}), script="cjk", match_policy=CJK_POLICY, addressing_family="chinese", prompt_style="chinese", residue_social_terms=frozenset({"哥哥", "姐姐", "父亲", "母亲", "老师", "主人"})),
+    "ja": LanguageProfile("ja", "Japanese", frozenset({"japanese", "ja", "nihongo", "日本語"}), script="cjk", match_policy=CJK_POLICY, addressing_family="japanese", has_formality_register=True, prompt_style="japanese", residue_social_terms=frozenset({"兄", "姉", "父", "母", "先生", "先輩"})),
+    "ko": LanguageProfile("ko", "Korean", frozenset({"korean", "ko", "hangul", "한국어", "tiếng hàn"}), script="hangul", match_policy=HANGUL_POLICY, addressing_family="korean", has_formality_register=True, prompt_style="korean", residue_social_terms=frozenset({"형", "오빠", "누나", "언니", "아버지", "어머니", "선생님"})),
+    "ar": LanguageProfile("ar", "Arabic", frozenset({"arabic", "ar", "العربية"}), script="rtl", match_policy=RTL_POLICY, rtl=True, prompt_style="rtl", residue_social_terms=frozenset({"أخي", "أختي", "أبي", "أمي", "سيدي", "معلم"})),
+    "ru": LanguageProfile("ru", "Russian", frozenset({"russian", "ru", "русский"}), script="cyrillic", match_policy=LATIN_POLICY, has_grammatical_gender=True, residue_social_terms=frozenset({"брат", "сестра", "отец", "мать", "учитель", "господин"})),
+    "hi": LanguageProfile("hi", "Hindi", frozenset({"hindi", "hi", "हिन्दी", "हिंदी"}), script="indic", match_policy=TextMatchPolicy(no_space_script=False), has_grammatical_gender=True, residue_social_terms=frozenset({"भाई", "बहन", "पिता", "माता", "गुरु"})),
+    "th": LanguageProfile("th", "Thai", frozenset({"thai", "th", "ไทย"}), script="thai", match_policy=THAI_POLICY, residue_social_terms=frozenset({"พี่", "น้อง", "พ่อ", "แม่", "ครู", "ท่าน"})),
     "it": LanguageProfile("it", "Italian", frozenset({"italian", "it", "italiano"}), script="latin", match_policy=LATIN_POLICY, addressing_family="romance", has_grammatical_gender=True, prompt_style="romance"),
     "pt": LanguageProfile("pt", "Portuguese", frozenset({"portuguese", "pt", "português", "portugues"}), script="latin", match_policy=LATIN_POLICY, addressing_family="romance", has_grammatical_gender=True, prompt_style="romance"),
     "nl": LanguageProfile("nl", "Dutch", frozenset({"dutch", "nl", "nederlands"}), script="latin", match_policy=LATIN_POLICY, addressing_family="germanic", has_formality_register=True),

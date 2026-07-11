@@ -497,7 +497,9 @@ export const FileUpload = {
                 languageConfidence: f.languageConfidence,
                 thumbnail: f.thumbnail,
                 operation: f.operation || 'translate',
-                refineAfter: !!f.refineAfter
+                refineAfter: !!f.refineAfter,
+                refinementOriginalPath: f.refinementOriginalPath || null,
+                refinementOriginalName: f.refinementOriginalName || null
             }));
             localStorage.setItem(FILE_QUEUE_STORAGE_KEY, JSON.stringify(serializableFiles));
         } catch {
@@ -709,6 +711,31 @@ export const FileUpload = {
         }
     },
 
+    async handleRefinementOriginalSelect(event) {
+        const file = event.target.files?.[0];
+        DomHelpers.setValue('fileInputRefineOriginal', '');
+        if (!file) return;
+        const filesToProcess = StateManager.getState('files.toProcess') || [];
+        const index = [...filesToProcess].map(item => item.operation).lastIndexOf('refine');
+        if (index < 0) {
+            MessageLogger.showMessage(t('translation:pair_refinement_source_missing'), 'warning');
+            return;
+        }
+        try {
+            const uploadResult = await ApiClient.uploadFile(file);
+            filesToProcess[index].refinementOriginalPath = uploadResult.file_path;
+            filesToProcess[index].refinementOriginalName = file.name;
+            if (uploadResult.detected_language && uploadResult.language_confidence >= 0.7) {
+                filesToProcess[index].sourceLanguage = uploadResult.detected_language;
+            }
+            StateManager.setState('files.toProcess', filesToProcess);
+            this.notifyFileListChanged();
+            MessageLogger.showMessage(t('translation:pair_refinement_source_ready', { name: file.name }), 'success');
+        } catch (error) {
+            MessageLogger.showMessage(t('translation:pair_refinement_source_failed', { error: error.message }), 'error');
+        }
+    },
+
     /**
      * Resolve the current queue's operation, or null if the queue is empty.
      * @returns {string|null}
@@ -826,7 +853,9 @@ export const FileUpload = {
                 languageConfidence: uploadResult.language_confidence || null,
                 thumbnail: uploadResult.thumbnail || null,  // EPUB cover thumbnail
                 operation: operation,
-                refineAfter: false
+                refineAfter: false,
+                refinementOriginalPath: null,
+                refinementOriginalName: null
             };
 
             // Add to state

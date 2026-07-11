@@ -56,6 +56,21 @@ class FakeEchoProvider(LLMProvider):
         timeout: int = 0,
         system_prompt: Optional[str] = None,
     ) -> Optional[LLMResponse]:
+        if "# DRAFT TRANSLATION TO AUDIT:" in prompt:
+            content = (
+                '<REFLECTION_JSON>{"status":"no_issues","issues":[]}'
+                '</REFLECTION_JSON>'
+            )
+            prompt_tokens = max(1, len(prompt) // 4)
+            return LLMResponse(
+                content=content,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=max(1, len(content) // 4),
+                context_used=prompt_tokens + max(1, len(content) // 4),
+                context_limit=self.context_window,
+                was_truncated=False,
+                was_fallback=False,
+            )
         source = _extract_source_block(prompt)
         content = f"{TRANSLATE_TAG_IN}{source}{TRANSLATE_TAG_OUT}"
         prompt_tokens = max(1, len(prompt) // 4)
