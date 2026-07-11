@@ -10,7 +10,8 @@ Features:
     - Efficient batch processing
 """
 
-from typing import List, Optional, Union
+from copy import deepcopy
+from typing import Any, Dict, List, Optional, Union
 import httpx
 import asyncio
 
@@ -21,7 +22,7 @@ from src.config import (
     GEMINI_SAFETY_THRESHOLD,
 )
 from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
-from ..exceptions import ContextOverflowError
+from ..exceptions import ContextOverflowError, StructuredOutputSchemaError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 
 # Four harm categories returned by the Gemini API. By default Gemini blocks
@@ -35,6 +36,43 @@ _GEMINI_HARM_CATEGORIES = (
     "HARM_CATEGORY_SEXUALLY_EXPLICIT",
     "HARM_CATEGORY_DANGEROUS_CONTENT",
 )
+
+
+def _prepare_response_json_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a Gemini JSON Schema copy with deterministic object ordering."""
+
+    prepared = deepcopy(schema)
+
+    def visit(node: Any) -> None:
+        if isinstance(node, dict):
+            properties = node.get("properties")
+            if node.get("type") == "object" and isinstance(properties, dict):
+                node.setdefault("propertyOrdering", list(properties))
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for value in node:
+                visit(value)
+
+    visit(prepared)
+    return prepared
+
+
+def _is_structured_schema_rejection(body: str) -> bool:
+    """Return whether a Gemini 400 response identifies the output schema."""
+
+    normalized = (body or "").casefold().replace("-", "_")
+    return any(
+        marker in normalized
+        for marker in (
+            "generation_config.response_schema",
+            "generationconfig.responseschema",
+            "response_json_schema",
+            "responsejsonschema",
+            "response_format",
+            "responseformat",
+        )
+    )
 
 
 class GeminiProvider(LLMProvider):
@@ -193,7 +231,9 @@ class GeminiProvider(LLMProvider):
         if generation_options and generation_options.response_schema:
             payload["generationConfig"].update({
                 "responseMimeType": "application/json",
-                "responseSchema": generation_options.response_schema,
+                "responseJsonSchema": _prepare_response_json_schema(
+                    generation_options.response_schema
+                ),
             })
 
         # Add system instruction if provided (Gemini API supports systemInstruction field)
@@ -305,9 +345,29 @@ class GeminiProvider(LLMProvider):
                         )
                         continue
 
-                    print(f"Gemini API HTTP Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
+                    if (
+                        e.response.status_code == 400
+                        and generation_options
+                        and generation_options.response_schema
+                        and _is_structured_schema_rejection(error_body)
+                    ):
+                        raise StructuredOutputSchemaError(
+                            "Gemini rejected the structured output schema (HTTP 400)."
+                        ) from e
+
+                    retryable = is_retryable_http_status(e.response.status_code)
+                    if retryable:
+                        print(
+                            "Gemini API HTTP Error "
+                            f"(attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}"
+                        )
+                    else:
+                        print(f"Gemini API request rejected (not retried): {e}")
                     if error_body:
-                        print(f"Response details: Status {e.response.status_code}, Body: {error_body[:200]}...")
+                        print(
+                            f"Response details: Status {e.response.status_code}, "
+                            f"Body: {error_body[:200]}..."
+                        )
 
                     # Detect context overflow errors (Gemini uses "RESOURCE_EXHAUSTED" or token limits)
                     context_overflow_keywords = ["resource_exhausted", "token limit", "input too long",
@@ -317,7 +377,7 @@ class GeminiProvider(LLMProvider):
 
                     # Client errors (404 model retired, 400/401/403) won't recover
                     # on retry — fail fast instead of hammering the API 3x.
-                    if not is_retryable_http_status(e.response.status_code):
+                    if not retryable:
                         return None
 
                     attempt += 1

@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.15.0-beta.33 - 2026-07-12
+
+### Fixed
+
+- **Gemini Senior Editor Structured Output**:
+  Gemini now receives the Senior Editor contract through its JSON Schema field
+  instead of the narrower OpenAPI schema field, preventing nested
+  `additionalProperties` constraints from causing HTTP 400 responses.
+
+- **Structured Output Fallback Classification**:
+  Deterministic schema rejections fall back once and are cached per editor
+  provider and model. Timeouts, empty responses, and unrelated request errors
+  no longer disable native structured output for the rest of the process.
+
+- **Gemini Client Error Logging**:
+  Non-retryable HTTP errors are reported as immediately rejected requests
+  instead of displaying a misleading transient attempt counter.
+
+### Tests
+
+- Added regressions for Gemini JSON Schema payloads, nested property ordering,
+  schema immutability, deterministic rejection handling, and capability-cache
+  behavior after empty responses.
+
 ## 1.15.0-beta.32 - 2026-07-11
 
 ### Added
