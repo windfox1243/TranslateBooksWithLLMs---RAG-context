@@ -12,31 +12,11 @@ the glossary NER endpoint forwarded the literal ``__USE_ENV__`` to Gemini,
 which rejected it as an invalid key. Keep the single source of truth here.
 """
 import os
+from src.common.provider_metadata import PROVIDER_ENV_VARS, provider_env_var
 
 # Marker the frontend sends when the key field is empty but a key is
 # configured in .env. Resolved back to the real env value server-side.
 USE_ENV_SENTINEL = '__USE_ENV__'
-
-# Provider -> conventional env var holding its API key.
-PROVIDER_ENV_VARS = {
-    'gemini': 'GEMINI_API_KEY',
-    'openai': 'OPENAI_API_KEY',
-    'openrouter': 'OPENROUTER_API_KEY',
-    'mistral': 'MISTRAL_API_KEY',
-    'deepseek': 'DEEPSEEK_API_KEY',
-    'poe': 'POE_API_KEY',
-    'nim': 'NIM_API_KEY',
-}
-
-
-def provider_env_var(provider):
-    """Return the env var name conventionally used for a provider's API key.
-
-    Returns ``''`` for providers that need no key (e.g. ``ollama``) or unknown
-    provider names.
-    """
-    return PROVIDER_ENV_VARS.get((provider or '').lower(), '')
-
 
 def resolve_api_key(value, env_var_name, config_default=''):
     """Resolve a per-request API-key value to the key to actually use.

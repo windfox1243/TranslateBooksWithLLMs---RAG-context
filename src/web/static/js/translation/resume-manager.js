@@ -12,6 +12,7 @@ import { DomHelpers } from '../ui/dom-helpers.js';
 import { ProgressManager } from './progress-manager.js';
 import { t, getCurrentLocale, applyToDOM } from '../i18n/i18n.js';
 import { createProviderModelPicker } from '../providers/provider-model-picker.js';
+import { EditorModelManager } from '../providers/editor-model-manager.js';
 
 // Live picker instances, keyed by translation_id, so the override panel keeps
 // its state while open and can be cleaned up on the next list render.
@@ -454,16 +455,13 @@ export const ResumeManager = {
 
             // Inject current UI toggle state for newly introduced settings so
             // that legacy jobs (whose checkpoint lacks these keys) adopt them.
+            const editorRuntime = EditorModelManager.requestConfig();
             const promptOverrides = {
                 reflection_mode: !!(DomHelpers.getElement('enableReflection')?.checked),
-                editor_provider: DomHelpers.getElement('enableReflection')?.checked
-                    ? (DomHelpers.getValue('editorProvider') || '')
-                    : '',
-                editor_model: DomHelpers.getElement('enableReflection')?.checked
-                    ? (DomHelpers.getValue('editorModel') || '').trim()
-                    : '',
+                ...editorRuntime.promptOptions,
             };
             const merged = overrides ? { ...overrides } : {};
+            Object.assign(merged, editorRuntime.credentials);
             merged.prompt_options = {
                 ...(merged.prompt_options || {}),
                 ...promptOverrides,

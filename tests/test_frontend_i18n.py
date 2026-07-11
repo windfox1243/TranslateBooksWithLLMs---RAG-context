@@ -525,6 +525,9 @@ def test_editor_model_picker_is_conditional_searchable_and_inheritable() -> None
     assert "editorProvider: DomHelpers.getValue('editorProvider') || ''" in settings_manager
     assert "editorModel: DomHelpers.getValue('editorModel') || ''" in settings_manager
     assert "editor_provider: DomHelpers.getElement('enableReflection')?.checked" in form_manager
+    assert 'id="editorKeyOptions"' in template
+    assert "this.usesSeparateProvider()" in manager
+    assert "EditorModelManager.applyToRequest(config)" in form_manager
 
 
 def test_env_backed_provider_fields_are_not_restored_from_local_storage() -> None:
@@ -550,6 +553,11 @@ def test_all_settings_help_keys_exist_in_every_locale() -> None:
         "bypass_context_gating_help",
         "editor_provider_help",
         "editor_model_help",
+        "editor_api_key_help",
+        "compact_database_help",
+        "compact_database_confirm",
+        "compact_database_success",
+        "compact_database_failed",
         "notifications_method_help",
         "notifications_events_help",
     }

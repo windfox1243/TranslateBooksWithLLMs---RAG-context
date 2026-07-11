@@ -58,6 +58,7 @@ def test_editor_diagnostics_are_classified_and_deleted_with_job(tmp_path):
     })
     result = db.get_editor_diagnostics("job-1")
     assert result["classification"] == "classified"
-    assert result["summary"]["outcomes"] == {"draft_kept_review": 1}
+    assert result["summary"]["outcomes"] == {"review_required": 1}
+    assert result["runs"][0]["legacy_outcome"] == "draft_kept_review"
     assert db.delete_job("job-1")
     assert db.get_editor_diagnostics("job-1")["classification"] == "legacy_unclassified"

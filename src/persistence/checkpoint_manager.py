@@ -40,6 +40,12 @@ class CheckpointManager:
             server_session_id: Unique identifier for the current server session
         """
         self.db = Database(db_path)
+        orphan_stats = self.db.purge_orphan_rows()
+        if orphan_stats["deleted_rows"]:
+            _checkpoint_log(
+                "Removed orphaned checkpoint data from deleted jobs.",
+                data=orphan_stats,
+            )
         from src.config import UPLOADS_DIR
         self.uploads_dir = UPLOADS_DIR
         self.uploads_dir.mkdir(parents=True, exist_ok=True)

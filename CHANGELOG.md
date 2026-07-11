@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.15.0-beta.32 - 2026-07-11
+
+### Added
+
+- **Independent Senior Editor Credentials**:
+  A separately selected Senior Editor provider now displays its own reactive
+  API-key control while continuing to use the provider's standard `.env`
+  variable. Draft and editor requests resolve independent provider endpoints,
+  credentials, and clients without persisting secrets.
+
+- **Checkpoint Database Maintenance**:
+  Startup safely removes checkpoint rows whose parent jobs were already
+  deleted. An idle-only maintenance action creates a timestamped backup,
+  checks integrity, truncates the WAL, and compacts the database.
+
+### Fixed
+
+- **Cross-Provider Editor Routing**:
+  OpenAI-compatible Senior Editors no longer inherit an Ollama or draft-cloud
+  endpoint, NVIDIA NIM credentials reach every file path, and repair output is
+  extracted through the selected editor client. An identical draft/editor
+  provider and model still reuse one client.
+
+- **False Senior Editor Repair Failures**:
+  No-op replacements are review evidence instead of rewrite requests, valid
+  issues survive partially incomplete contracts, locally applied edits are not
+  checked against stale locators, and only blocking source residue rejects a
+  repair. Diagnostics now distinguish local repair, LLM repair, review,
+  blocking, and transport outcomes.
+
+- **Orphaned Checkpoint Growth**:
+  SQLite foreign keys are enabled on every connection, while manual and aged
+  job deletion also remove checkpoint children explicitly for compatibility
+  with legacy databases that had foreign keys disabled.
+
+### Tests
+
+- Added cross-provider runtime, NIM credential, local-patch rebasing, no-op
+  issue, non-blocking residue, orphan cleanup, explicit deletion, backup, and
+  compaction regressions, plus seven-locale editor credential coverage.
+
 ## 1.15.0-beta.31 - 2026-07-11
 
 ### Added

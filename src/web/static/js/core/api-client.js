@@ -519,6 +519,13 @@ export const ApiClient = {
         });
     },
 
+    async compactJobsDatabase() {
+        return await apiRequest('/api/maintenance/jobs-db/compact', {
+            method: 'POST',
+            body: JSON.stringify({})
+        });
+    },
+
     /**
      * Get available custom instruction files
      * @returns {Promise<Object>} Custom instructions list with files array

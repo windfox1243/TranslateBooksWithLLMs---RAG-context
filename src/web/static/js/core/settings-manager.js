@@ -500,6 +500,16 @@ export const SettingsManager = {
                 if (key) envSettings['NIM_API_KEY'] = key;
             }
 
+            const editorProvider = (DomHelpers.getValue('editorProvider') || '').toUpperCase();
+            const editorKeyField = DomHelpers.getElement('editorApiKey');
+            if (
+                editorProvider
+                && editorProvider !== provider.toUpperCase()
+                && editorKeyField?.value.trim()
+            ) {
+                envSettings[`${editorProvider}_API_KEY`] = editorKeyField.value.trim();
+            }
+
             // Save endpoints to .env
             const ollamaEndpoint = DomHelpers.getValue('apiEndpoint');
             const openaiEndpoint = DomHelpers.getValue('openaiEndpoint');

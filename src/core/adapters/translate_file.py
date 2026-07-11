@@ -203,41 +203,29 @@ async def translate_file(
     # This reuses the EPUB pipeline for rapid deployment
     if detected_type == 'docx':
         from src.core.docx.translator import translate_docx_file
-        from src.core.llm import create_llm_provider
+        from src.core.llm.runtime import build_draft_and_editor_clients
 
-        # Create LLM client
-        llm_client = create_llm_provider(
-            provider_type=llm_provider,
-            endpoint=llm_api_endpoint,
-            model=model_name,
-            gemini_api_key=gemini_api_key,
-            openai_api_key=openai_api_key,
-            openrouter_api_key=openrouter_api_key,
-            mistral_api_key=mistral_api_key,
-            deepseek_api_key=deepseek_api_key,
-            poe_api_key=poe_api_key
-        )
         docx_prompt_options = dict(prompt_options or {})
-        editor_provider = str(
-            docx_prompt_options.get("editor_provider") or llm_provider
-        ).strip().casefold()
-        editor_model = str(
-            docx_prompt_options.get("editor_model") or model_name
-        ).strip()
-        editor_client = llm_client
-        if editor_provider != llm_provider.casefold() or editor_model != model_name:
-            editor_client = create_llm_provider(
-                provider_type=editor_provider,
-                endpoint=llm_api_endpoint,
-                model=editor_model,
-                gemini_api_key=gemini_api_key,
-                openai_api_key=openai_api_key,
-                openrouter_api_key=openrouter_api_key,
-                mistral_api_key=mistral_api_key,
-                deepseek_api_key=deepseek_api_key,
-                poe_api_key=poe_api_key,
-                nim_api_key=nim_api_key,
-            )
+        credentials = {
+            "gemini_api_key": gemini_api_key,
+            "openai_api_key": openai_api_key,
+            "openrouter_api_key": openrouter_api_key,
+            "mistral_api_key": mistral_api_key,
+            "deepseek_api_key": deepseek_api_key,
+            "poe_api_key": poe_api_key,
+            "nim_api_key": nim_api_key,
+        }
+        llm_client, editor_client, _, editor_spec = build_draft_and_editor_clients(
+            draft_provider=llm_provider,
+            draft_model=model_name,
+            draft_endpoint=llm_api_endpoint,
+            prompt_options=docx_prompt_options,
+            credentials=credentials,
+            context_window=context_window,
+            log_callback=log_callback,
+        )
+        editor_provider = editor_spec.provider
+        editor_model = editor_spec.model
         docx_prompt_options.update({
             "_editor_llm_client": editor_client,
             "editor_provider_resolved": editor_provider,
@@ -317,6 +305,7 @@ async def translate_file(
         'mistral_api_key': mistral_api_key,
         'deepseek_api_key': deepseek_api_key,
         'poe_api_key': poe_api_key,
+        'nim_api_key': nim_api_key,
         'prompt_options': prompt_options,
     }
 

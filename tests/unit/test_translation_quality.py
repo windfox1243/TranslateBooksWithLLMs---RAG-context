@@ -253,3 +253,99 @@ async def test_ambiguous_locator_is_corrected_before_any_repair_call():
     assert len(client.calls) == 2
     assert client.calls[0]["temperature"] == 0.2
     assert client.calls[1]["temperature"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_no_op_editor_issue_is_review_only_without_rewrite():
+    critique = (
+        '{"status":"needs_repair","issues":[{'
+        '"issue_id":"noop-1","category":"style","severity":"major",'
+        '"source_quote":"Wait.","draft_quote":"Chờ đã.",'
+        '"instruction":"Keep the existing wording.",'
+        '"draft_replacement":{"draft":"Chờ đã.","replacement":"Chờ đã."},'
+        '"glossary_update":null}]}'
+    )
+
+    class Client:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate_async(self, **_kwargs):
+            self.calls += 1
+            return SimpleNamespace(content=critique)
+
+    client = Client()
+    result = await run_chunk_reflection_pass(
+        source_chunk="Wait.",
+        draft_translation="Chờ đã.",
+        target_language="Vietnamese",
+        model_name="test",
+        llm_client=client,
+        prompt_options={"source_language": "English"},
+    )
+    assert result == "Chờ đã."
+    assert client.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_local_patch_is_not_revalidated_with_stale_locator():
+    critique = (
+        '{"status":"needs_repair","issues":['
+        '{"issue_id":"pronoun-1","category":"pronoun","severity":"major",'
+        '"source_quote":"You can go.","draft_quote":"Cậu có thể đi.",'
+        '"instruction":"Use the senior form.",'
+        '"draft_replacement":{"draft":"Cậu","replacement":"Anh"},'
+        '"glossary_update":null},'
+        '{"issue_id":"omission-1","category":"omission","severity":"major",'
+        '"source_quote":"Please return.","draft_quote":"",'
+        '"instruction":"Restore the omitted sentence.",'
+        '"draft_replacement":null,"glossary_update":null}]}'
+    )
+
+    class EditorClient:
+        def __init__(self):
+            self.responses = [
+                critique,
+                "<TRANSLATION>Anh có thể đi. Xin hãy quay lại.</TRANSLATION>",
+            ]
+            self.calls = 0
+
+        async def generate_async(self, **_kwargs):
+            value = self.responses[self.calls]
+            self.calls += 1
+            return SimpleNamespace(content=value)
+
+        def extract_translation(self, raw):
+            return raw.removeprefix("<TRANSLATION>").removesuffix("</TRANSLATION>")
+
+    class DraftClient:
+        def extract_translation(self, _raw):
+            raise AssertionError("repair extraction must use the editor client")
+
+    editor = EditorClient()
+    result = await run_chunk_reflection_pass(
+        source_chunk="You can go. Please return.",
+        draft_translation="Cậu có thể đi.",
+        target_language="Vietnamese",
+        model_name="draft",
+        llm_client=DraftClient(),
+        prompt_options={
+            "source_language": "English",
+            "_editor_llm_client": editor,
+            "editor_model_resolved": "editor",
+        },
+    )
+    assert result == "Anh có thể đi. Xin hãy quay lại."
+    assert editor.calls == 2
+
+
+def test_nonblocking_same_script_residue_is_not_a_repair_error():
+    errors = validate_editor_repair(
+        "Đây là game over cuối cùng.",
+        [],
+        draft_text="Đây là game over cuối cùng.",
+        source_text="This is the final game over.",
+        source_language="English",
+        target_language="Vietnamese",
+    )
+    assert errors == []

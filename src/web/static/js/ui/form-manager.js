@@ -847,7 +847,7 @@ export const FormManager = {
         // Get TTS configuration
         const ttsEnabled = DomHelpers.getElement('ttsEnabled')?.checked || false;
 
-        return {
+        const config = {
             source_language: sourceLanguageVal,
             target_language: targetLanguageVal,
             model: model,
@@ -895,6 +895,7 @@ export const FormManager = {
             tts_format: ttsEnabled ? (DomHelpers.getValue('ttsFormat') || 'opus') : 'opus',
             tts_bitrate: ttsEnabled ? (DomHelpers.getValue('ttsBitrate') || '64k') : '64k'
         };
+        return EditorModelManager.applyToRequest(config);
     },
 
     /**
@@ -924,6 +925,17 @@ export const FormManager = {
         const apiKeyValidation = ApiKeyUtils.validateForProvider(config.llm_provider, config.llm_api_endpoint);
         if (!apiKeyValidation.valid) {
             return apiKeyValidation;
+        }
+
+        const editorRuntime = EditorModelManager.requestConfig();
+        const editorProvider = editorRuntime.promptOptions.editor_provider;
+        if (editorProvider && editorProvider !== config.llm_provider) {
+            const editorValidation = ApiKeyUtils.validateForProvider(
+                editorProvider,
+                editorRuntime.promptOptions.editor_api_endpoint || '',
+                'editorApiKey',
+            );
+            if (!editorValidation.valid) return editorValidation;
         }
 
         return { valid: true, message: '' };

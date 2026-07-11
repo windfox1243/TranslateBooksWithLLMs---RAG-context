@@ -133,50 +133,28 @@ async def translate_epub_file(
     else:
         initial_context = context_window
 
-    # Create LLM client
-    llm_client = _create_llm_client(
-        llm_provider=llm_provider,
-        model_name=model_name,
-        gemini_api_key=gemini_api_key,
-        openai_api_key=openai_api_key,
-        openrouter_api_key=openrouter_api_key,
-        mistral_api_key=mistral_api_key,
-        deepseek_api_key=deepseek_api_key,
-        poe_api_key=poe_api_key,
-        nim_api_key=nim_api_key,
-        cli_api_endpoint=cli_api_endpoint,
-        initial_context=initial_context,
-        log_callback=log_callback
-    )
-
-    if llm_client is None:
-        return False
-
+    from src.core.llm.runtime import build_draft_and_editor_clients
     prompt_options = dict(prompt_options or {})
-    editor_provider = str(
-        prompt_options.get("editor_provider") or llm_provider
-    ).strip().casefold()
-    editor_model = str(
-        prompt_options.get("editor_model") or model_name
-    ).strip()
-    editor_llm_client = llm_client
-    if editor_provider != llm_provider.casefold() or editor_model != model_name:
-        editor_llm_client = _create_llm_client(
-            llm_provider=editor_provider,
-            model_name=editor_model,
-            gemini_api_key=gemini_api_key,
-            openai_api_key=openai_api_key,
-            openrouter_api_key=openrouter_api_key,
-            mistral_api_key=mistral_api_key,
-            deepseek_api_key=deepseek_api_key,
-            poe_api_key=poe_api_key,
-            nim_api_key=nim_api_key,
-            cli_api_endpoint=cli_api_endpoint,
-            initial_context=initial_context,
-            log_callback=log_callback,
-        )
-        if editor_llm_client is None:
-            return False
+    credentials = {
+        "gemini_api_key": gemini_api_key,
+        "openai_api_key": openai_api_key,
+        "openrouter_api_key": openrouter_api_key,
+        "mistral_api_key": mistral_api_key,
+        "deepseek_api_key": deepseek_api_key,
+        "poe_api_key": poe_api_key,
+        "nim_api_key": nim_api_key,
+    }
+    llm_client, editor_llm_client, _, editor_spec = build_draft_and_editor_clients(
+        draft_provider=llm_provider,
+        draft_model=model_name,
+        draft_endpoint=cli_api_endpoint,
+        prompt_options=prompt_options,
+        credentials=credentials,
+        context_window=initial_context,
+        log_callback=log_callback,
+    )
+    editor_provider = editor_spec.provider
+    editor_model = editor_spec.model
     prompt_options.update({
         "_editor_llm_client": editor_llm_client,
         "editor_provider_resolved": editor_provider,

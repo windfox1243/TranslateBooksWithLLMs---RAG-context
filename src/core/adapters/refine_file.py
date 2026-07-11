@@ -51,32 +51,34 @@ async def refine_file(
     else:
         prompt_options = dict(prompt_options)
 
-    editor_provider = str(
-        prompt_options.get("editor_provider") or llm_provider
-    ).strip().casefold()
-    editor_model = str(
-        prompt_options.get("editor_model") or model_name
-    ).strip()
-    if editor_provider != llm_provider.casefold() or editor_model != model_name:
-        from src.core.llm_client import create_llm_client
+    from src.core.llm.runtime import build_runtime_spec, create_runtime_client
 
-        editor_client = create_llm_client(
-            editor_provider,
-            gemini_api_key,
-            llm_api_endpoint or "",
-            editor_model,
-            openai_api_key,
-            openrouter_api_key,
-            mistral_api_key,
-            deepseek_api_key,
-            poe_api_key=poe_api_key,
-            nim_api_key=nim_api_key,
-            context_window=context_window,
-            log_callback=log_callback,
-        )
-        if editor_client is None:
-            raise ValueError("Could not initialize the configured Senior Editor")
-        prompt_options["_editor_llm_client"] = editor_client
+    credentials = {
+        "gemini_api_key": gemini_api_key,
+        "openai_api_key": openai_api_key,
+        "openrouter_api_key": openrouter_api_key,
+        "mistral_api_key": mistral_api_key,
+        "deepseek_api_key": deepseek_api_key,
+        "poe_api_key": poe_api_key,
+        "nim_api_key": nim_api_key,
+    }
+    editor_provider_value = str(prompt_options.get("editor_provider") or llm_provider)
+    editor_model_value = str(prompt_options.get("editor_model") or model_name)
+    editor_endpoint = prompt_options.get("editor_api_endpoint")
+    if not editor_endpoint and editor_provider_value.casefold() == llm_provider.casefold():
+        editor_endpoint = llm_api_endpoint
+    editor_spec = build_runtime_spec(
+        editor_provider_value,
+        editor_model_value,
+        api_endpoint=editor_endpoint,
+        credentials=credentials,
+    )
+    editor_client = create_runtime_client(
+        editor_spec, context_window=context_window, log_callback=log_callback,
+    )
+    editor_provider = editor_spec.provider
+    editor_model = editor_spec.model
+    prompt_options["_editor_llm_client"] = editor_client
     prompt_options.update({
         "editor_provider_resolved": editor_provider,
         "editor_model_resolved": editor_model,

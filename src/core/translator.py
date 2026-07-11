@@ -1839,7 +1839,7 @@ async def run_chunk_reflection_pass(
         failure_class = "transport"
         finish_run(
             "blocked" if contract_v2 and any(f.blocking for f in residue_findings)
-            else "draft_kept_review",
+            else "transport_failed",
             failure_class=failure_class,
             diagnostics={"reason": str(e)[:160]},
         )
@@ -1882,6 +1882,7 @@ async def run_chunk_reflection_pass(
             or (contract_v2 and _reflection_contract_incomplete(result))
         )
 
+    contract_review_required = False
     if reflection_contract_invalid(reflection_result):
         if log_callback:
             emit_progress_log(
@@ -1944,12 +1945,46 @@ async def run_chunk_reflection_pass(
             if not reflection_contract_invalid(retry_result):
                 critique = retry_critique
                 reflection_result = retry_result
+            elif retry_result.parse_status == "json" and retry_result.issues:
+                # Preserve the retry's valid subset even when a few issues still
+                # violate the direct-edit contract.
+                critique = retry_critique
+                reflection_result = retry_result
         except Exception as e:
             if log_callback:
                 emit_progress_log(
                     log_callback,
                     "reflection_parse_retry_failed",
                     f"Senior Editor reflection JSON retry failed: {e}",
+                    layer="senior_editor_reflection",
+                )
+
+    if reflection_contract_invalid(reflection_result):
+        valid_issues = [
+            issue for issue in reflection_result.issues
+            if not (
+                _issue_requires_draft_replacement(issue)
+                and not issue.get("draft_replacement")
+            )
+        ]
+        invalid_issue_count = len(reflection_result.issues) - len(valid_issues)
+        if valid_issues and reflection_result.parse_status == "json":
+            reflection_result = ReflectionResult(
+                "needs_repair",
+                valid_issues,
+                reflection_result.raw_text,
+                reflection_result.parse_status,
+            )
+            contract_review_required = invalid_issue_count > 0
+            if log_callback:
+                emit_progress_log(
+                    log_callback,
+                    "reflection_partial_contract",
+                    (
+                        "Senior Editor kept valid issues and moved "
+                        f"{invalid_issue_count} incomplete issue(s) to review."
+                    ),
+                    level="warning",
                     layer="senior_editor_reflection",
                 )
 
@@ -1969,7 +2004,7 @@ async def run_chunk_reflection_pass(
         if contract_v2:
             blocked = any(finding.blocking for finding in residue_findings)
             finish_run(
-                "blocked" if blocked else "draft_kept_review",
+                "blocked" if blocked else "review_required",
                 parse_status=reflection_result.parse_status,
                 failure_class=(
                     "contract_incomplete"
@@ -2044,7 +2079,7 @@ async def run_chunk_reflection_pass(
     locator_errors = validate_issue_locators(
         draft_translation, reflection_result.issues,
     )
-    review_required = False
+    review_required = contract_review_required
     if locator_errors:
         invalid_ids = {item.rsplit(":", 1)[-1] for item in locator_errors}
         locator_retry_prompt = (
@@ -2109,7 +2144,7 @@ async def run_chunk_reflection_pass(
         review_required = True
         if not reflection_result.issues:
             finish_run(
-                "draft_kept_review",
+                "review_required",
                 parse_status=reflection_result.parse_status,
                 failure_class=(
                     "locator_ambiguous"
@@ -2121,23 +2156,43 @@ async def run_chunk_reflection_pass(
             )
             return draft_translation
 
+    no_op_issue_ids = {
+        str(issue.get("issue_id") or "")
+        for issue in reflection_result.issues
+        if isinstance(issue.get("draft_replacement"), dict)
+        and str(issue["draft_replacement"].get("draft") or "").strip()
+        == str(issue["draft_replacement"].get("replacement") or "").strip()
+    }
     actionable_issues = [
         issue for issue in reflection_result.issues
-        if str(issue.get("severity") or "major").casefold() != "minor"
-        or issue.get("deterministic")
+        if str(issue.get("issue_id") or "") not in no_op_issue_ids
+        and (
+            str(issue.get("severity") or "major").casefold() != "minor"
+            or issue.get("deterministic")
+        )
     ]
     if len(actionable_issues) != len(reflection_result.issues):
         review_required = True
+    original_draft = draft_translation
     patched_draft, unresolved_issues, patch_errors = apply_local_editor_patches(
         draft_translation, actionable_issues,
     )
+    unresolved_ids = {
+        str(issue.get("issue_id") or "") for issue in unresolved_issues
+    }
+    locally_resolved = [
+        issue for issue in actionable_issues
+        if str(issue.get("issue_id") or "") not in unresolved_ids
+    ]
     if patch_errors:
         review_required = True
-    elif patched_draft != draft_translation and not unresolved_issues:
+        patched_draft = original_draft
+        unresolved_issues = list(actionable_issues)
+    elif locally_resolved:
         patch_validation = validate_editor_repair(
             patched_draft,
-            actionable_issues,
-            draft_text=draft_translation,
+            locally_resolved,
+            draft_text=original_draft,
             source_text=source_chunk,
             source_language=source_language,
             target_language=target_language,
@@ -2145,26 +2200,33 @@ async def run_chunk_reflection_pass(
             glossary_terms=glossary_terms,
         )
         if not patch_validation:
-            local_term_pairs = extract_term_replacements_from_critique(
-                _reflection_feedback_payload(reflection_result)
-            )
-            if local_term_pairs and context_session and hasattr(
-                context_session, "register_editor_terms"
-            ):
-                context_session.register_editor_terms(local_term_pairs)
-            finish_run(
-                "draft_kept_review" if review_required else "repaired",
-                parse_status=reflection_result.parse_status,
-                issue_count=len(reflection_result.issues),
-                diagnostics={"repair_mode": "local_patch"},
-            )
-            return patched_draft
-        unresolved_issues = actionable_issues
-        patch_errors.extend(patch_validation)
+            if not unresolved_issues:
+                local_term_pairs = extract_term_replacements_from_critique(
+                    _reflection_feedback_payload(reflection_result)
+                )
+                if local_term_pairs and context_session and hasattr(
+                    context_session, "register_editor_terms"
+                ):
+                    context_session.register_editor_terms(local_term_pairs)
+                finish_run(
+                    "review_required" if review_required else "locally_repaired",
+                    parse_status=reflection_result.parse_status,
+                    issue_count=len(reflection_result.issues),
+                    diagnostics={
+                        "repair_mode": "local_patch",
+                        "ignored_no_op_issue_ids": sorted(no_op_issue_ids),
+                    },
+                )
+                return patched_draft
+        else:
+            patched_draft = original_draft
+            unresolved_issues = list(actionable_issues)
+            patch_errors.extend(patch_validation)
+            review_required = True
 
     if not unresolved_issues:
         finish_run(
-            "draft_kept_review",
+            "review_required" if review_required else "locally_repaired",
             parse_status=reflection_result.parse_status,
             failure_class="local_patch_conflict" if patch_errors else None,
             issue_count=len(reflection_result.issues),
@@ -2234,8 +2296,8 @@ async def run_chunk_reflection_pass(
                 else ""
             )
             repaired_text = (
-                llm_client.extract_translation(raw_content)
-                if hasattr(llm_client, "extract_translation")
+                editor_client.extract_translation(raw_content)
+                if hasattr(editor_client, "extract_translation")
                 else None
             )
             if not repaired_text:
@@ -2281,7 +2343,7 @@ async def run_chunk_reflection_pass(
                         layer="senior_editor_repair",
                     )
                 finish_run(
-                    "draft_kept_review" if review_required else "repaired",
+                    "review_required" if review_required else "llm_repaired",
                     parse_status=reflection_result.parse_status,
                     issue_count=len(reflection_result.issues),
                     response_hash=response_hash(raw_content),
@@ -2359,7 +2421,7 @@ async def run_chunk_reflection_pass(
             draft_translation=draft_translation,
         )
     finish_run(
-        "draft_kept_review",
+        "review_required",
         parse_status=reflection_result.parse_status,
         failure_class=(
             "adapter_invalid" if any(

@@ -10,6 +10,7 @@ import { StateManager } from '../core/state-manager.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
 import { SearchableSelectFactory } from '../ui/searchable-select.js';
 import { t, applyToDOM } from '../i18n/i18n.js';
+import { ApiKeyUtils } from '../utils/api-key-utils.js';
 import {
     attachProviderSearchable,
     attachModelSearchable,
@@ -39,7 +40,10 @@ export const EditorModelManager = {
         this.initialized = true;
         attachProviderSearchable(provider, {
             placeholder: t('settings:search_providers_placeholder'),
-            onChange: () => this.loadModels(),
+            onChange: () => {
+                this.syncCredential();
+                this.loadModels();
+            },
         });
         attachModelSearchable(model, {
             placeholder: t('settings:search_models_placeholder'),
@@ -48,6 +52,7 @@ export const EditorModelManager = {
 
         enabled.addEventListener('change', () => this.syncVisibility());
         DomHelpers.getElement('llmProvider')?.addEventListener('change', () => {
+            this.syncCredential();
             if (!provider.value) this.loadModels();
         });
         window.addEventListener('defaultConfigLoaded', () => this.syncVisibility());
@@ -71,7 +76,81 @@ export const EditorModelManager = {
         } else if (provider === 'openai') {
             apiEndpoint = DomHelpers.getValue('openaiEndpoint') || config.openai_api_endpoint;
         }
-        return { apiKey: '__USE_ENV__', apiEndpoint };
+        const apiKey = this.usesSeparateProvider()
+            ? (ApiKeyUtils.getValue('editorApiKey') || '__USE_ENV__')
+            : (ApiKeyUtils.getValueForProvider(provider) || '__USE_ENV__');
+        return { apiKey, apiEndpoint };
+    },
+
+    effectiveModel() {
+        return (DomHelpers.getValue('editorModel') || DomHelpers.getValue('model') || '').trim();
+    },
+
+    effectiveEndpoint(provider = this.effectiveProvider()) {
+        const config = StateManager.getState('ui.defaultConfig') || {};
+        if (provider === 'ollama') {
+            return DomHelpers.getValue('apiEndpoint') || config.ollama_api_endpoint || config.api_endpoint || '';
+        }
+        if (provider === 'openai') {
+            return DomHelpers.getValue('openaiEndpoint') || config.openai_api_endpoint || '';
+        }
+        return '';
+    },
+
+    usesSeparateProvider() {
+        return this.effectiveProvider() !== (DomHelpers.getValue('llmProvider') || 'ollama');
+    },
+
+    syncCredential() {
+        const container = DomHelpers.getElement('editorKeyOptions');
+        const field = DomHelpers.getElement('editorApiKey');
+        const status = DomHelpers.getElement('editorKeyStatus');
+        if (!container || !field) return;
+        const enabled = !!DomHelpers.getElement('enableReflection')?.checked;
+        const provider = this.effectiveProvider();
+        const sourceFieldId = ApiKeyUtils.getFieldIdForProvider(provider);
+        const visible = enabled && this.usesSeparateProvider() && !!sourceFieldId;
+        container.style.display = visible ? 'block' : 'none';
+        if (!visible) return;
+
+        const source = DomHelpers.getElement(sourceFieldId);
+        if (field.dataset.provider !== provider) field.value = '';
+        field.dataset.provider = provider;
+        field.dataset.envConfigured = source?.dataset.envConfigured || 'false';
+        field.dataset.envKeyCount = source?.dataset.envKeyCount || '0';
+        field.placeholder = source?.placeholder || t('settings:editor_api_key_placeholder');
+        if (status) {
+            const count = parseInt(field.dataset.envKeyCount || '0', 10);
+            status.textContent = field.dataset.envConfigured === 'true'
+                ? (count > 1
+                    ? t('settings:key_status_configured_rotation', { count })
+                    : t('settings:key_status_configured'))
+                : t('settings:key_status_not_configured_badge');
+            status.className = `key-status ${field.dataset.envConfigured === 'true' ? 'configured' : 'not-configured'}`;
+        }
+    },
+
+    requestConfig() {
+        const enabled = !!DomHelpers.getElement('enableReflection')?.checked;
+        if (!enabled) return { promptOptions: {}, credentials: {} };
+        const provider = DomHelpers.getValue('editorProvider') || '';
+        const effectiveProvider = this.effectiveProvider();
+        const promptOptions = {
+            editor_provider: provider,
+            editor_model: (DomHelpers.getValue('editorModel') || '').trim(),
+            editor_api_endpoint: this.effectiveEndpoint(effectiveProvider),
+        };
+        const credentials = {};
+        if (this.usesSeparateProvider() && ApiKeyUtils.getFieldIdForProvider(effectiveProvider)) {
+            credentials[`${effectiveProvider}_api_key`] = ApiKeyUtils.getValue('editorApiKey');
+        }
+        return { promptOptions, credentials };
+    },
+
+    applyToRequest(config) {
+        const runtime = this.requestConfig();
+        config.prompt_options = { ...(config.prompt_options || {}), ...runtime.promptOptions };
+        return Object.assign(config, runtime.credentials);
     },
 
     async loadModels() {
@@ -118,6 +197,7 @@ export const EditorModelManager = {
         const enabled = !!DomHelpers.getElement('enableReflection')?.checked;
         const container = DomHelpers.getElement('editorModelOptions');
         if (container) container.style.display = enabled ? 'grid' : 'none';
+        this.syncCredential();
         if (enabled) this.loadModels();
     },
 
@@ -139,10 +219,12 @@ export const EditorModelManager = {
         model.value = modelValue || '';
         SearchableSelectFactory.get('editorModel')?.refresh();
         if (reload && DomHelpers.getElement('enableReflection')?.checked) this.loadModels();
+        this.syncCredential();
     },
 
     refreshLocalizedDisplay() {
         SearchableSelectFactory.get('editorProvider')?.refresh();
         SearchableSelectFactory.get('editorModel')?.refresh();
+        this.syncCredential();
     },
 };
