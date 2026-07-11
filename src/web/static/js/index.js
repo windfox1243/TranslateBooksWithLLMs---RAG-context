@@ -540,6 +540,25 @@ window.saveSettings = async () => {
     return result;
 };
 
+window.compactJobsDatabase = async () => {
+    if (!confirm(t('settings:compact_database_confirm'))) return;
+    const button = DomHelpers.getElement('compactJobsDbBtn');
+    if (button) button.disabled = true;
+    try {
+        const result = await ApiClient.compactJobsDatabase();
+        MessageLogger.showMessage(t('settings:compact_database_success', {
+            before: (result.before_bytes / 1048576).toFixed(1),
+            after: (result.after_bytes / 1048576).toFixed(1),
+        }), 'success');
+    } catch (error) {
+        MessageLogger.showMessage(t('settings:compact_database_failed', {
+            error: error.message,
+        }), 'error');
+    } finally {
+        if (button) button.disabled = false;
+    }
+};
+
 // Message Logger
 window.clearActivityLog = MessageLogger.clearLog.bind(MessageLogger);
 

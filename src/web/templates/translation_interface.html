@@ -1048,6 +1048,11 @@
                         <p data-i18n-html="settings:save_settings_help" style="margin: 8px 0 15px 0; font-size: 0.6875rem; color: var(--text-muted-light);">
                             Saves API keys, endpoints, naming convention, and current model as default values in the <code>.env</code> file. Changes in this section are <strong>not</strong> auto-saved.
                         </p>
+                        <button type="button" id="compactJobsDbBtn" class="btn btn-secondary" style="width: 100%;" onclick="compactJobsDatabase()">
+                            <span class="material-symbols-outlined">database</span>
+                            <span data-i18n="settings:compact_database">Optimize checkpoint database</span>
+                        </button>
+                        <p data-i18n="settings:compact_database_help" style="margin: 8px 0 0 0; font-size: 0.6875rem; color: var(--text-muted-light);">Creates a backup and compacts deleted checkpoint data. Translation must be idle.</p>
                     </div>
                 </div>
 
@@ -1232,6 +1237,13 @@
                                     </select>
                                 </div>
                                 <small class="setting-help" data-i18n="settings:editor_model_help">Inherit the draft model or choose another available model for reflection and repair.</small>
+                            </div>
+                            <div id="editorKeyOptions" class="form-group" style="display: none; margin-bottom: 0; grid-column: 1 / -1;">
+                                <label for="editorApiKey"><span data-i18n="settings:editor_api_key_label">Senior Editor API key</span> <span id="editorKeyStatus" class="key-status"></span></label>
+                                <div class="neu-inset-light">
+                                    <input type="password" class="form-control" id="editorApiKey" autocomplete="new-password" data-i18n-attr="placeholder:settings:editor_api_key_placeholder" placeholder="Leave blank to use the provider key from .env">
+                                </div>
+                                <small class="setting-help" data-i18n="settings:editor_api_key_help">Uses the selected provider's standard .env key. Enter a value to override it for this session, or save settings to update .env.</small>
                             </div>
                         </div>
                     </div>

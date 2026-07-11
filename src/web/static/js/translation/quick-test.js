@@ -20,6 +20,7 @@ import { t, applyToDOM } from '../i18n/i18n.js';
 import { navigateToSetting } from '../ui/settings-summary.js';
 import { SampleManager } from '../sample/sample-manager.js';
 import { SAMPLE_DEFAULT_N_SAMPLES, SAMPLE_DEFAULT_MAX_CHARS } from '../sample/sample-defaults.js';
+import { EditorModelManager } from '../providers/editor-model-manager.js';
 
 // Samples exactly like the full Sample tool — same shared defaults.
 const N_SAMPLES = SAMPLE_DEFAULT_N_SAMPLES;
@@ -75,18 +76,14 @@ function readGlobalLlmConfig() {
 }
 
 function readPromptOptions() {
+    const runtime = EditorModelManager.requestConfig();
     return {
         preserve_technical_content: !!($('preserveTechnicalContent')?.checked),
         text_cleanup: !!($('textCleanup')?.checked),
         chapter_mode: !!($('chapterMode')?.checked),
         novel_context_file: (DomHelpers.getValue('novelContextSelect') || '').trim(),
         reflection_mode: !!($('enableReflection')?.checked),
-        editor_provider: $('enableReflection')?.checked
-            ? (DomHelpers.getValue('editorProvider') || '')
-            : '',
-        editor_model: $('enableReflection')?.checked
-            ? (DomHelpers.getValue('editorModel') || '').trim()
-            : '',
+        ...runtime.promptOptions,
     };
 }
 

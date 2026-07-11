@@ -168,8 +168,8 @@ export const ApiKeyUtils = {
      * @param {string} endpoint - API endpoint (used for OpenAI local endpoint detection)
      * @returns {{valid: boolean, message: string}} Validation result
      */
-    validateForProvider(provider, endpoint = '') {
-        const fieldId = this.getFieldIdForProvider(provider);
+    validateForProvider(provider, endpoint = '', fieldOverride = null) {
+        const fieldId = fieldOverride || this.getFieldIdForProvider(provider);
 
         // Provider doesn't require API key (e.g., ollama)
         if (!fieldId) {

@@ -164,18 +164,29 @@ def _strip_api_keys(config):
 def _provider_credentials_error(config):
     """Return a credential error payload, or None when the config can run."""
     provider = (config.get('llm_provider') or 'ollama').lower()
+    prompt_options = config.get('prompt_options') or {}
+    editor_provider = str(prompt_options.get('editor_provider') or provider).lower()
+    providers = {provider: config.get('llm_api_endpoint')}
+    if editor_provider != provider:
+        providers[editor_provider] = prompt_options.get('editor_api_endpoint')
 
-    if provider in _KEY_PROVIDERS:
-        env_var = f"{provider.upper()}_API_KEY"
+    for current_provider, current_endpoint in providers.items():
+        if current_provider not in _KEY_PROVIDERS:
+            continue
+        env_var = f"{current_provider.upper()}_API_KEY"
         # 'openai' also covers OpenAI-compatible local endpoints (llama.cpp,
         # LM Studio, vLLM) where a key is legitimately absent — only require
         # one for the official API, mirroring the factory's heuristic.
-        key_required = (provider != 'openai'
-                        or 'api.openai.com' in (config.get('llm_api_endpoint') or ''))
-        if key_required and not (config.get(f"{provider}_api_key") or os.getenv(env_var)):
+        key_required = (
+            current_provider != 'openai'
+            or 'api.openai.com' in (current_endpoint or _config.OPENAI_API_ENDPOINT)
+        )
+        if key_required and not (
+            config.get(f"{current_provider}_api_key") or os.getenv(env_var)
+        ):
             return {
                 "error": "Missing API key for provider",
-                "message": (f"Resuming with '{provider}' requires an API key. "
+                "message": (f"Resuming with '{current_provider}' requires an API key. "
                             f"Set {env_var} in .env or include it in the request."),
             }
 
@@ -204,13 +215,21 @@ def _rehydrate_resume_credentials(config, overrides=None):
     helper before starting a worker.
     """
     provider = (config.get('llm_provider') or 'ollama').lower()
+    editor_provider = str(
+        (config.get('prompt_options') or {}).get('editor_provider') or provider
+    ).lower()
     raw_key = overrides.get('api_key') if isinstance(overrides, dict) else None
 
     for key_provider in _KEY_PROVIDERS:
         env_var = f"{key_provider.upper()}_API_KEY"
-        key_override = (
+        provider_override = (
+            overrides.get(f'{key_provider}_api_key')
+            if isinstance(overrides, dict) else None
+        )
+        key_override = provider_override or (
             raw_key
-            if key_provider == provider and raw_key not in (None, '')
+            if key_provider in {provider, editor_provider}
+            and raw_key not in (None, '')
             else None
         )
         resolved = _resolve_api_key(
@@ -1938,6 +1957,31 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                 translation_id
             )
         )
+
+    @bp.route('/api/maintenance/jobs-db/compact', methods=['POST'])
+    def compact_jobs_database_route():
+        """Back up and compact the checkpoint database while the app is idle."""
+
+        active_statuses = {'queued', 'running', 'rate_limited', 'resyncing', 'refining'}
+        active_jobs = [
+            translation_id
+            for translation_id, job in state_manager.get_all_translations().items()
+            if str(job.get('status') or '').casefold() in active_statuses
+        ]
+        with _CONTEXT_RESYNC_LOCK:
+            active_resyncs = sorted(_ACTIVE_CONTEXT_RESYNCS)
+        if active_jobs or active_resyncs:
+            return jsonify({
+                "error": "Checkpoint maintenance requires an idle application",
+                "active_jobs": active_jobs,
+                "active_resyncs": active_resyncs,
+            }), 409
+        try:
+            result = state_manager.checkpoint_manager.db.optimize_database()
+            return jsonify({"success": True, **result})
+        except Exception as exc:
+            logger.error(f"Checkpoint database optimization failed: {exc}")
+            return jsonify({"error": str(exc)}), 500
 
     @bp.route(
         '/api/translation/<translation_id>/chunks/<int:chunk_index>/retry-editor',

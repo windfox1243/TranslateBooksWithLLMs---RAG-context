@@ -431,6 +431,7 @@ def validate_editor_repair(
     errors.extend(
         f"source residue remains: {finding.draft_span}"
         for finding in remaining
+        if finding.blocking
     )
     return errors
 

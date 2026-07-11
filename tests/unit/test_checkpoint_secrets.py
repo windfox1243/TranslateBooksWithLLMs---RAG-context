@@ -170,6 +170,31 @@ class TestResumeCredentialValidation:
         _response, status = result
         assert status == 400
 
+    def test_cross_provider_editor_rehydrates_its_standard_key(self, app_ctx, monkeypatch):
+        monkeypatch.setenv('GEMINI_API_KEY', 'YOUR_DRAFT_API_KEY_HERE')
+        monkeypatch.setenv('OPENROUTER_API_KEY', 'YOUR_EDITOR_API_KEY_HERE')
+        config = self._restored_config()
+        config['prompt_options'] = {
+            'editor_provider': 'openrouter',
+            'editor_model': 'editor-model',
+        }
+        assert _apply_resume_overrides(config, {}) is None
+        assert config['gemini_api_key'] == 'YOUR_DRAFT_API_KEY_HERE'
+        assert config['openrouter_api_key'] == 'YOUR_EDITOR_API_KEY_HERE'
+
+    def test_cross_provider_editor_accepts_provider_specific_override(self, app_ctx, monkeypatch):
+        monkeypatch.setenv('GEMINI_API_KEY', 'YOUR_DRAFT_API_KEY_HERE')
+        monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
+        config = self._restored_config()
+        config['prompt_options'] = {
+            'editor_provider': 'openrouter',
+            'editor_model': 'editor-model',
+        }
+        assert _apply_resume_overrides(
+            config, {'openrouter_api_key': 'YOUR_EDITOR_API_KEY_HERE'}
+        ) is None
+        assert config['openrouter_api_key'] == 'YOUR_EDITOR_API_KEY_HERE'
+
 
 class TestResponseStripping:
     def test_strip_api_keys_removes_all_keys_in_place(self):

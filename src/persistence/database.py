@@ -5,11 +5,29 @@ SQLite database manager for translation job persistence.
 import sqlite3
 import json
 import os
+import shutil
 import time
 from contextlib import contextmanager
 from typing import Optional, Dict, List, Any
 import threading
 from pathlib import Path
+
+
+_TRANSLATION_CHILD_TABLES = (
+    "editor_runs",
+    "context_resync_chunk_stage",
+    "context_resync_runs",
+    "context_relationship_derivations",
+    "context_relationship_conflicts",
+    "context_relationship_evidence",
+    "context_relationship_edges",
+    "context_relationship_nodes",
+    "context_audit_logs",
+    "context_addressing_evidence",
+    "context_addressing_rules",
+    "context_entities",
+    "checkpoint_chunks",
+)
 
 
 def sanitize_config_secrets(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -67,6 +85,7 @@ class Database:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=30000")
+            conn.execute("PRAGMA foreign_keys=ON")
             self._local.connection = conn
         return self._local.connection
 
@@ -911,14 +930,9 @@ class Database:
                 if not job_ids:
                     return 0
 
-                # Delete old jobs (chunks deleted via CASCADE)
-                cursor.execute("""
-                    DELETE FROM translation_jobs
-                    WHERE status IN ('paused', 'interrupted', 'error', 'partial', 'completed')
-                    AND created_at <= datetime('now', ? || ' days')
-                """, (f'-{max_age_days}',))
-
-                deleted_count = cursor.rowcount
+                for translation_id in job_ids:
+                    self._delete_job_rows(conn, translation_id)
+                deleted_count = len(job_ids)
                 conn.commit()
                 return deleted_count
             except Exception as e:
@@ -1009,42 +1023,141 @@ class Database:
         with self._lock:
             try:
                 conn = self._get_connection()
-                cursor = conn.cursor()
-
-                for table in (
-                    "editor_attempts",
-                    "editor_runs",
-                    "context_relationship_derivations",
-                    "context_relationship_conflicts",
-                    "context_relationship_evidence",
-                    "context_relationship_edges",
-                    "context_relationship_nodes",
-                    "context_audit_logs",
-                    "context_addressing_evidence",
-                    "context_addressing_rules",
-                    "context_entities",
-                ):
-                    if table == "editor_attempts":
-                        cursor.execute(
-                            "DELETE FROM editor_attempts WHERE run_id IN "
-                            "(SELECT id FROM editor_runs WHERE translation_id = ?)",
-                            (translation_id,),
-                        )
-                    else:
-                        cursor.execute(
-                            f"DELETE FROM {table} WHERE translation_id = ?",
-                            (translation_id,),
-                        )
-                cursor.execute(
-                    "DELETE FROM translation_jobs WHERE translation_id = ?",
-                    (translation_id,)
-                )
-
+                self._delete_job_rows(conn, translation_id)
                 conn.commit()
                 return True
             except Exception as e:
                 print(f"Error deleting job: {e}")
                 return False
+
+    @staticmethod
+    def _delete_job_rows(conn: sqlite3.Connection, translation_id: str) -> None:
+        """Delete one job explicitly, including legacy databases without FKs."""
+
+        conn.execute(
+            "DELETE FROM editor_attempts WHERE run_id IN "
+            "(SELECT id FROM editor_runs WHERE translation_id = ?)",
+            (translation_id,),
+        )
+        for table in _TRANSLATION_CHILD_TABLES:
+            conn.execute(
+                f"DELETE FROM {table} WHERE translation_id = ?",
+                (translation_id,),
+            )
+        conn.execute(
+            "DELETE FROM translation_jobs WHERE translation_id = ?",
+            (translation_id,),
+        )
+
+    def purge_orphan_rows(self) -> Dict[str, int]:
+        """Remove rows whose translation job no longer exists.
+
+        Each orphan translation ID is committed independently so large legacy
+        databases do not create one enormous WAL transaction at startup.
+        """
+
+        started = time.monotonic()
+        deleted_rows = 0
+        logical_bytes = 0
+        orphan_ids = set()
+        with self._lock:
+            conn = self._get_connection()
+            for table in _TRANSLATION_CHILD_TABLES:
+                rows = conn.execute(
+                    f"SELECT DISTINCT t.translation_id FROM {table} t "
+                    "LEFT JOIN translation_jobs j "
+                    "ON j.translation_id = t.translation_id "
+                    "WHERE j.translation_id IS NULL"
+                ).fetchall()
+                orphan_ids.update(row[0] for row in rows if row[0])
+
+            for translation_id in sorted(orphan_ids):
+                size_row = conn.execute(
+                    "SELECT COALESCE(SUM(length(original_text) + "
+                    "COALESCE(length(translated_text), 0) + "
+                    "COALESCE(length(chunk_data), 0)), 0) "
+                    "FROM checkpoint_chunks WHERE translation_id = ?",
+                    (translation_id,),
+                ).fetchone()
+                logical_bytes += int(size_row[0] or 0)
+                conn.execute(
+                    "DELETE FROM editor_attempts WHERE run_id IN "
+                    "(SELECT id FROM editor_runs WHERE translation_id = ?)",
+                    (translation_id,),
+                )
+                for table in _TRANSLATION_CHILD_TABLES:
+                    cursor = conn.execute(
+                        f"DELETE FROM {table} WHERE translation_id = ?",
+                        (translation_id,),
+                    )
+                    deleted_rows += max(0, int(cursor.rowcount or 0))
+                conn.commit()
+
+            if orphan_ids:
+                conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+
+        return {
+            "translation_ids": len(orphan_ids),
+            "deleted_rows": deleted_rows,
+            "logical_bytes": logical_bytes,
+            "duration_ms": int((time.monotonic() - started) * 1000),
+        }
+
+    def optimize_database(self, backup_path: Optional[str] = None) -> Dict[str, Any]:
+        """Back up, compact, and integrity-check an idle jobs database."""
+
+        with self._lock:
+            conn = self._get_connection()
+            quick_check = conn.execute("PRAGMA quick_check").fetchone()[0]
+            if quick_check != "ok":
+                raise RuntimeError(f"Database quick check failed: {quick_check}")
+
+            db_file = Path(self.db_path).resolve()
+            def physical_bytes() -> int:
+                return sum(
+                    path.stat().st_size
+                    for path in (
+                        db_file,
+                        Path(str(db_file) + "-wal"),
+                        Path(str(db_file) + "-shm"),
+                    )
+                    if path.exists()
+                )
+
+            before_bytes = physical_bytes()
+            free_bytes = shutil.disk_usage(db_file.parent).free
+            required_bytes = max(64 * 1024 * 1024, before_bytes * 2)
+            if free_bytes < required_bytes:
+                raise RuntimeError(
+                    "Not enough free space to back up and compact the database"
+                )
+            if not backup_path:
+                stamp = time.strftime("%Y%m%d-%H%M%S")
+                backup_path = str(db_file.with_name(f"{db_file.name}.{stamp}.bak"))
+
+            backup = sqlite3.connect(backup_path)
+            try:
+                conn.backup(backup)
+            finally:
+                backup.close()
+
+            orphan_stats = self.purge_orphan_rows()
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            conn.execute("VACUUM")
+            # VACUUM in WAL mode can leave the compact image in a large WAL;
+            # checkpoint once more so the physical on-disk size is reclaimed.
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            final_check = conn.execute("PRAGMA quick_check").fetchone()[0]
+            if final_check != "ok":
+                raise RuntimeError(f"Database integrity check failed: {final_check}")
+            after_bytes = physical_bytes()
+            return {
+                "before_bytes": before_bytes,
+                "after_bytes": after_bytes,
+                "backup_path": str(Path(backup_path).resolve()),
+                "orphan_cleanup": orphan_stats,
+                "integrity": final_check,
+            }
 
     def create_editor_run(self, payload: Dict[str, Any]) -> Optional[int]:
         """Create one locally persisted Senior Editor run."""
@@ -1160,9 +1273,15 @@ class Database:
             outcomes: Dict[str, int] = {}
             failures: Dict[str, int] = {}
             for row in rows:
-                outcomes[row.get("outcome") or "unknown"] = (
-                    outcomes.get(row.get("outcome") or "unknown", 0) + 1
-                )
+                stored_outcome = row.get("outcome") or "unknown"
+                normalized_outcome = {
+                    "repaired": "llm_repaired",
+                    "draft_kept_review": "review_required",
+                }.get(stored_outcome, stored_outcome)
+                if normalized_outcome != stored_outcome:
+                    row["legacy_outcome"] = stored_outcome
+                    row["outcome"] = normalized_outcome
+                outcomes[normalized_outcome] = outcomes.get(normalized_outcome, 0) + 1
                 if row.get("failure_class"):
                     failures[row["failure_class"]] = failures.get(
                         row["failure_class"], 0

@@ -17,6 +17,7 @@ import { renderTranslationTitle } from './progress-title.js';
 import { FileUpload, generateOutputFilename } from '../files/file-upload.js';
 import { TranslationTracker } from './translation-tracker.js';
 import { t } from '../i18n/i18n.js';
+import { EditorModelManager } from '../providers/editor-model-manager.js';
 
 /**
  * Validation helper for early failures
@@ -139,7 +140,7 @@ function getTranslationConfig(file) {
         }
     }
 
-    return config;
+    return EditorModelManager.applyToRequest(config);
 }
 
 /**

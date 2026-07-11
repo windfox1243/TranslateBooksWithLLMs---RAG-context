@@ -239,32 +239,28 @@ class GenericTranslator:
                 )
 
             # 5. Create LLM client
-            from src.core.llm_client import LLMClient
             from src.core.translator import generate_translation_request
+            from src.core.llm.runtime import build_draft_and_editor_clients
 
             prompt_options = llm_kwargs.get('prompt_options', {})
-            llm_client = LLMClient(
-                provider_type=llm_provider,
-                model=model_name,
-                **llm_kwargs
+            (
+                llm_client,
+                editor_llm_client,
+                _draft_spec,
+                editor_spec,
+            ) = build_draft_and_editor_clients(
+                draft_provider=llm_provider,
+                draft_model=model_name,
+                draft_endpoint=(
+                    llm_kwargs.get("api_endpoint") or llm_kwargs.get("endpoint")
+                ),
+                prompt_options=prompt_options,
+                credentials=llm_kwargs,
+                context_window=llm_kwargs.get("context_window"),
+                log_callback=log_callback,
             )
-            editor_provider = str(
-                prompt_options.get("editor_provider") or llm_provider
-            ).strip().casefold()
-            editor_model = str(
-                prompt_options.get("editor_model") or model_name
-            ).strip()
-            editor_llm_client = llm_client
-            if editor_provider != llm_provider.casefold() or editor_model != model_name:
-                editor_kwargs = {
-                    key: value for key, value in llm_kwargs.items()
-                    if key != "prompt_options"
-                }
-                editor_llm_client = LLMClient(
-                    provider_type=editor_provider,
-                    model=editor_model,
-                    **editor_kwargs,
-                )
+            editor_provider = editor_spec.provider
+            editor_model = editor_spec.model
 
             # 6. Translate each unit (sequentially, or with continuous concurrency)
             from src.config import resolve_parallel_workers, UNIT_VALIDATION_RETRIES

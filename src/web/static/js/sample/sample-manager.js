@@ -30,6 +30,7 @@ import {
     populateModelSelectInto,
     setPlaceholderOption,
 } from '../providers/provider-select-helpers.js';
+import { EditorModelManager } from '../providers/editor-model-manager.js';
 
 // Track every SearchableSelect we attach inside the column cards so we can
 // destroy them before re-rendering — `#sampleColumns` gets wiped on every
@@ -935,13 +936,13 @@ function buildRunPayload({ defer = false } = {}) {
 
     // custom_instructions is now per-column (custom_instruction_file above);
     // these two stay run-wide.
+    const editorRuntime = EditorModelManager.requestConfig();
     const promptOptions = {
         preserve_technical_content: $('preserveTechnicalContent')?.checked || false,
         text_cleanup: $('textCleanup')?.checked || false,
         novel_context_file: ($('novelContextSelect')?.value || '').trim(),
         reflection_mode: $('enableReflection')?.checked || false,
-        editor_provider: $('enableReflection')?.checked ? ($('editorProvider')?.value || '') : '',
-        editor_model: $('enableReflection')?.checked ? ($('editorModel')?.value || '').trim() : '',
+        ...editorRuntime.promptOptions,
     };
 
     const payload = {
