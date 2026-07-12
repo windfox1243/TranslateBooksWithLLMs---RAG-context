@@ -416,27 +416,80 @@ def validate_editor_repair(
             errors.append(f"replacement_not_located_in_issue: {draft_span}")
             continue
 
-        span_start = quote_start + local_span_offset
-        span_end = span_start + len(draft_span_key)
-        changed_locally = False
-        replacement_in_change = False
-        matcher = SequenceMatcher(None, draft_key, repaired_key, autojunk=False)
-        for tag, old_start, old_end, new_start, new_end in matcher.get_opcodes():
-            if tag == "equal" or old_end <= span_start or old_start >= span_end:
-                continue
-            changed_locally = True
-            nearby_start = max(0, new_start - len(target_span_key) - 8)
-            nearby_end = min(
-                len(repaired_key),
-                new_end + len(target_span_key) + len(quote_key) + 8,
-            )
-            if target_span_key and target_span_key in repaired_key[nearby_start:nearby_end]:
-                replacement_in_change = True
+        is_case_only = (draft_span_key == target_span_key)
+        if is_case_only:
+            draft_key_raw = unicodedata.normalize("NFKC", str(draft_text or "")).strip()
+            repaired_key_raw = unicodedata.normalize("NFKC", str(repaired_text or "")).strip()
+            draft_span_key_raw = unicodedata.normalize("NFKC", str(draft_span)).strip()
+            target_span_key_raw = unicodedata.normalize("NFKC", str(target_span)).strip()
+            quote_key_raw = unicodedata.normalize("NFKC", str(quote)).strip()
 
-        old_draft_count = draft_key.count(draft_span_key) if draft_span_key else 0
-        new_draft_count = repaired_key.count(draft_span_key) if draft_span_key else 0
-        old_target_count = draft_key.count(target_span_key) if target_span_key else 0
-        new_target_count = repaired_key.count(target_span_key) if target_span_key else 0
+            raw_matches = list(re.finditer(re.escape(quote_key_raw), draft_key_raw, re.IGNORECASE))
+            if len(raw_matches) == 1:
+                quote_start_raw = raw_matches[0].start()
+                local_quote_raw = draft_key_raw[quote_start_raw:quote_start_raw + len(raw_matches[0].group(0))]
+            else:
+                quote_start_raw = quote_start
+                local_quote_raw = draft_key_raw[quote_start:quote_end]
+
+            local_occurrences_raw = [
+                match.start()
+                for match in re.finditer(re.escape(draft_span_key_raw), local_quote_raw, re.IGNORECASE)
+            ] if draft_span_key_raw else []
+            local_span_offset_raw = (
+                local_occurrences_raw[occurrence_index]
+                if 0 <= occurrence_index < len(local_occurrences_raw)
+                else -1
+            )
+            if local_span_offset_raw < 0:
+                span_start_raw = quote_start_raw + local_span_offset
+                span_end_raw = span_start_raw + len(draft_span_key_raw)
+            else:
+                span_start_raw = quote_start_raw + local_span_offset_raw
+                span_end_raw = span_start_raw + len(draft_span_key_raw)
+
+            changed_locally = False
+            replacement_in_change = False
+            matcher = SequenceMatcher(None, draft_key_raw, repaired_key_raw, autojunk=False)
+            for tag, old_start, old_end, new_start, new_end in matcher.get_opcodes():
+                if tag == "equal" or old_end <= span_start_raw or old_start >= span_end_raw:
+                    continue
+                changed_locally = True
+                nearby_start = max(0, new_start - len(target_span_key_raw) - 8)
+                nearby_end = min(
+                    len(repaired_key_raw),
+                    new_end + len(target_span_key_raw) + len(quote_key_raw) + 8,
+                )
+                if target_span_key_raw and target_span_key_raw in repaired_key_raw[nearby_start:nearby_end]:
+                    replacement_in_change = True
+
+            old_draft_count = draft_key_raw.count(draft_span_key_raw) if draft_span_key_raw else 0
+            new_draft_count = repaired_key_raw.count(draft_span_key_raw) if draft_span_key_raw else 0
+            old_target_count = draft_key_raw.count(target_span_key_raw) if target_span_key_raw else 0
+            new_target_count = repaired_key_raw.count(target_span_key_raw) if target_span_key_raw else 0
+        else:
+            span_start = quote_start + local_span_offset
+            span_end = span_start + len(draft_span_key)
+            changed_locally = False
+            replacement_in_change = False
+            matcher = SequenceMatcher(None, draft_key, repaired_key, autojunk=False)
+            for tag, old_start, old_end, new_start, new_end in matcher.get_opcodes():
+                if tag == "equal" or old_end <= span_start or old_start >= span_end:
+                    continue
+                changed_locally = True
+                nearby_start = max(0, new_start - len(target_span_key) - 8)
+                nearby_end = min(
+                    len(repaired_key),
+                    new_end + len(target_span_key) + len(quote_key) + 8,
+                )
+                if target_span_key and target_span_key in repaired_key[nearby_start:nearby_end]:
+                    replacement_in_change = True
+
+            old_draft_count = draft_key.count(draft_span_key) if draft_span_key else 0
+            new_draft_count = repaired_key.count(draft_span_key) if draft_span_key else 0
+            old_target_count = draft_key.count(target_span_key) if target_span_key else 0
+            new_target_count = repaired_key.count(target_span_key) if target_span_key else 0
+
         if not changed_locally or new_draft_count >= old_draft_count:
             errors.append(f"replacement_not_applied_locally: {draft_span}")
         if target_span_key and not (

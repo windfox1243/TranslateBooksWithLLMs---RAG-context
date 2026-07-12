@@ -461,3 +461,22 @@ async def test_minor_issue_is_review_only_without_rewrite():
     )
     assert result == "Chờ đã."
     assert client.calls == 1
+
+
+def test_editor_repair_validates_capitalization_only_correction():
+    errors = validate_editor_repair(
+        "Đây là các Cuộc đua Tuyển chọn.",
+        [{
+            "issue_id": "issue-1",
+            "draft_quote": "các cuộc đua tuyển chọn",
+            "draft_replacement": {
+                "draft": "các cuộc đua tuyển chọn",
+                "replacement": "các Cuộc đua Tuyển chọn"
+            }
+        }],
+        draft_text="Đây là các cuộc đua tuyển chọn.",
+        source_text="This is the Selection Races.",
+        source_language="English",
+        target_language="Vietnamese"
+    )
+    assert errors == []
