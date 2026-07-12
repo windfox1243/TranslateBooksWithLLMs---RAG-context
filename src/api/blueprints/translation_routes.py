@@ -59,7 +59,7 @@ def _prompt_options_from_start_request(data):
     prompt_options = dict((data or {}).get('prompt_options') or {})
     prompt_options.setdefault('use_relationship_reasoning', 'project')
     prompt_options.setdefault('use_relationship_llm_judge', 'selective')
-    prompt_options.setdefault('context_contract_version', 2)
+    prompt_options.setdefault('context_contract_version', 3)
     prompt_options.setdefault('source_residue_validation', True)
     if 'reflection_mode' not in prompt_options:
         prompt_options['reflection_mode'] = (
@@ -1723,7 +1723,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                 register=candidate.register,
                 social_basis=candidate.social_basis,
                 scope=candidate.scope,
-                contract_version=2,
+                contract_version=3,
                 confidence=max(candidate.confidence, 0.99),
                 is_locked=1 if data.get("is_locked", True) else 0,
                 chunk_index=-1,
@@ -1755,7 +1755,16 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
     def get_addressing_rules_route(translation_id):
         """Get directed character addressing rules for a translation job."""
         db = state_manager.checkpoint_manager.db
-        rules = db.get_addressing_rules(translation_id)
+        requested_status = str(request.args.get('status') or '').strip().lower()
+        if requested_status not in {'active', 'quarantined', 'all'}:
+            requested_status = 'all'
+        active_rules = db.get_addressing_rules(translation_id, 'active')
+        quarantined_rules = db.get_addressing_rules(translation_id, 'quarantined')
+        rules = (
+            active_rules if requested_status == 'active'
+            else quarantined_rules if requested_status == 'quarantined'
+            else active_rules
+        )
         from src.utils.relationship_reasoning_engine import (
             relationship_support_for_addressing,
         )
@@ -1800,6 +1809,9 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "context_revision": _context_revision(translation_id),
             "rules": rules,
             "count": len(rules),
+            "active_count": len(active_rules),
+            "quarantined_count": len(quarantined_rules),
+            "quarantined_rules": quarantined_rules,
             "rejections": rejections,
         }), 200
 
@@ -2072,13 +2084,14 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "status": "review_required",
             "final_reason_codes": ["manual_editor_retry_requested"],
         }
+        chunk_data["editor_retry_pending"] = True
         saved = state_manager.checkpoint_manager.save_checkpoint(
             translation_id=translation_id,
             chunk_index=chunk_index,
             original_text=chunk.get("original_text") or "",
             translated_text=chunk.get("translated_text"),
             chunk_data=chunk_data,
-            chunk_status="failed",
+            chunk_status="editor_retry",
         )
         if not saved:
             return jsonify({"error": "Could not queue editor retry"}), 500

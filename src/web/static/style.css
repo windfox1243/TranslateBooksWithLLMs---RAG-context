@@ -3969,3 +3969,14 @@ html.dark .file-test-btn { color: #a5b4fc; }
     vertical-align: middle;
     animation: spin 0.8s linear infinite;
 }
+.context-guide-card {
+    margin: 0 0 0.75rem;
+    padding: 0.65rem 0.8rem;
+    border: 1px solid color-mix(in srgb, var(--primary-color) 35%, var(--border-color));
+    border-left: 4px solid var(--primary-color);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--primary-color) 7%, var(--bg-light));
+    color: var(--text-dark);
+    font-size: 0.82rem;
+    line-height: 1.45;
+}

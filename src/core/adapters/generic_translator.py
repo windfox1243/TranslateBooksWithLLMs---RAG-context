@@ -190,12 +190,13 @@ class GenericTranslator:
                 restored_completed = {
                     c['chunk_index'] for c in checkpoint_data.get('chunks', [])
                     if c.get('status') == 'completed'
+                    and not (c.get('chunk_data') or {}).get('editor_retry_pending')
                     and 0 <= c.get('chunk_index', -1) < total_units
                 }
                 failed_editor_drafts_by_index = {
                     c['chunk_index']: c.get('translated_text')
                     for c in checkpoint_data.get('chunks', [])
-                    if c.get('status') == 'failed'
+                    if c.get('status') in {'failed', 'editor_retry'}
                     and c.get('translated_text')
                     and (c.get('chunk_data') or {}).get('editor_validation')
                     and 0 <= c.get('chunk_index', -1) < total_units
@@ -212,7 +213,7 @@ class GenericTranslator:
                     })
             else:
                 # 4. Create new translation job
-                prompt_options.setdefault("context_contract_version", 2)
+                prompt_options.setdefault("context_contract_version", 3)
                 prompt_options.setdefault("use_relationship_llm_judge", "selective")
                 prompt_options.setdefault("source_residue_validation", True)
                 self.checkpoint_manager.start_job(

@@ -272,6 +272,17 @@ class ContextMergeEngine:
                     "source-form evidence is not present in the source chunk: "
                     + ", ".join(unsupported[:3])
                 )
+            target_evidence = [
+                item for item in source_forms
+                if _norm(item.get("usage")) in {"direct_address", "second_person"}
+                and _norm(item.get("text"))
+                and _norm(item.get("text")) in _norm(item.get("evidence_quote"))
+            ]
+            if not target_evidence:
+                return reject(
+                    "directed addressing requires an exact spoken direct-address "
+                    "or second-person source form in its evidence quote."
+                )
             v2_source_supported = True
             strong_evidence = True
 
@@ -509,6 +520,9 @@ class ContextMergeEngine:
             confidence=delta.confidence,
             is_locked=0 if not existing else existing.get("is_locked", 0),
             chunk_index=chunk_index,
+            validation_status="active",
+            validation_reason="",
+            provenance=delta.provenance or trigger_source,
         )
 
         if success:

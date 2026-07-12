@@ -33,28 +33,31 @@ class FakeLLMClient:
     async def make_request(self, prompt, model_name, system_prompt=None):
         if "DRAFT TRANSLATION TO AUDIT" in prompt:
             match = re.search(
-                r"# DRAFT TRANSLATION TO AUDIT:\n(.*?)\n\nPerform",
+                r"# (?:NUMBERED )?DRAFT TRANSLATION TO AUDIT:\n(.*?)\n\nPerform",
                 prompt,
                 re.DOTALL,
             )
             assert match
-            self.draft = match.group(1).strip()
-            replacement = self.draft.upper()
+            numbered = match.group(1).strip()
+            self.draft = "\n".join(
+                re.sub(r"^\[SEG-\d{4}\]\s?", "", line)
+                for line in numbered.splitlines()
+            )
             import json
             payload = {
                 "status": "needs_repair",
                 "issues": [{
+                    "issue_id": "issue-1",
+                    "segment_id": "SEG-0001",
                     "category": "style",
                     "severity": "major",
+                    "confidence": 1.0,
+                    "repair_kind": "rewrite",
                     "source_quote": "",
-                    "draft_quote": self.draft,
+                    "draft_quote": "",
                     "instruction": "Use the required uppercase test style.",
-                    "draft_replacement": {
-                        "draft": self.draft,
-                        "replacement": replacement,
-                    },
+                    "draft_replacement": None,
                     "glossary_update": None,
-                    "term_replacement": None,
                 }],
             }
             return FakeLLMResponse(

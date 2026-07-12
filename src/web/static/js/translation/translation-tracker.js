@@ -1277,6 +1277,21 @@ window.NovelContextUI = {
         return null;
     },
 
+    _appendContextGuide: function(pane, key) {
+        const rawKey = String(key || 'general');
+        const normalized = rawKey === 'raw' ? 'raw'
+            : rawKey.includes('current-addressing') ? 'current_addressing'
+            : rawKey.includes('relationship-evolution') ? 'relationship_evolution'
+            : rawKey.includes('editor-diagnostics') ? 'editor_diagnostics'
+            : 'general';
+        const guideKey = `translation:context_guide_${normalized}`;
+        const guide = document.createElement('div');
+        guide.className = 'context-guide-card';
+        guide.setAttribute('data-i18n', guideKey);
+        guide.textContent = t(guideKey);
+        pane.prepend(guide);
+    },
+
     _ensureRawContextHeadings: function(content) {
         let raw = String(content || '');
         const missing = [];
@@ -1308,6 +1323,12 @@ window.NovelContextUI = {
                 `${t('translation:context_addressing_register')}: ${rule.register || t('translation:context_addressing_unknown')}`,
                 `${t('translation:context_addressing_scope')}: ${rule.scope || t('translation:context_addressing_unknown')}`
             ];
+            details.push(
+                `${t('translation:context_addressing_status')}: ${rule.validation_status || 'active'}`
+            );
+            if (rule.validation_reason) {
+                details.push(`${t('translation:context_addressing_reason')}: ${rule.validation_reason}`);
+            }
             const forms = Array.isArray(rule.source_forms)
                 ? rule.source_forms.map(item => (
                     typeof item === 'string' ? item : item?.source_form
@@ -1372,9 +1393,12 @@ window.NovelContextUI = {
 
     _renderEditorDiagnostics: function(pane) {
         pane.textContent = '';
+        this._appendContextGuide(pane, 'editor-diagnostics');
         const result = this.editorDiagnosticsResult;
         if (!result || result.classification === 'legacy_unclassified') {
-            pane.textContent = t('translation:editor_diagnostics_legacy');
+            const legacy = document.createElement('p');
+            legacy.textContent = t('translation:editor_diagnostics_legacy');
+            pane.appendChild(legacy);
             return;
         }
         const summary = document.createElement('p');
@@ -1382,6 +1406,7 @@ window.NovelContextUI = {
             total: result.summary?.total || 0,
             successful: result.summary?.successful || 0,
             review: result.summary?.review_required || 0,
+            degraded: result.summary?.degraded || 0,
             failed: result.summary?.hard_failed || 0,
             recovered: result.summary?.recovered || 0
         });
@@ -1441,6 +1466,10 @@ window.NovelContextUI = {
 
     _renderStructuredPane: function(pane, kind) {
         pane.textContent = '';
+        this._appendContextGuide(
+            pane,
+            kind === 'addressing' ? 'current-addressing' : 'relationship-evolution'
+        );
         const toolbar = document.createElement('div');
         toolbar.style.display = 'flex';
         toolbar.style.justifyContent = 'flex-end';
@@ -1484,8 +1513,13 @@ window.NovelContextUI = {
         pane.appendChild(toolbar);
 
         const records = kind === 'addressing'
-            ? (this.structuredAddressingResult?.rules || [])
-            : (this.structuredRelationshipResult?.edges || []).filter(edge => edge.status === 'accepted' && edge.relationship_type !== 'addressing');
+            ? [
+                ...(this.structuredAddressingResult?.rules || []),
+                ...(this.structuredAddressingResult?.quarantined_rules || [])
+            ]
+            : (this.structuredRelationshipResult?.edges || []).filter(
+                edge => edge.relationship_type !== 'addressing'
+            );
         if (!records.length) {
             const empty = document.createElement('p');
             empty.textContent = t(kind === 'addressing'
@@ -1506,7 +1540,7 @@ window.NovelContextUI = {
             text.style.whiteSpace = 'pre-wrap';
             text.textContent = kind === 'addressing'
                 ? this._formatAddressingRules({ rules: [record] })
-                : `${record.source_name} -> ${record.target_name}\n  ${record.relationship_type} | ${record.hierarchy} | ${record.scope}`;
+                : `${record.source_name} -> ${record.target_name}\n  ${record.relationship_type} | ${record.hierarchy} | ${record.scope} | ${record.status}`;
             const editButton = document.createElement('button');
             editButton.type = 'button';
             editButton.className = 'btn btn-sm btn-secondary';
@@ -1733,6 +1767,9 @@ window.NovelContextUI = {
             pane.style.display = isActive ? 'block' : 'none';
             pane.textContent = sec.content;
             pane.dataset.contextPaneKey = sec.key;
+            if (!['current-addressing', 'relationship-evolution', 'editor-diagnostics'].includes(sec.key)) {
+                this._appendContextGuide(pane, sec.key);
+            }
             
             btn.onclick = () => {
                 this.activeTabKey = sec.key;

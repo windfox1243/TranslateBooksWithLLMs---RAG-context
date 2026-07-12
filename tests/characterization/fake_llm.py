@@ -56,7 +56,10 @@ class FakeEchoProvider(LLMProvider):
         timeout: int = 0,
         system_prompt: Optional[str] = None,
     ) -> Optional[LLMResponse]:
-        if "# DRAFT TRANSLATION TO AUDIT:" in prompt:
+        if (
+            "# DRAFT TRANSLATION TO AUDIT:" in prompt
+            or "# NUMBERED DRAFT TRANSLATION TO AUDIT:" in prompt
+        ):
             content = (
                 '<REFLECTION_JSON>{"status":"no_issues","issues":[]}'
                 '</REFLECTION_JSON>'

@@ -1285,6 +1285,7 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
         repair_kind = "review_only"
     return {
         "issue_id": str(raw_issue.get("issue_id") or "").strip(),
+        "segment_id": str(raw_issue.get("segment_id") or "").strip().upper(),
         "category": category,
         "severity": severity,
         "confidence": confidence,
@@ -2343,7 +2344,12 @@ async def run_chunk_reflection_pass(
 
     if not reflection_result.needs_repair:
         if log_callback:
-            log_callback("reflection_complete", "Senior Editor reflection complete: No issues found.")
+            emit_progress_log(
+                log_callback,
+                "editor_state_no_issues",
+                "Senior Editor state: audit complete; no issues found.",
+                layer="senior_editor_reflection",
+            )
         finish_run(
             "no_issues",
             parse_status=reflection_result.parse_status,
@@ -2356,6 +2362,17 @@ async def run_chunk_reflection_pass(
         draft_translation, reflection_result.issues,
     )
     review_required = contract_review_required
+    if log_callback:
+        emit_progress_log(
+            log_callback,
+            "editor_state_audit_parsed",
+            (
+                "Senior Editor state: audit parsed "
+                f"({len(reflection_result.issues)} issue(s), "
+                f"{len(locator_errors)} locator error(s))."
+            ),
+            layer="senior_editor_reflection",
+        )
     if locator_errors:
         invalid_ids = {item.rsplit(":", 1)[-1] for item in locator_errors}
         locator_retry_prompt = (
@@ -2364,8 +2381,8 @@ async def run_chunk_reflection_pass(
             "LOCATOR CORRECTION: The following issue IDs did not identify an "
             "exact unique span in the draft: " + ", ".join(sorted(invalid_ids)) +
             ". Return the same JSON contract. Preserve every valid issue, but "
-            "expand draft_quote for each listed issue until it occurs exactly "
-            "once and contains draft_replacement.draft."
+            "set the correct segment_id and make draft_quote occur exactly "
+            "once inside that segment while containing draft_replacement.draft."
         )
         try:
             locator_response = await generate_editor(
@@ -2475,6 +2492,17 @@ async def run_chunk_reflection_pass(
     )
     if locally_resolved and patched_draft != original_draft:
         result_state = "locally_patched"
+    if log_callback:
+        emit_progress_log(
+            log_callback,
+            "editor_state_local_patch",
+            (
+                "Senior Editor state: local patch pass resolved "
+                f"{len(locally_resolved)} issue(s); "
+                f"{len(unresolved_issues)} remain actionable."
+            ),
+            layer="senior_editor_repair",
+        )
     if patch_errors:
         review_required = True
         patched_draft = original_draft
@@ -2555,7 +2583,17 @@ async def run_chunk_reflection_pass(
         term_pairs = extract_term_replacements_from_critique(critique)
     validation_errors: List[str] = []
     repair_attempt_diagnostics = []
-    for repair_attempt in range(2):
+    if log_callback:
+        emit_progress_log(
+            log_callback,
+            "editor_state_fallback_started",
+            (
+                "Senior Editor state: starting one bounded full-chunk fallback "
+                f"for {len(unresolved_issues)} unresolved major issue(s)."
+            ),
+            layer="senior_editor_repair",
+        )
+    for repair_attempt in range(1):
         repair_feedback = critique_feedback
         if validation_errors:
             repair_feedback += (
@@ -2635,8 +2673,8 @@ async def run_chunk_reflection_pass(
                 if log_callback:
                     emit_progress_log(
                         log_callback,
-                        "repair_applied",
-                        "Applied and validated Senior Editor repair fixes.",
+                        "editor_state_fallback_applied",
+                        "Senior Editor state: full-chunk fallback validated and applied.",
                         layer="senior_editor_repair",
                     )
                 finish_run(
@@ -2678,11 +2716,7 @@ async def run_chunk_reflection_pass(
             emit_progress_log(
                 log_callback,
                 "repair_validation_failed",
-                (
-                    "Senior Editor repair failed validation; retrying once."
-                    if repair_attempt == 0
-                    else "Senior Editor repair remained invalid after retry."
-                ),
+                "Senior Editor state: full-chunk fallback was rejected; preserving the best valid draft for review.",
                 level="warning",
                 layer="senior_editor_repair",
                 data={"attempt": repair_attempt + 1, "reasons": validation_errors},
@@ -2711,6 +2745,15 @@ async def run_chunk_reflection_pass(
         "status": "blocked" if has_deterministic_blocker else "review_required",
     }
     if contract_v2 and has_deterministic_blocker:
+        if log_callback:
+            emit_progress_log(
+                log_callback,
+                "editor_state_blocked",
+                "Senior Editor state: hard blocked by deterministic validation.",
+                level="error",
+                layer="senior_editor_repair",
+                data={"reasons": validation_errors},
+            )
         finish_run(
             "blocked",
             parse_status=reflection_result.parse_status,
@@ -2723,6 +2766,15 @@ async def run_chunk_reflection_pass(
             + "; ".join(validation_errors[:3]),
             diagnostics=diagnostics,
             draft_translation=draft_translation,
+        )
+    if log_callback:
+        emit_progress_log(
+            log_callback,
+            "editor_state_review_preserved",
+            "Senior Editor state: valid draft preserved with review-required findings.",
+            level="warning",
+            layer="senior_editor_repair",
+            data={"reasons": validation_errors},
         )
     finish_run(
         "review_required",

@@ -5,7 +5,31 @@ from types import SimpleNamespace
 import pytest
 
 from src.core.translator import ReflectionValidationError, run_chunk_reflection_pass
-from src.utils.translation_quality import find_source_residue, validate_editor_repair
+from src.utils.translation_quality import (
+    apply_local_editor_patches,
+    find_source_residue,
+    format_editor_segments,
+    validate_editor_repair,
+    validate_issue_locators,
+)
+
+
+def test_segment_locator_disambiguates_repeated_text():
+    draft = "Wait here.\nWait here."
+    issue = {
+        "issue_id": "issue-1",
+        "segment_id": "SEG-0002",
+        "repair_kind": "local_replace",
+        "draft_quote": "Wait here.",
+        "draft_replacement": {"draft": "Wait", "replacement": "Stay"},
+    }
+    assert "[SEG-0001] Wait here." in format_editor_segments(draft)
+    assert "[SEG-0002] Wait here." in format_editor_segments(draft)
+    assert validate_issue_locators(draft, [issue]) == []
+    repaired, unresolved, errors = apply_local_editor_patches(draft, [issue])
+    assert repaired == "Wait here.\nStay here."
+    assert unresolved == []
+    assert errors == []
 
 
 @pytest.mark.parametrize(

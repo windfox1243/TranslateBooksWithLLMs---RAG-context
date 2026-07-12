@@ -119,3 +119,5 @@ async def test_terminal_provider_failure_keeps_draft_and_retains_classification(
     diagnostics = db.get_editor_diagnostics("job-auth")
     assert diagnostics["summary"]["outcomes"] == {"transport_failed": 1}
     assert diagnostics["summary"]["failure_classes"] == {"provider_auth": 1}
+    assert diagnostics["summary"]["degraded"] == 1
+    assert diagnostics["summary"]["hard_failed"] == 0

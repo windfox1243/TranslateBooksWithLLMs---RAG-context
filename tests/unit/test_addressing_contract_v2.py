@@ -99,6 +99,49 @@ def test_v2_rejects_missing_source_forms_and_untranslated_vocatives(addressing_d
     assert any("untranslated generic" in reason for reason in reasons)
 
 
+def test_v3_rejects_indirect_reference_as_directed_addressing(addressing_db):
+    candidate = _candidate(source_forms=[{
+        "text": "Trainer",
+        "usage": "indirect_reference",
+        "evidence_quote": "She wanted to find a Trainer.",
+    }])
+    assert candidate is not None
+    applied = ContextMergeEngine(db=addressing_db).apply_delta(
+        "indirect", 0, candidate.to_delta(),
+        trigger_source="context_update_v2",
+        target_language="Vietnamese",
+        known_character_names=["Alice", "Bob"],
+        source_text="She wanted to find a Trainer.",
+        source_language="English",
+    )
+    assert not applied
+    reason = addressing_db.get_context_audit_logs("indirect")[0]["new_state"]["reason"]
+    assert "exact spoken direct-address" in reason
+
+
+def test_existing_indirect_llm_rule_is_quarantined_on_reopen(tmp_path):
+    path = str(tmp_path / "migration.db")
+    db = Database(path)
+    assert db.upsert_addressing_rule(
+        "job", "Protagonist", "Trainer", "em", "trainer",
+        contract_version=2, provenance="llm_context",
+    )
+    assert db.add_addressing_evidence(
+        "job", "Protagonist", "Trainer", "Trainer",
+        usage="indirect_reference",
+        evidence_quote="She wanted to find a Trainer.",
+        provenance="llm_context",
+    )
+    db.close()
+
+    reopened = Database(path)
+    assert reopened.get_addressing_rules("job") == []
+    quarantined = reopened.get_addressing_rules("job", "quarantined")
+    assert len(quarantined) == 1
+    assert quarantined[0]["validation_reason"] == "missing_direct_dialogue_evidence"
+    reopened.close()
+
+
 def test_v2_import_is_idempotent_and_preserves_source_forms(addressing_db):
     engine = ContextMergeEngine(db=addressing_db)
     candidate = _candidate()

@@ -192,6 +192,10 @@ class Database:
                     contract_version INTEGER NOT NULL DEFAULT 1,
                     confidence REAL DEFAULT 1.0,
                     is_locked INTEGER DEFAULT 0,
+                    validation_status TEXT NOT NULL DEFAULT 'active',
+                    validation_reason TEXT,
+                    provenance TEXT NOT NULL DEFAULT 'unknown',
+                    validated_at TIMESTAMP,
                     last_chunk_index INTEGER DEFAULT 0,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(translation_id, speaker_name, addressee_name)
@@ -204,6 +208,10 @@ class Database:
                 ("scope", "TEXT NOT NULL DEFAULT 'durable'"),
                 ("contract_version", "INTEGER NOT NULL DEFAULT 1"),
                 ("notes", "TEXT"),
+                ("validation_status", "TEXT NOT NULL DEFAULT 'active'"),
+                ("validation_reason", "TEXT"),
+                ("provenance", "TEXT NOT NULL DEFAULT 'unknown'"),
+                ("validated_at", "TIMESTAMP"),
             ):
                 if column not in addressing_columns:
                     cursor.execute(
@@ -231,6 +239,39 @@ class Database:
                         source_form, usage, scope, evidence_quote
                     )
                 )
+            """)
+
+            # Contract-v2 beta builds could persist an indirect mention as a
+            # durable directed rule. Quarantine only unlocked LLM-owned rules
+            # whose evidence contains no exact spoken addressee form. Manual,
+            # locked, and legacy rules remain active for compatibility.
+            cursor.execute("""
+                UPDATE context_addressing_rules AS rule
+                SET validation_status = 'quarantined',
+                    validation_reason = 'missing_direct_dialogue_evidence',
+                    validated_at = CURRENT_TIMESTAMP
+                WHERE rule.contract_version >= 2
+                  AND rule.is_locked = 0
+                  AND rule.validation_status = 'active'
+                  AND EXISTS (
+                      SELECT 1 FROM context_addressing_evidence AS evidence
+                      WHERE evidence.translation_id = rule.translation_id
+                        AND evidence.speaker_name = rule.speaker_name
+                        AND evidence.addressee_name = rule.addressee_name
+                        AND evidence.provenance NOT IN ('user_manual', 'manual_context')
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM context_addressing_evidence AS evidence
+                      WHERE evidence.translation_id = rule.translation_id
+                        AND evidence.speaker_name = rule.speaker_name
+                        AND evidence.addressee_name = rule.addressee_name
+                        AND evidence.usage IN ('direct_address', 'second_person')
+                        AND length(trim(evidence.source_form)) > 0
+                        AND instr(
+                            lower(evidence.evidence_quote),
+                            lower(evidence.source_form)
+                        ) > 0
+                  )
             """)
 
             # Context Audit Logs Table
@@ -1364,10 +1405,8 @@ class Database:
                 for name in ("no_issues", "locally_repaired", "llm_repaired")
             )
             review_count = outcomes.get("review_required", 0)
-            hard_failed = sum(
-                outcomes.get(name, 0)
-                for name in ("blocked", "transport_failed")
-            )
+            degraded = outcomes.get("transport_failed", 0)
+            hard_failed = outcomes.get("blocked", 0)
             return {
                 "translation_id": translation_id,
                 "classification": "classified",
@@ -1378,6 +1417,7 @@ class Database:
                     "result_states": result_states,
                     "successful": successful,
                     "review_required": review_count,
+                    "degraded": degraded,
                     "hard_failed": hard_failed,
                     "recovered": sum(
                         int(bool(row.get("recovered_truncation"))) for row in rows
@@ -1402,6 +1442,9 @@ class Database:
         is_locked: int = 0,
         chunk_index: int = 0,
         notes: str = "",
+        validation_status: str = "active",
+        validation_reason: str = "",
+        provenance: str = "unknown",
     ) -> bool:
         """Upsert a directed addressing rule for a speaker-addressee pair."""
         with self._lock:
@@ -1413,8 +1456,9 @@ class Database:
                         translation_id, speaker_name, addressee_name,
                         self_pronoun, target_pronoun, vocative, register,
                         social_basis, notes, scope, contract_version, confidence,
-                        is_locked, last_chunk_index, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        is_locked, validation_status, validation_reason,
+                        provenance, validated_at, last_chunk_index, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(translation_id, speaker_name, addressee_name) DO UPDATE SET
                         self_pronoun = excluded.self_pronoun,
                         target_pronoun = excluded.target_pronoun,
@@ -1428,6 +1472,10 @@ class Database:
                             excluded.contract_version
                         ),
                         confidence = excluded.confidence,
+                        validation_status = excluded.validation_status,
+                        validation_reason = excluded.validation_reason,
+                        provenance = excluded.provenance,
+                        validated_at = CURRENT_TIMESTAMP,
                         is_locked = CASE WHEN context_addressing_rules.is_locked = 1 THEN 1 ELSE excluded.is_locked END,
                         last_chunk_index = excluded.last_chunk_index,
                         updated_at = CURRENT_TIMESTAMP
@@ -1437,7 +1485,8 @@ class Database:
                     json.dumps(social_basis or [], ensure_ascii=False),
                     notes or "",
                     scope or "durable", int(contract_version or 1),
-                    confidence, is_locked, chunk_index
+                    confidence, is_locked, validation_status or "active",
+                    validation_reason or "", provenance or "unknown", chunk_index
                 ))
                 self._commit_connection(conn)
                 return True
@@ -1445,7 +1494,11 @@ class Database:
                 print(f"Error upserting addressing rule: {e}")
                 return False
 
-    def get_addressing_rules(self, translation_id: str) -> List[Dict[str, Any]]:
+    def get_addressing_rules(
+        self,
+        translation_id: str,
+        validation_status: Optional[str] = "active",
+    ) -> List[Dict[str, Any]]:
         """Fetch all addressing rules for a given translation job."""
         with self._lock:
             try:
@@ -1455,11 +1508,13 @@ class Database:
                     SELECT id, speaker_name, addressee_name, self_pronoun,
                            target_pronoun, vocative, register, social_basis, notes,
                            scope, contract_version, confidence, is_locked,
-                           last_chunk_index, updated_at
+                           validation_status, validation_reason, provenance,
+                           validated_at, last_chunk_index, updated_at
                     FROM context_addressing_rules
                     WHERE translation_id = ?
+                      AND (? IS NULL OR validation_status = ?)
                     ORDER BY speaker_name, addressee_name
-                """, (translation_id,))
+                """, (translation_id, validation_status, validation_status))
                 rules = []
                 for row in cursor.fetchall():
                     rule = dict(row)
@@ -1488,6 +1543,36 @@ class Database:
             except Exception as e:
                 print(f"Error getting addressing rules: {e}")
                 return []
+
+    def set_addressing_rule_validation(
+        self,
+        translation_id: str,
+        speaker_name: str,
+        addressee_name: str,
+        status: str,
+        reason: str = "",
+    ) -> bool:
+        """Activate or quarantine one directed addressing rule."""
+        normalized = status if status in {"active", "quarantined"} else "quarantined"
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.execute("""
+                    UPDATE context_addressing_rules
+                    SET validation_status = ?, validation_reason = ?,
+                        validated_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE translation_id = ? AND speaker_name = ?
+                      AND addressee_name = ?
+                """, (
+                    normalized, reason or "", translation_id,
+                    speaker_name, addressee_name,
+                ))
+                self._commit_connection(conn)
+                return cursor.rowcount > 0
+            except Exception as e:
+                print(f"Error setting addressing rule validation: {e}")
+                return False
 
     def set_addressing_rule_lock(
         self,

@@ -970,7 +970,7 @@ async def _translate_all_chunks_with_checkpoint(
             row_index = row.get('chunk_index')
             if (
                 isinstance(row_index, int)
-                and row.get('status') in ('completed', 'partial', 'failed')
+                and row.get('status') in ('completed', 'partial', 'failed', 'editor_retry')
                 and row_data.get('context_snapshot')
             ):
                 checkpoint_context_data_by_global_index[row_index] = dict(row_data)
@@ -1020,7 +1020,7 @@ async def _translate_all_chunks_with_checkpoint(
                 if latest_global_idx >= 0 and hasattr(checkpoint_manager, 'db'):
                     candidates = [
                         c for c in checkpoint_rows
-                        if c.get('status') in ('completed', 'partial', 'failed')
+                        if c.get('status') in ('completed', 'partial', 'failed', 'editor_retry')
                         and isinstance(c.get('chunk_index'), int)
                         and c.get('chunk_index') <= latest_global_idx
                         and (c.get('chunk_data') or {}).get('context_snapshot')
