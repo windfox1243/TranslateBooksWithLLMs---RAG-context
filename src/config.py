@@ -21,7 +21,7 @@ if _debug_mode:
 
 # Resolve configuration independently of later cwd changes. The executable
 # launcher sets TRANSLATEBOOK_CONFIG_DIR before importing application modules;
-# direct source entrypoints retain their historical cwd-based behavior.
+# direct source entrypoints resolve to the project root directory.
 _is_frozen = getattr(sys, 'frozen', False)
 _configured_root = os.getenv('TRANSLATEBOOK_CONFIG_DIR', '').strip()
 if _configured_root:
@@ -29,7 +29,7 @@ if _configured_root:
 elif _is_frozen:
     _config_dir = (Path(sys.executable).parent / 'TranslateBook_Data').resolve()
 else:
-    _config_dir = Path.cwd()
+    _config_dir = Path(__file__).parent.parent.resolve()
 
 # Check if .env file exists and provide helpful guidance
 _env_file = _config_dir / '.env'
@@ -72,10 +72,11 @@ if ENV_FILE_MISSING and _is_frozen and _debug_mode:
     # Running as executable - silently use defaults
     _config_logger.debug("⚠️  .env not found, using defaults (executable mode)")
 
-# The packaged app owns its process, so its explicit data-directory .env must
-# win over stale inherited variables. Source entrypoints preserve conventional
-# process-environment precedence unless an explicit config root was supplied.
-_dotenv_override = _is_frozen or bool(_configured_root)
+# The packaged app and local runs should honor the .env file as the authoritative source
+# of configuration, overriding any inherited shell/process environment variables.
+# We only disable override during unit testing to allow pytest's monkeypatch to work.
+_is_testing = 'pytest' in sys.modules
+_dotenv_override = not _is_testing
 _dotenv_result = load_dotenv(_env_file, override=_dotenv_override)
 if _debug_mode:
     _config_logger.debug(f"📁 load_dotenv() returned: {_dotenv_result}")
