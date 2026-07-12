@@ -377,6 +377,7 @@ async def translate_paragraphs_plain(
 
     context_session = None
     checkpoint_context_data_by_index: Dict[int, Dict] = {}
+    failed_editor_drafts_by_index: Dict[int, str] = {}
     continuation_reused_indices = set()
     continuation_context_seed = None
     if continuation_base_id and checkpoint_manager and translation_id:
@@ -423,6 +424,16 @@ async def translate_paragraphs_plain(
                 checkpoint_context_data_by_index[
                     row_index - global_chunk_offset
                 ] = dict(row_data)
+            if (
+                isinstance(row_index, int)
+                and global_chunk_offset <= row_index < global_chunk_offset + len(chunks)
+                and row.get("status") == "failed"
+                and row.get("translated_text")
+                and row_data.get("editor_validation")
+            ):
+                failed_editor_drafts_by_index[
+                    row_index - global_chunk_offset
+                ] = row.get("translated_text")
 
     if novel_context_file or auto_update_context:
         from src.config import NOVEL_CONTEXTS_DIR
@@ -717,33 +728,40 @@ async def translate_paragraphs_plain(
         if relationship_context:
             unit_prompt_options["relationship_context"] = relationship_context
 
-        translated = await generate_translation_request(
-            main_content=main_content,
-            context_before=chunks[i].get('context_before', ''),
-            context_after=chunks[i].get('context_after', ''),
-            previous_translation_context=(
-                previous_translation_context
-                if (
-                    sequential
-                    and (
-                        not chapter_mode
-                        or i == 0
-                        or chunks[i - 1].get('chapter_index')
-                        == chunks[i].get('chapter_index')
+        translated = failed_editor_drafts_by_index.pop(i, None)
+        if translated and log_callback:
+            log_callback(
+                "editor_draft_retry",
+                f"Retrying Senior Editor for preserved draft of chunk {i + 1}/{len(chunks)}.",
+            )
+        if not translated:
+            translated = await generate_translation_request(
+                main_content=main_content,
+                context_before=chunks[i].get('context_before', ''),
+                context_after=chunks[i].get('context_after', ''),
+                previous_translation_context=(
+                    previous_translation_context
+                    if (
+                        sequential
+                        and (
+                            not chapter_mode
+                            or i == 0
+                            or chunks[i - 1].get('chapter_index')
+                            == chunks[i].get('chapter_index')
+                        )
                     )
-                )
-                else ""
-            ),
-            source_language=source_language,
-            target_language=target_language,
-            model=model_name,
-            llm_client=llm_client,
-            log_callback=log_callback,
-            has_placeholders=False,
-            prompt_options=unit_prompt_options,
-            context_manager=context_manager,
-            placeholder_format=None,
-        )
+                    else ""
+                ),
+                source_language=source_language,
+                target_language=target_language,
+                model=model_name,
+                llm_client=llm_client,
+                log_callback=log_callback,
+                has_placeholders=False,
+                prompt_options=unit_prompt_options,
+                context_manager=context_manager,
+                placeholder_format=None,
+            )
         if translated and (prompt_options or {}).get("reflection_mode"):
             from src.core.translator import (
                 ReflectionValidationError,

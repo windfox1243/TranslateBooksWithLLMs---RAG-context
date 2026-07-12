@@ -332,7 +332,7 @@ def test_reflection_prompt_uses_json_contract():
 
     assert REFLECTION_JSON_TAG_IN in prompt_pair.system
     assert '"status": "needs_repair"' in prompt_pair.system
-    assert "Do not include prose, markdown, bullets, or comments outside the JSON tags" in prompt_pair.system
+    assert "Do not include prose, markdown, bullets, or comments outside the JSON object" in prompt_pair.system
     assert "Output NO_ISSUES" not in prompt_pair.system
 
 

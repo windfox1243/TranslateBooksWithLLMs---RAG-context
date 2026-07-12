@@ -331,8 +331,9 @@
   "editor_diagnostics_tab": "편집기 진단",
   "editor_diagnostics_loading": "수석 편집기 진단을 불러오는 중...",
   "editor_diagnostics_legacy": "이 작업에는 분류된 수석 편집기 진단이 없습니다.",
-  "editor_diagnostics_summary": "실행: {{total}} · 수정: {{repaired}} · 검토: {{review}} · 차단: {{blocked}}",
+  "editor_diagnostics_summary": "실행: {{total}} · 성공: {{successful}} · 검토: {{review}} · 심각한 실패: {{failed}} · 복구: {{recovered}}",
   "editor_diagnostics_run": "청크 {{chunk}} · {{outcome}} · {{reason}}",
+  "editor_diagnostics_result": "결과: {{state}} · 해결: {{resolved}} · 미해결: {{unresolved}} · 종료 이유: {{finish}}",
   "editor_diagnostics_tokens": "토큰: 입력 {{prompt}} · 출력 {{completion}} · 추론 {{thinking}} · 합계 {{total}}",
   "editor_retry": "편집기 재시도",
   "editor_retry_queued": "수석 편집기 재시도가 대기열에 추가되었습니다. 작업을 재개해 실행하세요."

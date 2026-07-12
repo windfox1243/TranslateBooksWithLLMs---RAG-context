@@ -7,13 +7,15 @@ from typing import Any, Dict, Iterable, Optional
 
 
 EDITOR_OUTCOMES = {
-    "no_issues", "repaired", "draft_kept_review", "blocked",
+    "no_issues", "locally_repaired", "llm_repaired", "review_required",
+    "blocked", "transport_failed",
 }
 EDITOR_FAILURE_CLASSES = {
-    "provider_empty", "provider_blocked", "provider_truncated", "transport",
-    "contract_parse", "contract_incomplete", "locator_missing",
-    "locator_ambiguous", "local_patch_conflict", "repair_missing",
-    "residue_blocker", "adapter_invalid", "internal",
+    "provider_auth", "provider_quota", "provider_rate_limit", "provider_empty",
+    "provider_blocked", "provider_truncated", "transport", "schema_rejected",
+    "contract_parse", "contract_incomplete", "contract_issue",
+    "locator_missing", "locator_ambiguous", "local_patch_conflict",
+    "repair_validation", "residue_blocker", "adapter_invalid", "internal",
 }
 
 
@@ -30,16 +32,17 @@ def response_hash(value: Any) -> str:
     return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
 
 
-def issue_excerpts(issues: Iterable[Dict[str, Any]]) -> list[Dict[str, str]]:
-    """Keep only bounded evidence needed to diagnose an issue locator."""
+def issue_excerpts(issues: Iterable[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    """Keep structural issue metadata without persisting book text."""
     result = []
     for issue in list(issues or [])[:12]:
         replacement = issue.get("draft_replacement") or {}
         result.append({
             "issue_id": bounded_excerpt(issue.get("issue_id"), 48),
-            "source": bounded_excerpt(issue.get("source_quote")),
-            "draft": bounded_excerpt(issue.get("draft_quote")),
-            "replacement": bounded_excerpt(replacement.get("replacement")),
+            "repair_kind": bounded_excerpt(issue.get("repair_kind"), 24),
+            "source_chars": len(str(issue.get("source_quote") or "")),
+            "draft_chars": len(str(issue.get("draft_quote") or "")),
+            "replacement_chars": len(str(replacement.get("replacement") or "")),
         })
     return result
 
@@ -101,7 +104,7 @@ class EditorRunRecorder:
 
     def finish(self, outcome: str, **payload: Any) -> None:
         if outcome not in EDITOR_OUTCOMES:
-            outcome = "draft_kept_review"
+            outcome = "review_required"
         if self.db is not None and self.run_id is not None:
             payload["diagnostics"] = bounded_diagnostics(
                 payload.get("diagnostics")

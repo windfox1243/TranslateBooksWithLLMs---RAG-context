@@ -10,8 +10,10 @@ import asyncio
 import json
 import httpx
 
-from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
-from ..exceptions import ContextOverflowError
+from ..base import (
+    LLMGenerationOptions, LLMProvider, LLMResponse, terminal_provider_failure,
+)
+from ..exceptions import ContextOverflowError, StructuredOutputSchemaError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 from ..utils.context_detection import ContextDetector
 
@@ -231,7 +233,7 @@ class OpenAICompatibleProvider(LLMProvider):
                 else:
                     print(f"{RED}❌ All retry attempts exhausted. Translation failed.{RESET}")
 
-                return None
+                return terminal_provider_failure(generation_options, "transport")
             except httpx.HTTPStatusError as e:
                 # Handle 400 Bad Request due to thinking/custom parameters (e.g. TabbyAPI)
                 if (hasattr(e, 'response') and e.response is not None
@@ -276,6 +278,19 @@ class OpenAICompatibleProvider(LLMProvider):
                         rate_limit_events, MAX_TRANSLATION_ATTEMPTS, self.log_callback,
                     )
                     continue
+
+                if (
+                    e.response is not None
+                    and e.response.status_code in {400, 422}
+                    and generation_options
+                    and generation_options.response_schema
+                    and any(marker in error_message.casefold() for marker in (
+                        "response_format", "json_schema", "schema",
+                    ))
+                ):
+                    raise StructuredOutputSchemaError(
+                        "OpenAI-compatible endpoint rejected the output schema."
+                    ) from e
 
                 # Detect context overflow errors
                 context_overflow_keywords = ["context_length", "maximum context", "token limit",
@@ -326,7 +341,15 @@ class OpenAICompatibleProvider(LLMProvider):
                 # when a key pool exists, otherwise retried with backoff).
                 if (e.response is not None
                         and not is_retryable_http_status(e.response.status_code)):
-                    return None
+                    status = e.response.status_code
+                    failure_class = (
+                        "provider_auth" if status in {401, 403}
+                        else "provider_quota" if status == 402
+                        else "transport"
+                    )
+                    return terminal_provider_failure(
+                        generation_options, failure_class, status
+                    )
 
                 attempt += 1
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
@@ -345,7 +368,10 @@ class OpenAICompatibleProvider(LLMProvider):
                 else:
                     print(f"{RED}❌ All retry attempts exhausted. Translation failed.{RESET}")
 
-                return None
+                return terminal_provider_failure(
+                    generation_options, "transport",
+                    e.response.status_code if e.response is not None else None,
+                )
             except json.JSONDecodeError as e:
                 RED = '\033[91m'
                 YELLOW = '\033[93m'
@@ -380,7 +406,7 @@ class OpenAICompatibleProvider(LLMProvider):
                 else:
                     print(f"{RED}❌ All retry attempts exhausted. Translation failed.{RESET}")
 
-                return None
+                return terminal_provider_failure(generation_options, "transport")
             except Exception as e:
                 RED = '\033[91m'
                 YELLOW = '\033[93m'
@@ -411,9 +437,9 @@ class OpenAICompatibleProvider(LLMProvider):
                 else:
                     print(f"{RED}❌ All retry attempts exhausted. Translation failed.{RESET}")
 
-                return None
+                return terminal_provider_failure(generation_options, "transport")
 
-        return None
+        return terminal_provider_failure(generation_options, "transport")
 
     async def get_model_context_size(self) -> int:
         """Query server to get model's context size using ContextDetector."""

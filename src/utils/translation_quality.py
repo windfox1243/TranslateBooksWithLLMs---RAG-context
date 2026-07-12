@@ -254,7 +254,14 @@ def validate_issue_locators(
     errors: List[str] = []
     for issue in issues or []:
         replacement = issue.get("draft_replacement")
+        repair_kind = str(issue.get("repair_kind") or "").casefold()
+        if repair_kind and repair_kind != "local_replace":
+            continue
         if not isinstance(replacement, dict):
+            if repair_kind == "local_replace":
+                errors.append(
+                    f"replacement_missing:{str(issue.get('issue_id') or 'issue')}"
+                )
             continue
         quote = str(issue.get("draft_quote") or "").strip()
         issue_id = str(issue.get("issue_id") or "issue")
@@ -266,6 +273,18 @@ def validate_issue_locators(
             errors.append(f"locator_missing:{issue_id}")
         elif count > 1:
             errors.append(f"locator_ambiguous:{issue_id}")
+            continue
+        local_quote = quote.casefold()
+        old = str(replacement.get("draft") or "").strip().casefold()
+        new = str(replacement.get("replacement") or "").strip().casefold()
+        if not old or not new:
+            errors.append(f"replacement_missing:{issue_id}")
+        elif old == new:
+            continue
+        elif local_quote.count(old) == 0:
+            errors.append(f"replacement_outside_locator:{issue_id}")
+        elif local_quote.count(old) > 1:
+            errors.append(f"replacement_ambiguous_in_locator:{issue_id}")
     return errors
 
 
@@ -279,6 +298,10 @@ def apply_local_editor_patches(
     unresolved: List[Dict[str, Any]] = []
     errors: List[str] = []
     for issue in issues or []:
+        repair_kind = str(issue.get("repair_kind") or "").casefold()
+        if repair_kind and repair_kind != "local_replace":
+            unresolved.append(issue)
+            continue
         replacement = issue.get("draft_replacement") or {}
         if not isinstance(replacement, dict):
             unresolved.append(issue)

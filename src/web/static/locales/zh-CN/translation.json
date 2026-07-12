@@ -331,8 +331,9 @@
   "editor_diagnostics_tab": "编辑器诊断",
   "editor_diagnostics_loading": "正在加载高级编辑诊断...",
   "editor_diagnostics_legacy": "此任务没有已分类的高级编辑诊断。",
-  "editor_diagnostics_summary": "运行：{{total}} · 已修复：{{repaired}} · 待检查：{{review}} · 已阻止：{{blocked}}",
+  "editor_diagnostics_summary": "运行：{{total}} · 成功：{{successful}} · 待检查：{{review}} · 严重失败：{{failed}} · 已恢复：{{recovered}}",
   "editor_diagnostics_run": "分块 {{chunk}} · {{outcome}} · {{reason}}",
+  "editor_diagnostics_result": "结果：{{state}} · 已解决：{{resolved}} · 未解决：{{unresolved}} · 结束原因：{{finish}}",
   "editor_diagnostics_tokens": "令牌：输入 {{prompt}} · 输出 {{completion}} · 推理 {{thinking}} · 总计 {{total}}",
   "editor_retry": "重试编辑器",
   "editor_retry_queued": "高级编辑重试已排队。请恢复任务以执行。"

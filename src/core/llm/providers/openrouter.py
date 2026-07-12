@@ -17,8 +17,10 @@ import asyncio
 import json
 
 from src.config import REQUEST_TIMEOUT, MAX_TRANSLATION_ATTEMPTS
-from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
-from ..exceptions import ContextOverflowError
+from ..base import (
+    LLMGenerationOptions, LLMProvider, LLMResponse, terminal_provider_failure,
+)
+from ..exceptions import ContextOverflowError, StructuredOutputSchemaError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 
 
@@ -284,7 +286,9 @@ class OpenRouterProvider(LLMProvider):
 
                 if "choices" not in result or len(result["choices"]) == 0:
                     print(f"[OpenRouter] WARN: Unexpected response format: {result}")
-                    return None
+                    return terminal_provider_failure(
+                        generation_options, "provider_empty"
+                    )
 
                 # NOTE: a present-but-null "content" makes .get(..., "") return None,
                 # so coalesce with `or ""` to guarantee a string downstream.
@@ -356,7 +360,7 @@ class OpenRouterProvider(LLMProvider):
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
                     await asyncio.sleep(2)
                     continue
-                return None
+                return terminal_provider_failure(generation_options, "transport")
             except httpx.HTTPStatusError as e:
                 error_body = ""
                 error_message = str(e)
@@ -371,6 +375,18 @@ class OpenRouterProvider(LLMProvider):
                         rate_limit_events, MAX_TRANSLATION_ATTEMPTS,
                     )
                     continue
+
+                if (
+                    e.response.status_code in {400, 422}
+                    and generation_options
+                    and generation_options.response_schema
+                    and any(marker in error_message.casefold() for marker in (
+                        "response_format", "json_schema", "schema",
+                    ))
+                ):
+                    raise StructuredOutputSchemaError(
+                        "OpenRouter endpoint rejected the output schema."
+                    ) from e
 
                 if e.response.status_code == 404:
                     print(f"[OpenRouter] ERROR: Model '{self.model}' not found!")
@@ -393,26 +409,36 @@ class OpenRouterProvider(LLMProvider):
                 # Client errors (404 model, 401 key, 402 credits, 400) won't
                 # recover on retry — fail fast instead of retrying 3x.
                 if not is_retryable_http_status(e.response.status_code):
-                    return None
+                    status = e.response.status_code
+                    failure_class = (
+                        "provider_auth" if status in {401, 403}
+                        else "provider_quota" if status == 402
+                        else "transport"
+                    )
+                    return terminal_provider_failure(
+                        generation_options, failure_class, status
+                    )
 
                 attempt += 1
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
                     await asyncio.sleep(2)
                     continue
-                return None
+                return terminal_provider_failure(
+                    generation_options, "transport", e.response.status_code
+                )
             except json.JSONDecodeError as e:
                 print(f"OpenRouter API JSON Decode Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
                 attempt += 1
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
                     await asyncio.sleep(2)
                     continue
-                return None
+                return terminal_provider_failure(generation_options, "transport")
             except Exception as e:
                 print(f"OpenRouter API Unknown Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
                 attempt += 1
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
                     await asyncio.sleep(2)
                     continue
-                return None
+                return terminal_provider_failure(generation_options, "transport")
 
-        return None
+        return terminal_provider_failure(generation_options, "transport")

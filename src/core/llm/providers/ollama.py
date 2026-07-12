@@ -11,8 +11,10 @@ import json
 import re
 import httpx
 
-from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
-from ..exceptions import ContextOverflowError, RepetitionLoopError
+from ..base import LLMGenerationOptions, LLMProvider, LLMResponse, terminal_provider_failure
+from ..exceptions import (
+    ContextOverflowError, RepetitionLoopError, StructuredOutputSchemaError,
+)
 from ..thinking.cache import get_thinking_cache
 from ..thinking.detection import detect_repetition_loop
 from ..thinking.behavior import ThinkingBehavior, _model_matches_pattern
@@ -323,6 +325,7 @@ class OllamaProvider(LLMProvider):
                 prompt_tokens = 0
                 completion_tokens = 0
                 exceeded_context = False
+                finish_reason = ""
 
                 # Calculate safe limit for completion tokens
                 # Reserve space for prompt (we'll get actual count from first chunk)
@@ -413,6 +416,9 @@ class OllamaProvider(LLMProvider):
                                 # Get final token counts
                                 prompt_tokens = chunk_data.get("prompt_eval_count", prompt_tokens)
                                 completion_tokens = chunk_data.get("eval_count", completion_tokens)
+                                finish_reason = str(
+                                    chunk_data.get("done_reason") or "stop"
+                                )
                                 break
                     finally:
                         # Ensure the stream is properly closed and all data is consumed
@@ -509,7 +515,10 @@ class OllamaProvider(LLMProvider):
                     completion_tokens=effective_completion_tokens,  # Use effective count (includes thinking estimate)
                     context_used=context_used,
                     context_limit=self.context_window,
-                    was_truncated=was_truncated
+                    was_truncated=was_truncated,
+                    finish_reason=finish_reason,
+                    thinking_tokens=thinking_tokens_estimate,
+                    total_tokens=context_used,
                 )
 
             except httpx.TimeoutException as e:
@@ -547,7 +556,7 @@ class OllamaProvider(LLMProvider):
                 else:
                     print(f"{RED}❌ All retry attempts exhausted. Translation failed.{RESET}")
 
-                return None
+                return terminal_provider_failure(generation_options, "transport")
             except httpx.HTTPStatusError as e:
                 RED = '\033[91m'
                 YELLOW = '\033[93m'
@@ -562,6 +571,19 @@ class OllamaProvider(LLMProvider):
                         pass
 
                 # Handle context overflow errors
+                if (
+                    e.response
+                    and e.response.status_code in {400, 422}
+                    and generation_options
+                    and generation_options.response_schema
+                    and any(marker in error_message.casefold() for marker in (
+                        "format", "json", "schema",
+                    ))
+                ):
+                    raise StructuredOutputSchemaError(
+                        "Ollama endpoint rejected the output schema."
+                    ) from e
+
                 if any(keyword in error_message.lower()
                        for keyword in ["context", "truncate", "length", "too long"]):
                     if self.log_callback:
@@ -602,7 +624,10 @@ class OllamaProvider(LLMProvider):
                 else:
                     print(f"{RED}❌ All retry attempts exhausted. Translation failed.{RESET}")
 
-                return None
+                return terminal_provider_failure(
+                    generation_options, "transport",
+                    e.response.status_code if e.response else None,
+                )
             except (RepetitionLoopError, ContextOverflowError):
                 # These errors should propagate up for handling by translator
                 raise
@@ -636,7 +661,7 @@ class OllamaProvider(LLMProvider):
                 else:
                     print(f"{RED}❌ All retry attempts exhausted. Translation failed.{RESET}")
 
-                return None
+                return terminal_provider_failure(generation_options, "transport")
             except Exception as e:
                 RED = '\033[91m'
                 YELLOW = '\033[93m'
@@ -665,9 +690,9 @@ class OllamaProvider(LLMProvider):
                 else:
                     print(f"{RED}❌ All retry attempts exhausted. Translation failed.{RESET}")
 
-                return None
+                return terminal_provider_failure(generation_options, "transport")
 
-        return None
+        return terminal_provider_failure(generation_options, "transport")
 
     async def get_model_context_size(self) -> int:
         """

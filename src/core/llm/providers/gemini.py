@@ -21,7 +21,9 @@ from src.config import (
     TEMPERATURE,
     GEMINI_SAFETY_THRESHOLD,
 )
-from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
+from ..base import (
+    LLMGenerationOptions, LLMProvider, LLMResponse, terminal_provider_failure,
+)
 from ..exceptions import ContextOverflowError, StructuredOutputSchemaError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 
@@ -348,7 +350,9 @@ class GeminiProvider(LLMProvider):
                     if attempt < MAX_TRANSLATION_ATTEMPTS:
                         await asyncio.sleep(2)
                         continue
-                    return None
+                    return terminal_provider_failure(
+                        generation_options, "transport"
+                    )
             except httpx.HTTPStatusError as e:
                     error_message = str(e)
                     error_body = ""
@@ -398,19 +402,31 @@ class GeminiProvider(LLMProvider):
                     # Client errors (404 model retired, 400/401/403) won't recover
                     # on retry — fail fast instead of hammering the API 3x.
                     if not retryable:
-                        return None
+                        status = e.response.status_code
+                        failure_class = (
+                            "provider_auth" if status in {401, 403}
+                            else "provider_quota" if status == 402
+                            else "transport"
+                        )
+                        return terminal_provider_failure(
+                            generation_options, failure_class, status
+                        )
 
                     attempt += 1
                     if attempt < MAX_TRANSLATION_ATTEMPTS:
                         await asyncio.sleep(2)
                         continue
-                    return None
+                    return terminal_provider_failure(
+                        generation_options, "transport", e.response.status_code
+                    )
             except Exception as e:
                     print(f"Gemini API Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
                     attempt += 1
                     if attempt < MAX_TRANSLATION_ATTEMPTS:
                         await asyncio.sleep(2)
                         continue
-                    return None
+                    return terminal_provider_failure(
+                        generation_options, "transport"
+                    )
 
-        return None
+        return terminal_provider_failure(generation_options, "transport")

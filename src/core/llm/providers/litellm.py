@@ -21,7 +21,7 @@ import asyncio
 from typing import Optional, Union, List
 
 from src.config import REQUEST_TIMEOUT, MAX_TRANSLATION_ATTEMPTS, TEMPERATURE
-from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
+from ..base import LLMGenerationOptions, LLMProvider, LLMResponse, terminal_provider_failure
 from ..exceptions import ContextOverflowError
 
 
@@ -181,11 +181,11 @@ class LiteLLMProvider(LLMProvider):
                     f"{MAX_TRANSLATION_ATTEMPTS}): {e}"
                 )
                 if is_last:
-                    return None
+                    return terminal_provider_failure(generation_options, "transport")
 
                 if qualname in _TRANSIENT_EXCEPTIONS:
                     await asyncio.sleep(min(2 ** (attempt + 1), 10))
                 else:
                     await asyncio.sleep(2)
 
-        return None
+        return terminal_provider_failure(generation_options, "transport")

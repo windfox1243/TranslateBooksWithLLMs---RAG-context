@@ -2025,6 +2025,19 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
     )
     def retry_editor_route(translation_id, chunk_index):
         """Queue a preserved draft for editor-only retry on normal resume."""
+        diagnostics = state_manager.checkpoint_manager.db.get_editor_diagnostics(
+            translation_id
+        )
+        latest_run = next((
+            run for run in reversed(diagnostics.get("runs") or [])
+            if int(run.get("chunk_index", -1)) == chunk_index
+        ), None)
+        if not latest_run or latest_run.get("outcome") not in {
+            "review_required", "transport_failed",
+        }:
+            return jsonify({
+                "error": "Only review-required or transport-failed editor runs can be retried"
+            }), 409
         checkpoint = state_manager.checkpoint_manager.load_checkpoint(translation_id)
         if not checkpoint:
             return jsonify({"error": "Translation job not found"}), 404
