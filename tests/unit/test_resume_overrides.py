@@ -116,3 +116,22 @@ def test_multi_key_string_is_preserved(app_ctx):
     })
     assert err is None
     assert config['openrouter_api_key'] == 'sk-or-1,sk-or-2,sk-or-3'
+
+
+def test_editor_model_overrides(app_ctx, monkeypatch):
+    monkeypatch.setenv('GEMINI_API_KEY', 'env-gemini-key')
+    config = _base_config()
+    config['prompt_options'] = {
+        'reflection_mode': True,
+        'editor_provider': 'ollama',
+        'editor_model': 'llama3',
+    }
+    err = _apply_resume_overrides(config, {
+        'editor_provider': 'Gemini',
+        'editor_model': 'gemini-3-flash-preview',
+        'editor_api_key': 'real-gemini-key-for-editor',
+    })
+    assert err is None
+    assert config['prompt_options']['editor_provider'] == 'gemini'
+    assert config['prompt_options']['editor_model'] == 'gemini-3-flash-preview'
+    assert config['gemini_api_key'] == 'real-gemini-key-for-editor'

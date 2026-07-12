@@ -35,7 +35,10 @@ function scheduleResumableJobsPoll(jobs, refresh) {
 }
 
 function destroyOverridePickers() {
-    overridePickers.forEach((p) => p.destroy?.());
+    overridePickers.forEach((p) => {
+        p.draftPicker?.destroy?.();
+        p.editorPicker?.destroy?.();
+    });
     overridePickers.clear();
 }
 
@@ -136,6 +139,11 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
     const origModel = cfg.model || '';
     const origEndpoint = cfg.llm_api_endpoint || '';
 
+    const origEditorProvider = cfg.prompt_options?.editor_provider || '';
+    const origEditorModel = cfg.prompt_options?.editor_model || '';
+    const origEditorEndpoint = cfg.prompt_options?.editor_api_endpoint || '';
+    const reflectionEnabled = cfg.prompt_options?.reflection_mode || false;
+
     return `
         <div class="resumable-job-card" style="border: 1px solid #e5e7eb; padding: 20px; margin-bottom: 15px; border-radius: 8px; background: #f9fafb;">
             <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px; gap: 15px;">
@@ -201,17 +209,31 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
                  data-provider="${DomHelpers.escapeHtml(origProvider)}"
                  data-model="${DomHelpers.escapeHtml(origModel)}"
                  data-endpoint="${DomHelpers.escapeHtml(origEndpoint)}"
+                 data-editor-provider="${DomHelpers.escapeHtml(origEditorProvider)}"
+                 data-editor-model="${DomHelpers.escapeHtml(origEditorModel)}"
+                 data-editor-endpoint="${DomHelpers.escapeHtml(origEditorEndpoint)}"
                  style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+                <div style="font-weight: 600; font-size: 13px; color: #374151; margin-bottom: 8px;" data-i18n="translation:resume_draft_model_section">Draft Model Settings</div>
                 <div style="font-size: 12px; color: #6b7280; margin-bottom: 10px;">
                     <span data-i18n="translation:resume_original_model">Original model</span>:
                     <strong>${DomHelpers.escapeHtml(origProvider)} / ${DomHelpers.escapeHtml(origModel || '—')}</strong>
                 </div>
                 <div class="resume-picker-mount"></div>
+                ${reflectionEnabled ? `
+                <div class="resume-editor-section" style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #e5e7eb;">
+                    <div style="font-weight: 600; font-size: 13px; color: #374151; margin-bottom: 8px;" data-i18n="translation:resume_editor_model_section">Senior Editor Model Settings</div>
+                    <div style="font-size: 12px; color: #6b7280; margin-bottom: 10px;">
+                        <span data-i18n="translation:resume_original_editor_model">Original editor model</span>:
+                        <strong>${origEditorProvider ? DomHelpers.escapeHtml(origEditorProvider) : t('translation:job_card_na')} / ${origEditorModel ? DomHelpers.escapeHtml(origEditorModel) : t('translation:job_card_na')}</strong>
+                    </div>
+                    <div class="resume-editor-picker-mount"></div>
+                </div>
+                ` : ''}
                 <div class="resume-style-warning" style="display: none; margin-top: 10px; font-size: 12px; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; padding: 8px;">
                     ⚠️ <span data-i18n="translation:resume_style_warning">Switching model mid-book may cause a style break between the already-translated and remaining chunks.</span>
                 </div>
                 <div style="margin-top: 12px;">
-                    <button class="btn btn-primary resume-apply" data-tid="${job.translation_id}" data-resync="${hasPendingResync ? 'true' : 'false'}" data-i18n="${hasPendingResync ? 'translation:context_resume_resync_btn' : 'translation:resume_apply_btn'}">
+                    <button class="btn btn-primary resume-apply" data-tid="${job.translation_id}" data-resync="${hasPendingResync ? 'true' : 'false'}" data-i18n="${reflectionEnabled ? 'translation:resume_apply_with_editor_btn' : (hasPendingResync ? 'translation:context_resume_resync_btn' : 'translation:resume_apply_btn')}">
                         Resume with this model
                     </button>
                 </div>
@@ -254,6 +276,7 @@ function ensureOverridePicker(panel) {
     const tid = panel.dataset.tid;
     if (overridePickers.has(tid)) return;
     const mount = panel.querySelector('.resume-picker-mount');
+    const editorMount = panel.querySelector('.resume-editor-picker-mount');
     const warning = panel.querySelector('.resume-style-warning');
     if (!mount) return;
 
@@ -261,14 +284,30 @@ function ensureOverridePicker(panel) {
     const origModel = panel.dataset.model || '';
     const origEndpoint = panel.dataset.endpoint || '';
 
-    const picker = createProviderModelPicker(mount, {
+    const draftPicker = createProviderModelPicker(mount, {
         config: { provider: origProvider, model: origModel, api_endpoint: origEndpoint },
         onChange: (cfg) => {
             const changed = (cfg.provider !== origProvider) || (cfg.model && cfg.model !== origModel);
             if (warning) warning.style.display = changed ? 'block' : 'none';
         },
     });
-    overridePickers.set(tid, picker);
+
+    let editorPicker = null;
+    if (editorMount) {
+        const origEditorProvider = panel.dataset.editorProvider || '';
+        const origEditorModel = panel.dataset.editorModel || '';
+        const origEditorEndpoint = panel.dataset.editorEndpoint || '';
+
+        editorPicker = createProviderModelPicker(editorMount, {
+            config: {
+                provider: origEditorProvider || origProvider,
+                model: origEditorModel || origModel,
+                api_endpoint: origEditorEndpoint || origEndpoint
+            },
+        });
+    }
+
+    overridePickers.set(tid, { draftPicker, editorPicker });
 }
 
 /**
@@ -294,8 +333,12 @@ function wireResumeOverrides(container) {
     container.querySelectorAll('.resume-apply').forEach((btn) => {
         btn.addEventListener('click', () => {
             const tid = btn.dataset.tid;
-            const picker = overridePickers.get(tid);
-            const cfg = picker ? picker.getConfig() : null;
+            const pickers = overridePickers.get(tid);
+            const draftPicker = pickers?.draftPicker;
+            const editorPicker = pickers?.editorPicker;
+            const cfg = draftPicker ? draftPicker.getConfig() : null;
+            const editorCfg = editorPicker ? editorPicker.getConfig() : null;
+
             if (cfg && !cfg.model) {
                 MessageLogger.showMessage(t('translation:resume_no_model_selected'), 'error');
                 return;
@@ -307,6 +350,13 @@ function wireResumeOverrides(container) {
                 overrides = { model: cfg.model, llm_provider: cfg.provider };
                 if (cfg.api_endpoint) overrides.llm_api_endpoint = cfg.api_endpoint;
                 if (cfg.api_key) overrides.api_key = cfg.api_key;
+
+                if (editorCfg) {
+                    overrides.editor_model = editorCfg.model;
+                    overrides.editor_provider = editorCfg.provider;
+                    if (editorCfg.api_endpoint) overrides.editor_api_endpoint = editorCfg.api_endpoint;
+                    if (editorCfg.api_key) overrides.editor_api_key = editorCfg.api_key;
+                }
             }
             if (btn.dataset.resync === 'true') {
                 ResumeManager.resumeContextResyncJob(tid, overrides);
