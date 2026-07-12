@@ -134,7 +134,15 @@ def build_relationship_projection(
     if not translation_id or db is None:
         return RelationshipProjection(fallback_reasons=["relationship_database_unavailable"])
     active_names = [str(name) for name in active_character_names or [] if name]
-    edges = db.get_relationship_edges(translation_id, statuses=["accepted"])
+    # Addressing edges mirror the directed-addressing table. Render only the
+    # validated active rules below so a quarantined legacy mirror cannot leak
+    # back into prompts as an accepted relationship fact.
+    edges = [
+        edge for edge in db.get_relationship_edges(
+            translation_id, statuses=["accepted"],
+        )
+        if str(edge.get("relationship_type") or "").casefold() != "addressing"
+    ]
     ranked = []
     for edge in edges:
         score, reason = _edge_relevance(

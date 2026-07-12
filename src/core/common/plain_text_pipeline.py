@@ -418,7 +418,7 @@ async def translate_paragraphs_plain(
                 and global_chunk_offset
                 <= row_index
                 < global_chunk_offset + len(chunks)
-                and row.get("status") in ("completed", "partial", "failed")
+                and row.get("status") in ("completed", "partial", "failed", "editor_retry")
                 and row_data.get("context_snapshot")
             ):
                 checkpoint_context_data_by_index[
@@ -427,7 +427,7 @@ async def translate_paragraphs_plain(
             if (
                 isinstance(row_index, int)
                 and global_chunk_offset <= row_index < global_chunk_offset + len(chunks)
-                and row.get("status") == "failed"
+                and row.get("status") in {"failed", "editor_retry"}
                 and row.get("translated_text")
                 and row_data.get("editor_validation")
             ):
@@ -810,6 +810,7 @@ async def translate_paragraphs_plain(
         diagnostics = getattr(editor_error, "diagnostics", None)
         if diagnostics:
             chunk_data["editor_validation"] = diagnostics
+        chunk_data.pop("editor_retry_pending", None)
         checkpoint_manager.db.save_chunk(
             translation_id=translation_id,
             chunk_index=global_chunk_offset + i,

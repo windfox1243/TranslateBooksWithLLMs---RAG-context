@@ -13,7 +13,7 @@ CORRECTED_TAG_OUT = "<CORRECTED_TAG_OUT>"
 REFLECTION_JSON_TAG_IN = "<REFLECTION_JSON>"
 REFLECTION_JSON_TAG_OUT = "</REFLECTION_JSON>"
 REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v5"
-REFLECTION_CONTRACT_VERSION = "editor-issue-v4"
+REFLECTION_CONTRACT_VERSION = "editor-issue-v5"
 
 REFLECTION_RESPONSE_SCHEMA = {
     "type": "object",
@@ -26,6 +26,7 @@ REFLECTION_RESPONSE_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "issue_id": {"type": "string"},
+                    "segment_id": {"type": "string"},
                     "category": {"type": "string"},
                     "severity": {
                         "type": "string",
@@ -69,7 +70,7 @@ REFLECTION_RESPONSE_SCHEMA = {
                     },
                 },
                 "required": [
-                    "issue_id", "category", "severity", "confidence",
+                    "issue_id", "segment_id", "category", "severity", "confidence",
                     "repair_kind",
                     "source_quote", "draft_quote", "instruction",
                     "draft_replacement", "glossary_update",
@@ -125,7 +126,7 @@ def _build_reflection_json_contract_section(*, native_schema: bool = False) -> s
 - Give every issue a stable issue_id and confidence from 0.0 to 1.0.
 - Set repair_kind to local_replace only for an exact substitution, rewrite for a semantic/full-context correction, or review_only for uncertain evidence that must not be changed automatically.
 - Minor issues and issues below 0.80 confidence must use review_only.
-- For a direct edit, draft_quote must be an exact, unique contextual span from the current draft. Expand it until it occurs exactly once and contains the draft_replacement.draft text.
+- For a direct edit, segment_id must identify the numbered draft segment and draft_quote must occur exactly once inside that segment and contain draft_replacement.draft.
 - For a direct local substitution, set draft_replacement to {{"draft": "exact current draft span", "replacement": "exact corrected target-language span"}}. Do not leave it null when a specific draft span must change.
 - Use glossary_update only for durable terminology that should apply to later chunks: {{"source": "...", "target": "..."}}. A one-off correction is not a glossary update.
 - term_replacement is a compatibility alias for glossary_update. Prefer glossary_update in new output.
@@ -147,6 +148,7 @@ Repair schema:
       "category": "terminology",
       "severity": "major",
       "issue_id": "issue-1",
+      "segment_id": "SEG-0001",
       "confidence": 0.95,
       "repair_kind": "local_replace",
       "source_quote": "exact source evidence",
@@ -1638,6 +1640,8 @@ def generate_chunk_reflection_prompt(
     stutter_example = guidance["stutter_example"]
     addressee_examples = guidance["addressee_examples"]
 
+    from src.utils.translation_quality import format_editor_segments
+
     reflection_contract = _build_reflection_json_contract_section(
         native_schema=native_schema,
     )
@@ -1713,7 +1717,10 @@ ADDITIONAL AUDIT OUTPUT RULES:
             f"draft_replacement when possible:\n{deterministic_findings.strip()}"
         )
     user_sections.append(f"# ACTIVE NOVEL LORE & ADDRESSING RULES (Background defaults apply ONLY when source text lacks an explicit spoken nickname/title. Explicit source nicknames like 'Spe-chan' take 100% priority over lore entries like 'Special'):\n{novel_context.strip() if novel_context.strip() else 'None'}")
-    user_sections.append(f"# DRAFT TRANSLATION TO AUDIT:\n{draft_translation.strip()}")
+    user_sections.append(
+        "# NUMBERED DRAFT TRANSLATION TO AUDIT:\n"
+        + format_editor_segments(draft_translation)
+    )
     user_sections.append("Perform your rigorous Senior Editor audit now:")
 
     return PromptPair(system=system_prompt.strip(), user="\n\n".join(user_sections))

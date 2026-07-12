@@ -244,13 +244,58 @@ def residue_findings_to_editor_issues(
     } for index, finding in enumerate(findings, start=1)]
 
 
+def build_editor_segments(text: str) -> List[Dict[str, Any]]:
+    """Split draft text into stable, offset-preserving editor segments."""
+
+    raw = str(text or "")
+    segments: List[Dict[str, Any]] = []
+    pattern = re.compile(r".*?(?:\r?\n+|(?<=[.!?。！？])(?:\s+|$)|$)", re.DOTALL)
+    for match in pattern.finditer(raw):
+        value = match.group(0)
+        if not value:
+            continue
+        start, end = match.span()
+        if value.strip():
+            segments.append({
+                "segment_id": f"SEG-{len(segments) + 1:04d}",
+                "start": start,
+                "end": end,
+                "text": value,
+            })
+    if not segments and raw:
+        segments.append({
+            "segment_id": "SEG-0001", "start": 0, "end": len(raw), "text": raw,
+        })
+    return segments
+
+
+def format_editor_segments(text: str) -> str:
+    """Render the marker-only draft view used by the Senior Editor prompt."""
+
+    return "\n".join(
+        f"[{item['segment_id']}] {item['text'].rstrip()}"
+        for item in build_editor_segments(text)
+    )
+
+
+def _issue_search_window(draft: str, issue: Dict[str, Any]) -> tuple[int, int]:
+    segment_id = str(issue.get("segment_id") or "").strip().upper()
+    if segment_id:
+        segment = next((
+            item for item in build_editor_segments(draft)
+            if item["segment_id"] == segment_id
+        ), None)
+        if segment:
+            return int(segment["start"]), int(segment["end"])
+    return 0, len(draft)
+
+
 def validate_issue_locators(
     draft_text: str,
     issues: Iterable[Dict[str, Any]],
 ) -> List[str]:
     """Validate that every direct edit identifies one exact draft location."""
     draft = str(draft_text or "")
-    draft_folded = draft.casefold()
     errors: List[str] = []
     for issue in issues or []:
         replacement = issue.get("draft_replacement")
@@ -268,7 +313,9 @@ def validate_issue_locators(
         if not quote:
             errors.append(f"locator_missing:{issue_id}")
             continue
-        count = draft_folded.count(quote.casefold())
+        window_start, window_end = _issue_search_window(draft, issue)
+        window_folded = draft[window_start:window_end].casefold()
+        count = window_folded.count(quote.casefold())
         if count == 0:
             errors.append(f"locator_missing:{issue_id}")
         elif count > 1:
@@ -313,12 +360,14 @@ def apply_local_editor_patches(
         if not quote or not old or not new:
             unresolved.append(issue)
             continue
-        folded = draft.casefold()
+        window_start, window_end = _issue_search_window(draft, issue)
+        window = draft[window_start:window_end]
+        folded = window.casefold()
         quote_folded = quote.casefold()
         if folded.count(quote_folded) != 1:
             unresolved.append(issue)
             continue
-        quote_start = folded.index(quote_folded)
+        quote_start = window_start + folded.index(quote_folded)
         quote_end = quote_start + len(quote)
         local = draft[quote_start:quote_end]
         local_folded = local.casefold()
@@ -381,14 +430,32 @@ def validate_editor_repair(
                 errors.append(f"replacement_missing: {target_span}")
             continue
 
-        quote_count = draft_key.count(quote_key) if quote_key else 0
+        raw_window_start, raw_window_end = _issue_search_window(
+            str(draft_text or ""), issue,
+        )
+        uses_segment = bool(str(issue.get("segment_id") or "").strip())
+        segment_key = _normalized(
+            str(draft_text or "")[raw_window_start:raw_window_end]
+        )
+        quote_count = (
+            segment_key.count(quote_key)
+            if uses_segment and quote_key
+            else draft_key.count(quote_key) if quote_key else 0
+        )
         if quote_count != 1:
             errors.append(
                 f"issue_locator_{'missing' if quote_count == 0 else 'ambiguous'}: {quote}"
             )
             continue
 
-        quote_start = draft_key.index(quote_key)
+        if uses_segment:
+            occurrence_before = _normalized(
+                str(draft_text or "")[:raw_window_start]
+            ).count(quote_key)
+            matches = list(re.finditer(re.escape(quote_key), draft_key))
+            quote_start = matches[min(occurrence_before, len(matches) - 1)].start()
+        else:
+            quote_start = draft_key.index(quote_key)
         quote_end = quote_start + len(quote_key)
         local_quote = draft_key[quote_start:quote_end]
         local_occurrences = [

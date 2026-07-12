@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 
-ADDRESSING_CONTRACT_VERSION = 2
+ADDRESSING_CONTRACT_VERSION = 3
 
 _REGISTER_VALUES = {
     "neutral",
@@ -157,7 +157,9 @@ class AddressingCandidateV2:
         )
         second_person = _clean(
             target.get("second_person")
+            or target.get("addressee_reference")
             or target.get("second_person_pronoun")
+            or data.get("addressee_reference")
             or data.get("second_person")
             or data.get("second_pronoun"),
             100,
@@ -230,7 +232,9 @@ class AddressingCandidateV2:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        result = asdict(self)
+        result["addressee_reference"] = self.second_person
+        return result
 
     def to_delta(self):
         from src.utils.context_schema import AddressingUpdateDelta

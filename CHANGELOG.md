@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.15.0-beta.38 - 2026-07-12
+
+### Added
+
+- **Segment-Based Senior Editor Repairs**:
+  The `editor-issue-v5` contract gives each draft segment a stable identifier, so
+  repeated text can be corrected locally without ambiguous global quote matching.
+  Concise terminal state logs now report audit, locator, local-patch, fallback,
+  review-preserved, and hard-blocked outcomes.
+- **Context Preview Guidance**:
+  Global lore, directed addressing, relationship evolution, editor diagnostics,
+  and raw context views now explain their source of truth and effect on later chunks
+  in all seven interface locales.
+
+### Fixed
+
+- **Senior Editor Review Reliability**:
+  Safe local fixes are preserved before one bounded full-chunk fallback. A valid
+  draft with unresolved editorial findings remains review-required instead of
+  becoming a failed translation, and editor-only retries use a separate checkpoint
+  state rather than forcing full retranslation.
+- **Unsupported Addressing Rules**:
+  Indirect references can no longer create durable speaker-to-listener addressing
+  rules. Existing unlocked contract-v2 rules without exact spoken evidence are
+  quarantined, kept in the audit trail, and excluded from prompts and context exports.
+
 ## 1.15.0-beta.37 - 2026-07-12
 
 ### Added
