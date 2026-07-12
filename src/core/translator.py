@@ -2159,6 +2159,7 @@ async def run_chunk_reflection_pass(
             )
         retry_user_prompt = (
             f"{reflection_pair.user}\n\n"
+            f"Your previous response was:\n{critique}\n\n"
             "Your previous response contained malformed contract data. Return only one valid "
             "JSON object. Every direct correction with a draft_quote "
             "must include draft_replacement with exact draft and replacement spans. "
@@ -2359,6 +2360,7 @@ async def run_chunk_reflection_pass(
         invalid_ids = {item.rsplit(":", 1)[-1] for item in locator_errors}
         locator_retry_prompt = (
             f"{reflection_pair.user}\n\n"
+            f"Your previous response was:\n{critique}\n\n"
             "LOCATOR CORRECTION: The following issue IDs did not identify an "
             "exact unique span in the draft: " + ", ".join(sorted(invalid_ids)) +
             ". Return the same JSON contract. Preserve every valid issue, but "

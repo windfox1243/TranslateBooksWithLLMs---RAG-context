@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.15.0-beta.36 - 2026-07-12
+
+### Fixed
+
+- **Capitalization Validation Bug**:
+  Fixed an issue where local replacement validation flagged false validation errors
+  (e.g., `replacement_not_applied_locally` and `replacement_missing_locally`)
+  for edits that only corrected capitalization, spacing, or accents. Case-only corrections
+  are now validated case-sensitively using case-preserved NFKC-normalized strings.
+
+- **Senior Editor Retry Context**:
+  Improved retry reliability in `locator_retry` and `reflection_parse_retry` stages
+  by including the model's previous critique response directly in the prompt. This ensures
+  the LLM knows exactly which issue IDs and quotes were generated in the first turn
+  when correcting ambiguous locators or malformed JSON payloads.
+
 ## 1.15.0-beta.35 - 2026-07-12
 
 ### Fixed
