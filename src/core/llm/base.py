@@ -14,6 +14,7 @@ from src.config import TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT, REQUEST_TIMEOUT
 from src.utils.telemetry import get_telemetry_headers
 from src.core.llm.utils.extraction import TranslationExtractor
 from src.core.llm.key_pool import KeyPool
+from src.core.llm.exceptions import ProviderRequestError
 
 
 def normalize_api_keys(raw: Optional[Union[str, Iterable[str]]]) -> List[str]:
@@ -53,6 +54,15 @@ class LLMResponse:
     thinking_tokens: int = 0
     total_tokens: int = 0
 
+    def __post_init__(self) -> None:
+        """Normalize provider finish reasons into one truncation signal."""
+        reason = str(self.finish_reason or "").strip().casefold().replace("-", "_")
+        if reason in {
+            "length", "max_tokens", "max_token", "max_output_tokens",
+            "token_limit", "max_tokens_reached",
+        }:
+            self.was_truncated = True
+
 
 @dataclass(frozen=True)
 class LLMGenerationOptions:
@@ -66,6 +76,17 @@ class LLMGenerationOptions:
     thinking_budget: Optional[int] = None
     thinking_enabled: Optional[bool] = None
     reasoning_effort: Optional[str] = None
+
+
+def terminal_provider_failure(
+    generation_options: Optional[LLMGenerationOptions],
+    failure_class: str,
+    status_code: Optional[int] = None,
+) -> None:
+    """Raise sanitized editor failures while preserving legacy draft behavior."""
+    if generation_options and generation_options.stage:
+        raise ProviderRequestError(failure_class, status_code)
+    return None
 
 
 class LLMProvider(ABC):

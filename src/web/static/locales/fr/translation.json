@@ -331,8 +331,9 @@
   "editor_diagnostics_tab": "Diagnostics de l'éditeur",
   "editor_diagnostics_loading": "Chargement des diagnostics de l'éditeur principal...",
   "editor_diagnostics_legacy": "Cette tâche ne contient aucun diagnostic classifié de l'éditeur principal.",
-  "editor_diagnostics_summary": "Exécutions : {{total}} · réparées : {{repaired}} · à vérifier : {{review}} · bloquées : {{blocked}}",
+  "editor_diagnostics_summary": "Exécutions : {{total}} · réussies : {{successful}} · à vérifier : {{review}} · échecs critiques : {{failed}} · récupérées : {{recovered}}",
   "editor_diagnostics_run": "Segment {{chunk}} · {{outcome}} · {{reason}}",
+  "editor_diagnostics_result": "Résultat : {{state}} · résolus : {{resolved}} · non résolus : {{unresolved}} · fin : {{finish}}",
   "editor_diagnostics_tokens": "Jetons : entrée {{prompt}} · sortie {{completion}} · raisonnement {{thinking}} · total {{total}}",
   "editor_retry": "Relancer l'éditeur",
   "editor_retry_queued": "Nouvelle tentative de l'éditeur mise en file. Reprenez la tâche pour l'exécuter."

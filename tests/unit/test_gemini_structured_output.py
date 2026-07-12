@@ -170,7 +170,6 @@ async def test_editor_does_not_cache_empty_schema_requests(
     responses = iter([
         None,
         LLMResponse(content='{"status":"no_issues","issues":[]}'),
-        LLMResponse(content='{"status":"no_issues","issues":[]}'),
     ])
 
     async def generate_async(**kwargs):
@@ -195,8 +194,9 @@ async def test_editor_does_not_cache_empty_schema_requests(
         )
 
     assert seen_schemas[0] is REFLECTION_RESPONSE_SCHEMA
-    assert seen_schemas[1] is None
-    assert seen_schemas[2] is REFLECTION_RESPONSE_SCHEMA
+    # Empty/transport failures do not trigger an unstructured duplicate call
+    # and do not poison the endpoint-specific capability cache.
+    assert seen_schemas[1] is REFLECTION_RESPONSE_SCHEMA
 
 
 @pytest.mark.asyncio
@@ -247,3 +247,47 @@ async def test_editor_retries_truncation_with_more_output_and_less_thinking(
     assert first["thinking_level"] == "minimal"
     assert retry["max_output_tokens"] == 8192
     assert retry["thinking_level"] == "minimal"
+
+
+@pytest.mark.asyncio
+async def test_native_json_prompt_and_tagged_schema_fallback_do_not_conflict(
+    clear_editor_schema_capabilities,
+):
+    from src.core.llm.exceptions import StructuredOutputSchemaError
+    from src.core.translator import run_chunk_reflection_pass
+
+    calls = []
+
+    async def generate_async(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise StructuredOutputSchemaError("schema rejected")
+        return LLMResponse(content='{"status":"no_issues","issues":[]}')
+
+    client = MagicMock()
+    client.generate_async = AsyncMock(side_effect=generate_async)
+    await run_chunk_reflection_pass(
+        source_chunk="Source.", draft_translation="Draft.",
+        target_language="English", model_name="editor", llm_client=client,
+        prompt_options={
+            "editor_provider_resolved": "gemini",
+            "editor_model_resolved": "editor",
+            "editor_api_endpoint": "https://example.invalid/a",
+        },
+    )
+    native_text = calls[0]["system_prompt"] + calls[0]["prompt"]
+    fallback_text = calls[1]["system_prompt"] + calls[1]["prompt"]
+    assert calls[0]["response_schema"] is REFLECTION_RESPONSE_SCHEMA
+    assert "<REFLECTION_JSON>" not in native_text
+    assert calls[1]["response_schema"] is None
+    assert "<REFLECTION_JSON>" in fallback_text
+    await run_chunk_reflection_pass(
+        source_chunk="Source.", draft_translation="Draft.",
+        target_language="English", model_name="editor", llm_client=client,
+        prompt_options={
+            "editor_provider_resolved": "gemini",
+            "editor_model_resolved": "editor",
+            "editor_api_endpoint": "https://example.invalid/b",
+        },
+    )
+    assert calls[2]["response_schema"] is REFLECTION_RESPONSE_SCHEMA

@@ -135,6 +135,7 @@ async def test_incomplete_editor_replacement_contract_retries_once():
     complete = (
         '{"status":"needs_repair","issues":[{'
         '"category":"mistranslation","severity":"major",'
+        '"repair_kind":"local_replace",'
         '"source_quote":"Brother","draft_quote":"Brother",'
         '"instruction":"Translate the address term.",'
         '"draft_replacement":{"draft":"Brother","replacement":"Anh"},'
@@ -149,7 +150,6 @@ async def test_incomplete_editor_replacement_contract_retries_once():
                     '"draft_replacement":null,',
                 ),
                 complete,
-                "<TRANSLATION>Anh, lại đây.</TRANSLATION>",
             ]
             self.calls = 0
 
@@ -172,7 +172,7 @@ async def test_incomplete_editor_replacement_contract_retries_once():
         },
     )
     assert repaired == "Anh, lại đây."
-    # The corrected exact issue is applied locally; no full-chunk repair call.
+    # Only the malformed issue is corrected; the exact edit is then local.
     assert client.calls == 2
 
 
@@ -228,7 +228,7 @@ async def test_ambiguous_locator_is_corrected_before_any_repair_call():
     )
     corrected = ambiguous.replace(
         '"draft_quote":"anh"',
-        '"draft_quote":"Anh nói với anh ấy."',
+        '"draft_quote":"Anh nói với"',
     ).replace('"draft":"anh"', '"draft":"Anh"')
 
     class Client:
@@ -349,3 +349,115 @@ def test_nonblocking_same_script_residue_is_not_a_repair_error():
         target_language="Vietnamese",
     )
     assert errors == []
+
+
+@pytest.mark.asyncio
+async def test_replacement_outside_locator_never_reaches_full_rewrite():
+    malformed = (
+        '{"status":"needs_repair","issues":[{'
+        '"issue_id":"bad-1","category":"style","severity":"major",'
+        '"confidence":0.95,"repair_kind":"local_replace",'
+        '"source_quote":"Source evidence.","draft_quote":"Short quote",'
+        '"instruction":"Replace the longer phrase.",'
+        '"draft_replacement":{"draft":"phrase outside quote",'
+        '"replacement":"correct phrase"},"glossary_update":null}]}'
+    )
+
+    class Client:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate_async(self, **_kwargs):
+            self.calls += 1
+            return SimpleNamespace(content=malformed)
+
+    client = Client()
+    result = await run_chunk_reflection_pass(
+        source_chunk="Source evidence.",
+        draft_translation="Short quote and phrase outside quote.",
+        target_language="English",
+        model_name="test",
+        llm_client=client,
+        prompt_options={"source_language": "English"},
+    )
+    assert result == "Short quote and phrase outside quote."
+    assert client.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_isolated_issue_retry_preserves_valid_sibling():
+    initial = (
+        '{"status":"needs_repair","issues":['
+        '{"issue_id":"valid-1","category":"terminology","severity":"major",'
+        '"confidence":0.95,"repair_kind":"local_replace",'
+        '"source_quote":"Coach","draft_quote":"Huấn luyện viên",'
+        '"instruction":"Use the glossary term.",'
+        '"draft_replacement":{"draft":"Huấn luyện viên","replacement":"HLV"},'
+        '"glossary_update":null},'
+        '{"issue_id":"bad-2","category":"style","severity":"major",'
+        '"confidence":0.90,"repair_kind":"local_replace",'
+        '"source_quote":"spoke","draft_quote":"nói nhỏ",'
+        '"instruction":"Improve the verb.","draft_replacement":null,'
+        '"glossary_update":null}]}'
+    )
+    corrected_only = (
+        '{"status":"needs_repair","issues":[{'
+        '"issue_id":"bad-2","category":"style","severity":"major",'
+        '"confidence":0.90,"repair_kind":"local_replace",'
+        '"source_quote":"spoke","draft_quote":"nói nhỏ",'
+        '"instruction":"Improve the verb.",'
+        '"draft_replacement":{"draft":"nói nhỏ","replacement":"thì thầm"},'
+        '"glossary_update":null}]}'
+    )
+
+    class Client:
+        def __init__(self):
+            self.responses = [initial, corrected_only]
+            self.calls = 0
+
+        async def generate_async(self, **_kwargs):
+            value = self.responses[self.calls]
+            self.calls += 1
+            return SimpleNamespace(content=value)
+
+    client = Client()
+    result = await run_chunk_reflection_pass(
+        source_chunk="Coach spoke.",
+        draft_translation="Huấn luyện viên nói nhỏ.",
+        target_language="Vietnamese",
+        model_name="test",
+        llm_client=client,
+        prompt_options={"source_language": "English"},
+    )
+    assert result == "HLV thì thầm."
+    assert client.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_minor_issue_is_review_only_without_rewrite():
+    critique = (
+        '{"status":"needs_repair","issues":[{'
+        '"issue_id":"minor-1","category":"style","severity":"minor",'
+        '"confidence":0.99,"repair_kind":"local_replace",'
+        '"source_quote":"Wait.","draft_quote":"Chờ đã.",'
+        '"instruction":"Optional stylistic preference.",'
+        '"draft_replacement":{"draft":"Chờ đã.","replacement":"Đợi nhé."},'
+        '"glossary_update":null}]}'
+    )
+
+    class Client:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate_async(self, **_kwargs):
+            self.calls += 1
+            return SimpleNamespace(content=critique)
+
+    client = Client()
+    result = await run_chunk_reflection_pass(
+        source_chunk="Wait.", draft_translation="Chờ đã.",
+        target_language="Vietnamese", model_name="test", llm_client=client,
+        prompt_options={"source_language": "English"},
+    )
+    assert result == "Chờ đã."
+    assert client.calls == 1

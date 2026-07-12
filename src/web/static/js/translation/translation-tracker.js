@@ -1378,12 +1378,12 @@ window.NovelContextUI = {
             return;
         }
         const summary = document.createElement('p');
-        const outcomes = result.summary?.outcomes || {};
         summary.textContent = t('translation:editor_diagnostics_summary', {
             total: result.summary?.total || 0,
-            repaired: outcomes.repaired || 0,
-            review: outcomes.draft_kept_review || 0,
-            blocked: outcomes.blocked || 0
+            successful: result.summary?.successful || 0,
+            review: result.summary?.review_required || 0,
+            failed: result.summary?.hard_failed || 0,
+            recovered: result.summary?.recovered || 0
         });
         pane.appendChild(summary);
         (result.runs || []).slice().reverse().forEach(run => {
@@ -1397,6 +1397,16 @@ window.NovelContextUI = {
                 reason: run.failure_class || '-'
             });
             row.appendChild(label);
+            const details = document.createElement('div');
+            details.style.fontSize = '0.75rem';
+            details.style.color = 'var(--text-muted-light)';
+            details.textContent = t('translation:editor_diagnostics_result', {
+                state: run.result_state || 'unchanged_draft',
+                resolved: run.resolved_issue_count || 0,
+                unresolved: run.unresolved_issue_count || 0,
+                finish: run.finish_reason || '-'
+            });
+            row.appendChild(details);
             const tokens = document.createElement('div');
             tokens.style.fontSize = '0.75rem';
             tokens.style.color = 'var(--text-muted-light)';
@@ -1408,7 +1418,8 @@ window.NovelContextUI = {
                 total: run.total_tokens || 0
             });
             row.appendChild(tokens);
-            if (run.outcome === 'draft_kept_review' && Number(run.chunk_index) >= 0) {
+            if (['review_required', 'transport_failed'].includes(run.outcome)
+                && Number(run.chunk_index) >= 0) {
                 const retry = document.createElement('button');
                 retry.type = 'button';
                 retry.className = 'btn btn-sm btn-secondary';

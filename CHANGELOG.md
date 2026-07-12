@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.15.0-beta.35 - 2026-07-12
+
+### Fixed
+
+- **Senior Editor Outcome Reporting**:
+  Successful local and LLM repairs now persist with their exact outcomes.
+  Review-required runs are reported separately from hard failures, and legacy
+  beta.32-beta.34 outcome values remain readable.
+
+- **Malformed Issue Isolation**:
+  Invalid replacement spans and ambiguous locators are corrected by issue ID
+  before repair. Valid sibling fixes are preserved, malformed local edits never
+  enter an impossible full rewrite, and minor or low-confidence observations
+  remain review evidence.
+
+- **Structured Output Reliability**:
+  Native-schema requests use a pure JSON prompt while explicit schema rejection
+  uses a tagged fallback. Transport, authentication, quota, and empty-response
+  failures no longer trigger duplicate unstructured requests.
+
+- **Cross-Provider Truncation Recovery**:
+  Finish reasons from Gemini, OpenAI-compatible providers, OpenRouter, Ollama,
+  LiteLLM, Mistral, DeepSeek, and Poe now share one truncation signal for bounded
+  adaptive Senior Editor retries.
+
+### Added
+
+- **Actionable Editor Contract**:
+  The `editor-issue-v4` contract distinguishes exact local replacements,
+  semantic rewrites, and review-only evidence while remaining compatible with
+  older responses.
+
+- **Detailed Safe Diagnostics**:
+  Editor diagnostics include result state, resolved and unresolved issue counts,
+  recovered truncations, provider finish state, and sanitized per-attempt data
+  without prompts, credentials, complete responses, or book excerpts.
+
 ## 1.15.0-beta.34 - 2026-07-12
 
 ### Added

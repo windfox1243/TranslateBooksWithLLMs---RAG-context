@@ -32,6 +32,15 @@ class StructuredOutputSchemaError(RuntimeError):
     pass
 
 
+class ProviderRequestError(RuntimeError):
+    """Sanitized terminal provider failure for an editor-stage request."""
+
+    def __init__(self, failure_class: str, status_code: int | None = None):
+        super().__init__(failure_class)
+        self.failure_class = failure_class
+        self.status_code = status_code
+
+
 class RateLimitError(Exception):
     """
     Raised when the API returns HTTP 429 (Too Many Requests) and all retry

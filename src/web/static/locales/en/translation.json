@@ -331,8 +331,9 @@
   "editor_diagnostics_tab": "Editor Diagnostics",
   "editor_diagnostics_loading": "Loading Senior Editor diagnostics...",
   "editor_diagnostics_legacy": "This job has no classified Senior Editor diagnostics.",
-  "editor_diagnostics_summary": "Runs: {{total}} · repaired: {{repaired}} · review: {{review}} · blocked: {{blocked}}",
+  "editor_diagnostics_summary": "Runs: {{total}} · successful: {{successful}} · review: {{review}} · hard failures: {{failed}} · recovered: {{recovered}}",
   "editor_diagnostics_run": "Chunk {{chunk}} · {{outcome}} · {{reason}}",
+  "editor_diagnostics_result": "Result: {{state}} · resolved: {{resolved}} · unresolved: {{unresolved}} · finish: {{finish}}",
   "editor_diagnostics_tokens": "Tokens: input {{prompt}} · output {{completion}} · thinking {{thinking}} · total {{total}}",
   "editor_retry": "Retry editor",
   "editor_retry_queued": "Senior Editor retry queued. Resume the job to run it."

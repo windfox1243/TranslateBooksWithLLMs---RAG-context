@@ -17,7 +17,7 @@ import asyncio
 import json
 
 from src.config import REQUEST_TIMEOUT, MAX_TRANSLATION_ATTEMPTS, TEMPERATURE
-from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
+from ..base import LLMGenerationOptions, LLMProvider, LLMResponse, terminal_provider_failure
 from ..exceptions import ContextOverflowError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 
@@ -258,7 +258,7 @@ class MistralProvider(LLMProvider):
 
                 if "choices" not in result or len(result["choices"]) == 0:
                     print(f"⚠️ Mistral: Unexpected response format: {result}")
-                    return None
+                    return terminal_provider_failure(generation_options, "provider_empty")
 
                 response_text = result["choices"][0].get("message", {}).get("content", "")
 
@@ -288,7 +288,7 @@ class MistralProvider(LLMProvider):
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
                     await asyncio.sleep(2)
                     continue
-                return None
+                return terminal_provider_failure(generation_options, "transport")
 
             except httpx.HTTPStatusError as e:
                 error_body = ""
@@ -321,13 +321,15 @@ class MistralProvider(LLMProvider):
                 # Client errors (404 model, 401 key, 402 credits, 400) won't
                 # recover on retry — fail fast.
                 if not is_retryable_http_status(e.response.status_code):
-                    return None
+                    status = e.response.status_code
+                    failure_class = "provider_auth" if status in {401, 403} else "provider_quota" if status == 402 else "transport"
+                    return terminal_provider_failure(generation_options, failure_class, status)
 
                 attempt += 1
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
                     await asyncio.sleep(2)
                     continue
-                return None
+                return terminal_provider_failure(generation_options, "transport", e.response.status_code)
 
             except json.JSONDecodeError as e:
                 print(f"Mistral API JSON Decode Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
@@ -335,7 +337,7 @@ class MistralProvider(LLMProvider):
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
                     await asyncio.sleep(2)
                     continue
-                return None
+                return terminal_provider_failure(generation_options, "transport")
 
             except Exception as e:
                 print(f"Mistral API Unknown Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
@@ -343,6 +345,6 @@ class MistralProvider(LLMProvider):
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
                     await asyncio.sleep(2)
                     continue
-                return None
+                return terminal_provider_failure(generation_options, "transport")
 
-        return None
+        return terminal_provider_failure(generation_options, "transport")

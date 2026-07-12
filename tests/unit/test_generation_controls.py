@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from src.core.llm import LLMGenerationOptions
+from src.core.llm import LLMGenerationOptions, LLMResponse
 from src.core.llm.generation_controls import (
     adaptive_retry_output_tokens,
     generation_capabilities,
@@ -64,6 +64,14 @@ def test_other_provider_capabilities_are_conservative():
     assert generation_capabilities(
         "openai", "o4-mini", endpoint="http://localhost:1234/v1"
     ).thinking_supported is False
+
+
+@pytest.mark.parametrize(
+    "finish_reason",
+    ["MAX_TOKENS", "length", "max_output_tokens", "token-limit"],
+)
+def test_provider_finish_reasons_normalize_truncation(finish_reason):
+    assert LLMResponse(content="partial", finish_reason=finish_reason).was_truncated
     assert generation_capabilities(
         "mistral", "mistral-large-latest"
     ).thinking_supported is False

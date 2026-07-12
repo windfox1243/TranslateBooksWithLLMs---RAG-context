@@ -12,8 +12,8 @@ CORRECTED_TAG_IN = "<CORRECTED_TAG_IN>"
 CORRECTED_TAG_OUT = "<CORRECTED_TAG_OUT>"
 REFLECTION_JSON_TAG_IN = "<REFLECTION_JSON>"
 REFLECTION_JSON_TAG_OUT = "</REFLECTION_JSON>"
-REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v4"
-REFLECTION_CONTRACT_VERSION = "editor-issue-v3"
+REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v5"
+REFLECTION_CONTRACT_VERSION = "editor-issue-v4"
 
 REFLECTION_RESPONSE_SCHEMA = {
     "type": "object",
@@ -32,6 +32,10 @@ REFLECTION_RESPONSE_SCHEMA = {
                         "enum": ["blocker", "major", "minor"],
                     },
                     "confidence": {"type": "number"},
+                    "repair_kind": {
+                        "type": "string",
+                        "enum": ["local_replace", "rewrite", "review_only"],
+                    },
                     "source_quote": {"type": "string"},
                     "draft_quote": {"type": "string"},
                     "instruction": {"type": "string"},
@@ -66,6 +70,7 @@ REFLECTION_RESPONSE_SCHEMA = {
                 },
                 "required": [
                     "issue_id", "category", "severity", "confidence",
+                    "repair_kind",
                     "source_quote", "draft_quote", "instruction",
                     "draft_replacement", "glossary_update",
                 ],
@@ -108,39 +113,42 @@ Apply these instructions to {apply_to} wherever they affect style, tone, termino
 """
 
 
-def _build_reflection_json_contract_section() -> str:
+def _build_reflection_json_contract_section(*, native_schema: bool = False) -> str:
     """Return the structured Senior Editor output contract."""
     return f"""STRICT OUTPUT CONTRACT:
-- Output exactly one JSON object inside {REFLECTION_JSON_TAG_IN} and {REFLECTION_JSON_TAG_OUT}.
+- Output exactly one JSON object{'' if native_schema else f' inside {REFLECTION_JSON_TAG_IN} and {REFLECTION_JSON_TAG_OUT}'}.
 - Use status "no_issues" only when no repair is needed.
 - Use status "needs_repair" when any omission, mistranslation, glossary error, pronoun bleed, gender mismatch, register issue, style issue, fluency issue, consistency issue, placeholder issue, format issue, or other actionable defect exists.
-- Do not include prose, markdown, bullets, or comments outside the JSON tags.
+- Do not include prose, markdown, bullets, or comments outside the JSON object.
 - Keep issue instructions concise and directly repairable.
 - Return at most 12 issues, ordered by severity and confidence.
 - Give every issue a stable issue_id and confidence from 0.0 to 1.0.
+- Set repair_kind to local_replace only for an exact substitution, rewrite for a semantic/full-context correction, or review_only for uncertain evidence that must not be changed automatically.
+- Minor issues and issues below 0.80 confidence must use review_only.
 - For a direct edit, draft_quote must be an exact, unique contextual span from the current draft. Expand it until it occurs exactly once and contains the draft_replacement.draft text.
 - For a direct local substitution, set draft_replacement to {{"draft": "exact current draft span", "replacement": "exact corrected target-language span"}}. Do not leave it null when a specific draft span must change.
 - Use glossary_update only for durable terminology that should apply to later chunks: {{"source": "...", "target": "..."}}. A one-off correction is not a glossary update.
 - term_replacement is a compatibility alias for glossary_update. Prefer glossary_update in new output.
 
 Required schema:
-{REFLECTION_JSON_TAG_IN}
+{'' if native_schema else REFLECTION_JSON_TAG_IN}
 {{
   "status": "no_issues",
   "issues": []
 }}
-{REFLECTION_JSON_TAG_OUT}
+{'' if native_schema else REFLECTION_JSON_TAG_OUT}
 
 Repair schema:
-{REFLECTION_JSON_TAG_IN}
+{'' if native_schema else REFLECTION_JSON_TAG_IN}
 {{
   "status": "needs_repair",
   "issues": [
     {{
-      "category": "omission",
+      "category": "terminology",
       "severity": "major",
       "issue_id": "issue-1",
       "confidence": 0.95,
+      "repair_kind": "local_replace",
       "source_quote": "exact source evidence",
       "draft_quote": "problematic draft text or empty string",
       "instruction": "specific repair instruction",
@@ -150,7 +158,7 @@ Repair schema:
     }}
   ]
 }}
-{REFLECTION_JSON_TAG_OUT}"""
+{'' if native_schema else REFLECTION_JSON_TAG_OUT}"""
 
 def _get_output_format_section(
     translate_tag_in: str,
@@ -1614,6 +1622,7 @@ def generate_chunk_reflection_prompt(
     glossary_block: str = "",
     deterministic_findings: str = "",
     source_available: bool = True,
+    native_schema: bool = False,
 ) -> PromptPair:
     """
     Generate a chunk reflection prompt acting as a Senior Translation Editor / Critic.
@@ -1629,15 +1638,22 @@ def generate_chunk_reflection_prompt(
     stutter_example = guidance["stutter_example"]
     addressee_examples = guidance["addressee_examples"]
 
-    reflection_contract = _build_reflection_json_contract_section()
+    reflection_contract = _build_reflection_json_contract_section(
+        native_schema=native_schema,
+    )
 
     source_mode = (
         "Perform bilingual source-fidelity and target-language quality review."
         if source_available
         else "Perform monolingual target-language style, fluency, consistency, glossary, relationship, and formatting review. Do not claim omissions, mistranslations, or source residue because no aligned source is available."
     )
-    system_prompt = f"""You are an uncompromising, ultra-rigorous Senior Literary Translation Editor specializing in {target_lang}.
+    system_prompt = f"""You are a rigorous, evidence-driven Senior Literary Translation Editor specializing in {target_lang}.
 {source_mode}
+
+STRICT BUT ACTIONABLE POLICY:
+- Report only defects supported by exact source/draft evidence.
+- Prefer no issue over a speculative stylistic preference.
+- Minor or below-0.80-confidence observations are review_only and must not trigger automatic rewriting.
 
 RIGOROUS 4-STEP AUDIT PROCEDURE:
 0. EXPLICIT SOURCE INTENT & TARGET LOCALIZATION (CRITICAL RULE):

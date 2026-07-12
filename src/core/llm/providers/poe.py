@@ -19,7 +19,7 @@ import asyncio
 import json
 
 from src.config import REQUEST_TIMEOUT, MAX_TRANSLATION_ATTEMPTS, TEMPERATURE
-from ..base import LLMGenerationOptions, LLMProvider, LLMResponse
+from ..base import LLMGenerationOptions, LLMProvider, LLMResponse, terminal_provider_failure
 from ..exceptions import ContextOverflowError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 
@@ -376,12 +376,12 @@ class PoeProvider(LLMProvider):
                 if response.status_code == 401:
                     print(f"❌ Poe: Invalid API key!")
                     print(f"   Get your API key at: https://poe.com/api_key")
-                    return None
+                    return terminal_provider_failure(generation_options, "provider_auth", 401)
 
                 if response.status_code == 402:
                     print(f"❌ Poe: Insufficient points/credits!")
                     print(f"   Check your subscription at: https://poe.com/subscribe")
-                    return None
+                    return terminal_provider_failure(generation_options, "provider_quota", 402)
 
                 if response.status_code == 429:
                     rate_limit_events += 1
@@ -396,7 +396,7 @@ class PoeProvider(LLMProvider):
 
                 if "choices" not in result or len(result["choices"]) == 0:
                     print(f"⚠️ Poe: Unexpected response format: {result}")
-                    return None
+                    return terminal_provider_failure(generation_options, "provider_empty")
 
                 response_text = result["choices"][0].get("message", {}).get("content", "")
 
@@ -442,7 +442,7 @@ class PoeProvider(LLMProvider):
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
                     await asyncio.sleep(2)
                     continue
-                return None
+                return terminal_provider_failure(generation_options, "transport")
 
             except httpx.HTTPStatusError as e:
                 error_body = ""
@@ -471,13 +471,17 @@ class PoeProvider(LLMProvider):
                 # Client errors (404 bot, 401 key, 402 credits, 400) won't
                 # recover on retry — fail fast.
                 if not is_retryable_http_status(e.response.status_code):
-                    return None
+                    return terminal_provider_failure(
+                        generation_options, "transport", e.response.status_code
+                    )
 
                 attempt += 1
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
                     await asyncio.sleep(2)
                     continue
-                return None
+                return terminal_provider_failure(
+                    generation_options, "transport", e.response.status_code
+                )
 
             except json.JSONDecodeError as e:
                 print(f"Poe API JSON Decode Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
@@ -485,7 +489,7 @@ class PoeProvider(LLMProvider):
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
                     await asyncio.sleep(2)
                     continue
-                return None
+                return terminal_provider_failure(generation_options, "transport")
 
             except Exception as e:
                 print(f"Poe API Unknown Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
@@ -493,6 +497,6 @@ class PoeProvider(LLMProvider):
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
                     await asyncio.sleep(2)
                     continue
-                return None
+                return terminal_provider_failure(generation_options, "transport")
 
-        return None
+        return terminal_provider_failure(generation_options, "transport")

@@ -331,8 +331,9 @@
   "editor_diagnostics_tab": "エディター診断",
   "editor_diagnostics_loading": "シニアエディター診断を読み込んでいます...",
   "editor_diagnostics_legacy": "このジョブには分類済みのシニアエディター診断がありません。",
-  "editor_diagnostics_summary": "実行：{{total}} · 修正：{{repaired}} · 要確認：{{review}} · ブロック：{{blocked}}",
+  "editor_diagnostics_summary": "実行：{{total}} · 成功：{{successful}} · 要確認：{{review}} · 重大な失敗：{{failed}} · 回復：{{recovered}}",
   "editor_diagnostics_run": "チャンク {{chunk}} · {{outcome}} · {{reason}}",
+  "editor_diagnostics_result": "結果：{{state}} · 解決済み：{{resolved}} · 未解決：{{unresolved}} · 終了理由：{{finish}}",
   "editor_diagnostics_tokens": "トークン：入力 {{prompt}} · 出力 {{completion}} · 推論 {{thinking}} · 合計 {{total}}",
   "editor_retry": "エディターを再試行",
   "editor_retry_queued": "シニアエディターの再試行を予約しました。ジョブを再開して実行してください。"

@@ -46,6 +46,29 @@ MIN_CHUNK_CHARACTERS = 200  # Minimum chunk size to attempt translation
 _EDITOR_SCHEMA_UNSUPPORTED = set()
 
 
+def _classify_editor_exception(exc: BaseException) -> str:
+    """Map terminal editor errors without persisting provider response bodies."""
+
+    explicit = str(getattr(exc, "failure_class", "") or "")
+    if explicit:
+        return explicit
+    if isinstance(exc, RateLimitError):
+        return "provider_rate_limit"
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status in {401, 403}:
+        return "provider_auth"
+    if status == 402:
+        return "provider_quota"
+    if status == 429:
+        return "provider_rate_limit"
+    name = type(exc).__name__.casefold()
+    if "timeout" in name or "connect" in name or "network" in name:
+        return "transport"
+    if isinstance(exc, StructuredOutputSchemaError):
+        return "schema_rejected"
+    return "transport"
+
+
 @dataclass
 class ReflectionResult:
     """Parsed Senior Editor reflection result."""
@@ -1182,6 +1205,8 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
         return {
             "category": "other",
             "severity": "major",
+            "confidence": 0.8,
+            "repair_kind": "rewrite",
             "source_quote": "",
             "draft_quote": "",
             "instruction": instruction,
@@ -1226,7 +1251,15 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
             or ""
         ).strip()
         draft_replacement = (
-            {"draft": draft_span, "replacement": replacement}
+            {
+                "draft": draft_span,
+                "replacement": replacement,
+                **(
+                    {"occurrence_index": draft_replacement.get("occurrence_index")}
+                    if draft_replacement.get("occurrence_index") is not None
+                    else {}
+                ),
+            }
             if draft_span and replacement
             else None
         )
@@ -1238,11 +1271,24 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
     except (TypeError, ValueError):
         confidence = 0.8
 
+    category = str(raw_issue.get("category") or "other").strip() or "other"
+    severity = str(raw_issue.get("severity") or "major").strip() or "major"
+    repair_kind = str(raw_issue.get("repair_kind") or "").strip().casefold()
+    if repair_kind not in {"local_replace", "rewrite", "review_only"}:
+        if severity.casefold() == "minor" or confidence < 0.80:
+            repair_kind = "review_only"
+        elif draft_replacement:
+            repair_kind = "local_replace"
+        else:
+            repair_kind = "rewrite"
+    if severity.casefold() == "minor" or confidence < 0.80:
+        repair_kind = "review_only"
     return {
         "issue_id": str(raw_issue.get("issue_id") or "").strip(),
-        "category": str(raw_issue.get("category") or "other").strip() or "other",
-        "severity": str(raw_issue.get("severity") or "major").strip() or "major",
+        "category": category,
+        "severity": severity,
         "confidence": confidence,
+        "repair_kind": repair_kind,
         "source_quote": str(raw_issue.get("source_quote") or "").strip(),
         "draft_quote": str(raw_issue.get("draft_quote") or "").strip(),
         "instruction": instruction,
@@ -1255,12 +1301,7 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
 def _issue_requires_draft_replacement(issue: Dict[str, Any]) -> bool:
     """Return whether an issue describes a direct, locally verifiable edit."""
 
-    category = str(issue.get("category") or "other").casefold()
-    return bool(
-        str(issue.get("draft_quote") or "").strip()
-        and category not in {"omission", "placeholder", "format"}
-        and not issue.get("deterministic")
-    )
+    return str(issue.get("repair_kind") or "").casefold() == "local_replace"
 
 
 def _reflection_contract_incomplete(result: ReflectionResult) -> bool:
@@ -1315,6 +1356,8 @@ def parse_reflection_result(reflection_text: str) -> ReflectionResult:
             {
                 "category": "other",
                 "severity": "major",
+                "confidence": 0.8,
+                "repair_kind": "rewrite",
                 "source_quote": "",
                 "draft_quote": "",
                 "instruction": item,
@@ -1669,7 +1712,11 @@ async def run_chunk_reflection_pass(
         editor_controls.get("mode"),
         reported_limit=editor_output_limit,
     )
-    schema_capability_key = (editor_provider, editor_model.casefold())
+    schema_capability_key = (
+        editor_provider,
+        editor_model.casefold(),
+        editor_endpoint.rstrip("/").casefold(),
+    )
     recorder = EditorRunRecorder(
         options,
         target_language=target_language,
@@ -1681,7 +1728,15 @@ async def run_chunk_reflection_pass(
     total_completion_tokens = 0
     total_thinking_tokens = 0
     total_tokens = 0
-    truncation_retry_used = False
+    truncation_retry_stages: set[str] = set()
+    editor_request_count = 0
+    any_truncation = False
+    recovered_truncation = False
+    last_finish_reason = ""
+    last_blocked_reason = ""
+    result_state = "unchanged_draft"
+    resolved_issue_count = 0
+    unresolved_issue_count = 0
 
     def record_attempt(
         stage: str,
@@ -1695,6 +1750,7 @@ async def run_chunk_reflection_pass(
     ) -> None:
         nonlocal request_index, total_prompt_tokens, total_completion_tokens
         nonlocal total_thinking_tokens, total_tokens
+        nonlocal any_truncation, last_finish_reason, last_blocked_reason
         request_index += 1
         prompt_tokens = int(getattr(response, "prompt_tokens", 0) or 0)
         completion_tokens = int(getattr(response, "completion_tokens", 0) or 0)
@@ -1707,6 +1763,14 @@ async def run_chunk_reflection_pass(
         total_completion_tokens += completion_tokens
         total_thinking_tokens += thinking_tokens
         total_tokens += attempt_total
+        attempt_truncated = getattr(response, "was_truncated", False) is True
+        any_truncation = any_truncation or attempt_truncated
+        finish_reason = str(getattr(response, "finish_reason", "") or "")
+        blocked_reason = str(getattr(response, "blocked_reason", "") or "")
+        if finish_reason:
+            last_finish_reason = finish_reason
+        if blocked_reason:
+            last_blocked_reason = blocked_reason
         recorder.attempt({
             "attempt_index": request_index,
             "stage": stage,
@@ -1717,20 +1781,27 @@ async def run_chunk_reflection_pass(
             "completion_tokens": completion_tokens,
             "thinking_tokens": thinking_tokens,
             "total_tokens": attempt_total,
-            "was_truncated": bool(getattr(response, "was_truncated", False)),
-            "finish_reason": str(getattr(response, "finish_reason", "") or ""),
-            "blocked_reason": str(getattr(response, "blocked_reason", "") or ""),
+            "was_truncated": attempt_truncated,
+            "finish_reason": finish_reason,
+            "blocked_reason": blocked_reason,
             "response_hash": response_hash(raw),
             "excerpts": issue_excerpts(issues or []),
         })
 
     def finish_run(outcome: str, **payload: Any) -> None:
+        payload.setdefault("result_state", result_state)
+        payload.setdefault("resolved_issue_count", resolved_issue_count)
+        payload.setdefault("unresolved_issue_count", unresolved_issue_count)
         recorder.finish(
             outcome,
             prompt_tokens=total_prompt_tokens,
             completion_tokens=total_completion_tokens,
             thinking_tokens=total_thinking_tokens,
             total_tokens=total_tokens,
+            was_truncated=any_truncation,
+            recovered_truncation=recovered_truncation,
+            finish_reason=last_finish_reason,
+            blocked_reason=last_blocked_reason,
             deterministic_count=sum(
                 1 for finding in residue_findings if finding.blocking
             ),
@@ -1745,8 +1816,10 @@ async def run_chunk_reflection_pass(
         max_output_tokens: int,
         stage: str,
         structured: bool = False,
+        fallback_prompt: Optional[str] = None,
+        fallback_system_prompt: Optional[str] = None,
     ) -> Any:
-        nonlocal truncation_retry_used
+        nonlocal editor_request_count, recovered_truncation
         schema = (
             REFLECTION_RESPONSE_SCHEMA
             if structured and options.get("editor_native_schema", True)
@@ -1754,16 +1827,22 @@ async def run_chunk_reflection_pass(
             else None
         )
         disable_native_schema = False
+        active_prompt = prompt if schema is not None else (fallback_prompt or prompt)
+        active_system_prompt = (
+            system_prompt
+            if schema is not None
+            else (fallback_system_prompt or system_prompt)
+        )
 
         async def retry_truncated(response: Any, active_schema: Any) -> Any:
-            nonlocal truncation_retry_used
+            nonlocal editor_request_count, recovered_truncation
             if (
                 response is None
                 or getattr(response, "was_truncated", False) is not True
-                or truncation_retry_used
+                or stage in truncation_retry_stages
             ):
                 return response
-            truncation_retry_used = True
+            truncation_retry_stages.add(stage)
             raw = str(getattr(response, "content", "") or "")
             record_attempt(
                 f"{stage}_max_tokens",
@@ -1804,10 +1883,13 @@ async def run_chunk_reflection_pass(
                         "thinking_mode": retry_controls.get("mode"),
                     },
                 )
-            return await _generate_editor_response(
+            if editor_request_count >= 6:
+                return response
+            editor_request_count += 1
+            retried = await _generate_editor_response(
                 llm_client=editor_client,
-                prompt=prompt,
-                system_prompt=system_prompt,
+                prompt=active_prompt,
+                system_prompt=active_system_prompt,
                 model_name=editor_model,
                 temperature=0.0,
                 max_output_tokens=retry_tokens,
@@ -1820,12 +1902,18 @@ async def run_chunk_reflection_pass(
                     )
                 },
             )
+            if retried is not None and getattr(retried, "was_truncated", False) is not True:
+                recovered_truncation = True
+            return retried
 
         try:
+            if editor_request_count >= 6:
+                raise RuntimeError("Senior Editor request budget exhausted")
+            editor_request_count += 1
             response = await _generate_editor_response(
                 llm_client=editor_client,
-                prompt=prompt,
-                system_prompt=system_prompt,
+                prompt=active_prompt,
+                system_prompt=active_system_prompt,
                 model_name=editor_model,
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
@@ -1838,36 +1926,29 @@ async def run_chunk_reflection_pass(
                     )
                 },
             )
-            if response is not None or schema is None:
-                return await retry_truncated(response, schema)
-            record_attempt(
-                f"{stage}_schema_fallback", None, "",
-                failure_class="transport",
-                reason_codes=["native_schema_request_failed"],
-            )
+            if response is None:
+                raise RuntimeError("Senior Editor provider returned no response")
+            return await retry_truncated(response, schema)
         except StructuredOutputSchemaError as exc:
             if schema is None:
                 raise
             disable_native_schema = True
             record_attempt(
                 f"{stage}_schema_fallback", None, "",
-                failure_class="schema",
+                failure_class="schema_rejected",
                 reason_codes=[f"native_schema_rejected:{type(exc).__name__}"],
             )
         except Exception as exc:
-            if schema is None:
-                raise
-            record_attempt(
-                f"{stage}_schema_fallback", None, "",
-                failure_class="transport",
-                reason_codes=[f"native_schema_request_failed:{type(exc).__name__}"],
-            )
+            raise
         if disable_native_schema:
             _EDITOR_SCHEMA_UNSUPPORTED.add(schema_capability_key)
+        if editor_request_count >= 6:
+            raise RuntimeError("Senior Editor request budget exhausted")
+        editor_request_count += 1
         response = await _generate_editor_response(
             llm_client=editor_client,
-            prompt=prompt,
-            system_prompt=system_prompt,
+            prompt=fallback_prompt or prompt,
+            system_prompt=fallback_system_prompt or system_prompt,
             model_name=editor_model,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
@@ -1971,6 +2052,18 @@ async def run_chunk_reflection_pass(
         glossary_block=glossary_block,
         deterministic_findings=deterministic_findings,
         source_available=source_available,
+        native_schema=True,
+    )
+    reflection_fallback_pair = generate_chunk_reflection_prompt(
+        source_chunk=source_chunk,
+        draft_translation=draft_translation,
+        target_language=target_language,
+        novel_context=active_novel_context,
+        custom_instructions=custom_instructions,
+        glossary_block=glossary_block,
+        deterministic_findings=deterministic_findings,
+        source_available=source_available,
+        native_schema=False,
     )
 
     try:
@@ -1981,6 +2074,8 @@ async def run_chunk_reflection_pass(
             max_output_tokens=editor_output_tokens,
             stage="reflection",
             structured=True,
+            fallback_prompt=reflection_fallback_pair.user,
+            fallback_system_prompt=reflection_fallback_pair.system,
         )
         critique = (response.content or "").strip() if response and getattr(response, "content", None) else ""
     except Exception as e:
@@ -1988,15 +2083,21 @@ async def run_chunk_reflection_pass(
             emit_progress_log(
                 log_callback,
                 "reflection_failed",
-                f"Senior Editor reflection failed: {e}",
+                "Senior Editor reflection request failed "
+                f"({type(e).__name__}).",
                 layer="senior_editor_reflection",
             )
-        failure_class = "transport"
+        failure_class = _classify_editor_exception(e)
+        record_attempt(
+            "reflection", None, "",
+            failure_class=failure_class,
+            reason_codes=[f"provider_failure:{failure_class}"],
+        )
         finish_run(
             "blocked" if contract_v2 and any(f.blocking for f in residue_findings)
             else "transport_failed",
             failure_class=failure_class,
-            diagnostics={"reason": str(e)[:160]},
+            diagnostics={"reason": failure_class},
         )
         if contract_v2 and any(f.blocking for f in residue_findings):
             raise ReflectionValidationError(
@@ -2039,6 +2140,12 @@ async def run_chunk_reflection_pass(
 
     contract_review_required = False
     if reflection_contract_invalid(reflection_result):
+        malformed_issue_ids = {
+            str(issue.get("issue_id") or "")
+            for issue in reflection_result.issues
+            if _issue_requires_draft_replacement(issue)
+            and not issue.get("draft_replacement")
+        }
         if log_callback:
             emit_progress_log(
                 log_callback,
@@ -2052,11 +2159,15 @@ async def run_chunk_reflection_pass(
             )
         retry_user_prompt = (
             f"{reflection_pair.user}\n\n"
-            "Your previous response was not valid JSON. Return only one valid "
-            f"JSON object inside {REFLECTION_JSON_TAG_IN} and "
-            f"{REFLECTION_JSON_TAG_OUT}. Every direct correction with a draft_quote "
+            "Your previous response contained malformed contract data. Return only one valid "
+            "JSON object. Every direct correction with a draft_quote "
             "must include draft_replacement with exact draft and replacement spans. "
-            "Do not include prose, markdown, or bullets."
+            + (
+                "Correct only these issue IDs and return only those issues: "
+                + ", ".join(sorted(malformed_issue_ids)) + ". "
+                if malformed_issue_ids else ""
+            )
+            + "Do not include prose, markdown, or bullets."
         )
         try:
             retry_response = await generate_editor(
@@ -2097,14 +2208,23 @@ async def run_chunk_reflection_pass(
                         "parse_status": retry_result.parse_status,
                     },
                 )
-            if not reflection_contract_invalid(retry_result):
+            if retry_result.parse_status == "json" and retry_result.issues:
+                if malformed_issue_ids:
+                    corrected_by_id = {
+                        str(issue.get("issue_id") or ""): issue
+                        for issue in retry_result.issues
+                        if str(issue.get("issue_id") or "") in malformed_issue_ids
+                    }
+                    merged = [
+                        corrected_by_id.get(str(issue.get("issue_id") or ""), issue)
+                        for issue in reflection_result.issues
+                    ]
+                    reflection_result = ReflectionResult(
+                        "needs_repair", merged, retry_critique, "json"
+                    )
+                elif not reflection_contract_invalid(retry_result):
+                    reflection_result = retry_result
                 critique = retry_critique
-                reflection_result = retry_result
-            elif retry_result.parse_status == "json" and retry_result.issues:
-                # Preserve the retry's valid subset even when a few issues still
-                # violate the direct-edit contract.
-                critique = retry_critique
-                reflection_result = retry_result
         except Exception as e:
             if log_callback:
                 emit_progress_log(
@@ -2298,6 +2418,7 @@ async def run_chunk_reflection_pass(
         )
         review_required = True
         if not reflection_result.issues:
+            unresolved_issue_count = len(invalid_ids)
             finish_run(
                 "review_required",
                 parse_status=reflection_result.parse_status,
@@ -2305,6 +2426,8 @@ async def run_chunk_reflection_pass(
                     "locator_ambiguous"
                     if any(item.startswith("locator_ambiguous") for item in locator_errors)
                     else "locator_missing"
+                    if any(item.startswith("locator_missing") for item in locator_errors)
+                    else "contract_issue"
                 ),
                 issue_count=len(invalid_ids),
                 diagnostics={"reason_codes": locator_errors},
@@ -2321,9 +2444,14 @@ async def run_chunk_reflection_pass(
     actionable_issues = [
         issue for issue in reflection_result.issues
         if str(issue.get("issue_id") or "") not in no_op_issue_ids
+        and str(issue.get("repair_kind") or "rewrite").casefold() != "review_only"
         and (
-            str(issue.get("severity") or "major").casefold() != "minor"
-            or issue.get("deterministic")
+            issue.get("deterministic")
+            or (
+                str(issue.get("severity") or "major").casefold()
+                in {"major", "blocker"}
+                and float(issue.get("confidence", 0.8) or 0.0) >= 0.80
+            )
         )
     ]
     if len(actionable_issues) != len(reflection_result.issues):
@@ -2339,10 +2467,19 @@ async def run_chunk_reflection_pass(
         issue for issue in actionable_issues
         if str(issue.get("issue_id") or "") not in unresolved_ids
     ]
+    resolved_issue_count = len(locally_resolved)
+    unresolved_issue_count = len(unresolved_issues) + (
+        len(reflection_result.issues) - len(actionable_issues)
+    )
+    if locally_resolved and patched_draft != original_draft:
+        result_state = "locally_patched"
     if patch_errors:
         review_required = True
         patched_draft = original_draft
         unresolved_issues = list(actionable_issues)
+        result_state = "unchanged_draft"
+        resolved_issue_count = 0
+        unresolved_issue_count = len(reflection_result.issues)
     elif locally_resolved:
         patch_validation = validate_editor_repair(
             patched_draft,
@@ -2378,6 +2515,9 @@ async def run_chunk_reflection_pass(
             unresolved_issues = list(actionable_issues)
             patch_errors.extend(patch_validation)
             review_required = True
+            result_state = "unchanged_draft"
+            resolved_issue_count = 0
+            unresolved_issue_count = len(reflection_result.issues)
 
     if not unresolved_issues:
         finish_run(
@@ -2503,10 +2643,17 @@ async def run_chunk_reflection_pass(
                     issue_count=len(reflection_result.issues),
                     response_hash=response_hash(raw_content),
                     diagnostics={"repair_attempt": repair_attempt + 1},
+                    result_state="rewritten",
+                    resolved_issue_count=len(reflection_result.issues),
+                    unresolved_issue_count=(
+                        len(reflection_result.issues) if review_required else 0
+                    ),
                 )
                 return repaired_text
         except Exception as e:
-            validation_errors.append(f"repair call failed: {type(e).__name__}: {e}")
+            validation_errors.append(
+                f"repair_call_failed:{_classify_editor_exception(e)}"
+            )
 
         failure_class = (
             "provider_empty" if "empty" in " ".join(validation_errors).casefold()
@@ -2514,7 +2661,7 @@ async def run_chunk_reflection_pass(
                 str(reason).startswith("adapter_")
                 for reason in validation_errors
             )
-            else "repair_missing"
+            else "repair_validation"
         )
         record_attempt(
             f"repair_{repair_attempt + 1}",
@@ -2581,7 +2728,7 @@ async def run_chunk_reflection_pass(
         failure_class=(
             "adapter_invalid" if any(
                 str(reason).startswith("adapter_") for reason in validation_errors
-            ) else "repair_missing"
+            ) else "repair_validation"
         ),
         issue_count=len(reflection_result.issues),
         diagnostics=diagnostics,

@@ -421,6 +421,10 @@ class Database:
                     outcome TEXT NOT NULL DEFAULT 'running',
                     failure_class TEXT,
                     issue_count INTEGER NOT NULL DEFAULT 0,
+                    resolved_issue_count INTEGER NOT NULL DEFAULT 0,
+                    unresolved_issue_count INTEGER NOT NULL DEFAULT 0,
+                    result_state TEXT NOT NULL DEFAULT 'unchanged_draft',
+                    recovered_truncation INTEGER NOT NULL DEFAULT 0,
                     deterministic_count INTEGER NOT NULL DEFAULT 0,
                     prompt_tokens INTEGER NOT NULL DEFAULT 0,
                     completion_tokens INTEGER NOT NULL DEFAULT 0,
@@ -468,6 +472,19 @@ class Database:
                             f"ALTER TABLE {table} ADD COLUMN {column} "
                             "INTEGER NOT NULL DEFAULT 0"
                         )
+            cursor.execute("PRAGMA table_info(editor_runs)")
+            editor_run_columns = {row[1] for row in cursor.fetchall()}
+            editor_run_migrations = {
+                "resolved_issue_count": "INTEGER NOT NULL DEFAULT 0",
+                "unresolved_issue_count": "INTEGER NOT NULL DEFAULT 0",
+                "result_state": "TEXT NOT NULL DEFAULT 'unchanged_draft'",
+                "recovered_truncation": "INTEGER NOT NULL DEFAULT 0",
+            }
+            for column, definition in editor_run_migrations.items():
+                if column not in editor_run_columns:
+                    cursor.execute(
+                        f"ALTER TABLE editor_runs ADD COLUMN {column} {definition}"
+                    )
 
             # Create indexes for performance
             cursor.execute("""
@@ -1245,6 +1262,8 @@ class Database:
                     """
                     UPDATE editor_runs SET parse_status = ?, outcome = ?,
                         failure_class = ?, issue_count = ?,
+                        resolved_issue_count = ?, unresolved_issue_count = ?,
+                        result_state = ?, recovered_truncation = ?,
                         deterministic_count = ?, prompt_tokens = ?,
                         completion_tokens = ?, thinking_tokens = ?,
                         total_tokens = ?, was_truncated = ?,
@@ -1254,9 +1273,13 @@ class Database:
                     """,
                     (
                         payload.get("parse_status"),
-                        payload.get("outcome") or "draft_kept_review",
+                        payload.get("outcome") or "review_required",
                         payload.get("failure_class"),
                         int(payload.get("issue_count", 0) or 0),
+                        int(payload.get("resolved_issue_count", 0) or 0),
+                        int(payload.get("unresolved_issue_count", 0) or 0),
+                        payload.get("result_state") or "unchanged_draft",
+                        int(bool(payload.get("recovered_truncation"))),
                         int(payload.get("deterministic_count", 0) or 0),
                         int(payload.get("prompt_tokens", 0) or 0),
                         int(payload.get("completion_tokens", 0) or 0),
@@ -1293,6 +1316,27 @@ class Database:
                 }
             outcomes: Dict[str, int] = {}
             failures: Dict[str, int] = {}
+            result_states: Dict[str, int] = {}
+            attempts_by_run: Dict[int, list] = {}
+            run_ids = [int(row["id"]) for row in rows]
+            if run_ids:
+                placeholders = ",".join("?" for _ in run_ids)
+                for attempt_row in conn.execute(
+                    f"SELECT * FROM editor_attempts WHERE run_id IN ({placeholders}) "
+                    "ORDER BY run_id, attempt_index",
+                    run_ids,
+                ).fetchall():
+                    attempt = dict(attempt_row)
+                    for field in ("reason_codes", "excerpts"):
+                        try:
+                            attempt[field] = json.loads(attempt.get(field) or "[]")
+                        except (TypeError, ValueError):
+                            attempt[field] = []
+                    # The API exposes classifications, not book excerpts.
+                    attempt.pop("excerpts", None)
+                    attempts_by_run.setdefault(int(attempt["run_id"]), []).append(
+                        attempt
+                    )
             for row in rows:
                 stored_outcome = row.get("outcome") or "unknown"
                 normalized_outcome = {
@@ -1303,6 +1347,8 @@ class Database:
                     row["legacy_outcome"] = stored_outcome
                     row["outcome"] = normalized_outcome
                 outcomes[normalized_outcome] = outcomes.get(normalized_outcome, 0) + 1
+                result_state = row.get("result_state") or "unchanged_draft"
+                result_states[result_state] = result_states.get(result_state, 0) + 1
                 if row.get("failure_class"):
                     failures[row["failure_class"]] = failures.get(
                         row["failure_class"], 0
@@ -1311,6 +1357,17 @@ class Database:
                     row["diagnostics"] = json.loads(row.get("diagnostics") or "{}")
                 except (TypeError, ValueError):
                     row["diagnostics"] = {}
+                row["diagnostics"].pop("issues", None)
+                row["attempts"] = attempts_by_run.get(int(row["id"]), [])
+            successful = sum(
+                outcomes.get(name, 0)
+                for name in ("no_issues", "locally_repaired", "llm_repaired")
+            )
+            review_count = outcomes.get("review_required", 0)
+            hard_failed = sum(
+                outcomes.get(name, 0)
+                for name in ("blocked", "transport_failed")
+            )
             return {
                 "translation_id": translation_id,
                 "classification": "classified",
@@ -1318,6 +1375,13 @@ class Database:
                     "total": len(rows),
                     "outcomes": outcomes,
                     "failure_classes": failures,
+                    "result_states": result_states,
+                    "successful": successful,
+                    "review_required": review_count,
+                    "hard_failed": hard_failed,
+                    "recovered": sum(
+                        int(bool(row.get("recovered_truncation"))) for row in rows
+                    ),
                 },
                 "runs": rows,
             }
