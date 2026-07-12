@@ -249,6 +249,7 @@ def _rehydrate_resume_credentials(config, overrides=None):
         (config.get('prompt_options') or {}).get('editor_provider') or provider
     ).lower()
     raw_key = overrides.get('api_key') if isinstance(overrides, dict) else None
+    raw_editor_key = overrides.get('editor_api_key') if isinstance(overrides, dict) else None
 
     for key_provider in _KEY_PROVIDERS:
         env_var = f"{key_provider.upper()}_API_KEY"
@@ -258,8 +259,11 @@ def _rehydrate_resume_credentials(config, overrides=None):
         )
         key_override = provider_override or (
             raw_key
-            if key_provider in {provider, editor_provider}
+            if key_provider == provider
             and raw_key not in (None, '')
+            else raw_editor_key
+            if key_provider == editor_provider
+            and raw_editor_key not in (None, '')
             else None
         )
         resolved = _resolve_api_key(
@@ -312,6 +316,21 @@ def _apply_resume_overrides(config, overrides):
             config['prompt_options'] = _prompt_options_from_start_request({
                 'prompt_options': existing_opts,
             })
+
+        # Merge editor overrides into prompt_options
+        if (
+            overrides.get('editor_model') is not None
+            or overrides.get('editor_provider') is not None
+            or overrides.get('editor_api_endpoint') is not None
+        ):
+            if 'prompt_options' not in config or not isinstance(config['prompt_options'], dict):
+                config['prompt_options'] = {}
+            if overrides.get('editor_model') is not None:
+                config['prompt_options']['editor_model'] = overrides['editor_model']
+            if overrides.get('editor_provider') is not None:
+                config['prompt_options']['editor_provider'] = str(overrides['editor_provider']).lower()
+            if overrides.get('editor_api_endpoint') is not None:
+                config['prompt_options']['editor_api_endpoint'] = overrides['editor_api_endpoint']
 
     _rehydrate_resume_credentials(config, overrides)
 

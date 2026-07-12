@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.15.0-beta.37 - 2026-07-12
+
+### Added
+
+- **Senior Editor Model Selection on Job Resume**:
+  Added support for overriding/selecting the Senior Editor model, provider, custom endpoint,
+  and API key when resuming a paused translation job. The override panel now displays
+  a dedicated model picker for the Senior Editor if reflection mode was enabled in the original job.
+
 ## 1.15.0-beta.36 - 2026-07-12
 
 ### Fixed
