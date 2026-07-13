@@ -342,10 +342,16 @@
   "editor_diagnostics_tab": "Editor-Diagnose",
   "editor_diagnostics_loading": "Senior-Editor-Diagnose wird geladen...",
   "editor_diagnostics_legacy": "Für diesen Auftrag sind keine klassifizierten Senior-Editor-Diagnosen vorhanden.",
-  "editor_diagnostics_summary": "Läufe: {{total}} · erfolgreich: {{successful}} · Prüfung: {{review}} · eingeschränkt: {{degraded}} · schwere Fehler: {{failed}} · wiederhergestellt: {{recovered}}",
+  "editor_diagnostics_summary": "Läufe: {{total}} · erfolgreich: {{successful}} · Prüfung: {{review}} · Warnungen: {{warnings}} · eingeschränkt: {{degraded}} · schwere Fehler: {{failed}} · wiederhergestellt: {{recovered}}",
   "editor_diagnostics_run": "Abschnitt {{chunk}} · {{outcome}} · {{reason}}",
-  "editor_diagnostics_result": "Ergebnis: {{state}} · gelöst: {{resolved}} · ungelöst: {{unresolved}} · Ende: {{finish}}",
+  "editor_diagnostics_result": "Ergebnis: {{state}} · gelöst: {{resolved}} · ungelöst: {{unresolved}} · Warnungen: {{warnings}} · Ende: {{finish}}",
   "editor_diagnostics_tokens": "Tokens: Eingabe {{prompt}} · Ausgabe {{completion}} · Denken {{thinking}} · Gesamt {{total}}",
   "editor_retry": "Editor erneut ausführen",
-  "editor_retry_queued": "Editor-Wiederholung eingereiht. Setzen Sie den Auftrag fort, um sie auszuführen."
+  "editor_retry_queued": "Eingereiht...",
+  "editor_retry_running": "Wiederholung läuft...",
+  "editor_retry_started": "Die Senior-Editor-Wiederholung wurde sofort gestartet.",
+  "editor_retry_succeeded": "Die Wiederholung wurde abgeschlossen und der validierte Entwurf gespeichert.",
+  "editor_retry_review_required": "Die Wiederholung wurde abgeschlossen, aber wichtige Befunde müssen noch geprüft werden.",
+  "editor_retry_failed": "Editor-Wiederholung fehlgeschlagen: {{error}}",
+  "editor_retry_timeout": "Die Editor-Wiederholung wurde nicht vor dem Zeitlimit der Oberfläche abgeschlossen."
 }

@@ -1738,6 +1738,8 @@ async def run_chunk_reflection_pass(
     result_state = "unchanged_draft"
     resolved_issue_count = 0
     unresolved_issue_count = 0
+    warning_count = 0
+    review_issue_count = 0
 
     def record_attempt(
         stage: str,
@@ -1793,6 +1795,7 @@ async def run_chunk_reflection_pass(
         payload.setdefault("result_state", result_state)
         payload.setdefault("resolved_issue_count", resolved_issue_count)
         payload.setdefault("unresolved_issue_count", unresolved_issue_count)
+        payload.setdefault("warning_count", warning_count)
         recorder.finish(
             outcome,
             prompt_tokens=total_prompt_tokens,
@@ -2253,6 +2256,7 @@ async def run_chunk_reflection_pass(
                 reflection_result.parse_status,
             )
             contract_review_required = invalid_issue_count > 0
+            review_issue_count += invalid_issue_count
             if log_callback:
                 emit_progress_log(
                     log_callback,
@@ -2436,6 +2440,7 @@ async def run_chunk_reflection_pass(
             reflection_result.parse_status,
         )
         review_required = True
+        review_issue_count += len(invalid_ids)
         if not reflection_result.issues:
             unresolved_issue_count = len(invalid_ids)
             finish_run(
@@ -2473,8 +2478,7 @@ async def run_chunk_reflection_pass(
             )
         )
     ]
-    if len(actionable_issues) != len(reflection_result.issues):
-        review_required = True
+    warning_count = len(reflection_result.issues) - len(actionable_issues)
     original_draft = draft_translation
     patched_draft, unresolved_issues, patch_errors = apply_local_editor_patches(
         draft_translation, actionable_issues,
@@ -2487,9 +2491,7 @@ async def run_chunk_reflection_pass(
         if str(issue.get("issue_id") or "") not in unresolved_ids
     ]
     resolved_issue_count = len(locally_resolved)
-    unresolved_issue_count = len(unresolved_issues) + (
-        len(reflection_result.issues) - len(actionable_issues)
-    )
+    unresolved_issue_count = len(unresolved_issues) + review_issue_count
     if locally_resolved and patched_draft != original_draft:
         result_state = "locally_patched"
     if log_callback:
@@ -2504,12 +2506,11 @@ async def run_chunk_reflection_pass(
             layer="senior_editor_repair",
         )
     if patch_errors:
-        review_required = True
         patched_draft = original_draft
         unresolved_issues = list(actionable_issues)
         result_state = "unchanged_draft"
         resolved_issue_count = 0
-        unresolved_issue_count = len(reflection_result.issues)
+        unresolved_issue_count = len(actionable_issues) + review_issue_count
     elif locally_resolved:
         patch_validation = validate_editor_repair(
             patched_draft,
@@ -2531,7 +2532,12 @@ async def run_chunk_reflection_pass(
                 ):
                     context_session.register_editor_terms(local_term_pairs)
                 finish_run(
-                    "review_required" if review_required else "locally_repaired",
+                    (
+                        "review_required" if review_required
+                        else "locally_repaired" if locally_resolved
+                        else "warnings_only" if warning_count
+                        else "no_issues"
+                    ),
                     parse_status=reflection_result.parse_status,
                     issue_count=len(reflection_result.issues),
                     diagnostics={
@@ -2544,14 +2550,18 @@ async def run_chunk_reflection_pass(
             patched_draft = original_draft
             unresolved_issues = list(actionable_issues)
             patch_errors.extend(patch_validation)
-            review_required = True
             result_state = "unchanged_draft"
             resolved_issue_count = 0
-            unresolved_issue_count = len(reflection_result.issues)
+            unresolved_issue_count = len(actionable_issues) + review_issue_count
 
     if not unresolved_issues:
         finish_run(
-            "review_required" if review_required else "locally_repaired",
+            (
+                "review_required" if review_required
+                else "locally_repaired" if locally_resolved
+                else "warnings_only" if warning_count
+                else "no_issues"
+            ),
             parse_status=reflection_result.parse_status,
             failure_class="local_patch_conflict" if patch_errors else None,
             issue_count=len(reflection_result.issues),
@@ -2685,9 +2695,7 @@ async def run_chunk_reflection_pass(
                     diagnostics={"repair_attempt": repair_attempt + 1},
                     result_state="rewritten",
                     resolved_issue_count=len(reflection_result.issues),
-                    unresolved_issue_count=(
-                        len(reflection_result.issues) if review_required else 0
-                    ),
+                    unresolved_issue_count=review_issue_count,
                 )
                 return repaired_text
         except Exception as e:

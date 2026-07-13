@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.core.translator import ReflectionValidationError, run_chunk_reflection_pass
+from src.persistence.database import Database
 from src.utils.translation_quality import (
     apply_local_editor_patches,
     find_source_residue,
@@ -458,7 +459,7 @@ async def test_isolated_issue_retry_preserves_valid_sibling():
 
 
 @pytest.mark.asyncio
-async def test_minor_issue_is_review_only_without_rewrite():
+async def test_minor_issue_is_warning_without_rewrite(tmp_path):
     critique = (
         '{"status":"needs_repair","issues":[{'
         '"issue_id":"minor-1","category":"style","severity":"minor",'
@@ -478,13 +479,24 @@ async def test_minor_issue_is_review_only_without_rewrite():
             return SimpleNamespace(content=critique)
 
     client = Client()
+    db_path = str(tmp_path / "jobs.db")
+    db = Database(db_path)
+    assert db.create_job("warning-job", "txt", {})
     result = await run_chunk_reflection_pass(
         source_chunk="Wait.", draft_translation="Chờ đã.",
         target_language="Vietnamese", model_name="test", llm_client=client,
-        prompt_options={"source_language": "English"},
+        prompt_options={
+            "source_language": "English",
+            "translation_id": "warning-job",
+            "jobs_db_path": db_path,
+            "chunk_index": 0,
+        },
     )
     assert result == "Chờ đã."
     assert client.calls == 1
+    diagnostics = db.get_editor_diagnostics("warning-job")
+    assert diagnostics["summary"]["outcomes"] == {"warnings_only": 1}
+    assert diagnostics["summary"]["warnings"] == 1
 
 
 def test_editor_repair_validates_capitalization_only_correction():

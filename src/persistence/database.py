@@ -462,6 +462,7 @@ class Database:
                     outcome TEXT NOT NULL DEFAULT 'running',
                     failure_class TEXT,
                     issue_count INTEGER NOT NULL DEFAULT 0,
+                    warning_count INTEGER NOT NULL DEFAULT 0,
                     resolved_issue_count INTEGER NOT NULL DEFAULT 0,
                     unresolved_issue_count INTEGER NOT NULL DEFAULT 0,
                     result_state TEXT NOT NULL DEFAULT 'unchanged_draft',
@@ -516,6 +517,7 @@ class Database:
             cursor.execute("PRAGMA table_info(editor_runs)")
             editor_run_columns = {row[1] for row in cursor.fetchall()}
             editor_run_migrations = {
+                "warning_count": "INTEGER NOT NULL DEFAULT 0",
                 "resolved_issue_count": "INTEGER NOT NULL DEFAULT 0",
                 "unresolved_issue_count": "INTEGER NOT NULL DEFAULT 0",
                 "result_state": "TEXT NOT NULL DEFAULT 'unchanged_draft'",
@@ -1303,6 +1305,7 @@ class Database:
                     """
                     UPDATE editor_runs SET parse_status = ?, outcome = ?,
                         failure_class = ?, issue_count = ?,
+                        warning_count = ?,
                         resolved_issue_count = ?, unresolved_issue_count = ?,
                         result_state = ?, recovered_truncation = ?,
                         deterministic_count = ?, prompt_tokens = ?,
@@ -1317,6 +1320,7 @@ class Database:
                         payload.get("outcome") or "review_required",
                         payload.get("failure_class"),
                         int(payload.get("issue_count", 0) or 0),
+                        int(payload.get("warning_count", 0) or 0),
                         int(payload.get("resolved_issue_count", 0) or 0),
                         int(payload.get("unresolved_issue_count", 0) or 0),
                         payload.get("result_state") or "unchanged_draft",
@@ -1402,7 +1406,10 @@ class Database:
                 row["attempts"] = attempts_by_run.get(int(row["id"]), [])
             successful = sum(
                 outcomes.get(name, 0)
-                for name in ("no_issues", "locally_repaired", "llm_repaired")
+                for name in (
+                    "no_issues", "warnings_only", "locally_repaired",
+                    "llm_repaired",
+                )
             )
             review_count = outcomes.get("review_required", 0)
             degraded = outcomes.get("transport_failed", 0)
@@ -1419,6 +1426,9 @@ class Database:
                     "review_required": review_count,
                     "degraded": degraded,
                     "hard_failed": hard_failed,
+                    "warnings": sum(
+                        int(row.get("warning_count", 0) or 0) for row in rows
+                    ),
                     "recovered": sum(
                         int(bool(row.get("recovered_truncation"))) for row in rows
                     ),

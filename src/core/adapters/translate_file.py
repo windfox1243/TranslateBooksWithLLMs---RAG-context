@@ -402,7 +402,10 @@ async def build_translated_output(
 
     # Get file paths from config
     input_file_path = config.get('preserved_input_path') or config.get('input_file_path')
-    output_file_path = config.get('output_file_path')
+    output_file_path = (
+        adapter_config.get('output_file_path')
+        or config.get('output_file_path')
+    )
 
     if not input_file_path or not output_file_path:
         return None, "Missing file paths in checkpoint configuration"
@@ -428,7 +431,12 @@ async def build_translated_output(
         await adapter.resume_from_checkpoint(checkpoint_data)
 
         # Reconstruct output
-        output_bytes = await adapter.reconstruct_output()
+        output_bytes = await adapter.reconstruct_output(
+            bilingual=bool(
+                adapter_config.get('bilingual_output')
+                or config.get('bilingual_output')
+            )
+        )
 
         # Cleanup
         await adapter.cleanup()

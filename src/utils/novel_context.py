@@ -9073,6 +9073,139 @@ def _inject_addressing_candidate_contract(prompt: str) -> str:
     )
 
 
+_SECOND_PERSON_MARKERS = {
+    "english": ("you", "your", "yours", "yourself", "yourselves"),
+    "french": ("tu", "te", "toi", "ton", "ta", "tes", "vous", "votre", "vos"),
+    "spanish": ("tú", "te", "ti", "usted", "ustedes", "vos", "vosotros", "vuestro"),
+    "german": ("du", "dich", "dir", "dein", "ihr", "euch", "sie", "ihnen"),
+    "italian": ("tu", "te", "ti", "voi", "lei", "loro", "tuo", "vostro"),
+    "portuguese": ("tu", "te", "ti", "você", "vocês", "vosso", "seu"),
+    "vietnamese": ("bạn", "cậu", "anh", "chị", "em", "ông", "bà", "ngươi", "mày"),
+    "chinese": ("你", "您", "你们", "妳"),
+    "japanese": ("あなた", "君", "きみ", "お前", "貴方", "あんた"),
+    "korean": ("너", "당신", "그대", "자네", "너희"),
+}
+
+
+def _existing_directed_addressing_pairs(dynamic_state: str) -> set[Tuple[str, str]]:
+    addressing, _, _ = _split_dynamic_sections(dynamic_state)
+    pairs: set[Tuple[str, str]] = set()
+    for line in addressing.splitlines():
+        match = _DYNAMIC_RELATION_PATTERN.match(line)
+        if match and match.group("arrow") == "→":
+            pairs.add(
+                (
+                    _plain_key(match.group("left")),
+                    _plain_key(match.group("right")),
+                )
+            )
+    return pairs
+
+
+def _cue_has_directed_address(
+    cue: str,
+    addressee: str,
+    source_language: str,
+) -> bool:
+    from src.utils.text_matching import reference_mentions_label
+
+    language_key = _plain_key(source_language)
+    markers: Tuple[str, ...] = ()
+    for name, values in _SECOND_PERSON_MARKERS.items():
+        if name in language_key:
+            markers = values
+            break
+    if any(
+        reference_mentions_label(marker, cue, source_language)
+        for marker in markers
+    ):
+        return True
+
+    cue_tokens = set(re.findall(r"[^\W_]+(?:-[^\W_]+)*", cue.casefold(), re.UNICODE))
+    name_tokens = re.findall(r"[^\W_]+", addressee.casefold(), re.UNICODE)
+    return any(
+        len(token) >= 3
+        and any(cue_token == token or cue_token.startswith(f"{token}-") for cue_token in cue_tokens)
+        for token in name_tokens
+    )
+
+
+def _missing_addressing_requirements(
+    dialogue_attribution: Dict[str, Any],
+    candidates: List[Any],
+    current_dynamic_state: str,
+    source_language: str,
+) -> List[Dict[str, Any]]:
+    """Find high-confidence directed dialogue pairs lacking an addressing candidate."""
+
+    covered = {
+        (_plain_key(candidate.speaker), _plain_key(candidate.addressee))
+        for candidate in candidates
+    }
+    covered.update(_existing_directed_addressing_pairs(current_dynamic_state))
+    requirements: List[Dict[str, Any]] = []
+    seen: set[Tuple[str, str]] = set()
+    for turn in dialogue_attribution.get("turns") or []:
+        speaker = str(turn.get("speaker") or "").strip()
+        addressee = str(turn.get("addressee") or "").strip()
+        cue = str(turn.get("cue") or "").strip()
+        try:
+            confidence = float(turn.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        pair = (_plain_key(speaker), _plain_key(addressee))
+        if (
+            confidence < 0.80
+            or not all(pair)
+            or "unknown" in pair
+            or pair in covered
+            or pair in seen
+            or not _cue_has_directed_address(cue, addressee, source_language)
+        ):
+            continue
+        seen.add(pair)
+        requirements.append(
+            {
+                "dialogue_turn_id": str(turn.get("id") or ""),
+                "speaker": speaker,
+                "addressee": addressee,
+                "evidence_quote": cue,
+                "confidence": confidence,
+            }
+        )
+    return requirements
+
+
+async def _retry_missing_addressing_candidates(
+    llm_client: Any,
+    requirements: List[Dict[str, Any]],
+    source_language: str,
+    target_language: str,
+) -> Tuple[List[Any], str]:
+    from src.utils.addressing_schema import parse_addressing_candidate_block
+
+    prompt = (
+        "Create addressing updates only for the missing high-confidence dialogue "
+        "pairs below. Use each supplied evidence quote exactly; do not add pairs or "
+        "facts. Return only one JSON object with an updates array matching the "
+        "ADDRESSING_CANDIDATES contract. Each upsert must include complete target "
+        "self_reference and second_person fields.\n\n"
+        f"Source language: {source_language}\nTarget language: {target_language}\n"
+        f"Missing pairs: {json.dumps(requirements, ensure_ascii=False)}"
+    )
+    response = await llm_client.generate(
+        prompt=prompt,
+        system_prompt=(
+            "You fill deterministic addressing-coverage gaps from supplied spoken "
+            "evidence. Return JSON only and never invent evidence."
+        ),
+    )
+    return parse_addressing_candidate_block(
+        str(getattr(response, "content", "") or ""),
+        source_language=source_language,
+    )
+
+
 async def update_novel_context_chunk(
     llm_client: Any,
     model_name: str,
@@ -9523,16 +9656,103 @@ async def update_novel_context_chunk(
             # We can log that relationship state changed
             change_logs.append("[Novel Context] Dynamic state updated.")
 
+        dialogue_attribution = parse_dialogue_attribution(
+            dialogue_raw,
+            dialogue_turns,
+            _character_alias_map(updated_global_lore),
+            current_dialogue_state,
+        )
+        coverage_gaps: List[Dict[str, Any]] = []
+        if context_contract_version >= 2:
+            from src.utils.progress_logging import emit_progress_log
+
+            requirements = _missing_addressing_requirements(
+                dialogue_attribution,
+                addressing_candidates,
+                current_dynamic_state,
+                source_language,
+            )
+            if requirements:
+                emit_progress_log(
+                    log_callback,
+                    "addressing_coverage_retry",
+                    "High-confidence dialogue addressing coverage was incomplete; "
+                    "retrying the missing pairs once.",
+                    level="warning",
+                    layer="db_addressing",
+                    data={"missing_pair_count": len(requirements)},
+                )
+                try:
+                    retry_candidates, retry_status = (
+                        await _retry_missing_addressing_candidates(
+                            llm_client,
+                            requirements,
+                            source_language,
+                            target_language,
+                        )
+                    )
+                    existing_pairs = {
+                        (_plain_key(item.speaker), _plain_key(item.addressee))
+                        for item in addressing_candidates
+                    }
+                    for candidate in retry_candidates:
+                        pair = (
+                            _plain_key(candidate.speaker),
+                            _plain_key(candidate.addressee),
+                        )
+                        if pair not in existing_pairs:
+                            addressing_candidates.append(candidate)
+                            existing_pairs.add(pair)
+                    if retry_status == "json":
+                        addressing_parse_status = "json_coverage_retried"
+                except Exception as coverage_error:
+                    logger.warning(
+                        "Addressing coverage retry failed for chunk %s: %s",
+                        chunk_index,
+                        coverage_error,
+                    )
+                coverage_gaps = _missing_addressing_requirements(
+                    dialogue_attribution,
+                    addressing_candidates,
+                    current_dynamic_state,
+                    source_language,
+                )
+                if coverage_gaps:
+                    addressing_parse_status = "coverage_gap"
+                    emit_progress_log(
+                        log_callback,
+                        "addressing_coverage_gap",
+                        "Addressing candidates still omit one or more "
+                        "high-confidence directed dialogue pairs.",
+                        level="warning",
+                        layer="db_addressing",
+                        data={
+                            "missing_pair_count": len(coverage_gaps),
+                            "pairs": [
+                                {
+                                    "speaker": item["speaker"],
+                                    "addressee": item["addressee"],
+                                    "dialogue_turn_id": item["dialogue_turn_id"],
+                                }
+                                for item in coverage_gaps
+                            ],
+                        },
+                    )
+
+        if addressing_candidate_sink is not None:
+            addressing_candidate_sink.clear()
+            addressing_candidate_sink.update(
+                {
+                    "candidates": [
+                        candidate.to_dict() for candidate in addressing_candidates
+                    ],
+                    "parse_status": addressing_parse_status,
+                    "coverage_gaps": coverage_gaps,
+                }
+            )
         if dialogue_attribution_sink is not None:
             dialogue_attribution_sink.clear()
-            dialogue_attribution_sink.update(
-                parse_dialogue_attribution(
-                    dialogue_raw,
-                    dialogue_turns,
-                    _character_alias_map(updated_global_lore),
-                    current_dialogue_state,
-                )
-            )
+            dialogue_attribution_sink.update(dialogue_attribution)
             
         return updated_global_lore, new_dynamic, change_logs
 

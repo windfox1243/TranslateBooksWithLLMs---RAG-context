@@ -1217,6 +1217,7 @@ window.NovelContextUI = {
     structuredAddressingRequest: 0,
     structuredRelationshipResult: null,
     editorDiagnosticsResult: null,
+    activeEditorRetryPolls: new Set(),
     localizedView: null,
     lastResyncState: null,
     _localeListenerBound: false,
@@ -1408,9 +1409,14 @@ window.NovelContextUI = {
             review: result.summary?.review_required || 0,
             degraded: result.summary?.degraded || 0,
             failed: result.summary?.hard_failed || 0,
-            recovered: result.summary?.recovered || 0
+            recovered: result.summary?.recovered || 0,
+            warnings: result.summary?.warnings || 0
         });
         pane.appendChild(summary);
+        const latestRunByChunk = new Map();
+        (result.runs || []).forEach(run => {
+            latestRunByChunk.set(Number(run.chunk_index), run);
+        });
         (result.runs || []).slice().reverse().forEach(run => {
             const row = document.createElement('div');
             row.style.padding = '0.6rem 0';
@@ -1429,6 +1435,7 @@ window.NovelContextUI = {
                 state: run.result_state || 'unchanged_draft',
                 resolved: run.resolved_issue_count || 0,
                 unresolved: run.unresolved_issue_count || 0,
+                warnings: run.warning_count || 0,
                 finish: run.finish_reason || '-'
             });
             row.appendChild(details);
@@ -1443,25 +1450,82 @@ window.NovelContextUI = {
                 total: run.total_tokens || 0
             });
             row.appendChild(tokens);
-            if (['review_required', 'transport_failed'].includes(run.outcome)
-                && Number(run.chunk_index) >= 0) {
+            const chunkIndex = Number(run.chunk_index);
+            const isLatestForChunk = latestRunByChunk.get(chunkIndex) === run;
+            const retryState = result.retry_states?.[String(chunkIndex)]
+                || run.retry_state || { status: 'idle' };
+            if (isLatestForChunk
+                && ['review_required', 'transport_failed'].includes(run.outcome)
+                && chunkIndex >= 0) {
                 const retry = document.createElement('button');
                 retry.type = 'button';
                 retry.className = 'btn btn-sm btn-secondary';
                 retry.style.marginLeft = '0.75rem';
-                retry.textContent = t('translation:editor_retry');
+                const activeRetry = ['queued', 'running'].includes(retryState.status);
+                retry.disabled = activeRetry;
+                retry.textContent = t(
+                    activeRetry
+                        ? `translation:editor_retry_${retryState.status}`
+                        : 'translation:editor_retry'
+                );
                 retry.onclick = async () => {
-                    await ApiClient.retrySeniorEditor(
-                        currentTranslationIdForContext(), run.chunk_index
-                    );
-                    MessageLogger.showMessage(
-                        t('translation:editor_retry_queued'), 'success'
-                    );
+                    retry.disabled = true;
+                    retry.textContent = t('translation:editor_retry_queued');
+                    try {
+                        const translationId = currentTranslationIdForContext();
+                        await ApiClient.retrySeniorEditor(translationId, chunkIndex);
+                        MessageLogger.showMessage(
+                            t('translation:editor_retry_started'), 'success'
+                        );
+                        await this._pollEditorRetry(translationId, chunkIndex);
+                    } catch (error) {
+                        retry.disabled = false;
+                        retry.textContent = t('translation:editor_retry');
+                        MessageLogger.showMessage(
+                            t('translation:editor_retry_failed', {
+                                error: error.message || String(error)
+                            }),
+                            'error'
+                        );
+                    }
                 };
                 row.appendChild(retry);
             }
             pane.appendChild(row);
         });
+    },
+
+    _pollEditorRetry: async function(translationId, chunkIndex) {
+        const pollKey = `${translationId}:${chunkIndex}`;
+        if (this.activeEditorRetryPolls.has(pollKey)) return;
+        this.activeEditorRetryPolls.add(pollKey);
+        try {
+            for (let attempt = 0; attempt < 600; attempt += 1) {
+                const result = await ApiClient.getEditorDiagnostics(translationId);
+                this.editorDiagnosticsResult = result;
+                const pane = document.querySelector(
+                    '[data-context-pane-key="editor-diagnostics"]'
+                );
+                if (pane) this._renderEditorDiagnostics(pane);
+                const status = result.retry_states?.[String(chunkIndex)]?.status;
+                if (['succeeded', 'review_required', 'failed', 'blocked'].includes(status)) {
+                    const messageKey = status === 'succeeded'
+                        ? 'translation:editor_retry_succeeded'
+                        : status === 'review_required'
+                        ? 'translation:editor_retry_review_required'
+                        : 'translation:editor_retry_failed';
+                    MessageLogger.showMessage(
+                        t(messageKey, { error: status }),
+                        status === 'succeeded' ? 'success' : 'warning'
+                    );
+                    return;
+                }
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            throw new Error(t('translation:editor_retry_timeout'));
+        } finally {
+            this.activeEditorRetryPolls.delete(pollKey);
+        }
     },
 
     _renderStructuredPane: function(pane, kind) {
