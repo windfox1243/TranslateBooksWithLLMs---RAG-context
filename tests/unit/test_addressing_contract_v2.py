@@ -6,7 +6,7 @@ import pytest
 
 from src.persistence.database import Database
 from src.utils.addressing_schema import AddressingCandidateV2, parse_addressing_candidate_block
-from src.utils.context_merge_engine import ContextMergeEngine
+from src.utils.context_merge_engine import ContextMergeEngine, _source_form_support_reason
 from src.utils.db_addressing import export_db_addressing_to_markdown
 
 
@@ -199,3 +199,29 @@ def test_context_state_transaction_rolls_back_all_staged_changes(addressing_db):
             raise RuntimeError("simulated failed chunk")
     assert addressing_db.get_addressing_rules("rollback") == []
     assert addressing_db.get_addressing_evidence("rollback") == []
+
+
+@pytest.mark.parametrize(
+    ("source_text", "evidence"),
+    [
+        ('She said, “Thanks, Guri-ko!”', 'She said, "Thanks, Guri-ko!"'),
+        ('She paused… then said, “Apollo.”', 'She paused... then said, "Apollo."'),
+    ],
+)
+def test_source_evidence_accepts_typographic_quote_variants(source_text, evidence):
+    assert _source_form_support_reason(
+        "Guri-ko" if "Guri" in source_text else "Apollo",
+        source_text,
+        evidence,
+        "English",
+    ) == ""
+
+
+def test_source_evidence_rejects_fabricated_dialogue_boundaries():
+    source = "She wondered whether Apollo would answer."
+    assert _source_form_support_reason(
+        "Apollo",
+        source,
+        '"She wondered whether Apollo would answer."',
+        "English",
+    ) == "evidence_quote_mismatch"

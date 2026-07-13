@@ -2,6 +2,7 @@
 Translation job management routes
 """
 import os
+import asyncio
 import time
 import copy
 import threading
@@ -110,6 +111,8 @@ _ENDPOINT_PROVIDERS = ('ollama', 'openai')
 
 _CONTEXT_RESYNC_LOCK = threading.Lock()
 _ACTIVE_CONTEXT_RESYNCS = set()
+_EDITOR_RETRY_LOCK = threading.Lock()
+_ACTIVE_EDITOR_RETRIES = set()
 
 
 def _claim_context_resync(translation_id):
@@ -128,6 +131,20 @@ def _release_context_resync(translation_id):
 def _is_context_resync_active(translation_id):
     with _CONTEXT_RESYNC_LOCK:
         return translation_id in _ACTIVE_CONTEXT_RESYNCS
+
+
+def _claim_editor_retry(translation_id, chunk_index):
+    key = (str(translation_id), int(chunk_index))
+    with _EDITOR_RETRY_LOCK:
+        if any(item[0] == key[0] for item in _ACTIVE_EDITOR_RETRIES):
+            return False
+        _ACTIVE_EDITOR_RETRIES.add(key)
+        return True
+
+
+def _release_editor_retry(translation_id, chunk_index):
+    with _EDITOR_RETRY_LOCK:
+        _ACTIVE_EDITOR_RETRIES.discard((str(translation_id), int(chunk_index)))
 
 
 def _context_resync_state_from_config(config):
@@ -251,7 +268,8 @@ def _rehydrate_resume_credentials(config, overrides=None):
     raw_key = overrides.get('api_key') if isinstance(overrides, dict) else None
     raw_editor_key = overrides.get('editor_api_key') if isinstance(overrides, dict) else None
 
-    for key_provider in _KEY_PROVIDERS:
+    active_key_providers = {provider, editor_provider} & set(_KEY_PROVIDERS)
+    for key_provider in active_key_providers:
         env_var = f"{key_provider.upper()}_API_KEY"
         provider_override = (
             overrides.get(f'{key_provider}_api_key')
@@ -399,12 +417,14 @@ def _active_translation_conflict(state_manager, *, action="resume"):
             })
     if not active_translations:
         return None
-    action_label = (
-        "start continuation" if action == "continue" else "resume"
-    )
-    action_detail = (
-        "adding new content" if action == "continue" else "resuming"
-    )
+    action_label = {
+        "continue": "start continuation",
+        "retry the Senior Editor": "retry the Senior Editor",
+    }.get(action, "resume")
+    action_detail = {
+        "continue": "adding new content",
+        "retry the Senior Editor": "retrying the Senior Editor",
+    }.get(action, "resuming")
     active_info = ', '.join(
         f"{item['output_filename']} ({item['status']})"
         for item in active_translations
@@ -2015,11 +2035,26 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         job = state_manager.checkpoint_manager.get_job(translation_id)
         if not job:
             return jsonify({"error": "Translation job not found"}), 404
-        return jsonify(
-            state_manager.checkpoint_manager.db.get_editor_diagnostics(
-                translation_id
-            )
+        result = state_manager.checkpoint_manager.db.get_editor_diagnostics(
+            translation_id
         )
+        from src.core.editor_retry import editor_retry_state
+
+        checkpoint = state_manager.checkpoint_manager.load_checkpoint(
+            translation_id
+        ) or {}
+        retry_states = {
+            str(chunk.get("chunk_index")): editor_retry_state(
+                chunk.get("chunk_data")
+            )
+            for chunk in checkpoint.get("chunks", [])
+        }
+        result["retry_states"] = retry_states
+        for run in result.get("runs") or []:
+            run["retry_state"] = retry_states.get(
+                str(run.get("chunk_index")), {"status": "idle"}
+            )
+        return jsonify(result)
 
     @bp.route('/api/maintenance/jobs-db/compact', methods=['POST'])
     def compact_jobs_database_route():
@@ -2055,7 +2090,13 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         methods=['POST'],
     )
     def retry_editor_route(translation_id, chunk_index):
-        """Queue a preserved draft for editor-only retry on normal resume."""
+        """Start an immediate editor-only retry for a preserved draft."""
+        active_error = _active_translation_conflict(
+            state_manager,
+            action="retry the Senior Editor",
+        )
+        if active_error is not None:
+            return active_error
         diagnostics = state_manager.checkpoint_manager.db.get_editor_diagnostics(
             translation_id
         )
@@ -2078,12 +2119,23 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         ), None)
         if not chunk or not str(chunk.get("translated_text") or "").strip():
             return jsonify({"error": "No preserved draft is available"}), 409
+        if not _claim_editor_retry(translation_id, chunk_index):
+            return jsonify({"error": "A Senior Editor retry is already running"}), 409
+
+        from src.core.editor_retry import _save_retry_state, run_editor_retry
+
         chunk_data = dict(chunk.get("chunk_data") or {})
         chunk_data["editor_validation"] = {
             "stage": "manual_retry",
             "status": "review_required",
             "final_reason_codes": ["manual_editor_retry_requested"],
         }
+        queued_state = {
+            "status": "queued",
+            "requested_at": int(time.time()),
+            "source_run_id": latest_run.get("id"),
+        }
+        chunk_data["editor_retry"] = queued_state
         chunk_data["editor_retry_pending"] = True
         saved = state_manager.checkpoint_manager.save_checkpoint(
             translation_id=translation_id,
@@ -2094,14 +2146,79 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             chunk_status="editor_retry",
         )
         if not saved:
+            _release_editor_retry(translation_id, chunk_index)
             return jsonify({"error": "Could not queue editor retry"}), 500
-        state_manager.checkpoint_manager.mark_partial(translation_id)
+
+        def run_retry_background():
+            try:
+                latest_checkpoint = (
+                    state_manager.checkpoint_manager.load_checkpoint(
+                        translation_id
+                    ) or {}
+                )
+                latest_chunk = next((
+                    item for item in latest_checkpoint.get("chunks", [])
+                    if int(item.get("chunk_index", -1)) == int(chunk_index)
+                ), chunk)
+                _save_retry_state(
+                    state_manager.checkpoint_manager,
+                    translation_id,
+                    latest_chunk,
+                    {
+                        **queued_state,
+                        "status": "running",
+                        "started_at": int(time.time()),
+                    },
+                    chunk_status="editor_retry",
+                )
+                asyncio.run(run_editor_retry(
+                    translation_id=translation_id,
+                    chunk_index=chunk_index,
+                    checkpoint_manager=state_manager.checkpoint_manager,
+                    output_dir=Path(output_dir),
+                ))
+            except Exception as exc:
+                logger.error(
+                    "Immediate Senior Editor retry failed for "
+                    f"{translation_id} chunk {chunk_index}: {exc}"
+                )
+                failed_checkpoint = (
+                    state_manager.checkpoint_manager.load_checkpoint(
+                        translation_id
+                    ) or {}
+                )
+                failed_chunk = next((
+                    item for item in failed_checkpoint.get("chunks", [])
+                    if int(item.get("chunk_index", -1)) == int(chunk_index)
+                ), chunk)
+                _save_retry_state(
+                    state_manager.checkpoint_manager,
+                    translation_id,
+                    failed_chunk,
+                    {
+                        **queued_state,
+                        "status": "failed",
+                        "message": str(exc),
+                        "completed_at": int(time.time()),
+                    },
+                    chunk_status="completed",
+                )
+            finally:
+                _release_editor_retry(translation_id, chunk_index)
+
+        thread = threading.Thread(
+            target=run_retry_background,
+            name=f"editor-retry-{translation_id}-{chunk_index}",
+            daemon=True,
+        )
+        thread.start()
         return jsonify({
             "success": True,
             "translation_id": translation_id,
             "chunk_index": chunk_index,
             "status": "queued",
-        })
+            "retry_state": queued_state,
+        }), 202
 
     @bp.route('/api/translation/<translation_id>/relationship-conflicts', methods=['GET'])
     @bp.route('/<translation_id>/relationship-conflicts', methods=['GET'])

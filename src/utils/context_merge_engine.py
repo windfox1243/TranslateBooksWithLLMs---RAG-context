@@ -4,6 +4,8 @@ Deterministic merge policy engine for directed addressing updates.
 
 from dataclasses import replace
 from typing import Optional, Dict, Any, List, Callable, Iterable
+import re
+import unicodedata
 from src.utils.context_schema import AddressingUpdateDelta
 from src.persistence.database import Database
 from src.utils.progress_logging import emit_progress_log
@@ -40,6 +42,27 @@ _SOURCE_KINSHIP_TERMS = {
 
 def _norm(value: Any) -> str:
     return " ".join(str(value or "").casefold().strip().split())
+
+
+def _evidence_key(value: Any) -> str:
+    """Normalize typographic variants without erasing dialogue boundaries."""
+
+    text = unicodedata.normalize("NFKC", str(value or ""))
+    text = text.translate(
+        str.maketrans(
+            {
+                "“": '"',
+                "”": '"',
+                "„": '"',
+                "‟": '"',
+                "‘": "'",
+                "’": "'",
+                "‚": "'",
+                "‛": "'",
+            }
+        )
+    ).replace("…", "...")
+    return re.sub(r"\s+", " ", text.casefold()).strip()
 
 
 def _is_unspecified(value: Any) -> bool:
@@ -81,12 +104,34 @@ def _dialogue_state_pair(dialogue_attribution: Optional[Dict[str, Any]]) -> tupl
     return speaker, addressee
 
 
-def _source_form_supported(source_form: str, source_text: str, evidence: str) -> bool:
-    form = _norm(source_form)
-    if not form:
-        return False
-    return form in _norm(source_text) and (
-        not evidence or _norm(evidence) in _norm(source_text)
+def _source_form_support_reason(
+    source_form: str,
+    source_text: str,
+    evidence: str,
+    source_language: str = "",
+) -> str:
+    """Return an empty string when evidence is supported, otherwise a reason code."""
+
+    from src.utils.text_matching import reference_mentions_label
+
+    if not reference_mentions_label(source_form, source_text, source_language):
+        return "source_form_missing"
+    if evidence and _evidence_key(evidence) not in _evidence_key(source_text):
+        return "evidence_quote_mismatch"
+    return ""
+
+
+def _source_form_supported(
+    source_form: str,
+    source_text: str,
+    evidence: str,
+    source_language: str = "",
+) -> bool:
+    return not _source_form_support_reason(
+        source_form,
+        source_text,
+        evidence,
+        source_language,
     )
 
 
@@ -258,25 +303,40 @@ class ContextMergeEngine:
                 return reject(
                     "context contract v2 requires at least one exact source form."
                 )
-            unsupported = [
-                str(item.get("text") or "").strip()
-                for item in source_forms
-                if not _source_form_supported(
-                    str(item.get("text") or ""),
-                    source_text,
-                    str(item.get("evidence_quote") or delta.evidence_quote or ""),
+            support_failures = [
+                (
+                    str(item.get("text") or "").strip(),
+                    _source_form_support_reason(
+                        str(item.get("text") or ""),
+                        source_text,
+                        str(item.get("evidence_quote") or delta.evidence_quote or ""),
+                        source_language,
+                    ),
                 )
+                for item in source_forms
             ]
-            if unsupported:
+            missing_forms = [text for text, reason in support_failures if reason == "source_form_missing"]
+            mismatched_quotes = [text for text, reason in support_failures if reason == "evidence_quote_mismatch"]
+            if missing_forms:
                 return reject(
-                    "source-form evidence is not present in the source chunk: "
-                    + ", ".join(unsupported[:3])
+                    "source form is not present in the source chunk "
+                    "[source_form_missing]: " + ", ".join(missing_forms[:3])
+                )
+            if mismatched_quotes:
+                return reject(
+                    "source evidence quote is not present in the source chunk "
+                    "[evidence_quote_mismatch]: " + ", ".join(mismatched_quotes[:3])
                 )
             target_evidence = [
                 item for item in source_forms
                 if _norm(item.get("usage")) in {"direct_address", "second_person"}
                 and _norm(item.get("text"))
-                and _norm(item.get("text")) in _norm(item.get("evidence_quote"))
+                and _source_form_supported(
+                    str(item.get("text") or ""),
+                    str(item.get("evidence_quote") or ""),
+                    "",
+                    source_language,
+                )
             ]
             if not target_evidence:
                 return reject(

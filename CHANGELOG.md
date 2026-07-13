@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.15.0-beta.39 - 2026-07-13
+
+### Added
+
+- **Immediate Senior Editor Retry**:
+  Editor diagnostics now start an editor-only retry immediately, expose queued,
+  running, and terminal states in the interface, preserve the best checkpointed
+  draft, and rebuild the translated output after a validated retry.
+- **Addressing Coverage Diagnostics**:
+  High-confidence dialogue attribution now checks that direct second-person and
+  named-address pairs produce a structured addressing candidate. One bounded
+  targeted retry fills omissions and records any remaining coverage gap.
+
+### Fixed
+
+- **Senior Editor Review Inflation**:
+  Minor, optional, no-op, and review-only observations are persisted as warnings
+  without forcing human review. Only unresolved material defects now produce a
+  review-required outcome, while validated local and full-chunk repairs remain
+  independently classified.
+- **Addressing Evidence Matching**:
+  Source evidence accepts equivalent straight and typographic quotation marks and
+  ellipsis forms while preserving dialogue boundaries. Audit logs now distinguish
+  a missing source form from an evidence-quote mismatch.
+
 ## 1.15.0-beta.38 - 2026-07-12
 
 ### Added

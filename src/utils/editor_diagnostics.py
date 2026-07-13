@@ -7,8 +7,8 @@ from typing import Any, Dict, Iterable, Optional
 
 
 EDITOR_OUTCOMES = {
-    "no_issues", "locally_repaired", "llm_repaired", "review_required",
-    "blocked", "transport_failed",
+    "no_issues", "warnings_only", "locally_repaired", "llm_repaired",
+    "review_required", "blocked", "transport_failed",
 }
 EDITOR_FAILURE_CLASSES = {
     "provider_auth", "provider_quota", "provider_rate_limit", "provider_empty",

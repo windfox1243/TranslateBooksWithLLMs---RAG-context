@@ -126,6 +126,9 @@ def _build_reflection_json_contract_section(*, native_schema: bool = False) -> s
 - Give every issue a stable issue_id and confidence from 0.0 to 1.0.
 - Set repair_kind to local_replace only for an exact substitution, rewrite for a semantic/full-context correction, or review_only for uncertain evidence that must not be changed automatically.
 - Minor issues and issues below 0.80 confidence must use review_only.
+- Do not report optional stylistic preferences, equally valid alternatives, or
+  praise as review_only issues. Omit them. Use review_only only for uncertain
+  evidence of a material defect that a human may genuinely need to inspect.
 - For a direct edit, segment_id must identify the numbered draft segment and draft_quote must occur exactly once inside that segment and contain draft_replacement.draft.
 - For a direct local substitution, set draft_replacement to {{"draft": "exact current draft span", "replacement": "exact corrected target-language span"}}. Do not leave it null when a specific draft span must change.
 - Use glossary_update only for durable terminology that should apply to later chunks: {{"source": "...", "target": "..."}}. A one-off correction is not a glossary update.

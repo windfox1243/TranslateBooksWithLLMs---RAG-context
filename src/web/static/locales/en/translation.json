@@ -342,10 +342,16 @@
   "editor_diagnostics_tab": "Editor Diagnostics",
   "editor_diagnostics_loading": "Loading Senior Editor diagnostics...",
   "editor_diagnostics_legacy": "This job has no classified Senior Editor diagnostics.",
-  "editor_diagnostics_summary": "Runs: {{total}} · successful: {{successful}} · review: {{review}} · degraded: {{degraded}} · hard failures: {{failed}} · recovered: {{recovered}}",
+  "editor_diagnostics_summary": "Runs: {{total}} · successful: {{successful}} · review: {{review}} · warnings: {{warnings}} · degraded: {{degraded}} · hard failures: {{failed}} · recovered: {{recovered}}",
   "editor_diagnostics_run": "Chunk {{chunk}} · {{outcome}} · {{reason}}",
-  "editor_diagnostics_result": "Result: {{state}} · resolved: {{resolved}} · unresolved: {{unresolved}} · finish: {{finish}}",
+  "editor_diagnostics_result": "Result: {{state}} · resolved: {{resolved}} · unresolved: {{unresolved}} · warnings: {{warnings}} · finish: {{finish}}",
   "editor_diagnostics_tokens": "Tokens: input {{prompt}} · output {{completion}} · thinking {{thinking}} · total {{total}}",
   "editor_retry": "Retry editor",
-  "editor_retry_queued": "Senior Editor retry queued. Resume the job to run it."
+  "editor_retry_queued": "Queued...",
+  "editor_retry_running": "Retrying...",
+  "editor_retry_started": "Senior Editor retry started immediately.",
+  "editor_retry_succeeded": "Senior Editor retry completed and saved the validated draft.",
+  "editor_retry_review_required": "Senior Editor retry completed, but major findings still require review.",
+  "editor_retry_failed": "Senior Editor retry failed: {{error}}",
+  "editor_retry_timeout": "Senior Editor retry did not finish before the UI timeout."
 }
