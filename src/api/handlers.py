@@ -368,6 +368,26 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 f"ℹ️ Output filename modified to avoid overwriting: {config['output_filename']} → {actual_output_filename}")
             config['output_filename'] = actual_output_filename
 
+        # Upgrade/resume audits run before new translation units so a known
+        # narrator-policy violation cannot remain in the rebuilt output.
+        if is_resume and not config.get('refine_only'):
+            from src.core.editor_retry import run_pending_narrator_backfill
+
+            resume_backfill = await run_pending_narrator_backfill(
+                translation_id=translation_id,
+                checkpoint_manager=checkpoint_manager,
+                output_dir=Path(os.path.dirname(output_filepath_on_server)),
+                log_callback=_log_message_callback,
+            )
+            state_manager.set_translation_field(
+                translation_id, 'narrator_backfill', resume_backfill,
+            )
+            if resume_backfill.get('failed'):
+                raise RuntimeError(
+                    "Narrator conformance backfill is blocked; review the "
+                    "preserved draft before resuming translation."
+                )
+
         # Log translation start with unified logger
         logger.info("Translation Started", LogType.TRANSLATION_START, {
             'source_lang': config['source_language'],

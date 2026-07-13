@@ -2571,6 +2571,18 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                 for item in chunks
                 if (item.get("chunk_data") or {}).get("narrator_voice_stale")
             ]
+            conformance_units = [{
+                "chunk_index": int(item.get("chunk_index", 0)),
+                "conformance": (item.get("chunk_data") or {}).get(
+                    "narrator_conformance"
+                ) or {"status": "not_checked"},
+                "backfill": (item.get("chunk_data") or {}).get(
+                    "narrator_backfill"
+                ) or {"status": "idle"},
+            } for item in chunks if (
+                (item.get("chunk_data") or {}).get("narrator_conformance")
+                or (item.get("chunk_data") or {}).get("narrator_backfill")
+            )]
             completed_count = sum(
                 1 for item in chunks
                 if item.get("status") in {"completed", "partial"}
@@ -2606,9 +2618,15 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                     ),
                 },
                 "backfill": {
-                    "status": "pending" if stale_chunks else "idle",
+                    "status": (
+                        "blocked" if any(
+                            unit["backfill"].get("status") == "blocked"
+                            for unit in conformance_units
+                        ) else "pending" if stale_chunks else "idle"
+                    ),
                     "pending_units": stale_chunks,
                     "pending_count": len(stale_chunks),
+                    "units": conformance_units,
                 },
             }), 200
 
