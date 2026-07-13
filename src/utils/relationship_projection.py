@@ -6,7 +6,10 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from src.persistence.database import Database
 from src.utils.language_profiles import get_language_profile
-from src.utils.relationship_reasoning_engine import relationship_support_for_addressing
+from src.utils.relationship_reasoning_engine import (
+    migrate_relationship_reasoning_v2,
+    relationship_support_for_addressing,
+)
 from src.utils.relationship_schema import RelationshipProjection, clean_relationship_text
 from src.utils.text_matching import active_label_matches_name, reference_mentions_label
 
@@ -133,6 +136,7 @@ def build_relationship_projection(
 
     if not translation_id or db is None:
         return RelationshipProjection(fallback_reasons=["relationship_database_unavailable"])
+    migrate_relationship_reasoning_v2(db, translation_id)
     active_names = [str(name) for name in active_character_names or [] if name]
     # Addressing edges mirror the directed-addressing table. Render only the
     # validated active rules below so a quarantined legacy mirror cannot leak

@@ -613,6 +613,7 @@ async def translate_paragraphs_plain(
             target_language=target_language,
             model_name=str((prompt_options or {}).get("editor_model") or model_name),
             llm_client=(prompt_options or {}).get("_editor_llm_client") or llm_client,
+            file_type=str((prompt_options or {}).get("file_type") or "txt"),
         )
 
     async def _translate_chunk(i, analyze_context=True):
@@ -635,6 +636,7 @@ async def translate_paragraphs_plain(
                 target_language=target_language,
                 model_name=str((prompt_options or {}).get("editor_model") or model_name),
                 llm_client=(prompt_options or {}).get("_editor_llm_client") or llm_client,
+                file_type=str((prompt_options or {}).get("file_type") or "txt"),
             )
 
         should_analyze_context = (

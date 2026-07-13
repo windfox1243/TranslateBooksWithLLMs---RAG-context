@@ -199,42 +199,12 @@ def sync_db_addressing_to_relationship_graph(
     chunk_index: int = 0,
     log_callback=None,
 ) -> List[RelationshipMergeDecision]:
-    """Mirror accepted directed addressing rules as graph AddressingEdges."""
+    """Compatibility no-op: addressing has its own directed projection table."""
 
-    if not translation_id or db is None:
-        return []
-    engine = RelationshipReasoningEngine(db=db)
-    decisions = []
-    for rule in db.get_addressing_rules(translation_id):
-        source = str(rule.get("speaker_name") or "").strip()
-        target = str(rule.get("addressee_name") or "").strip()
-        if not source or not target:
-            continue
-        engine.register_node(translation_id, source, entity_type="character")
-        engine.register_node(translation_id, target, entity_type="character")
-        details = (
-            f"self={rule.get('self_pronoun')}; target={rule.get('target_pronoun')}; "
-            f"vocative={rule.get('vocative') or ''}; register={rule.get('register') or ''}"
-        )
-        decisions.append(engine.merge_candidate(
-            translation_id,
-            int(rule.get("last_chunk_index") or chunk_index),
-            RelationshipCandidate(
-                source=source,
-                target=target,
-                relationship_type="addressing",
-                direction="directed",
-                scope="durable",
-                register=str(rule.get("register") or "neutral"),
-                confidence=float(rule.get("confidence") or 1.0),
-                provenance="db_addressing",
-                details=details,
-                parser_status="database",
-            ),
-            known_character_names=[source, target],
-            log_callback=log_callback,
-        ))
-    return decisions
+    # Older releases mirrored addressing rules into the semantic graph. Those
+    # edges polluted inverse-role validation. Existing mirrors remain readable
+    # for audit compatibility but every semantic consumer filters them out.
+    return []
 
 
 def quarantine_incompatible_addressing_rules(

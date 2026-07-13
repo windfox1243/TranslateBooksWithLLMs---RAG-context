@@ -222,6 +222,7 @@ async def run_editor_retry(
         target_language=str(config.get("target_language") or ""),
         model_name=editor_spec.model,
         llm_client=editor_client,
+        file_type=str(job.get("file_type") or config.get("file_type") or ""),
     )
 
     source_text = str(chunk.get("original_text") or "")
@@ -343,3 +344,55 @@ async def run_editor_retry(
         chunk_status=final_chunk_status,
     )
     return state
+
+
+async def run_pending_narrator_backfill(
+    *, translation_id: str, checkpoint_manager: Any, output_dir: Path,
+    log_callback: Any = None,
+) -> Dict[str, Any]:
+    """Run queued narrator repairs once per stale completed unit."""
+
+    checkpoint = checkpoint_manager.load_checkpoint(translation_id)
+    if not checkpoint:
+        return {"status": "idle", "completed": [], "failed": []}
+    stale = [
+        item for item in checkpoint.get("chunks", [])
+        if item.get("status") in {"completed", "partial"}
+        and (item.get("chunk_data") or {}).get("narrator_voice_stale")
+    ]
+    if not stale:
+        return {"status": "idle", "completed": [], "failed": []}
+    completed = []
+    failed = []
+    for chunk in sorted(stale, key=lambda item: int(item.get("chunk_index", 0))):
+        chunk_index = int(chunk.get("chunk_index", 0))
+        if log_callback:
+            log_callback(
+                "narrator_backfill_started",
+                f"Applying narrator voice to completed unit {chunk_index + 1}.",
+            )
+        try:
+            result = await run_editor_retry(
+                translation_id=translation_id,
+                chunk_index=chunk_index,
+                checkpoint_manager=checkpoint_manager,
+                output_dir=Path(output_dir),
+            )
+            if result.get("status") == "succeeded":
+                completed.append(chunk_index)
+            else:
+                failed.append({
+                    "chunk_index": chunk_index,
+                    "status": result.get("status") or "failed",
+                })
+        except Exception as exc:
+            failed.append({
+                "chunk_index": chunk_index,
+                "status": "failed",
+                "error": type(exc).__name__,
+            })
+    return {
+        "status": "completed" if not failed else "review_required",
+        "completed": completed,
+        "failed": failed,
+    }
