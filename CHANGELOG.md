@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.15.0-beta.44 - 2026-07-13
+
+### Added
+
+- **Senior Editor Result Notes**:
+  Every persisted Senior Editor run now includes a localized explanatory note
+  in the diagnostics UI. Notes distinguish clean passes, warning-only passes,
+  local repairs, LLM repairs, review-required drafts, provider failures, and
+  deterministic blocks, with reason codes retained for detailed diagnosis.
+- **Provisional Addressing Visibility**:
+  Evidence-bearing addressing candidates that are not safe for prompt use are
+  now shown as provisional in the structured context UI instead of appearing
+  active or disappearing from the audit trail.
+
+### Fixed
+
+- **Partial Vocative Evidence Activating a Complete Vietnamese Pair**:
+  A directly evidenced vocative can no longer validate an unrelated
+  self-reference, second-person pronoun, social basis, and durable scope as one
+  atomic rule. Unsupported Vietnamese pairs remain provisional, and durable
+  peer pairs require relationship support or observations from two distinct
+  units.
+- **Special Week and Silence Suzuka Addressing Regression**:
+  The source form `Suzuka-san` no longer promotes the unsupported
+  `tớ → Suzuka-san` target pair or the uncorroborated `peer` basis. Existing
+  unlocked contract-v3 copies are automatically reclassified as provisional
+  during database migration.
+
 ## 1.15.0-beta.43 - 2026-07-13
 
 ### Added

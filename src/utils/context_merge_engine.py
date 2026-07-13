@@ -33,6 +33,7 @@ TRUSTED_PAIR_SOURCES = {
 VI_SENIOR_FORMS = {"anh", "chị", "thầy", "cô", "sếp", "bác", "chú", "ông", "bà", "ngài"}
 VI_JUNIOR_FORMS = {"em", "cháu", "con", "hậu bối"}
 VI_PEER_FORMS = {"cậu", "bạn", "tớ", "mình", "tao", "mày"}
+VI_NEUTRAL_SELF_FORMS = {"tôi"}
 _SOURCE_KINSHIP_TERMS = {
     "brother", "sister", "older brother", "older sister", "younger brother",
     "younger sister", "teacher", "senior", "junior", "master", "father",
@@ -166,9 +167,35 @@ def _vi_pair_direction(self_pronoun: str, target_pronoun: str) -> str:
         return "senior_to_junior"
     if self_key in VI_PEER_FORMS and target_key in VI_PEER_FORMS:
         return "peer"
+    if self_key in VI_NEUTRAL_SELF_FORMS and target_key in VI_PEER_FORMS:
+        return "peer"
     if self_key and self_key == target_key:
         return "same"
     return ""
+
+
+def _ground_social_basis(
+    social_basis: Iterable[str],
+    source_text: str,
+    graph_hierarchy: str,
+) -> List[str]:
+    """Keep social claims independent and backed by their own evidence."""
+
+    canonical_graph_basis = {
+        "source_senior": "speaker is senior to addressee",
+        "source_junior": "addressee is senior to speaker",
+        "peer": "peer",
+    }.get(str(graph_hierarchy or "unknown"), "")
+    if canonical_graph_basis:
+        return [canonical_graph_basis]
+
+    source_key = _evidence_key(source_text)
+    grounded = []
+    for item in social_basis or []:
+        value = str(item or "").strip()
+        if value and _evidence_key(value) in source_key:
+            grounded.append(value)
+    return list(dict.fromkeys(grounded))
 
 
 class ContextMergeEngine:
@@ -209,7 +236,13 @@ class ContextMergeEngine:
         if not delta:
             return False
 
-        existing_rules = self.db.get_addressing_rules(translation_id)
+        all_existing_rules = self.db.get_addressing_rules(
+            translation_id, validation_status=None,
+        )
+        existing_rules = [
+            rule for rule in all_existing_rules
+            if rule.get("validation_status") == "active"
+        ]
         existing_rule_map = {
             (r["speaker_name"].lower(), r["addressee_name"].lower()): r
             for r in existing_rules
@@ -218,6 +251,43 @@ class ContextMergeEngine:
         pair_key = (delta.speaker.lower(), delta.addressee.lower())
         existing = existing_rule_map.get(pair_key)
         reverse = existing_rule_map.get((delta.addressee.lower(), delta.speaker.lower()))
+        existing_any = next((
+            rule for rule in all_existing_rules
+            if (
+                str(rule.get("speaker_name") or "").lower(),
+                str(rule.get("addressee_name") or "").lower(),
+            ) == pair_key
+        ), None)
+
+        def persist_evidence() -> None:
+            for source_form in delta.source_forms:
+                if not isinstance(source_form, dict):
+                    continue
+                db_form = str(source_form.get("text") or "").strip()
+                if not db_form:
+                    continue
+                self.db.add_addressing_evidence(
+                    translation_id,
+                    delta.speaker,
+                    delta.addressee,
+                    db_form,
+                    usage=str(source_form.get("usage") or "direct_address"),
+                    source_language=str(
+                        source_form.get("source_language") or source_language or ""
+                    ),
+                    evidence_quote=str(
+                        source_form.get("evidence_quote")
+                        or delta.evidence_quote
+                        or ""
+                    ),
+                    scope=str(source_form.get("scope") or delta.scope),
+                    confidence=float(
+                        source_form.get("confidence") or delta.confidence
+                    ),
+                    provenance=delta.provenance or trigger_source,
+                    dialogue_turn_id=delta.dialogue_turn_id,
+                    chunk_index=chunk_index,
+                )
 
         def reject(reason: str) -> bool:
             msg = (
@@ -262,6 +332,80 @@ class ContextMergeEngine:
             )
             return False
 
+        def provisional(reason: str) -> bool:
+            """Persist evidence without projecting an unsupported rule."""
+
+            if existing and existing.get("validation_status") == "active":
+                return reject(
+                    f"provisional observation did not replace the active rule: {reason}"
+                )
+            if existing_any and existing_any.get("is_locked"):
+                return reject("locked by user.")
+            if existing_any and existing_any.get("validation_status") == "quarantined":
+                return reject(
+                    f"provisional observation did not replace a quarantined rule: {reason}"
+                )
+            success = self.db.upsert_addressing_rule(
+                translation_id=translation_id,
+                speaker_name=delta.speaker,
+                addressee_name=delta.addressee,
+                self_pronoun=delta.self_pronoun,
+                target_pronoun=delta.second_pronoun,
+                vocative=delta.vocative,
+                register=delta.register,
+                social_basis=list(delta.social_basis or []),
+                scope=delta.scope,
+                contract_version=delta.contract_version,
+                confidence=min(float(delta.confidence), 0.79),
+                is_locked=0,
+                chunk_index=chunk_index,
+                validation_status="provisional",
+                validation_reason=reason,
+                provenance=delta.provenance or trigger_source,
+            )
+            if not success:
+                return False
+            persist_evidence()
+            self.db.add_context_audit_log(
+                translation_id=translation_id,
+                chunk_index=chunk_index,
+                speaker_name=delta.speaker,
+                addressee_name=delta.addressee,
+                old_state=existing_any,
+                new_state={
+                    "status": "provisional",
+                    "reason": reason,
+                    "speaker_name": delta.speaker,
+                    "addressee_name": delta.addressee,
+                    "self_pronoun": delta.self_pronoun,
+                    "target_pronoun": delta.second_pronoun,
+                    "vocative": delta.vocative,
+                    "register": delta.register,
+                    "confidence": min(float(delta.confidence), 0.79),
+                },
+                trigger_source=f"{trigger_source}:provisional",
+                evidence_quote=delta.evidence_quote,
+                confidence=min(float(delta.confidence), 0.79),
+            )
+            emit_progress_log(
+                log_callback,
+                "addressing_provisional",
+                (
+                    f"Addressing update awaiting corroboration for "
+                    f"{delta.speaker} -> {delta.addressee}: {reason}"
+                ),
+                level="warning",
+                layer="db_addressing",
+                chunk_index=chunk_index,
+                data={
+                    "speaker": delta.speaker,
+                    "addressee": delta.addressee,
+                    "reason": reason,
+                    "trigger_source": trigger_source,
+                },
+            )
+            return False
+
         try:
             from src.utils.language_profiles import get_language_profile
 
@@ -292,6 +436,16 @@ class ContextMergeEngine:
                 "hierarchy": "unknown",
                 "edges": [],
             }
+
+        if delta.contract_version >= 4 and not trusted_pair_source:
+            delta = replace(
+                delta,
+                social_basis=_ground_social_basis(
+                    delta.social_basis,
+                    source_text,
+                    str(graph_support.get("hierarchy") or "unknown"),
+                ),
+            )
 
         v2_source_supported = False
         if delta.contract_version >= 2 and not trusted_pair_source:
@@ -354,6 +508,39 @@ class ContextMergeEngine:
                 "target vocative preserves an untranslated generic source-language "
                 "kinship/title term."
             )
+
+        if (
+            requires_paired_forms
+            and delta.contract_version >= 4
+            and not trusted_pair_source
+        ):
+            incoming_direction = _vi_pair_direction(
+                delta.self_pronoun,
+                delta.second_pronoun,
+            )
+            if not incoming_direction:
+                return provisional(
+                    "unsupported_vietnamese_target_pair"
+                )
+            if (
+                incoming_direction == "peer"
+                and delta.scope == "durable"
+                and graph_support.get("hierarchy", "unknown") == "unknown"
+            ):
+                supporting_units = {
+                    int(item.get("chunk_index", -1))
+                    for item in self.db.get_addressing_evidence(
+                        translation_id,
+                        delta.speaker,
+                        delta.addressee,
+                    )
+                    if int(item.get("chunk_index", -1)) >= 0
+                }
+                supporting_units.add(int(chunk_index))
+                if len(supporting_units) < 2:
+                    return provisional(
+                        "peer_pair_awaiting_corroboration"
+                    )
 
         if requires_paired_forms and _is_unspecified(delta.self_pronoun):
             return reject(
@@ -586,34 +773,7 @@ class ContextMergeEngine:
         )
 
         if success:
-            for source_form in delta.source_forms:
-                if not isinstance(source_form, dict):
-                    continue
-                db_form = str(source_form.get("text") or "").strip()
-                if not db_form:
-                    continue
-                self.db.add_addressing_evidence(
-                    translation_id,
-                    delta.speaker,
-                    delta.addressee,
-                    db_form,
-                    usage=str(source_form.get("usage") or "direct_address"),
-                    source_language=str(
-                        source_form.get("source_language") or source_language or ""
-                    ),
-                    evidence_quote=str(
-                        source_form.get("evidence_quote")
-                        or delta.evidence_quote
-                        or ""
-                    ),
-                    scope=str(source_form.get("scope") or delta.scope),
-                    confidence=float(
-                        source_form.get("confidence") or delta.confidence
-                    ),
-                    provenance=delta.provenance or trigger_source,
-                    dialogue_turn_id=delta.dialogue_turn_id,
-                    chunk_index=chunk_index,
-                )
+            persist_evidence()
             self.db.add_context_audit_log(
                 translation_id=translation_id,
                 chunk_index=chunk_index,

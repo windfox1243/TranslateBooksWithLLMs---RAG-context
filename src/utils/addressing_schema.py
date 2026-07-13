@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 
-ADDRESSING_CONTRACT_VERSION = 3
+ADDRESSING_CONTRACT_VERSION = 4
 
 _REGISTER_VALUES = {
     "neutral",
