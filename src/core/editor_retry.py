@@ -108,6 +108,8 @@ def _save_retry_state(
     chunk_data["editor_retry"] = dict(state)
     if state.get("status") in TERMINAL_RETRY_STATES:
         chunk_data.pop("editor_retry_pending", None)
+        if state.get("status") == "succeeded":
+            chunk_data.pop("narrator_voice_stale", None)
     else:
         chunk_data["editor_retry_pending"] = True
     return checkpoint_manager.save_checkpoint(
@@ -212,6 +214,16 @@ async def run_editor_retry(
         context_window=config.get("context_window"),
     )
 
+    from src.utils.narrator_voice import bootstrap_narrator_voice
+    await bootstrap_narrator_voice(
+        db=checkpoint_manager.db,
+        translation_id=translation_id,
+        chunks=checkpoint.get("chunks", []),
+        target_language=str(config.get("target_language") or ""),
+        model_name=editor_spec.model,
+        llm_client=editor_client,
+    )
+
     source_text = str(chunk.get("original_text") or "")
     draft_text = str(chunk.get("translated_text") or "")
     chunk_data = dict(chunk.get("chunk_data") or {})
@@ -230,17 +242,15 @@ async def run_editor_retry(
         "target_language": config.get("target_language") or "",
         "active_character_names": _active_character_names(chunk_data),
     })
-    from src.utils.translation_quality import build_narrative_voice_context
+    from src.utils.narrator_voice import build_narrator_voice_context
 
-    previous_translations = [
-        item.get("translated_text") or ""
-        for item in checkpoint.get("chunks", [])
-        if int(item.get("chunk_index", -1)) < int(chunk_index)
-        and item.get("status") in {"completed", "partial"}
-    ]
-    narrative_voice_context = build_narrative_voice_context(
-        previous_translations,
-        str(config.get("target_language") or ""),
+    options["_checkpoint_db"] = checkpoint_manager.db
+    options["chapter_index"] = chunk_data.get("chapter_index")
+    options["scene_key"] = str(chunk_data.get("scene_key") or "")
+    narrative_voice_context = build_narrator_voice_context(
+        translation_id, checkpoint_manager.db,
+        chunk_index=int(chunk_index),
+        target_language=str(config.get("target_language") or ""),
     )
     if narrative_voice_context:
         options["narrative_voice_context"] = narrative_voice_context

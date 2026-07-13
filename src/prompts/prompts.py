@@ -12,8 +12,8 @@ CORRECTED_TAG_IN = "<CORRECTED_TAG_IN>"
 CORRECTED_TAG_OUT = "<CORRECTED_TAG_OUT>"
 REFLECTION_JSON_TAG_IN = "<REFLECTION_JSON>"
 REFLECTION_JSON_TAG_OUT = "</REFLECTION_JSON>"
-REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v6"
-REFLECTION_CONTRACT_VERSION = "editor-issue-v5"
+REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v7"
+REFLECTION_CONTRACT_VERSION = "editor-issue-v6-voice"
 
 REFLECTION_RESPONSE_SCHEMA = {
     "type": "object",
@@ -78,8 +78,39 @@ REFLECTION_RESPONSE_SCHEMA = {
                 "additionalProperties": False,
             },
         },
+        "voice_observations": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "segment_id": {"type": "string"},
+                    "discourse_mode": {"type": "string", "enum": [
+                        "narration", "dialogue", "thought", "letter", "embedded_story"
+                    ]},
+                    "narrator_key": {"type": "string"},
+                    "narrator_identity": {"type": "string"},
+                    "point_of_view": {"type": "string"},
+                    "dimensions": {"type": "object"},
+                    "source_quote": {"type": "string"},
+                    "target_quote": {"type": "string"},
+                    "transition_type": {"type": "string", "enum": [
+                        "none", "chapter", "scene", "explicit"
+                    ]},
+                    "transition_evidence": {"type": "string"},
+                    "confidence": {"type": "number"},
+                },
+                "required": [
+                    "segment_id", "discourse_mode", "narrator_key",
+                    "narrator_identity", "point_of_view", "dimensions",
+                    "source_quote", "target_quote", "transition_type",
+                    "transition_evidence", "confidence"
+                ],
+                "additionalProperties": False,
+            },
+        },
     },
-    "required": ["status", "issues"],
+    "required": ["status", "issues", "voice_observations"],
     "additionalProperties": False,
 }
 
@@ -133,12 +164,16 @@ def _build_reflection_json_contract_section(*, native_schema: bool = False) -> s
 - For a direct local substitution, set draft_replacement to {{"draft": "exact current draft span", "replacement": "exact corrected target-language span"}}. Do not leave it null when a specific draft span must change.
 - Use glossary_update only for durable terminology that should apply to later chunks: {{"source": "...", "target": "..."}}. A one-off correction is not a glossary update.
 - term_replacement is a compatibility alias for glossary_update. Prefer glossary_update in new output.
+- Return voice_observations independently of issues. Include only exact, unique source and target evidence. Classify narration, dialogue, thought, letter, and embedded_story separately. Never infer narrator voice from raw pronoun frequency.
+- A voice observation is evidence, not an edit. Use an empty list when narrator identity, POV, or language-specific voice dimensions are not strongly supported.
+- Report a chapter/scene/explicit transition only when the source itself supports it. Dialogue alone is never a narrator transition.
 
 Required schema:
 {'' if native_schema else REFLECTION_JSON_TAG_IN}
 {{
   "status": "no_issues",
-  "issues": []
+  "issues": [],
+  "voice_observations": []
 }}
 {'' if native_schema else REFLECTION_JSON_TAG_OUT}
 
@@ -161,7 +196,8 @@ Repair schema:
       "glossary_update": null,
       "term_replacement": null
     }}
-  ]
+  ],
+  "voice_observations": []
 }}
 {'' if native_schema else REFLECTION_JSON_TAG_OUT}"""
 
@@ -679,6 +715,15 @@ For consistency and natural flow, here's what came immediately before:
     directed_addressing_section = _build_directed_addressing_section(prompt_options)
     relationship_context_section = _build_relationship_context_section(prompt_options)
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
+    narrator_voice_context = str(
+        prompt_options.get("narrative_voice_context") or ""
+    ).strip()
+    narrator_voice_section = (
+        "# ESTABLISHED NARRATOR VOICE (HISTORICAL TIMELINE)\n"
+        + narrator_voice_context
+        + "\nApply it only to the matching narrator and discourse scope; dialogue addressing cannot override it.\n\n"
+        if narrator_voice_context else ""
+    )
     novel_context_section = _build_novel_context_section(
         prompt_options,
         reference_text="\n".join(
@@ -702,7 +747,7 @@ For consistency and natural flow, here's what came immediately before:
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_translation_block_text}{directed_addressing_section}{relationship_context_section}{novel_context_section}{glossary_section}{dialogue_section}# TEXT TO TRANSLATE
+    user_prompt = f"""{previous_translation_block_text}{directed_addressing_section}{relationship_context_section}{narrator_voice_section}{novel_context_section}{glossary_section}{dialogue_section}# TEXT TO TRANSLATE
 
 {INPUT_TAG_IN}
 {main_content}
@@ -979,6 +1024,15 @@ For consistency and natural flow, here's what came immediately before:
     directed_addressing_section = _build_directed_addressing_section(prompt_options)
     relationship_context_section = _build_relationship_context_section(prompt_options)
     dialogue_section = _build_dialogue_attribution_section(prompt_options)
+    narrator_voice_context = str(
+        prompt_options.get("narrative_voice_context") or ""
+    ).strip()
+    narrator_voice_section = (
+        "# ESTABLISHED NARRATOR VOICE (HISTORICAL, READ-ONLY)\n"
+        + narrator_voice_context
+        + "\nRefinement must preserve this profile and must not infer or rewrite narrator history.\n\n"
+        if narrator_voice_context else ""
+    )
     # Glossary block injected here (per-chunk dynamic) so the system prompt
     # stays cacheable across chunks.
     novel_context_section = _build_novel_context_section(
@@ -1005,7 +1059,7 @@ For consistency and natural flow, here's what came immediately before:
     if dialogue_section:
         dialogue_section = f"{dialogue_section}\n\n"
 
-    user_prompt = f"""{previous_context_block}{directed_addressing_section}{relationship_context_section}{novel_context_section}{glossary_section}{dialogue_section}# DRAFT TO REFINE
+    user_prompt = f"""{previous_context_block}{directed_addressing_section}{relationship_context_section}{narrator_voice_section}{novel_context_section}{glossary_section}{dialogue_section}# DRAFT TO REFINE
 
 The following is a rough {target_language} translation that needs significant improvement.
 Rewrite it with elegant, literary-quality {target_language} prose:
@@ -1723,7 +1777,7 @@ ADDITIONAL AUDIT OUTPUT RULES:
         )
     if narrative_voice_context and narrative_voice_context.strip():
         user_sections.append(
-            "# ESTABLISHED NARRATOR VOICE (DERIVED FROM PRIOR COMPLETED CHUNKS)\n"
+            "# ESTABLISHED NARRATOR VOICE (EVIDENCE-BACKED HISTORICAL TIMELINE)\n"
             + narrative_voice_context.strip()
         )
     user_sections.append(f"# ACTIVE NOVEL LORE & ADDRESSING RULES (Background defaults apply ONLY when source text lacks an explicit spoken nickname/title. Explicit source nicknames like 'Spe-chan' take 100% priority over lore entries like 'Special'):\n{novel_context.strip() if novel_context.strip() else 'None'}")
@@ -1774,7 +1828,7 @@ Output ONLY the final repaired translation text inside {translate_tag_in} and {t
         user_sections.append(f"# GLOSSARY & TERM MAPPING:\n{glossary_block.strip()}")
     if narrative_voice_context and narrative_voice_context.strip():
         user_sections.append(
-            "# ESTABLISHED NARRATOR VOICE (DERIVED FROM PRIOR COMPLETED CHUNKS)\n"
+            "# ESTABLISHED NARRATOR VOICE (EVIDENCE-BACKED HISTORICAL TIMELINE)\n"
             + narrative_voice_context.strip()
         )
     user_sections.append(f"# ACTIVE NOVEL LORE & ADDRESSING RULES:\n{novel_context.strip() if novel_context.strip() else 'None'}")

@@ -5,7 +5,7 @@ import inspect
 import json
 import time
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from tqdm.auto import tqdm
 
 from src.config import (
@@ -77,6 +77,7 @@ class ReflectionResult:
     issues: List[Dict[str, Any]]
     raw_text: str = ""
     parse_status: str = "empty"
+    voice_observations: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def needs_repair(self) -> bool:
@@ -975,6 +976,23 @@ async def refine_chunks(
                 "chunk_index": i,
                 "editor_phase": "refinement",
             })
+            from src.utils.narrator_voice import build_narrator_voice_context
+            voice_db = local_prompt_options.get("_checkpoint_db")
+            narrative_voice_context = build_narrator_voice_context(
+                str(local_prompt_options.get("translation_id") or ""),
+                voice_db,
+                chunk_index=i,
+                target_language=target_language,
+            )
+            if narrative_voice_context:
+                local_prompt_options["narrative_voice_context"] = narrative_voice_context
+            if i < len(original_chunks):
+                local_prompt_options["chapter_index"] = original_chunks[i].get(
+                    "chapter_index"
+                )
+                local_prompt_options["scene_key"] = str(
+                    original_chunks[i].get("scene_key") or ""
+                )
             dialogue_attribution = None
             if i < len(original_chunks):
                 dialogue_attribution = original_chunks[i].get(
@@ -1346,7 +1364,13 @@ def parse_reflection_result(reflection_text: str) -> ReflectionResult:
         parse_status = "json"
         if not issues and raw_status == "needs_repair":
             parse_status = "incomplete_json"
-        return ReflectionResult(raw_status, issues, raw_text, parse_status)
+        raw_voice = (
+            data.get("voice_observations")
+            if isinstance(data.get("voice_observations"), list) else []
+        )
+        return ReflectionResult(
+            raw_status, issues, raw_text, parse_status, raw_voice,
+        )
 
     if raw_text.strip().upper() == "NO_ISSUES":
         return ReflectionResult("no_issues", [], raw_text, "legacy_no_issues")
@@ -2230,7 +2254,9 @@ async def run_chunk_reflection_pass(
                         for issue in reflection_result.issues
                     ]
                     reflection_result = ReflectionResult(
-                        "needs_repair", merged, retry_critique, "json"
+                        "needs_repair", merged, retry_critique, "json",
+                        retry_result.voice_observations
+                        or reflection_result.voice_observations,
                     )
                 elif not reflection_contract_invalid(retry_result):
                     reflection_result = retry_result
@@ -2259,6 +2285,7 @@ async def run_chunk_reflection_pass(
                 valid_issues,
                 reflection_result.raw_text,
                 reflection_result.parse_status,
+                reflection_result.voice_observations,
             )
             contract_review_required = invalid_issue_count > 0
             review_issue_count += invalid_issue_count
@@ -2322,6 +2349,53 @@ async def run_chunk_reflection_pass(
             layer="senior_editor_reflection",
         )
 
+    # Voice evidence is validated independently: malformed observations are
+    # discarded without invalidating otherwise actionable Editor issues.
+    if reflection_result.voice_observations:
+        from src.utils.narrator_voice import (
+            persist_voice_observations,
+            validate_voice_observations,
+        )
+        accepted_voice, rejected_voice = validate_voice_observations(
+            reflection_result.voice_observations,
+            source_text=source_chunk,
+            target_text=draft_translation,
+            target_language=target_language,
+        )
+        if rejected_voice and log_callback:
+            emit_progress_log(
+                log_callback,
+                "narrator_voice_evidence_rejected",
+                f"Discarded {len(rejected_voice)} ungrounded narrator observation(s).",
+                level="warning",
+                layer="narrator_voice",
+                data={"reasons": [item["reason"] for item in rejected_voice]},
+            )
+        # Refinement consumes the original historical profile but is read-only
+        # with respect to narrator history.
+        if accepted_voice and str(options.get("editor_phase") or "") != "refinement":
+            voice_db = options.get("_checkpoint_db")
+            owns_voice_db = False
+            if voice_db is None and options.get("jobs_db_path"):
+                from src.persistence.database import Database
+                voice_db = Database(str(options["jobs_db_path"]))
+                owns_voice_db = True
+            if voice_db is not None and options.get("translation_id"):
+                persist_voice_observations(
+                    voice_db,
+                    str(options["translation_id"]),
+                    int(options.get("chunk_index", 0) or 0),
+                    accepted_voice,
+                    chapter_index=options.get("chapter_index"),
+                    scene_key=str(options.get("scene_key") or ""),
+                    provenance=(
+                        "bootstrap" if options.get("narrator_bootstrap")
+                        else "senior_editor"
+                    ),
+                )
+            if owns_voice_db:
+                voice_db.close()
+
     if residue_findings:
         existing_spans = {
             str(issue.get("draft_quote") or "").casefold().strip()
@@ -2340,6 +2414,7 @@ async def run_chunk_reflection_pass(
                 [*reflection_result.issues, *mandatory_issues],
                 reflection_result.raw_text,
                 reflection_result.parse_status,
+                reflection_result.voice_observations,
             )
             if log_callback:
                 emit_progress_log(
@@ -2426,6 +2501,8 @@ async def run_chunk_reflection_pass(
                     [*valid_original, *corrected],
                     locator_raw,
                     locator_result.parse_status,
+                    locator_result.voice_observations
+                    or reflection_result.voice_observations,
                 )
                 locator_errors = validate_issue_locators(
                     draft_translation, reflection_result.issues,
@@ -2443,6 +2520,7 @@ async def run_chunk_reflection_pass(
             ],
             reflection_result.raw_text,
             reflection_result.parse_status,
+            reflection_result.voice_observations,
         )
         review_required = True
         review_issue_count += len(invalid_ids)
@@ -2579,6 +2657,7 @@ async def run_chunk_reflection_pass(
         unresolved_issues,
         reflection_result.raw_text,
         reflection_result.parse_status,
+        reflection_result.voice_observations,
     )
     draft_translation = patched_draft
 

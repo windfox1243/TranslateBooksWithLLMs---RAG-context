@@ -1216,6 +1216,7 @@ window.NovelContextUI = {
     structuredAddressingResult: null,
     structuredAddressingRequest: 0,
     structuredRelationshipResult: null,
+    narratorVoiceResult: null,
     editorDiagnosticsResult: null,
     activeEditorRetryPolls: new Set(),
     localizedView: null,
@@ -1275,6 +1276,7 @@ window.NovelContextUI = {
         if (key === 'current-addressing') return 'translation:context_current_addressing_tab';
         if (key === 'relationship-evolution') return 'translation:context_relationship_evolution_tab';
         if (key === 'editor-diagnostics') return 'translation:editor_diagnostics_tab';
+        if (key === 'narrator-voice') return 'translation:context_narrator_voice_tab';
         return null;
     },
 
@@ -1284,6 +1286,7 @@ window.NovelContextUI = {
             : rawKey.includes('current-addressing') ? 'current_addressing'
             : rawKey.includes('relationship-evolution') ? 'relationship_evolution'
             : rawKey.includes('editor-diagnostics') ? 'editor_diagnostics'
+            : rawKey.includes('narrator-voice') ? 'narrator_voice'
             : 'general';
         const guideKey = `translation:context_guide_${normalized}`;
         const guide = document.createElement('div');
@@ -1390,6 +1393,220 @@ window.NovelContextUI = {
         }
         const pane = document.querySelector('[data-context-pane-key="editor-diagnostics"]');
         if (pane) this._renderEditorDiagnostics(pane);
+    },
+
+    refreshNarratorVoice: async function() {
+        const translationId = currentTranslationIdForContext();
+        if (!translationId) return;
+        try {
+            this.narratorVoiceResult = await ApiClient.getNarratorVoice(translationId);
+        } catch (_error) {
+            this.narratorVoiceResult = null;
+        }
+        const pane = document.querySelector('[data-context-pane-key="narrator-voice"]');
+        if (pane) this._renderNarratorVoice(pane);
+    },
+
+    _renderNarratorVoice: function(pane) {
+        pane.textContent = '';
+        this._appendContextGuide(pane, 'narrator-voice');
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'btn btn-sm btn-primary';
+        add.textContent = t('translation:context_narrator_add');
+        add.onclick = () => this._openNarratorVoiceEditor(null);
+        pane.appendChild(add);
+        const profiles = this.narratorVoiceResult?.profiles || [];
+        if (!profiles.length) {
+            const empty = document.createElement('p');
+            empty.textContent = t('translation:context_narrator_empty');
+            pane.appendChild(empty);
+        }
+        profiles.forEach(profile => {
+            const row = document.createElement('div');
+            row.className = 'context-structured-row';
+            row.style.padding = '0.75rem 0';
+            row.style.borderBottom = '1px solid var(--border-color)';
+            const details = document.createElement('pre');
+            details.style.whiteSpace = 'pre-wrap';
+            const dimensions = Object.entries(profile.dimensions || {})
+                .map(([key, value]) => `${key}: ${value}`).join(', ');
+            details.textContent = t('translation:context_narrator_profile_summary', {
+                key: profile.narrator_key,
+                identity: profile.narrator_identity,
+                pov: profile.point_of_view,
+                scope: profile.scope,
+                confidence: Number(profile.confidence || 0).toFixed(2),
+                start: profile.start_chunk_index,
+                end: profile.end_chunk_index ?? '∞',
+                lock: profile.is_locked
+                    ? t('translation:context_narrator_locked')
+                    : t('translation:context_narrator_unlocked'),
+                dimensions: dimensions || t('translation:context_addressing_unknown')
+            });
+            const actions = document.createElement('div');
+            actions.style.display = 'flex';
+            actions.style.gap = '0.5rem';
+            const edit = document.createElement('button');
+            edit.type = 'button';
+            edit.className = 'btn btn-sm btn-secondary';
+            edit.textContent = t('translation:context_edit_structured');
+            edit.onclick = () => this._openNarratorVoiceEditor(profile);
+            const lock = document.createElement('button');
+            lock.type = 'button';
+            lock.className = 'btn btn-sm btn-secondary';
+            lock.textContent = t(profile.is_locked
+                ? 'translation:context_narrator_unlock'
+                : 'translation:context_narrator_lock');
+            lock.onclick = async () => {
+                await ApiClient.lockNarratorVoiceProfile(
+                    currentTranslationIdForContext(), profile.id, {
+                        is_locked: !profile.is_locked,
+                        expected_revision: this.narratorVoiceResult.context_revision,
+                        expected_profile_revision: profile.revision
+                    }
+                );
+                await this.refreshNarratorVoice();
+            };
+            actions.append(edit, lock);
+            row.append(details, actions);
+            pane.appendChild(row);
+        });
+        (this.narratorVoiceResult?.conflicts || []).forEach(conflict => {
+            const card = document.createElement('div');
+            card.style.padding = '0.75rem';
+            card.style.marginTop = '0.75rem';
+            card.style.border = '1px solid var(--warning-color, #d97706)';
+            const reason = document.createElement('p');
+            reason.textContent = t('translation:context_narrator_conflict', {
+                chunk: conflict.chunk_index + 1,
+                reason: conflict.reason
+            });
+            const accept = document.createElement('button');
+            accept.className = 'btn btn-sm btn-primary';
+            accept.textContent = t('translation:context_narrator_accept');
+            accept.onclick = async () => {
+                await ApiClient.resolveNarratorVoiceConflict(
+                    currentTranslationIdForContext(), conflict.id, 'accepted_transition'
+                );
+                await this.refreshNarratorVoice();
+            };
+            const reject = document.createElement('button');
+            reject.className = 'btn btn-sm btn-secondary';
+            reject.style.marginLeft = '0.5rem';
+            reject.textContent = t('translation:context_narrator_reject');
+            reject.onclick = async () => {
+                await ApiClient.resolveNarratorVoiceConflict(
+                    currentTranslationIdForContext(), conflict.id, 'rejected_transition'
+                );
+                await this.refreshNarratorVoice();
+            };
+            card.append(reason, accept, reject);
+            pane.appendChild(card);
+        });
+        (this.narratorVoiceResult?.stale_chunks || []).forEach(chunkIndex => {
+            const retry = document.createElement('button');
+            retry.type = 'button';
+            retry.className = 'btn btn-sm btn-secondary';
+            retry.style.margin = '0.5rem 0.5rem 0 0';
+            retry.textContent = `${t('translation:editor_retry')} · ${chunkIndex + 1}`;
+            retry.onclick = async () => {
+                retry.disabled = true;
+                try {
+                    await ApiClient.retrySeniorEditor(
+                        currentTranslationIdForContext(), chunkIndex
+                    );
+                    this._pollEditorRetry(
+                        currentTranslationIdForContext(), chunkIndex
+                    );
+                } catch (error) {
+                    retry.disabled = false;
+                    MessageLogger.showMessage(
+                        t('translation:editor_retry_failed', { error: error.message }),
+                        'error'
+                    );
+                }
+            };
+            pane.appendChild(retry);
+        });
+    },
+
+    _openNarratorVoiceEditor: function(profile) {
+        document.getElementById('narratorVoiceEditor')?.remove();
+        const dialog = document.createElement('dialog');
+        dialog.id = 'narratorVoiceEditor';
+        const form = document.createElement('form');
+        form.method = 'dialog';
+        const title = document.createElement('h3');
+        title.textContent = t('translation:context_narrator_editor_title');
+        form.appendChild(title);
+        const values = {
+            narrator_key: profile?.narrator_key || 'default',
+            narrator_identity: profile?.narrator_identity || 'unknown',
+            point_of_view: profile?.point_of_view || 'unknown',
+            self_reference: profile?.self_reference || '',
+            formality: profile?.formality || 'neutral',
+            speech_level: profile?.speech_level || '',
+            gender: profile?.gender || 'unknown',
+            number: profile?.number || 'singular',
+            dialect: profile?.dialect || '',
+            tense: profile?.tense || '',
+            stylistic_markers: (profile?.stylistic_markers || []).join(', '),
+            start_chunk_index: profile?.start_chunk_index || 0,
+            end_chunk_index: profile?.end_chunk_index ?? ''
+        };
+        Object.entries(values).forEach(([name, value]) => {
+            const label = document.createElement('label');
+            label.style.display = 'block';
+            label.style.margin = '0.5rem 0';
+            const caption = document.createElement('span');
+            caption.textContent = t(`translation:context_narrator_field_${name}`);
+            const input = document.createElement('input');
+            input.name = name;
+            input.value = value;
+            input.style.width = '100%';
+            label.append(caption, input);
+            form.appendChild(label);
+        });
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'btn btn-secondary';
+        cancel.textContent = t('translation:context_cancel');
+        cancel.onclick = () => dialog.close();
+        const save = document.createElement('button');
+        save.type = 'submit';
+        save.className = 'btn btn-primary';
+        save.textContent = t('translation:context_save');
+        form.append(cancel, save);
+        form.onsubmit = async event => {
+            event.preventDefault();
+            const payload = Object.fromEntries(new FormData(form).entries());
+            payload.stylistic_markers = payload.stylistic_markers
+                .split(',').map(item => item.trim()).filter(Boolean);
+            payload.start_chunk_index = Number(payload.start_chunk_index || 0);
+            payload.end_chunk_index = payload.end_chunk_index === ''
+                ? null : Number(payload.end_chunk_index);
+            payload.expected_revision = this.narratorVoiceResult?.context_revision;
+            payload.expected_profile_revision = profile?.revision;
+            payload.is_locked = true;
+            try {
+                await ApiClient.saveNarratorVoiceProfile(
+                    currentTranslationIdForContext(), payload
+                );
+                dialog.close();
+                await this.refreshNarratorVoice();
+                MessageLogger.showMessage(t('translation:context_structured_saved'), 'success');
+            } catch (error) {
+                MessageLogger.showMessage(
+                    t('translation:context_structured_save_failed', { error: error.message }),
+                    'error'
+                );
+            }
+        };
+        dialog.appendChild(form);
+        document.body.appendChild(dialog);
+        dialog.addEventListener('close', () => dialog.remove());
+        dialog.showModal();
     },
 
     _renderEditorDiagnostics: function(pane) {
@@ -1792,6 +2009,12 @@ window.NovelContextUI = {
         }
         if (!isSnapshot) {
             sections.push({
+                key: 'narrator-voice',
+                title: t('translation:context_narrator_voice_tab'),
+                titleKey: 'translation:context_narrator_voice_tab',
+                content: t('translation:context_narrator_empty')
+            });
+            sections.push({
                 key: 'editor-diagnostics',
                 title: t('translation:editor_diagnostics_tab'),
                 titleKey: 'translation:editor_diagnostics_tab',
@@ -1831,7 +2054,7 @@ window.NovelContextUI = {
             pane.style.display = isActive ? 'block' : 'none';
             pane.textContent = sec.content;
             pane.dataset.contextPaneKey = sec.key;
-            if (!['current-addressing', 'relationship-evolution', 'editor-diagnostics'].includes(sec.key)) {
+            if (!['current-addressing', 'relationship-evolution', 'narrator-voice', 'editor-diagnostics'].includes(sec.key)) {
                 this._appendContextGuide(pane, sec.key);
             }
             
@@ -1871,6 +2094,9 @@ window.NovelContextUI = {
             if (!isSnapshot && sec.key === 'relationship-evolution') {
                 this._renderStructuredPane(pane, 'relationship');
             }
+            if (!isSnapshot && sec.key === 'narrator-voice') {
+                this._renderNarratorVoice(pane);
+            }
             if (!isSnapshot && sec.key === 'editor-diagnostics') {
                 this._renderEditorDiagnostics(pane);
             }
@@ -1878,6 +2104,7 @@ window.NovelContextUI = {
         if (!isSnapshot) {
             this.refreshStructuredAddressing();
             this.refreshStructuredRelationships();
+            this.refreshNarratorVoice();
             this.refreshEditorDiagnostics();
         }
     },

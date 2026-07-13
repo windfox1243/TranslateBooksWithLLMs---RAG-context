@@ -15,6 +15,11 @@ from pathlib import Path
 
 _TRANSLATION_CHILD_TABLES = (
     "editor_runs",
+    "context_narrator_bootstrap_attempts",
+    "context_narrator_conflicts",
+    "context_narrator_transitions",
+    "context_narrator_observations",
+    "context_narrator_profiles",
     "context_resync_chunk_stage",
     "context_resync_runs",
     "context_relationship_derivations",
@@ -504,6 +509,115 @@ class Database:
                 )
             """)
 
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_narrator_profiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    translation_id TEXT NOT NULL,
+                    narrator_key TEXT NOT NULL DEFAULT 'default',
+                    narrator_identity TEXT NOT NULL DEFAULT 'unknown',
+                    point_of_view TEXT NOT NULL DEFAULT 'unknown',
+                    self_reference TEXT NOT NULL DEFAULT '',
+                    formality TEXT NOT NULL DEFAULT 'neutral',
+                    speech_level TEXT NOT NULL DEFAULT '',
+                    gender TEXT NOT NULL DEFAULT 'unknown',
+                    number TEXT NOT NULL DEFAULT 'singular',
+                    dialect TEXT NOT NULL DEFAULT '',
+                    tense TEXT NOT NULL DEFAULT '',
+                    stylistic_markers JSON NOT NULL DEFAULT '[]',
+                    dimensions JSON NOT NULL DEFAULT '{}',
+                    confidence REAL NOT NULL DEFAULT 0.0,
+                    provenance TEXT NOT NULL DEFAULT 'unknown',
+                    scope TEXT NOT NULL DEFAULT 'durable',
+                    start_chunk_index INTEGER NOT NULL DEFAULT 0,
+                    end_chunk_index INTEGER,
+                    is_locked INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'provisional',
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(translation_id, narrator_key, start_chunk_index)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_narrator_observations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    translation_id TEXT NOT NULL,
+                    profile_id INTEGER,
+                    chunk_index INTEGER NOT NULL,
+                    chapter_index INTEGER,
+                    scene_key TEXT,
+                    segment_id TEXT NOT NULL,
+                    discourse_mode TEXT NOT NULL,
+                    narrator_key TEXT NOT NULL DEFAULT 'default',
+                    narrator_identity TEXT NOT NULL DEFAULT 'unknown',
+                    point_of_view TEXT NOT NULL DEFAULT 'unknown',
+                    dimensions JSON NOT NULL DEFAULT '{}',
+                    source_quote TEXT NOT NULL,
+                    target_quote TEXT NOT NULL,
+                    transition_type TEXT NOT NULL DEFAULT 'none',
+                    transition_evidence TEXT NOT NULL DEFAULT '',
+                    confidence REAL NOT NULL DEFAULT 0.0,
+                    provenance TEXT NOT NULL DEFAULT 'senior_editor',
+                    status TEXT NOT NULL DEFAULT 'accepted',
+                    rejection_reason TEXT NOT NULL DEFAULT '',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(translation_id, chunk_index, segment_id, narrator_key),
+                    FOREIGN KEY (profile_id)
+                        REFERENCES context_narrator_profiles(id) ON DELETE SET NULL
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_narrator_transitions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    translation_id TEXT NOT NULL,
+                    narrator_key TEXT NOT NULL,
+                    from_profile_id INTEGER,
+                    to_profile_id INTEGER,
+                    chunk_index INTEGER NOT NULL,
+                    chapter_index INTEGER,
+                    scene_key TEXT,
+                    transition_type TEXT NOT NULL,
+                    evidence_quote TEXT NOT NULL DEFAULT '',
+                    confidence REAL NOT NULL DEFAULT 0.0,
+                    status TEXT NOT NULL DEFAULT 'accepted',
+                    provenance TEXT NOT NULL DEFAULT 'senior_editor',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (from_profile_id)
+                        REFERENCES context_narrator_profiles(id) ON DELETE SET NULL,
+                    FOREIGN KEY (to_profile_id)
+                        REFERENCES context_narrator_profiles(id) ON DELETE SET NULL
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_narrator_conflicts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    translation_id TEXT NOT NULL,
+                    narrator_key TEXT NOT NULL DEFAULT 'default',
+                    chunk_index INTEGER NOT NULL,
+                    chapter_index INTEGER,
+                    scene_key TEXT,
+                    reason TEXT NOT NULL,
+                    candidate_json JSON NOT NULL DEFAULT '{}',
+                    status TEXT NOT NULL DEFAULT 'open',
+                    resolution TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at TIMESTAMP
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_narrator_bootstrap_attempts (
+                    translation_id TEXT NOT NULL,
+                    attempt_kind TEXT NOT NULL,
+                    boundary_key TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL,
+                    sampled_chunks JSON NOT NULL DEFAULT '[]',
+                    details JSON NOT NULL DEFAULT '{}',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (translation_id, attempt_kind, boundary_key)
+                )
+            """)
+
             # Token-detail migration for databases created before beta.34.
             for table in ("editor_runs", "editor_attempts"):
                 cursor.execute(f"PRAGMA table_info({table})")
@@ -594,6 +708,22 @@ class Database:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_editor_attempts_run
                 ON editor_attempts(run_id, attempt_index)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_narrator_profiles_effective
+                ON context_narrator_profiles(
+                    translation_id, status, start_chunk_index, end_chunk_index
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_narrator_observations_chunk
+                ON context_narrator_observations(
+                    translation_id, chunk_index, status
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_narrator_conflicts_status
+                ON context_narrator_conflicts(translation_id, status, chunk_index)
             """)
 
             conn.commit()
@@ -2552,6 +2682,374 @@ class Database:
             finally:
                 backup_conn.close()
         return str(target)
+
+    def upsert_narrator_voice_profile(
+        self, translation_id: str, profile: Dict[str, Any],
+        *, expected_revision: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Create or update one timeline profile using optimistic locking."""
+
+        narrator_key = str(profile.get("narrator_key") or "default").strip()
+        start_chunk = int(profile.get("start_chunk_index", 0) or 0)
+        with self._lock:
+            conn = self._get_connection()
+            existing = conn.execute("""
+                SELECT id, revision, is_locked FROM context_narrator_profiles
+                WHERE translation_id = ? AND narrator_key = ?
+                  AND start_chunk_index = ?
+            """, (translation_id, narrator_key, start_chunk)).fetchone()
+            if existing and expected_revision is not None:
+                if int(existing["revision"]) != int(expected_revision):
+                    return None
+            # Model observations cannot overwrite a user lock.
+            provenance = str(profile.get("provenance") or "unknown")
+            if existing and existing["is_locked"] and provenance != "user_manual":
+                return dict(existing)
+            values = (
+                translation_id, narrator_key,
+                str(profile.get("narrator_identity") or "unknown"),
+                str(profile.get("point_of_view") or "unknown"),
+                str(profile.get("self_reference") or ""),
+                str(profile.get("formality") or "neutral"),
+                str(profile.get("speech_level") or ""),
+                str(profile.get("gender") or "unknown"),
+                str(profile.get("number") or "singular"),
+                str(profile.get("dialect") or ""),
+                str(profile.get("tense") or ""),
+                json.dumps(profile.get("stylistic_markers") or [], ensure_ascii=False),
+                json.dumps(profile.get("dimensions") or {}, ensure_ascii=False),
+                max(0.0, min(1.0, float(profile.get("confidence", 0.0) or 0.0))),
+                provenance, str(profile.get("scope") or "durable"), start_chunk,
+                profile.get("end_chunk_index"),
+                1 if profile.get("is_locked") else 0,
+                str(profile.get("status") or "provisional"),
+            )
+            conn.execute("""
+                INSERT INTO context_narrator_profiles (
+                    translation_id, narrator_key, narrator_identity,
+                    point_of_view, self_reference, formality, speech_level,
+                    gender, number, dialect, tense, stylistic_markers,
+                    dimensions, confidence, provenance, scope,
+                    start_chunk_index, end_chunk_index, is_locked, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(translation_id, narrator_key, start_chunk_index)
+                DO UPDATE SET
+                    narrator_identity = excluded.narrator_identity,
+                    point_of_view = excluded.point_of_view,
+                    self_reference = excluded.self_reference,
+                    formality = excluded.formality,
+                    speech_level = excluded.speech_level,
+                    gender = excluded.gender,
+                    number = excluded.number,
+                    dialect = excluded.dialect,
+                    tense = excluded.tense,
+                    stylistic_markers = excluded.stylistic_markers,
+                    dimensions = excluded.dimensions,
+                    confidence = excluded.confidence,
+                    provenance = excluded.provenance,
+                    scope = excluded.scope,
+                    end_chunk_index = excluded.end_chunk_index,
+                    is_locked = excluded.is_locked,
+                    status = excluded.status,
+                    revision = context_narrator_profiles.revision + 1,
+                    updated_at = CURRENT_TIMESTAMP
+            """, values)
+            self._commit_connection(conn)
+            row = conn.execute("""
+                SELECT * FROM context_narrator_profiles
+                WHERE translation_id = ? AND narrator_key = ?
+                  AND start_chunk_index = ?
+            """, (translation_id, narrator_key, start_chunk)).fetchone()
+            return self._decode_narrator_profile(dict(row)) if row else None
+
+    @staticmethod
+    def _decode_narrator_profile(row: Dict[str, Any]) -> Dict[str, Any]:
+        for key, fallback in (("stylistic_markers", []), ("dimensions", {})):
+            try:
+                row[key] = json.loads(row.get(key) or json.dumps(fallback))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                row[key] = fallback
+        row["is_locked"] = bool(row.get("is_locked"))
+        return row
+
+    def get_narrator_voice_profiles(
+        self, translation_id: str, *, effective_chunk_index: Optional[int] = None,
+        include_inactive: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Return profiles, optionally as-of a historical chunk boundary."""
+
+        clauses = ["translation_id = ?"]
+        params: List[Any] = [translation_id]
+        if not include_inactive:
+            clauses.append("status = 'active'")
+        if effective_chunk_index is not None:
+            clauses.extend([
+                "start_chunk_index <= ?",
+                "(end_chunk_index IS NULL OR end_chunk_index >= ?)",
+            ])
+            params.extend([int(effective_chunk_index), int(effective_chunk_index)])
+        with self._lock:
+            rows = self._get_connection().execute(
+                "SELECT * FROM context_narrator_profiles WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY is_locked DESC, start_chunk_index, narrator_key",
+                tuple(params),
+            ).fetchall()
+            return [self._decode_narrator_profile(dict(row)) for row in rows]
+
+    def get_narrator_voice_profile(
+        self, translation_id: str, profile_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            row = self._get_connection().execute("""
+                SELECT * FROM context_narrator_profiles
+                WHERE translation_id = ? AND id = ?
+            """, (translation_id, int(profile_id))).fetchone()
+            return self._decode_narrator_profile(dict(row)) if row else None
+
+    def delete_narrator_voice_profile(
+        self, translation_id: str, profile_id: int,
+        *, expected_revision: Optional[int] = None,
+    ) -> bool:
+        with self._lock:
+            conn = self._get_connection()
+            row = conn.execute("""
+                SELECT revision, is_locked FROM context_narrator_profiles
+                WHERE translation_id = ? AND id = ?
+            """, (translation_id, int(profile_id))).fetchone()
+            if not row or row["is_locked"]:
+                return False
+            if expected_revision is not None and int(row["revision"]) != int(expected_revision):
+                return False
+            cursor = conn.execute("""
+                DELETE FROM context_narrator_profiles
+                WHERE translation_id = ? AND id = ?
+            """, (translation_id, int(profile_id)))
+            self._commit_connection(conn)
+            return cursor.rowcount > 0
+
+    def set_narrator_voice_profile_lock(
+        self, translation_id: str, profile_id: int, is_locked: bool,
+        *, expected_revision: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            conn = self._get_connection()
+            row = conn.execute("""
+                SELECT revision FROM context_narrator_profiles
+                WHERE translation_id = ? AND id = ?
+            """, (translation_id, int(profile_id))).fetchone()
+            if not row or (
+                expected_revision is not None
+                and int(row["revision"]) != int(expected_revision)
+            ):
+                return None
+            conn.execute("""
+                UPDATE context_narrator_profiles SET is_locked = ?,
+                    provenance = CASE WHEN ? = 1 THEN 'user_manual' ELSE provenance END,
+                    revision = revision + 1, updated_at = CURRENT_TIMESTAMP
+                WHERE translation_id = ? AND id = ?
+            """, (1 if is_locked else 0, 1 if is_locked else 0, translation_id, int(profile_id)))
+            self._commit_connection(conn)
+            return self.get_narrator_voice_profile(translation_id, profile_id)
+
+    def add_narrator_voice_observation(
+        self, translation_id: str, chunk_index: int, observation: Dict[str, Any],
+        *, chapter_index: Optional[int] = None, scene_key: str = "",
+        profile_id: Optional[int] = None, provenance: str = "senior_editor",
+        status: str = "accepted", rejection_reason: str = "",
+    ) -> bool:
+        with self._lock:
+            conn = self._get_connection()
+            conn.execute("""
+                INSERT INTO context_narrator_observations (
+                    translation_id, profile_id, chunk_index, chapter_index,
+                    scene_key, segment_id, discourse_mode, narrator_key,
+                    narrator_identity, point_of_view, dimensions, source_quote,
+                    target_quote, transition_type, transition_evidence,
+                    confidence, provenance, status, rejection_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(translation_id, chunk_index, segment_id, narrator_key)
+                DO UPDATE SET profile_id = excluded.profile_id,
+                    dimensions = excluded.dimensions,
+                    source_quote = excluded.source_quote,
+                    target_quote = excluded.target_quote,
+                    transition_type = excluded.transition_type,
+                    transition_evidence = excluded.transition_evidence,
+                    confidence = excluded.confidence,
+                    provenance = excluded.provenance,
+                    status = excluded.status,
+                    rejection_reason = excluded.rejection_reason
+            """, (
+                translation_id, profile_id, int(chunk_index), chapter_index,
+                scene_key or "", observation.get("segment_id") or "",
+                observation.get("discourse_mode") or "narration",
+                observation.get("narrator_key") or "default",
+                observation.get("narrator_identity") or "unknown",
+                observation.get("point_of_view") or "unknown",
+                json.dumps(observation.get("dimensions") or {}, ensure_ascii=False),
+                observation.get("source_quote") or "",
+                observation.get("target_quote") or "",
+                observation.get("transition_type") or "none",
+                observation.get("transition_evidence") or "",
+                float(observation.get("confidence", 0.0) or 0.0), provenance,
+                status, rejection_reason,
+            ))
+            self._commit_connection(conn)
+            return True
+
+    def get_narrator_voice_timeline(self, translation_id: str) -> Dict[str, Any]:
+        with self._lock:
+            conn = self._get_connection()
+            observations = [dict(row) for row in conn.execute("""
+                SELECT * FROM context_narrator_observations
+                WHERE translation_id = ? ORDER BY chunk_index, id
+            """, (translation_id,)).fetchall()]
+            transitions = [dict(row) for row in conn.execute("""
+                SELECT * FROM context_narrator_transitions
+                WHERE translation_id = ? ORDER BY chunk_index, id
+            """, (translation_id,)).fetchall()]
+            for item in observations:
+                try:
+                    item["dimensions"] = json.loads(item.get("dimensions") or "{}")
+                except (TypeError, ValueError):
+                    item["dimensions"] = {}
+            return {"observations": observations, "transitions": transitions}
+
+    def add_narrator_voice_conflict(
+        self, translation_id: str, *, narrator_key: str, chunk_index: int,
+        reason: str, candidate: Dict[str, Any], chapter_index: Optional[int] = None,
+        scene_key: str = "",
+    ) -> int:
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.execute("""
+                INSERT INTO context_narrator_conflicts (
+                    translation_id, narrator_key, chunk_index, chapter_index,
+                    scene_key, reason, candidate_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (translation_id, narrator_key or "default", int(chunk_index),
+                  chapter_index, scene_key or "", reason,
+                  json.dumps(candidate or {}, ensure_ascii=False)))
+            self._commit_connection(conn)
+            return int(cursor.lastrowid)
+
+    def get_narrator_voice_conflicts(
+        self, translation_id: str, *, status: str = "open",
+    ) -> List[Dict[str, Any]]:
+        with self._lock:
+            rows = self._get_connection().execute("""
+                SELECT * FROM context_narrator_conflicts
+                WHERE translation_id = ? AND (? = 'all' OR status = ?)
+                ORDER BY chunk_index, id
+            """, (translation_id, status, status)).fetchall()
+            result = []
+            for row in rows:
+                item = dict(row)
+                try:
+                    item["candidate"] = json.loads(item.pop("candidate_json") or "{}")
+                except (TypeError, ValueError):
+                    item["candidate"] = {}
+                result.append(item)
+            return result
+
+    def resolve_narrator_voice_conflict(
+        self, translation_id: str, conflict_id: int, resolution: str,
+    ) -> bool:
+        if resolution not in {"accepted_transition", "rejected_transition"}:
+            return False
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.execute("""
+                UPDATE context_narrator_conflicts SET status = 'resolved',
+                    resolution = ?, resolved_at = CURRENT_TIMESTAMP
+                WHERE translation_id = ? AND id = ? AND status = 'open'
+            """, (resolution, translation_id, int(conflict_id)))
+            self._commit_connection(conn)
+            return cursor.rowcount > 0
+
+    def quarantine_narrator_voice_after(
+        self, translation_id: str, chunk_index: int,
+    ) -> None:
+        """Quarantine unlocked inferred state downstream of a resync boundary."""
+
+        with self._lock:
+            conn = self._get_connection()
+            conn.execute("""
+                UPDATE context_narrator_observations SET status = 'quarantined'
+                WHERE translation_id = ? AND chunk_index >= ?
+            """, (translation_id, int(chunk_index)))
+            conn.execute("""
+                UPDATE context_narrator_profiles SET status = 'quarantined',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE translation_id = ? AND start_chunk_index >= ?
+                  AND is_locked = 0
+            """, (translation_id, int(chunk_index)))
+            conn.execute("""
+                UPDATE context_narrator_transitions SET status = 'quarantined'
+                WHERE translation_id = ? AND chunk_index >= ?
+            """, (translation_id, int(chunk_index)))
+            self._commit_connection(conn)
+
+    def claim_narrator_bootstrap(
+        self, translation_id: str, *, attempt_kind: str = "bootstrap",
+        boundary_key: str = "", sampled_chunks: Optional[List[int]] = None,
+    ) -> bool:
+        """Claim a single durable bootstrap/transition-verification attempt."""
+
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.execute("""
+                INSERT OR IGNORE INTO context_narrator_bootstrap_attempts (
+                    translation_id, attempt_kind, boundary_key, status,
+                    sampled_chunks
+                ) VALUES (?, ?, ?, 'running', ?)
+            """, (translation_id, attempt_kind, boundary_key,
+                  json.dumps(sampled_chunks or [])))
+            self._commit_connection(conn)
+            return cursor.rowcount > 0
+
+    def finish_narrator_bootstrap(
+        self, translation_id: str, status: str, *, attempt_kind: str = "bootstrap",
+        boundary_key: str = "", details: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.execute("""
+                UPDATE context_narrator_bootstrap_attempts SET status = ?,
+                    details = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE translation_id = ? AND attempt_kind = ? AND boundary_key = ?
+            """, (status, json.dumps(details or {}, ensure_ascii=False),
+                  translation_id, attempt_kind, boundary_key))
+            self._commit_connection(conn)
+            return cursor.rowcount > 0
+
+    def mark_narrator_voice_chunks_stale(
+        self, translation_id: str, start_chunk_index: int,
+    ) -> int:
+        """Mark completed historical chunks for an explicit Editor retry."""
+
+        changed = 0
+        with self._lock:
+            conn = self._get_connection()
+            rows = conn.execute("""
+                SELECT chunk_index, chunk_data FROM checkpoint_chunks
+                WHERE translation_id = ? AND chunk_index >= ?
+                  AND status IN ('completed', 'partial')
+            """, (translation_id, int(start_chunk_index))).fetchall()
+            for row in rows:
+                try:
+                    data = json.loads(row["chunk_data"] or "{}")
+                except (TypeError, ValueError):
+                    data = {}
+                data["narrator_voice_stale"] = True
+                conn.execute("""
+                    UPDATE checkpoint_chunks SET chunk_data = ?
+                    WHERE translation_id = ? AND chunk_index = ?
+                """, (json.dumps(data, ensure_ascii=False), translation_id,
+                      int(row["chunk_index"])))
+                changed += 1
+            self._commit_connection(conn)
+        return changed
 
     def close(self):
         """Close database connection."""

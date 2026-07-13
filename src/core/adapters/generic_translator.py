@@ -501,6 +501,24 @@ class GenericTranslator:
             pending_db_addressing_context_by_index = {}
             pending_relationship_context_by_index = {}
 
+            if (
+                sequential and self.translation_id
+                and getattr(self.checkpoint_manager, "db", None)
+                and (
+                    prompt_options.get("reflection_mode")
+                    or prompt_options.get("auto_update_context")
+                )
+            ):
+                from src.utils.narrator_voice import bootstrap_narrator_voice
+                await bootstrap_narrator_voice(
+                    db=self.checkpoint_manager.db,
+                    translation_id=self.translation_id,
+                    chunks=self.checkpoint_manager.db.get_chunks(self.translation_id) or [],
+                    target_language=target_language,
+                    model_name=str(prompt_options.get("editor_model") or model_name),
+                    llm_client=prompt_options.get("_editor_llm_client") or llm_client,
+                )
+
             async def _translate_unit(i, analyze_context=True):
                 """Translate one unit. Reads last_context only in sequential mode
                 (parallel runs have no stable 'previous translation').
@@ -513,6 +531,19 @@ class GenericTranslator:
                 if log_callback:
                     log_callback("unit_start",
                         f"Translating unit {i+1}/{total_units} ({unit.unit_id})")
+                if i > 0 and sequential and self.translation_id and (
+                    prompt_options.get("reflection_mode")
+                    or prompt_options.get("auto_update_context")
+                ):
+                    from src.utils.narrator_voice import bootstrap_narrator_voice
+                    await bootstrap_narrator_voice(
+                        db=self.checkpoint_manager.db,
+                        translation_id=self.translation_id,
+                        chunks=self.checkpoint_manager.db.get_chunks(self.translation_id) or [],
+                        target_language=target_language,
+                        model_name=str(prompt_options.get("editor_model") or model_name),
+                        llm_client=prompt_options.get("_editor_llm_client") or llm_client,
+                    )
 
                 base_instructions = (prompt_options or {}).get('custom_instructions', '')
                 attempt_options = prompt_options
@@ -739,26 +770,20 @@ class GenericTranslator:
                     )
                     if relationship_context:
                         unit_prompt_options["relationship_context"] = relationship_context
-                    if sequential:
-                        from src.utils.translation_quality import (
-                            build_narrative_voice_context,
-                        )
-
-                        previous_translations = [
-                            text
-                            for index, text in sorted(
-                                completed_translations_by_index.items()
-                            )
-                            if index < i
-                        ]
-                        narrative_voice_context = build_narrative_voice_context(
-                            previous_translations,
-                            target_language,
-                        )
-                        if narrative_voice_context:
-                            unit_prompt_options["narrative_voice_context"] = (
-                                narrative_voice_context
-                            )
+                    from src.utils.narrator_voice import build_narrator_voice_context
+                    voice_db = getattr(self.checkpoint_manager, "db", None)
+                    narrative_voice_context = build_narrator_voice_context(
+                        self.translation_id, voice_db,
+                        chunk_index=i,
+                        target_language=target_language,
+                    )
+                    if narrative_voice_context:
+                        unit_prompt_options["narrative_voice_context"] = narrative_voice_context
+                    unit_prompt_options.update({
+                        "_checkpoint_db": voice_db,
+                        "chapter_index": getattr(unit, "chapter_index", None),
+                        "scene_key": str(getattr(unit, "scene_key", "") or ""),
+                    })
                     result = failed_editor_drafts_by_index.pop(i, None)
                     if result and log_callback:
                         log_callback(
@@ -1646,6 +1671,9 @@ async def _resync_context_snapshots_async(
         contract_version = int(options.get("context_contract_version", 1) or 1)
         with db.context_state_transaction():
             if not global_only_resync:
+                db.quarantine_narrator_voice_after(
+                    translation_id, start_chunk_index,
+                )
                 for rule in db.get_addressing_rules(translation_id):
                     if not rule.get("is_locked") and int(rule.get("last_chunk_index") or 0) >= start_chunk_index:
                         db.delete_addressing_rule(

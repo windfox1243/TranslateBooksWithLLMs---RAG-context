@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, FrozenSet
+from typing import Dict, FrozenSet, Tuple
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,9 @@ class LanguageProfile:
     prompt_style: str = "generic"
     neutral_fallback: bool = False
     residue_social_terms: FrozenSet[str] = field(default_factory=frozenset)
+    narrator_voice_dimensions: Tuple[str, ...] = (
+        "point_of_view", "number", "tense", "style",
+    )
 
 
 @dataclass(frozen=True)
@@ -92,6 +95,28 @@ _PROFILES: Dict[str, LanguageProfile] = {
     "tr": LanguageProfile("tr", "Turkish", frozenset({"turkish", "tr", "türkçe", "turkce"}), script="latin", match_policy=LATIN_POLICY),
 }
 
+# Narrator dimensions are deliberately explicit per supported language.  They
+# describe what an observation may assert; they are not lexical heuristics.
+_VOICE_DIMENSIONS: Dict[str, Tuple[str, ...]] = {
+    "en": ("point_of_view", "number", "gender", "formality", "tense", "style"),
+    "fr": ("point_of_view", "number", "gender", "formality", "regional_register", "tense", "style"),
+    "es": ("point_of_view", "number", "gender", "formality", "regional_register", "tense", "style"),
+    "de": ("point_of_view", "number", "gender", "formality", "regional_register", "tense", "style"),
+    "vi": ("point_of_view", "self_reference", "politeness", "dialogue_isolation", "style"),
+    "zh": ("point_of_view", "self_reference", "pronoun_omission", "persona", "speech_level", "style"),
+    "ja": ("point_of_view", "self_reference", "pronoun_omission", "persona", "speech_level", "style"),
+    "ko": ("point_of_view", "self_reference", "pronoun_omission", "persona", "speech_level", "style"),
+    "ar": ("point_of_view", "number", "gender", "formality", "tense", "style"),
+    "ru": ("point_of_view", "number", "gender", "formality", "tense", "style"),
+    "hi": ("point_of_view", "number", "gender", "formality", "tense", "style"),
+    "th": ("point_of_view", "self_reference", "politeness", "dialogue_isolation", "style"),
+    "it": ("point_of_view", "number", "gender", "formality", "regional_register", "tense", "style"),
+    "pt": ("point_of_view", "number", "gender", "formality", "regional_register", "tense", "style"),
+    "nl": ("point_of_view", "number", "gender", "formality", "regional_register", "tense", "style"),
+    "pl": ("point_of_view", "number", "gender", "formality", "tense", "style"),
+    "tr": ("point_of_view", "number", "gender", "formality", "tense", "style"),
+}
+
 _ALIASES = {
     alias.casefold(): code
     for code, profile in _PROFILES.items()
@@ -116,7 +141,13 @@ def get_language_profile(language: str | None) -> LanguageProfile:
     key = str(language or "").strip().casefold()
     if not key:
         return GENERIC_PROFILE
-    return _PROFILES.get(_ALIASES.get(key, ""), GENERIC_PROFILE)
+    profile = _PROFILES.get(_ALIASES.get(key, ""), GENERIC_PROFILE)
+    dimensions = _VOICE_DIMENSIONS.get(profile.code)
+    if not dimensions or profile.narrator_voice_dimensions == dimensions:
+        return profile
+    return LanguageProfile(**{
+        **profile.__dict__, "narrator_voice_dimensions": dimensions,
+    })
 
 
 def supported_translation_languages() -> tuple[str, ...]:

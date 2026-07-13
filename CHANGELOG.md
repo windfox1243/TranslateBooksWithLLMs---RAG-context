@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.15.0-beta.42 - 2026-07-13
+
+### Added
+
+- **Structured Cross-Language Narrator Voice**:
+  Added evidence-backed narrator profiles, observations, transitions, conflicts,
+  historical chunk scoping, manual locks, and language-specific voice dimensions
+  for all 17 supported target languages. Draft translation, Senior Editor audit,
+  retry, and refinement now consume the profile effective at the current chunk.
+- **Narrator Voice Context Interface**:
+  Added localized profile editing, locking, evidence visibility, and transition
+  conflict resolution to the context viewer in all seven interface locales.
+
+### Changed
+
+- **Evidence Instead of Pronoun Counts**:
+  Removed the Vietnamese pronoun-majority hint. Narrator state now requires exact
+  source and target evidence from at least two agreeing narrative segments with
+  at least 0.90 confidence. Dialogue addressing cannot override narrator state.
+- **Timeline-Safe Refinement and Resync**:
+  Refinement reads the original chunk's historical narrator profile without
+  mutating narrator history. Context re-sync quarantines downstream inferred
+  narrator state atomically while preserving locked manual profiles.
+
+### Fixed
+
+- **Cross-Chapter Narrator Drift**:
+  First-person narration such as Apollo Rainbow's Vietnamese `tôi` remains
+  isolated from dialogue-specific `tớ/cậu`, while supported chapter, scene, and
+  explicit narrator transitions remain possible.
+
 ## 1.15.0-beta.41 - 2026-07-13
 
 ### Fixed

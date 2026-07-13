@@ -89,6 +89,7 @@ async def refine_file(
         "jobs_db_path": getattr(
             getattr(checkpoint_manager, "db", None), "db_path", None,
         ),
+        "_checkpoint_db": getattr(checkpoint_manager, "db", None),
     })
 
     # Load novel context if a file is specified
