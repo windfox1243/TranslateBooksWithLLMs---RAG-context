@@ -765,6 +765,14 @@ async def translate_paragraphs_plain(
             "chapter_index": chunks[i].get("chapter_index"),
             "scene_key": str(chunks[i].get("scene_key") or ""),
         })
+        if context_session and context_session.dialogue_attribution:
+            unit_prompt_options["dialogue_attribution"] = (
+                context_session.dialogue_attribution
+            )
+        elif chunks[i].get("dialogue_attribution"):
+            unit_prompt_options["dialogue_attribution"] = chunks[i][
+                "dialogue_attribution"
+            ]
         directed_context = build_directed_addressing_prompt_context(
             translation_id=translation_id or "",
             db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,

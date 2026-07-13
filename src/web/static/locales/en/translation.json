@@ -359,6 +359,8 @@
   "editor_diagnostics_note_blocked": "Note: Deterministic validation blocked this result ({{reason}}); the chunk needs correction before acceptance.",
   "editor_diagnostics_note_unknown": "Note: This editor result uses an unrecognized outcome. Inspect the result state and reason codes before relying on it.",
   "editor_diagnostics_reason_codes": "Reason codes: {{reasons}}",
+  "editor_diagnostics_automatic_retry": "Automatic repair: attempt {{attempt}}/{{maximum}} · terminal reason: {{terminal}} · narrator conformance: {{conformance}}",
+  "context_narrator_conformance_note": "Unit {{chunk}} · {{status}} · attempts: {{attempts}} · reasons: {{reasons}}",
   "editor_retry": "Retry editor",
   "editor_retry_queued": "Queued...",
   "editor_retry_running": "Retrying...",

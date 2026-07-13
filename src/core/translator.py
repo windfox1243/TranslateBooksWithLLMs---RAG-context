@@ -1764,6 +1764,10 @@ async def run_chunk_reflection_pass(
     unresolved_issue_count = 0
     warning_count = 0
     review_issue_count = 0
+    max_automatic_repair_attempts = 3
+    automatic_repair_attempts = 0
+    narrator_conformance: Dict[str, Any] = {"status": "not_checked"}
+    initial_narrator_finding_count = 0
 
     def record_attempt(
         stage: str,
@@ -1820,6 +1824,18 @@ async def run_chunk_reflection_pass(
         payload.setdefault("resolved_issue_count", resolved_issue_count)
         payload.setdefault("unresolved_issue_count", unresolved_issue_count)
         payload.setdefault("warning_count", warning_count)
+        diagnostics = dict(payload.get("diagnostics") or {})
+        diagnostics.setdefault("narrator_conformance", narrator_conformance)
+        diagnostics.setdefault("automatic_retry", {
+            "trigger": (
+                "deterministic_validation"
+                if automatic_repair_attempts else "none"
+            ),
+            "current_attempt": automatic_repair_attempts,
+            "maximum_attempts": max_automatic_repair_attempts,
+            "terminal_reason": outcome,
+        })
+        payload["diagnostics"] = diagnostics
         recorder.finish(
             outcome,
             prompt_tokens=total_prompt_tokens,
@@ -1832,7 +1848,7 @@ async def run_chunk_reflection_pass(
             blocked_reason=last_blocked_reason,
             deterministic_count=sum(
                 1 for finding in residue_findings if finding.blocking
-            ),
+            ) + initial_narrator_finding_count,
             **payload,
         )
 
@@ -2040,11 +2056,33 @@ async def run_chunk_reflection_pass(
             protected_terms=protected_terms,
             glossary_terms=glossary_terms,
         )
+    from src.utils.narrator_conformance import audit_narrator_conformance
+
+    narrator_conformance = audit_narrator_conformance(
+        source_text=source_chunk,
+        target_text=draft_translation,
+        source_language=source_language,
+        target_language=target_language,
+        file_type=str(options.get("file_type") or "txt"),
+        dialogue_attribution=options.get("dialogue_attribution") or {},
+        db=options.get("_checkpoint_db"),
+        translation_id=str(options.get("translation_id") or ""),
+        chunk_index=int(options.get("chunk_index", 0) or 0),
+        explicit_override=str(
+            options.get("narrator_self_reference_override") or ""
+        ),
+    )
+    initial_narrator_finding_count = len(
+        narrator_conformance.get("violating_segments") or []
+    )
+    deterministic_payloads = [
+        finding.to_dict() for finding in residue_findings
+    ] + list(narrator_conformance.get("violating_segments") or [])
     deterministic_findings = json.dumps(
-        [finding.to_dict() for finding in residue_findings],
+        deterministic_payloads,
         ensure_ascii=False,
         indent=2,
-    ) if residue_findings else ""
+    ) if deterministic_payloads else ""
     narrative_voice_context = str(
         options.get("narrative_voice_context") or ""
     ).strip()
@@ -2428,6 +2466,42 @@ async def run_chunk_reflection_pass(
                     data={"findings": [finding.to_dict() for finding in residue_findings]},
                 )
 
+    if narrator_conformance.get("status") == "fail":
+        from src.utils.narrator_conformance import conformance_editor_issues
+
+        narrator_issues = conformance_editor_issues(narrator_conformance)
+        narrator_spans = {
+            str(item.get("draft_quote") or "").casefold().strip()
+            for item in narrator_issues
+        }
+        retained_issues = [
+            item for item in reflection_result.issues
+            if not (
+                str(item.get("draft_quote") or "").casefold().strip()
+                in narrator_spans
+                and not item.get("deterministic")
+            )
+        ]
+        reflection_result = ReflectionResult(
+            "needs_repair",
+            [*retained_issues, *narrator_issues],
+            reflection_result.raw_text,
+            reflection_result.parse_status,
+            reflection_result.voice_observations,
+        )
+        if log_callback:
+            emit_progress_log(
+                log_callback,
+                "narrator_conformance_blocker",
+                (
+                    "Detected deterministic narrator self-reference leakage "
+                    f"in {len(narrator_issues)} narrative segment(s)."
+                ),
+                level="warning",
+                layer="narrator_voice",
+                data={"findings": narrator_conformance["violating_segments"]},
+            )
+
     if not reflection_result.needs_repair:
         if log_callback:
             emit_progress_log(
@@ -2684,12 +2758,14 @@ async def run_chunk_reflection_pass(
             log_callback,
             "editor_state_fallback_started",
             (
-                "Senior Editor state: starting one bounded full-chunk fallback "
-                f"for {len(unresolved_issues)} unresolved major issue(s)."
+                "Senior Editor state: starting bounded full-chunk repair "
+                f"(up to {max_automatic_repair_attempts} attempts) for "
+                f"{len(unresolved_issues)} unresolved major issue(s)."
             ),
             layer="senior_editor_repair",
         )
-    for repair_attempt in range(1):
+    for repair_attempt in range(max_automatic_repair_attempts):
+        automatic_repair_attempts = repair_attempt + 1
         repair_feedback = critique_feedback
         if validation_errors:
             repair_feedback += (
@@ -2756,6 +2832,26 @@ async def run_chunk_reflection_pass(
                     protected_terms=protected_terms,
                     glossary_terms=glossary_terms,
                 ))
+            if repaired_text:
+                repaired_conformance = audit_narrator_conformance(
+                    source_text=source_chunk,
+                    target_text=repaired_text,
+                    source_language=source_language,
+                    target_language=target_language,
+                    file_type=str(options.get("file_type") or "txt"),
+                    dialogue_attribution=options.get("dialogue_attribution") or {},
+                    db=options.get("_checkpoint_db"),
+                    translation_id=str(options.get("translation_id") or ""),
+                    chunk_index=int(options.get("chunk_index", 0) or 0),
+                    explicit_override=str(
+                        options.get("narrator_self_reference_override") or ""
+                    ),
+                )
+                narrator_conformance = repaired_conformance
+                validation_errors.extend(
+                    f"{item.get('reason_code')}:{item.get('segment_id')}"
+                    for item in repaired_conformance.get("violating_segments") or []
+                )
             if repaired_text and not validation_errors:
                 record_attempt(
                     f"repair_{repair_attempt + 1}", repair_response, raw_content,
@@ -2839,7 +2935,7 @@ async def run_chunk_reflection_pass(
         "final_reason_codes": list(validation_errors),
         "status": "blocked" if has_deterministic_blocker else "review_required",
     }
-    if contract_v2 and has_deterministic_blocker:
+    if has_deterministic_blocker:
         if log_callback:
             emit_progress_log(
                 log_callback,

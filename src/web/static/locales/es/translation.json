@@ -359,6 +359,8 @@
   "editor_diagnostics_note_blocked": "Nota: la validación determinista bloqueó este resultado ({{reason}}); el fragmento debe corregirse antes de aceptarlo.",
   "editor_diagnostics_note_unknown": "Nota: este resultado del editor usa un estado desconocido. Revisa el estado y los códigos de motivo antes de confiar en él.",
   "editor_diagnostics_reason_codes": "Códigos de motivo: {{reasons}}",
+  "editor_diagnostics_automatic_retry": "Corrección automática: intento {{attempt}}/{{maximum}} · motivo final: {{terminal}} · conformidad del narrador: {{conformance}}",
+  "context_narrator_conformance_note": "Unidad {{chunk}} · {{status}} · intentos: {{attempts}} · motivos: {{reasons}}",
   "editor_retry": "Reintentar editor",
   "editor_retry_queued": "En cola...",
   "editor_retry_running": "Reintentando...",

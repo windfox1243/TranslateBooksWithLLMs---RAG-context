@@ -110,6 +110,14 @@ def _save_retry_state(
         chunk_data.pop("editor_retry_pending", None)
         if state.get("status") == "succeeded":
             chunk_data.pop("narrator_voice_stale", None)
+            narrator_backfill = dict(chunk_data.get("narrator_backfill") or {})
+            if narrator_backfill:
+                narrator_backfill["status"] = "succeeded"
+                narrator_backfill["attempts"] = (
+                    int(narrator_backfill.get("attempts") or 0) + 1
+                )
+                narrator_backfill.pop("last_failure", None)
+                chunk_data["narrator_backfill"] = narrator_backfill
     else:
         chunk_data["editor_retry_pending"] = True
     return checkpoint_manager.save_checkpoint(
@@ -169,6 +177,7 @@ async def run_editor_retry(
     chunk_index: int,
     checkpoint_manager: Any,
     output_dir: Path,
+    refresh_output: bool = True,
 ) -> Dict[str, Any]:
     """Run one Senior Editor pass without resuming the translation job."""
 
@@ -242,6 +251,7 @@ async def run_editor_retry(
         "source_language": config.get("source_language") or "",
         "target_language": config.get("target_language") or "",
         "active_character_names": _active_character_names(chunk_data),
+        "dialogue_attribution": chunk_data.get("dialogue_attribution") or {},
     })
     from src.utils.narrator_voice import build_narrator_voice_context
 
@@ -318,7 +328,7 @@ async def run_editor_retry(
         translated_text=str(result or draft_text),
         chunk_status=final_chunk_status,
     )
-    if status in {"succeeded", "review_required"}:
+    if status in {"succeeded", "review_required"} and refresh_output:
         state["output_sync"] = await _refresh_output(
             translation_id,
             checkpoint_manager,
@@ -326,7 +336,7 @@ async def run_editor_retry(
             str(config.get("output_filename") or ""),
             bool(config.get("bilingual_output")),
         )
-    else:
+    elif status not in {"succeeded", "review_required"}:
         state["output_sync"] = {
             "status": "unchanged",
             "reason": "editor_retry_failed",
@@ -346,24 +356,124 @@ async def run_editor_retry(
     return state
 
 
+def audit_completed_narrator_conformance(
+    *, translation_id: str, checkpoint_manager: Any,
+) -> Dict[str, Any]:
+    """Queue only completed units that fail the current deterministic policy."""
+
+    from src.utils.narrator_conformance import (
+        audit_narrator_conformance,
+        conformance_fingerprint,
+    )
+
+    checkpoint = checkpoint_manager.load_checkpoint(translation_id)
+    if not checkpoint:
+        return {"audited": 0, "queued": [], "blocked": []}
+    job = checkpoint.get("job") or {}
+    config = dict(job.get("config") or {})
+    options = dict(config.get("prompt_options") or {})
+    queued: list[int] = []
+    blocked: list[int] = []
+    audited = 0
+    for chunk in checkpoint.get("chunks") or []:
+        if chunk.get("status") not in {"completed", "partial"}:
+            continue
+        source_text = str(chunk.get("original_text") or "")
+        target_text = str(chunk.get("translated_text") or "")
+        if not target_text.strip():
+            continue
+        index = int(chunk.get("chunk_index") or 0)
+        chunk_data = dict(chunk.get("chunk_data") or {})
+        audit = audit_narrator_conformance(
+            source_text=source_text,
+            target_text=target_text,
+            source_language=str(config.get("source_language") or ""),
+            target_language=str(config.get("target_language") or ""),
+            file_type=str(job.get("file_type") or config.get("file_type") or ""),
+            dialogue_attribution=chunk_data.get("dialogue_attribution") or {},
+            db=checkpoint_manager.db,
+            translation_id=translation_id,
+            chunk_index=index,
+            explicit_override=str(options.get("narrator_self_reference") or ""),
+        )
+        fingerprint = conformance_fingerprint(
+            source_text=source_text, target_text=target_text, policy=audit,
+        )
+        previous = dict(chunk_data.get("narrator_backfill") or {})
+        same_blocked = (
+            previous.get("status") == "blocked"
+            and previous.get("fingerprint") == fingerprint
+        )
+        chunk_data["narrator_conformance"] = audit
+        chunk_data["narrator_conformance_fingerprint"] = fingerprint
+        if audit.get("status") == "fail" and not same_blocked:
+            chunk_data["narrator_voice_stale"] = True
+            chunk_data["narrator_backfill"] = {
+                "status": "queued", "fingerprint": fingerprint,
+                "attempts": int(previous.get("attempts") or 0),
+                "reason_codes": audit.get("reason_codes") or [],
+            }
+            queued.append(index)
+        elif same_blocked:
+            chunk_data["narrator_voice_stale"] = True
+            blocked.append(index)
+        else:
+            chunk_data.pop("narrator_voice_stale", None)
+            chunk_data["narrator_backfill"] = {
+                "status": "not_required", "fingerprint": fingerprint,
+                "attempts": int(previous.get("attempts") or 0),
+            }
+        checkpoint_manager.save_checkpoint(
+            translation_id=translation_id,
+            chunk_index=index,
+            original_text=source_text,
+            translated_text=target_text,
+            chunk_data=chunk_data,
+            chunk_status=chunk.get("status") or "completed",
+        )
+        audited += 1
+    return {"audited": audited, "queued": queued, "blocked": blocked}
+
+
 async def run_pending_narrator_backfill(
     *, translation_id: str, checkpoint_manager: Any, output_dir: Path,
     log_callback: Any = None,
 ) -> Dict[str, Any]:
     """Run queued narrator repairs once per stale completed unit."""
 
+    audit_summary = audit_completed_narrator_conformance(
+        translation_id=translation_id, checkpoint_manager=checkpoint_manager,
+    )
     checkpoint = checkpoint_manager.load_checkpoint(translation_id)
     if not checkpoint:
         return {"status": "idle", "completed": [], "failed": []}
+    existing_blocked = [
+        {
+            "chunk_index": int(item.get("chunk_index", 0)),
+            "status": "blocked",
+        }
+        for item in checkpoint.get("chunks", [])
+        if ((item.get("chunk_data") or {}).get("narrator_backfill") or {}).get(
+            "status"
+        ) == "blocked"
+    ]
     stale = [
         item for item in checkpoint.get("chunks", [])
         if item.get("status") in {"completed", "partial"}
         and (item.get("chunk_data") or {}).get("narrator_voice_stale")
+        and ((item.get("chunk_data") or {}).get("narrator_backfill") or {}).get(
+            "status"
+        ) != "blocked"
     ]
     if not stale:
-        return {"status": "idle", "completed": [], "failed": []}
+        return {
+            "status": "review_required" if existing_blocked else "idle",
+            "completed": [], "failed": existing_blocked,
+            "audit": audit_summary,
+            "output_sync": {"status": "unchanged"},
+        }
     completed = []
-    failed = []
+    failed = list(existing_blocked)
     for chunk in sorted(stale, key=lambda item: int(item.get("chunk_index", 0))):
         chunk_index = int(chunk.get("chunk_index", 0))
         if log_callback:
@@ -377,22 +487,75 @@ async def run_pending_narrator_backfill(
                 chunk_index=chunk_index,
                 checkpoint_manager=checkpoint_manager,
                 output_dir=Path(output_dir),
+                refresh_output=False,
             )
             if result.get("status") == "succeeded":
                 completed.append(chunk_index)
             else:
+                latest_checkpoint = checkpoint_manager.load_checkpoint(
+                    translation_id
+                ) or {}
+                latest_chunk = next((
+                    row for row in latest_checkpoint.get("chunks") or []
+                    if int(row.get("chunk_index", -1)) == chunk_index
+                ), chunk)
+                latest_data = dict(latest_chunk.get("chunk_data") or {})
+                backfill_state = dict(latest_data.get("narrator_backfill") or {})
+                backfill_state.update({
+                    "status": "blocked",
+                    "attempts": int(backfill_state.get("attempts") or 0) + 1,
+                    "last_failure": result.get("outcome") or result.get("status"),
+                })
+                latest_data["narrator_backfill"] = backfill_state
+                latest_data["narrator_voice_stale"] = True
+                checkpoint_manager.save_checkpoint(
+                    translation_id=translation_id,
+                    chunk_index=chunk_index,
+                    original_text=latest_chunk.get("original_text") or "",
+                    translated_text=latest_chunk.get("translated_text") or "",
+                    chunk_data=latest_data,
+                    chunk_status="failed",
+                )
                 failed.append({
                     "chunk_index": chunk_index,
                     "status": result.get("status") or "failed",
                 })
         except Exception as exc:
+            chunk_data = dict(chunk.get("chunk_data") or {})
+            backfill_state = dict(chunk_data.get("narrator_backfill") or {})
+            backfill_state.update({
+                "status": "blocked",
+                "attempts": int(backfill_state.get("attempts") or 0) + 1,
+                "last_failure": type(exc).__name__,
+            })
+            chunk_data["narrator_backfill"] = backfill_state
+            chunk_data["narrator_voice_stale"] = True
+            checkpoint_manager.save_checkpoint(
+                translation_id=translation_id,
+                chunk_index=chunk_index,
+                original_text=chunk.get("original_text") or "",
+                translated_text=chunk.get("translated_text") or "",
+                chunk_data=chunk_data,
+                chunk_status="failed",
+            )
             failed.append({
                 "chunk_index": chunk_index,
                 "status": "failed",
                 "error": type(exc).__name__,
             })
+    output_sync = {"status": "unchanged"}
+    if completed and not failed:
+        refreshed = checkpoint_manager.load_checkpoint(translation_id) or {}
+        refreshed_config = dict((refreshed.get("job") or {}).get("config") or {})
+        output_sync = await _refresh_output(
+            translation_id, checkpoint_manager, Path(output_dir),
+            str(refreshed_config.get("output_filename") or ""),
+            bool(refreshed_config.get("bilingual_output")),
+        )
     return {
         "status": "completed" if not failed else "review_required",
         "completed": completed,
         "failed": failed,
+        "audit": audit_summary,
+        "output_sync": output_sync,
     }
