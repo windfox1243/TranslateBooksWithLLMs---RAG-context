@@ -1416,6 +1416,17 @@ window.NovelContextUI = {
         add.textContent = t('translation:context_narrator_add');
         add.onclick = () => this._openNarratorVoiceEditor(null);
         pane.appendChild(add);
+        const bootstrap = this.narratorVoiceResult?.bootstrap || {};
+        const backfill = this.narratorVoiceResult?.backfill || {};
+        const diagnostic = document.createElement('p');
+        diagnostic.className = 'context-guide-card';
+        diagnostic.textContent = t('translation:context_narrator_diagnostics', {
+            completed: bootstrap.completed_units || 0,
+            attempts: (bootstrap.attempts || []).length,
+            next: bootstrap.next_boundary || 2,
+            pending: backfill.pending_count || 0
+        });
+        pane.appendChild(diagnostic);
         const profiles = this.narratorVoiceResult?.profiles || [];
         if (!profiles.length) {
             const empty = document.createElement('p');
@@ -1819,9 +1830,26 @@ window.NovelContextUI = {
             const text = document.createElement('pre');
             text.style.margin = '0';
             text.style.whiteSpace = 'pre-wrap';
-            text.textContent = kind === 'addressing'
-                ? this._formatAddressingRules({ rules: [record] })
-                : `${record.source_name} -> ${record.target_name}\n  ${record.relationship_type} | ${record.hierarchy} | ${record.scope} | ${record.status}`;
+            if (kind === 'addressing') {
+                text.textContent = this._formatAddressingRules({ rules: [record] });
+            } else {
+                const statusKey = {
+                    accepted: 'translation:context_relationship_status_accepted',
+                    provisional: 'translation:context_relationship_status_provisional',
+                    quarantined: 'translation:context_relationship_status_quarantined'
+                }[record.status] || 'translation:context_relationship_status_unknown';
+                text.textContent = t('translation:context_relationship_summary', {
+                    source: record.source_name,
+                    target: record.target_name,
+                    type: record.relationship_type,
+                    hierarchy: record.hierarchy,
+                    scope: record.scope,
+                    status: t(statusKey),
+                    reason: record.reason_code || t('translation:context_addressing_unknown'),
+                    evidence: record.evidence_tier || t('translation:context_addressing_unknown'),
+                    units: record.supporting_units || 0
+                });
+            }
             const editButton = document.createElement('button');
             editButton.type = 'button';
             editButton.className = 'btn btn-sm btn-secondary';

@@ -784,6 +784,24 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 _log_message_callback("output_marked_partial",
                     f"💾 Partial EPUB saved as: {config['output_filename']}")
 
+        # Apply queued narrator corrections before final status and cleanup.
+        if (
+            not config.get('refine_only')
+            and not state_manager.get_translation_field(translation_id, 'interrupted')
+            and state_manager.get_translation_field(translation_id, 'status') != 'error'
+        ):
+            from src.core.editor_retry import run_pending_narrator_backfill
+
+            backfill = await run_pending_narrator_backfill(
+                translation_id=translation_id,
+                checkpoint_manager=checkpoint_manager,
+                output_dir=Path(os.path.dirname(os.path.abspath(output_filepath_on_server))),
+                log_callback=_log_message_callback,
+            )
+            state_manager.set_translation_field(
+                translation_id, 'narrator_backfill', backfill,
+            )
+
         # Set result message based on file type
         file_type_upper = config['file_type'].upper()
         result_action = "refined" if config.get('refine_only') else "translated"

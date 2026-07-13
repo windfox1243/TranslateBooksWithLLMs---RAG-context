@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import json
 import re
+import unicodedata
 from dataclasses import replace
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -101,10 +102,57 @@ def _matches_any_name(value: str, names: Iterable[str], language: str = "") -> b
     return any(_names_match(value, name, language) for name in names if name)
 
 
+_EVIDENCE_TRANSLATION = str.maketrans({
+    "‘": "'", "’": "'", "‚": "'", "‛": "'",
+    "“": '"', "”": '"', "„": '"', "‟": '"',
+    "–": "-", "—": "-", "―": "-", "…": "...",
+})
+
+
+def _canonical_evidence(value: str) -> tuple[str, list[int]]:
+    """Normalize evidence while retaining a map to original offsets."""
+
+    output: list[str] = []
+    offsets: list[int] = []
+    pending_space = False
+    for original_index, original in enumerate(str(value or "")):
+        expanded = unicodedata.normalize("NFKC", original).translate(
+            _EVIDENCE_TRANSLATION
+        ).casefold()
+        for char in expanded:
+            if char.isspace():
+                pending_space = bool(output)
+                continue
+            if pending_space:
+                output.append(" ")
+                offsets.append(original_index)
+                pending_space = False
+            output.append(char)
+            offsets.append(original_index)
+    return "".join(output).strip(), offsets
+
+
+def _match_source_quote(quote: str, source_text: str) -> tuple[str, Optional[int], Optional[int]]:
+    value = str(quote or "").strip()
+    source = str(source_text or "")
+    if not value or not source:
+        return "missing", None, None
+    exact = source.find(value)
+    if exact >= 0:
+        return "exact", exact, exact + len(value)
+    quote_key, _ = _canonical_evidence(value)
+    source_key, source_offsets = _canonical_evidence(source)
+    start = source_key.find(quote_key) if quote_key else -1
+    if start < 0 or not source_offsets:
+        return "unsupported", None, None
+    end_key = start + len(quote_key) - 1
+    if start >= len(source_offsets) or end_key >= len(source_offsets):
+        return "unsupported", None, None
+    return "normalized", source_offsets[start], source_offsets[end_key] + 1
+
+
 def _quote_is_source_supported(quote: str, source_text: str) -> bool:
-    quote_key = normalize_relationship_name(quote)
-    source_key = normalize_relationship_name(source_text)
-    return bool(quote_key and source_key and quote_key in source_key)
+    return _match_source_quote(quote, source_text)[0] in {"exact", "normalized"}
 
 
 def _edge_changed(existing: Dict[str, Any], candidate: RelationshipCandidate) -> bool:
@@ -172,7 +220,11 @@ class RelationshipReasoningEngine:
             chunk_index=chunk_index,
             edge_id=edge_id,
         )
-        event = "relationship_quarantined" if status == "quarantined" else "relationship_rejected"
+        event = (
+            "relationship_provisional" if status == "provisional"
+            else "relationship_quarantined" if status == "quarantined"
+            else "relationship_rejected"
+        )
         self._log(
             log_callback,
             event,
@@ -357,7 +409,69 @@ class RelationshipReasoningEngine:
             chunk_index=chunk_index,
             provenance=candidate.provenance,
             details=candidate.details,
+            evidence_tier="contradictory",
+            reason_code="deterministic_conflict",
+            validator_version=2,
         )
+
+    def _provisional_edge(
+        self, translation_id: str, chunk_index: int,
+        candidate: RelationshipCandidate,
+        source_node: Optional[Dict[str, Any]],
+        target_node: Optional[Dict[str, Any]],
+        *, reason_code: str, source_text: str = "",
+    ) -> Optional[int]:
+        if not source_node or not target_node:
+            return None
+        existing = self.db.get_relationship_edges_for_pair(
+            translation_id, source_node["normalized_name"],
+            target_node["normalized_name"], include_reverse=False,
+        )
+        same = next((
+            edge for edge in existing
+            if edge.get("relationship_type") == candidate.relationship_type
+            and edge.get("scope") == candidate.scope
+        ), None)
+        supporting = {
+            int(item.get("chunk_index", 0))
+            for item in self.db.get_relationship_evidence(
+                translation_id, same.get("id") if same else None,
+            )
+        } if same else set()
+        supporting.add(int(chunk_index))
+        edge_id = self.db.upsert_relationship_edge(
+            translation_id=translation_id,
+            source_node_id=source_node["id"], target_node_id=target_node["id"],
+            relationship_type=candidate.relationship_type,
+            direction=candidate.direction, scope=candidate.scope,
+            hierarchy=candidate.hierarchy, relative_age=candidate.relative_age,
+            rank_relation=candidate.rank_relation, intimacy=candidate.intimacy,
+            register=candidate.register, confidence=candidate.confidence,
+            status="provisional", is_locked=0, chunk_index=chunk_index,
+            provenance=candidate.provenance, details=candidate.details,
+            evidence_tier="indirect", reason_code=reason_code,
+            supporting_units=len(supporting), validator_version=2,
+        )
+        for span in candidate.evidence_spans or [{"quote": candidate.evidence_quote}]:
+            quote = str(span.get("quote") or "").strip()
+            if not quote:
+                continue
+            match_kind, source_start, source_end = _match_source_quote(
+                quote, source_text
+            )
+            self.db.add_relationship_evidence(
+                translation_id=translation_id, edge_id=edge_id,
+                chunk_index=chunk_index, evidence_quote=quote,
+                provenance=candidate.provenance,
+                parser_status=candidate.parser_status,
+                confidence=candidate.confidence, file_id=candidate.file_id,
+                dialogue_turn_id=str(
+                    span.get("dialogue_turn_id") or candidate.dialogue_turn_id
+                ),
+                match_kind=match_kind, source_start=source_start,
+                source_end=source_end,
+            )
+        return edge_id
 
     def merge_candidate(
         self,
@@ -416,8 +530,8 @@ class RelationshipReasoningEngine:
             )
             return self._record_conflict(
                 translation_id, chunk_index, candidate,
-                status="quarantined", validator="known_character",
-                reason="Relationship endpoints do not resolve to trusted canonical characters.",
+                status="provisional", validator="known_character",
+                reason="Relationship endpoints await unambiguous canonical character evidence.",
                 edge_id=edge_id, log_callback=log_callback,
             )
         if (
@@ -436,7 +550,7 @@ class RelationshipReasoningEngine:
             source=source_node["canonical_name"],
             target=target_node["canonical_name"],
         )
-        if not trusted and _explicit_inverse_role(candidate):
+        if not trusted and candidate.relationship_type in ASYMMETRIC_RELATIONSHIP_INVERSES:
             inverse_type = _INVERSE_RELATIONSHIPS.get(candidate.relationship_type)
             inverse_hierarchy = {
                 "source_senior": "source_junior",
@@ -476,7 +590,6 @@ class RelationshipReasoningEngine:
             "student": "source_junior",
             "servant": "source_junior",
             "subordinate": "source_junior",
-            "peer": "peer",
         }.get(candidate.relationship_type)
         age_hierarchy = {
             "source_older": "source_senior",
@@ -488,29 +601,9 @@ class RelationshipReasoningEngine:
             "source_lower": "source_junior",
             "equal": "peer",
         }.get(candidate.rank_relation)
-        hierarchy_signals = [
-            value for value in (
-                expected_hierarchy,
-                age_hierarchy,
-                rank_hierarchy,
-                candidate.hierarchy if candidate.hierarchy != "unknown" else None,
-            )
-            if value
-        ]
-        if len(set(hierarchy_signals)) > 1:
-            edge_id = self._quarantine_edge(
-                translation_id, chunk_index, candidate, source_node, target_node,
-            )
-            return self._record_conflict(
-                translation_id, chunk_index, candidate,
-                status="quarantined", validator="semantic_hierarchy",
-                reason=(
-                    "Relationship type, relative age, institutional rank, and "
-                    "hierarchy fields contain incompatible seniority directions."
-                ),
-                severity="error", edge_id=edge_id,
-                log_callback=log_callback,
-            )
+        # Age, institutional rank, social relationship, and conversational
+        # hierarchy are independent dimensions. Only a role-implied hierarchy
+        # constrains the relationship type itself.
         if (
             expected_hierarchy
             and candidate.hierarchy not in {"unknown", expected_hierarchy}
@@ -562,6 +655,10 @@ class RelationshipReasoningEngine:
             target_node["normalized_name"],
             include_reverse=True,
         )
+        pair_edges = [
+            edge for edge in pair_edges
+            if edge.get("relationship_type") != "addressing"
+        ]
         same_edge = next((
             edge for edge in pair_edges
             if edge["source_node_id"] == source_node["id"]
@@ -634,13 +731,14 @@ class RelationshipReasoningEngine:
         if candidate.scope == "durable" and not trusted:
             evidence_quotes = _candidate_evidence_quotes(candidate)
             if not evidence_quotes:
-                edge_id = self._quarantine_edge(
+                edge_id = self._provisional_edge(
                     translation_id, chunk_index, candidate, source_node, target_node,
+                    reason_code="source_evidence_missing", source_text=source_text,
                 )
                 return self._record_conflict(
                     translation_id, chunk_index, candidate,
-                    status="quarantined", validator="source_evidence",
-                    reason="A new durable LLM relationship requires an exact source evidence quote.",
+                    status="provisional", validator="source_evidence",
+                    reason="Awaiting a source evidence span or independent corroboration.",
                     edge_id=edge_id, log_callback=log_callback,
                 )
             unsupported_quotes = [
@@ -648,13 +746,14 @@ class RelationshipReasoningEngine:
                 if not _quote_is_source_supported(quote, source_text)
             ]
             if unsupported_quotes:
-                edge_id = self._quarantine_edge(
+                edge_id = self._provisional_edge(
                     translation_id, chunk_index, candidate, source_node, target_node,
+                    reason_code="source_evidence_unmatched", source_text=source_text,
                 )
                 return self._record_conflict(
                     translation_id, chunk_index, candidate,
-                    status="quarantined", validator="source_evidence",
-                    reason="One or more proposed evidence spans are not present in the source chunk.",
+                    status="provisional", validator="source_evidence",
+                    reason="Evidence could not yet be matched to the source unit.",
                     edge_id=edge_id, log_callback=log_callback,
                 )
             participant_text = "\n".join([*evidence_quotes, source_text])
@@ -700,37 +799,44 @@ class RelationshipReasoningEngine:
             ):
                 target_supported = True
             if not (source_supported and target_supported):
-                edge_id = self._quarantine_edge(
+                edge_id = self._provisional_edge(
                     translation_id, chunk_index, candidate, source_node, target_node,
+                    reason_code="participants_ambiguous", source_text=source_text,
                 )
                 return self._record_conflict(
                     translation_id, chunk_index, candidate,
-                    status="quarantined", validator="source_participants",
-                    reason="The source chunk does not explicitly identify both relationship participants.",
+                    status="provisional", validator="source_participants",
+                    reason="Awaiting unambiguous evidence for both relationship participants.",
                     edge_id=edge_id, log_callback=log_callback,
                 )
 
         if not trusted and candidate.judge_decision == "reject":
-            edge_id = self._quarantine_edge(
+            edge_id = self._provisional_edge(
                 translation_id, chunk_index, candidate, source_node, target_node,
+                reason_code="judge_disagreement", source_text=source_text,
             )
             return self._record_conflict(
                 translation_id, chunk_index, candidate,
-                status="quarantined", validator="llm_judge",
+                status="provisional", validator="llm_judge",
                 reason=(
                     "Optional LLM evidence judge rejected the ambiguous candidate; "
-                    "manual review is required."
+                    "additional evidence or manual review is required."
                 ),
                 edge_id=edge_id, log_callback=log_callback,
             )
 
-        if not trusted and candidate.confidence < self.confidence_threshold:
-            edge_id = self._quarantine_edge(
+        if (
+            not trusted
+            and candidate.confidence < self.confidence_threshold
+            and candidate.scope != "durable"
+        ):
+            edge_id = self._provisional_edge(
                 translation_id, chunk_index, candidate, source_node, target_node,
+                reason_code="confidence_unconfirmed", source_text=source_text,
             )
             return self._record_conflict(
                 translation_id, chunk_index, candidate,
-                status="quarantined", validator="confidence",
+                status="provisional", validator="confidence",
                 reason=(
                     f"Confidence {candidate.confidence:.2f} is below the "
                     f"{self.confidence_threshold:.2f} acceptance threshold."
@@ -740,13 +846,19 @@ class RelationshipReasoningEngine:
 
         if candidate.relationship_type in ASYMMETRIC_RELATIONSHIP_INVERSES:
             expected_reverse = ASYMMETRIC_RELATIONSHIP_INVERSES[candidate.relationship_type]
+            inverse_family = {candidate.relationship_type, expected_reverse}
             for edge in pair_edges:
                 is_reverse = (
                     edge["source_node_id"] == target_node["id"]
                     and edge["target_node_id"] == source_node["id"]
                     and edge.get("status") == "accepted"
                 )
-                if is_reverse and edge.get("relationship_type") != expected_reverse:
+                existing_reverse_type = edge.get("relationship_type")
+                if (
+                    is_reverse
+                    and existing_reverse_type in inverse_family
+                    and existing_reverse_type != expected_reverse
+                ):
                     return self._record_conflict(
                         translation_id, chunk_index, candidate,
                         status="rejected", validator="reverse_semantics",
@@ -814,6 +926,9 @@ class RelationshipReasoningEngine:
                     confidence=candidate.confidence,
                     file_id=candidate.file_id,
                     dialogue_turn_id=str(span.get("dialogue_turn_id") or candidate.dialogue_turn_id),
+                    match_kind=_match_source_quote(quote, source_text)[0],
+                    source_start=_match_source_quote(quote, source_text)[1],
+                    source_end=_match_source_quote(quote, source_text)[2],
                 )
             return RelationshipMergeDecision(
                 status="unchanged", reason="Relationship already matches accepted graph state.",
@@ -838,6 +953,14 @@ class RelationshipReasoningEngine:
             chunk_index=chunk_index,
             provenance=candidate.provenance,
             details=candidate.details,
+            evidence_tier=("direct" if _candidate_evidence_quotes(candidate) else "trusted"),
+            reason_code="validated",
+            supporting_units=1,
+            match_kind=(
+                _match_source_quote(_candidate_evidence_quotes(candidate)[0], source_text)[0]
+                if _candidate_evidence_quotes(candidate) else "trusted"
+            ),
+            validator_version=2,
         )
         if edge_id is None:
             return self._record_conflict(
@@ -861,6 +984,9 @@ class RelationshipReasoningEngine:
                 confidence=candidate.confidence,
                 file_id=candidate.file_id,
                 dialogue_turn_id=str(span.get("dialogue_turn_id") or candidate.dialogue_turn_id),
+                match_kind=_match_source_quote(quote, source_text)[0],
+                source_start=_match_source_quote(quote, source_text)[1],
+                source_end=_match_source_quote(quote, source_text)[2],
             )
         self._log(
             log_callback,
@@ -900,6 +1026,97 @@ class RelationshipReasoningEngine:
             for candidate in candidates
             if candidate
         ]
+
+
+def migrate_relationship_reasoning_v2(
+    db: Optional[Database], translation_id: str,
+) -> Dict[str, Any]:
+    """Re-evaluate safe legacy quarantines once while preserving audit history."""
+
+    migration_key = "relationship_validator_v2"
+    if (
+        db is None or not translation_id
+        or not hasattr(db, "claim_reasoning_migration")
+        or not db.claim_reasoning_migration(translation_id, migration_key)
+    ):
+        return {"status": "unchanged", "accepted": 0}
+    accepted = 0
+    reviewed = 0
+    try:
+        conflicts = db.get_relationship_conflicts(
+            translation_id, status="open", limit=1000,
+        )
+        eligible_validators = {
+            "semantic_hierarchy", "reverse_semantics", "source_evidence",
+            "source_participants", "llm_judge", "confidence",
+        }
+        eligible = [
+            item for item in conflicts
+            if item.get("validator") in eligible_validators
+            and isinstance(item.get("candidate"), dict)
+        ]
+        db_path = str(getattr(db, "db_path", "") or "")
+        if eligible and db_path and db_path != ":memory:":
+            backup_path = db_path + ".pre-v1.15.0-beta.43.bak"
+            if not __import__("os").path.exists(backup_path):
+                db.backup_to(backup_path)
+        chunks = {
+            int(item.get("chunk_index", 0)): item
+            for item in db.get_chunks(translation_id)
+        }
+        known_names = [
+            str(item.get("canonical_name") or "")
+            for item in db.get_relationship_nodes(translation_id)
+        ]
+        engine = RelationshipReasoningEngine(db=db)
+        for conflict in eligible:
+            edge_id = conflict.get("edge_id")
+            edge = next((
+                item for item in db.get_relationship_edges(translation_id)
+                if item.get("id") == edge_id
+            ), None)
+            if edge and edge.get("is_locked"):
+                continue
+            candidate = RelationshipCandidate.from_dict(
+                conflict.get("candidate") or {},
+                default_provenance="llm_context",
+            )
+            if candidate is None:
+                continue
+            chunk_index = int(conflict.get("chunk_index", 0) or 0)
+            source_text = str(
+                (chunks.get(chunk_index) or {}).get("original_text") or ""
+            )
+            decision = engine.merge_candidate(
+                translation_id, chunk_index, candidate,
+                source_text=source_text,
+                known_character_names=known_names,
+            )
+            reviewed += 1
+            if decision.status in {"accepted", "unchanged"}:
+                db.resolve_relationship_conflict(
+                    translation_id, int(conflict["id"])
+                )
+                accepted += 1
+            elif (
+                decision.status == "provisional"
+                and decision.audit_id
+                and int(decision.audit_id) != int(conflict["id"])
+            ):
+                db.resolve_relationship_conflict(
+                    translation_id, int(conflict["id"])
+                )
+        db.finish_reasoning_migration(
+            translation_id, migration_key, "completed",
+            {"reviewed": reviewed, "accepted": accepted},
+        )
+        return {"status": "completed", "reviewed": reviewed, "accepted": accepted}
+    except Exception as exc:
+        db.finish_reasoning_migration(
+            translation_id, migration_key, "failed",
+            {"error": type(exc).__name__},
+        )
+        return {"status": "failed", "error": type(exc).__name__}
 
 
 def relationship_support_for_addressing(
