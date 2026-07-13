@@ -27,6 +27,7 @@ _TRANSLATION_CHILD_TABLES = (
     "context_relationship_evidence",
     "context_relationship_edges",
     "context_relationship_nodes",
+    "context_reasoning_migrations",
     "context_audit_logs",
     "context_addressing_evidence",
     "context_addressing_rules",
@@ -341,6 +342,11 @@ class Database:
                     last_chunk_index INTEGER NOT NULL DEFAULT 0,
                     provenance TEXT NOT NULL DEFAULT 'unknown',
                     details TEXT,
+                    evidence_tier TEXT NOT NULL DEFAULT 'unknown',
+                    reason_code TEXT NOT NULL DEFAULT '',
+                    supporting_units INTEGER NOT NULL DEFAULT 0,
+                    match_kind TEXT NOT NULL DEFAULT '',
+                    validator_version INTEGER NOT NULL DEFAULT 2,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(
@@ -355,11 +361,20 @@ class Database:
             """)
             cursor.execute("PRAGMA table_info(context_relationship_edges)")
             relationship_edge_columns = {row[1] for row in cursor.fetchall()}
-            for column in ("relative_age", "rank_relation"):
+            edge_migrations = {
+                "relative_age": "TEXT NOT NULL DEFAULT 'unknown'",
+                "rank_relation": "TEXT NOT NULL DEFAULT 'unknown'",
+                "evidence_tier": "TEXT NOT NULL DEFAULT 'unknown'",
+                "reason_code": "TEXT NOT NULL DEFAULT ''",
+                "supporting_units": "INTEGER NOT NULL DEFAULT 0",
+                "match_kind": "TEXT NOT NULL DEFAULT ''",
+                "validator_version": "INTEGER NOT NULL DEFAULT 2",
+            }
+            for column, definition in edge_migrations.items():
                 if column not in relationship_edge_columns:
                     cursor.execute(
                         f"ALTER TABLE context_relationship_edges ADD COLUMN "
-                        f"{column} TEXT NOT NULL DEFAULT 'unknown'"
+                        f"{column} {definition}"
                     )
 
             cursor.execute("""
@@ -374,11 +389,26 @@ class Database:
                     provenance TEXT NOT NULL DEFAULT 'unknown',
                     parser_status TEXT NOT NULL DEFAULT 'unknown',
                     confidence REAL NOT NULL DEFAULT 0.5,
+                    match_kind TEXT NOT NULL DEFAULT '',
+                    source_start INTEGER,
+                    source_end INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (edge_id)
                         REFERENCES context_relationship_edges(id) ON DELETE CASCADE
                 )
             """)
+            cursor.execute("PRAGMA table_info(context_relationship_evidence)")
+            relationship_evidence_columns = {row[1] for row in cursor.fetchall()}
+            for column, definition in {
+                "match_kind": "TEXT NOT NULL DEFAULT ''",
+                "source_start": "INTEGER",
+                "source_end": "INTEGER",
+            }.items():
+                if column not in relationship_evidence_columns:
+                    cursor.execute(
+                        f"ALTER TABLE context_relationship_evidence ADD COLUMN "
+                        f"{column} {definition}"
+                    )
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS context_relationship_conflicts (
@@ -393,6 +423,7 @@ class Database:
                     reason TEXT NOT NULL,
                     remediation_hint TEXT,
                     candidate_json JSON,
+                    fingerprint TEXT NOT NULL DEFAULT '',
                     chunk_index INTEGER NOT NULL DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     resolved_at TIMESTAMP,
@@ -400,6 +431,13 @@ class Database:
                         REFERENCES context_relationship_edges(id) ON DELETE SET NULL
                 )
             """)
+            cursor.execute("PRAGMA table_info(context_relationship_conflicts)")
+            relationship_conflict_columns = {row[1] for row in cursor.fetchall()}
+            if "fingerprint" not in relationship_conflict_columns:
+                cursor.execute(
+                    "ALTER TABLE context_relationship_conflicts "
+                    "ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''"
+                )
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS context_relationship_derivations (
@@ -415,6 +453,17 @@ class Database:
                     last_chunk_index INTEGER NOT NULL DEFAULT 0,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(translation_id, source_name, target_name)
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS context_reasoning_migrations (
+                    translation_id TEXT NOT NULL,
+                    migration_key TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'running',
+                    details JSON NOT NULL DEFAULT '{}',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (translation_id, migration_key)
                 )
             """)
 
@@ -2075,6 +2124,11 @@ class Database:
         details: str = "",
         relative_age: str = "unknown",
         rank_relation: str = "unknown",
+        evidence_tier: str = "unknown",
+        reason_code: str = "",
+        supporting_units: int = 0,
+        match_kind: str = "",
+        validator_version: int = 2,
     ) -> Optional[int]:
         """Create or update a relationship graph edge and return its id."""
 
@@ -2088,8 +2142,9 @@ class Database:
                         relationship_type, direction, scope, hierarchy,
                         relative_age, rank_relation, intimacy, register,
                         confidence, status, is_locked,
-                        last_chunk_index, provenance, details
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        last_chunk_index, provenance, details, evidence_tier,
+                        reason_code, supporting_units, match_kind, validator_version
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(
                         translation_id, source_node_id, target_node_id,
                         relationship_type, scope
@@ -2118,12 +2173,24 @@ class Database:
                             THEN context_relationship_edges.provenance ELSE excluded.provenance END,
                         details = CASE WHEN context_relationship_edges.is_locked = 1
                             THEN context_relationship_edges.details ELSE excluded.details END,
+                        evidence_tier = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.evidence_tier ELSE excluded.evidence_tier END,
+                        reason_code = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.reason_code ELSE excluded.reason_code END,
+                        supporting_units = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.supporting_units ELSE excluded.supporting_units END,
+                        match_kind = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.match_kind ELSE excluded.match_kind END,
+                        validator_version = CASE WHEN context_relationship_edges.is_locked = 1
+                            THEN context_relationship_edges.validator_version ELSE excluded.validator_version END,
                         updated_at = CURRENT_TIMESTAMP
                 """, (
                     translation_id, source_node_id, target_node_id,
                     relationship_type, direction, scope, hierarchy,
                     relative_age, rank_relation, intimacy, register, confidence,
                     status, int(bool(is_locked)), chunk_index, provenance, details,
+                    evidence_tier, reason_code, max(0, int(supporting_units or 0)),
+                    match_kind, int(validator_version or 2),
                 ))
                 cursor.execute("""
                     SELECT id FROM context_relationship_edges
@@ -2139,6 +2206,48 @@ class Database:
             except Exception as e:
                 print(f"Error upserting relationship edge: {e}")
                 return None
+
+    def claim_reasoning_migration(
+        self, translation_id: str, migration_key: str,
+    ) -> bool:
+        """Claim one durable per-job reasoning migration, retrying failures."""
+
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.execute("""
+                INSERT OR IGNORE INTO context_reasoning_migrations (
+                    translation_id, migration_key, status
+                ) VALUES (?, ?, 'running')
+            """, (translation_id, migration_key))
+            claimed = cursor.rowcount > 0
+            if not claimed:
+                cursor = conn.execute("""
+                    UPDATE context_reasoning_migrations
+                    SET status = 'running', details = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE translation_id = ? AND migration_key = ?
+                      AND status = 'failed'
+                """, (translation_id, migration_key))
+                claimed = cursor.rowcount > 0
+            self._commit_connection(conn)
+            return claimed
+
+    def finish_reasoning_migration(
+        self, translation_id: str, migration_key: str, status: str,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.execute("""
+                UPDATE context_reasoning_migrations
+                SET status = ?, details = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE translation_id = ? AND migration_key = ?
+            """, (
+                status, json.dumps(details or {}, ensure_ascii=False),
+                translation_id, migration_key,
+            ))
+            self._commit_connection(conn)
+            return cursor.rowcount > 0
 
     def get_relationship_edges(
         self,
@@ -2265,6 +2374,9 @@ class Database:
         confidence: float,
         file_id: str = "",
         dialogue_turn_id: str = "",
+        match_kind: str = "",
+        source_start: Optional[int] = None,
+        source_end: Optional[int] = None,
     ) -> Optional[int]:
         with self._lock:
             try:
@@ -2273,12 +2385,13 @@ class Database:
                     INSERT INTO context_relationship_evidence (
                         translation_id, edge_id, chunk_index, file_id,
                         dialogue_turn_id, evidence_quote, provenance,
-                        parser_status, confidence
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        parser_status, confidence, match_kind, source_start,
+                        source_end
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     translation_id, edge_id, chunk_index, file_id,
                     dialogue_turn_id, evidence_quote, provenance,
-                    parser_status, confidence,
+                    parser_status, confidence, match_kind, source_start, source_end,
                 ))
                 self._commit_connection(conn)
                 return int(cursor.lastrowid)
@@ -2327,16 +2440,53 @@ class Database:
         with self._lock:
             try:
                 conn = self._get_connection()
+                candidate_data = candidate or {}
+                fingerprint = "|".join((
+                    str(source_name or "").strip().casefold(),
+                    str(target_name or "").strip().casefold(),
+                    str(validator or "").strip().casefold(),
+                    str(candidate_data.get("relationship_type") or "").strip().casefold(),
+                    str(candidate_data.get("scope") or "durable").strip().casefold(),
+                ))
+                existing = conn.execute("""
+                    SELECT id FROM context_relationship_conflicts
+                    WHERE translation_id = ? AND status = 'open' AND (
+                        fingerprint = ? OR (
+                            fingerprint = ''
+                            AND lower(source_name) = lower(?)
+                            AND lower(target_name) = lower(?)
+                            AND validator = ?
+                        )
+                    )
+                    ORDER BY id DESC LIMIT 1
+                """, (
+                    translation_id, fingerprint, source_name, target_name, validator,
+                )).fetchone()
+                if existing:
+                    conn.execute("""
+                        UPDATE context_relationship_conflicts
+                        SET edge_id = COALESCE(?, edge_id), severity = ?, reason = ?,
+                            remediation_hint = ?, candidate_json = ?, chunk_index = ?,
+                            fingerprint = ?
+                        WHERE id = ?
+                    """, (
+                        edge_id, severity, reason, remediation_hint,
+                        json.dumps(candidate_data, ensure_ascii=False), chunk_index,
+                        fingerprint, int(existing["id"]),
+                    ))
+                    self._commit_connection(conn)
+                    return int(existing["id"])
                 cursor = conn.execute("""
                     INSERT INTO context_relationship_conflicts (
                         translation_id, edge_id, source_name, target_name,
                         severity, validator, status, reason,
-                        remediation_hint, candidate_json, chunk_index
-                    ) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)
+                        remediation_hint, candidate_json, chunk_index, fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)
                 """, (
                     translation_id, edge_id, source_name, target_name,
                     severity, validator, reason, remediation_hint,
-                    json.dumps(candidate or {}, ensure_ascii=False), chunk_index,
+                    json.dumps(candidate_data, ensure_ascii=False), chunk_index,
+                    fingerprint,
                 ))
                 self._commit_connection(conn)
                 return int(cursor.lastrowid)
@@ -3023,8 +3173,31 @@ class Database:
             self._commit_connection(conn)
             return cursor.rowcount > 0
 
+    def get_narrator_bootstrap_attempts(
+        self, translation_id: str, *, attempt_kind: str = "bootstrap",
+    ) -> List[Dict[str, Any]]:
+        """Return decoded bootstrap attempts for public diagnostics."""
+
+        with self._lock:
+            rows = self._get_connection().execute("""
+                SELECT * FROM context_narrator_bootstrap_attempts
+                WHERE translation_id = ? AND attempt_kind = ?
+                ORDER BY created_at, boundary_key
+            """, (translation_id, attempt_kind)).fetchall()
+            result = []
+            for row in rows:
+                item = dict(row)
+                for key, fallback in (("sampled_chunks", []), ("details", {})):
+                    try:
+                        item[key] = json.loads(item.get(key) or json.dumps(fallback))
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        item[key] = fallback
+                result.append(item)
+            return result
+
     def mark_narrator_voice_chunks_stale(
         self, translation_id: str, start_chunk_index: int,
+        *, end_chunk_index: Optional[int] = None,
     ) -> int:
         """Mark completed historical chunks for an explicit Editor retry."""
 
@@ -3034,8 +3207,12 @@ class Database:
             rows = conn.execute("""
                 SELECT chunk_index, chunk_data FROM checkpoint_chunks
                 WHERE translation_id = ? AND chunk_index >= ?
+                  AND (? IS NULL OR chunk_index <= ?)
                   AND status IN ('completed', 'partial')
-            """, (translation_id, int(start_chunk_index))).fetchall()
+            """, (
+                translation_id, int(start_chunk_index), end_chunk_index,
+                int(end_chunk_index) if end_chunk_index is not None else None,
+            )).fetchall()
             for row in rows:
                 try:
                     data = json.loads(row["chunk_data"] or "{}")

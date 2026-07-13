@@ -1261,6 +1261,7 @@ async def _translate_all_chunks_with_checkpoint(
                 target_language=target_language,
                 model_name=str(prompt_options.get("editor_model") or model_name),
                 llm_client=prompt_options.get("_editor_llm_client") or llm_client,
+                file_type=str(prompt_options.get("file_type") or "epub"),
             )
         checkpoint_context_data = checkpoint_context_data_by_global_index.get(
             global_chunk_idx

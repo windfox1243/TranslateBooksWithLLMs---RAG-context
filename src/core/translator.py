@@ -2349,9 +2349,11 @@ async def run_chunk_reflection_pass(
             layer="senior_editor_reflection",
         )
 
-    # Voice evidence is validated independently: malformed observations are
-    # discarded without invalidating otherwise actionable Editor issues.
-    if reflection_result.voice_observations:
+    def persist_final_voice(final_text: str) -> str:
+        """Persist voice evidence only when it still grounds in final output."""
+
+        if not reflection_result.voice_observations:
+            return final_text
         from src.utils.narrator_voice import (
             persist_voice_observations,
             validate_voice_observations,
@@ -2359,7 +2361,7 @@ async def run_chunk_reflection_pass(
         accepted_voice, rejected_voice = validate_voice_observations(
             reflection_result.voice_observations,
             source_text=source_chunk,
-            target_text=draft_translation,
+            target_text=final_text,
             target_language=target_language,
         )
         if rejected_voice and log_callback:
@@ -2371,8 +2373,7 @@ async def run_chunk_reflection_pass(
                 layer="narrator_voice",
                 data={"reasons": [item["reason"] for item in rejected_voice]},
             )
-        # Refinement consumes the original historical profile but is read-only
-        # with respect to narrator history.
+        # Refinement consumes historical voice state but never rewrites it.
         if accepted_voice and str(options.get("editor_phase") or "") != "refinement":
             voice_db = options.get("_checkpoint_db")
             owns_voice_db = False
@@ -2395,6 +2396,7 @@ async def run_chunk_reflection_pass(
                 )
             if owns_voice_db:
                 voice_db.close()
+        return final_text
 
     if residue_findings:
         existing_spans = {
@@ -2440,7 +2442,7 @@ async def run_chunk_reflection_pass(
             issue_count=0,
             response_hash=response_hash(critique),
         )
-        return draft_translation
+        return persist_final_voice(draft_translation)
 
     locator_errors = validate_issue_locators(
         draft_translation, reflection_result.issues,
@@ -2539,7 +2541,7 @@ async def run_chunk_reflection_pass(
                 issue_count=len(invalid_ids),
                 diagnostics={"reason_codes": locator_errors},
             )
-            return draft_translation
+            return persist_final_voice(draft_translation)
 
     no_op_issue_ids = {
         str(issue.get("issue_id") or "")
@@ -2628,7 +2630,7 @@ async def run_chunk_reflection_pass(
                         "ignored_no_op_issue_ids": sorted(no_op_issue_ids),
                     },
                 )
-                return patched_draft
+                return persist_final_voice(patched_draft)
         else:
             patched_draft = original_draft
             unresolved_issues = list(actionable_issues)
@@ -2650,7 +2652,7 @@ async def run_chunk_reflection_pass(
             issue_count=len(reflection_result.issues),
             diagnostics={"reason_codes": patch_errors},
         )
-        return patched_draft
+        return persist_final_voice(patched_draft)
 
     reflection_result = ReflectionResult(
         "needs_repair",
@@ -2782,7 +2784,7 @@ async def run_chunk_reflection_pass(
                     resolved_issue_count=len(reflection_result.issues),
                     unresolved_issue_count=review_issue_count,
                 )
-                return repaired_text
+                return persist_final_voice(repaired_text)
         except Exception as e:
             validation_errors.append(
                 f"repair_call_failed:{_classify_editor_exception(e)}"
@@ -2880,4 +2882,4 @@ async def run_chunk_reflection_pass(
         issue_count=len(reflection_result.issues),
         diagnostics=diagnostics,
     )
-    return draft_translation
+    return persist_final_voice(draft_translation)

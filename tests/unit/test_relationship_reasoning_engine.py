@@ -176,7 +176,7 @@ def test_source_supported_relationship_is_accepted(relationship_db):
     ] == "mentor"
 
 
-def test_durable_llm_relationship_without_exact_evidence_is_quarantined(relationship_db):
+def test_durable_llm_relationship_without_exact_evidence_is_provisional(relationship_db):
     tx = "missing-evidence"
     engine = _engine_with_characters(relationship_db, tx, "Quinier", "Frondier")
     decision = engine.merge_candidate(
@@ -192,8 +192,9 @@ def test_durable_llm_relationship_without_exact_evidence_is_quarantined(relation
         source_text="Quinier and Frondier entered the room.",
         known_character_names=["Quinier", "Frondier"],
     )
-    assert decision.status == "quarantined"
+    assert decision.status == "provisional"
     assert relationship_db.get_relationship_edges(tx, statuses=["accepted"]) == []
+    assert len(relationship_db.get_relationship_edges(tx, statuses=["provisional"])) == 1
     assert relationship_db.get_relationship_conflicts(tx, status="open")[0][
         "validator"
     ] == "source_evidence"
@@ -359,7 +360,7 @@ def test_partial_latin_name_does_not_resolve_tomio(relationship_db):
         known_character_names=["Tomio Momozawa", "Apollo Rainbow"],
         language="English",
     )
-    assert decision.status == "quarantined"
+    assert decision.status == "provisional"
     assert relationship_db.get_relationship_node_by_name(tx, "tom") is None
 
 
@@ -583,7 +584,7 @@ async def test_llm_judge_cannot_bypass_missing_source_evidence(relationship_db):
         source_text="A and B entered the room.",
         known_character_names=["A", "B"],
     )
-    assert decision.status == "quarantined"
+    assert decision.status == "provisional"
     assert decision.validator == "source_evidence"
 
 
@@ -957,3 +958,82 @@ def test_relationship_beta_routes_support_audit_lock_quarantine_and_delete(
             f"/api/translation/{tx}/relationship-edges/{decision.edge_id}"
         )
         assert deleted.status_code == 200
+
+
+def test_symmetric_rival_allows_independent_age_and_rank(relationship_db):
+    tx = "rival-dimensions-v2"
+    engine = _engine_with_characters(relationship_db, tx, "A", "B")
+    source = "A and B were rivals despite A holding the lower rank."
+    decision = engine.merge_candidate(
+        tx, 0, RelationshipCandidate(
+            source="A", target="B", relationship_type="rival",
+            direction="symmetric", hierarchy="source_junior",
+            relative_age="same_age", rank_relation="source_lower",
+            evidence_quote=source, confidence=0.95,
+        ), source_text=source, known_character_names=["A", "B"],
+        language="English",
+    )
+    assert decision.status == "accepted"
+
+
+def test_addressing_mirror_is_excluded_from_reverse_semantics(relationship_db):
+    tx = "addressing-isolation-v2"
+    engine = _engine_with_characters(relationship_db, tx, "Mentor", "Student")
+    mentor = relationship_db.get_relationship_node_by_name(tx, "mentor")
+    student = relationship_db.get_relationship_node_by_name(tx, "student")
+    relationship_db.upsert_relationship_edge(
+        tx, student["id"], mentor["id"], "addressing", "directed",
+        "durable", "source_junior", "unknown", "neutral", 1.0,
+        "accepted", 0, 0, "db_addressing",
+    )
+    source = "Mentor is the teacher of Student."
+    decision = engine.merge_candidate(
+        tx, 1, RelationshipCandidate(
+            source="Mentor", target="Student", relationship_type="mentor",
+            evidence_quote=source, confidence=0.99,
+        ), source_text=source, known_character_names=["Mentor", "Student"],
+    )
+    assert decision.status == "accepted"
+
+
+def test_independent_asymmetric_relationship_families_can_coexist(relationship_db):
+    tx = "independent-role-families-v2"
+    engine = _engine_with_characters(relationship_db, tx, "A", "B")
+    assert engine.merge_candidate(
+        tx, 0, _manual_candidate("B", "A", "mentor")
+    ).status == "accepted"
+    assert engine.merge_candidate(
+        tx, 1, _manual_candidate("A", "B", "subordinate")
+    ).status == "accepted"
+
+
+def test_unicode_punctuation_evidence_records_normalized_offsets(relationship_db):
+    tx = "normalized-evidence-v2"
+    engine = _engine_with_characters(relationship_db, tx, "Apollo", "Teatan")
+    source = "“Apollo—Teatan” were trusted allies."
+    quote = '\"Apollo-Teatan\" were trusted allies.'
+    decision = engine.merge_candidate(
+        tx, 0, RelationshipCandidate(
+            source="Apollo", target="Teatan", relationship_type="ally",
+            evidence_quote=quote, confidence=0.94,
+        ), source_text=source, known_character_names=["Apollo", "Teatan"],
+    )
+    assert decision.status == "accepted"
+    evidence = relationship_db.get_relationship_evidence(tx, decision.edge_id)[0]
+    assert evidence["match_kind"] == "normalized"
+    assert evidence["source_start"] == 0
+    assert evidence["source_end"] > evidence["source_start"]
+
+
+def test_provisional_conflicts_are_deduplicated(relationship_db):
+    tx = "deduplicated-provisional-v2"
+    engine = _engine_with_characters(relationship_db, tx, "A", "B")
+    candidate = RelationshipCandidate(
+        source="A", target="B", relationship_type="friend", confidence=0.8,
+    )
+    for chunk_index in (0, 1):
+        assert engine.merge_candidate(
+            tx, chunk_index, candidate, source_text="A and B appeared.",
+            known_character_names=["A", "B"],
+        ).status == "provisional"
+    assert len(relationship_db.get_relationship_conflicts(tx, status="open")) == 1

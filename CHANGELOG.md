@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.15.0-beta.43 - 2026-07-13
+
+### Added
+
+- **Native Narrator Policies for All Supported Languages**:
+  Added evidence-gated explicit, pro-drop, omission-preferred, and
+  persona-required narrator policies for all 17 target languages. The same
+  lifecycle now runs through TXT, EPUB, SRT, and DOCX translation paths.
+- **Transparent Relationship Decisions**:
+  Relationship graph responses and the context interface now expose provisional
+  state, evidence tier, reason code, supporting units, match kind, and validator
+  version instead of a generic heuristic explanation.
+
+### Changed
+
+- **Retryable Narrator Bootstrap and Automatic Backfill**:
+  Ambiguous bootstrap attempts retry at 2, 4, 8, and 12 completed units and
+  every four units afterward. Voice evidence is persisted only against final
+  repaired output, and newly activated profiles queue localized Senior Editor
+  corrections for earlier completed units before job cleanup.
+- **Relationship Reasoning Contract v2**:
+  Social relationship type, age, rank, and conversational hierarchy are
+  independent dimensions. Missing evidence, ambiguous aliases, and judge
+  disagreement remain provisional; only deterministic contradictions are
+  quarantined.
+
+### Fixed
+
+- **Narrator Profile Never Appearing After an Ambiguous First Attempt**:
+  Bootstrap claims now include a completed-unit boundary and contract version,
+  so an inconclusive two-unit sample no longer blocks analysis after additional
+  chunks finish.
+- **False Relationship Quarantines**:
+  Addressing mirrors no longer participate in semantic reverse validation,
+  symmetric relationships can coexist with unequal rank or age, inverse roles
+  are canonicalized from consistent evidence, and Unicode punctuation variants
+  retain auditable source offsets.
+- **Concurrent GitHub Release Publication**:
+  Windows and macOS builds now feed one release publisher, which verifies the
+  complete asset set and generates SHA-256 checksums before publishing.
+
 ## 1.15.0-beta.42 - 2026-07-13
 
 ### Added

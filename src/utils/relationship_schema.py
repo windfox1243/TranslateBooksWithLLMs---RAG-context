@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 
-RELATIONSHIP_CONTRACT_VERSION = "1.0"
+RELATIONSHIP_CONTRACT_VERSION = "2.0"
 
 SYMMETRIC_RELATIONSHIP_TYPES = frozenset({
     "ally",

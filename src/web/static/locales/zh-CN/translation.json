@@ -240,7 +240,7 @@
   "context_preview_title": "上下文预览",
   "context_guide_general": "全局上下文保存规范角色、性别、别名和术语，并用于后续分块；编辑后会启动上下文重新同步。",
   "context_guide_current_addressing": "启用的说话者→听者称呼会直接指导后续对话。被隔离的规则在口语证据修正并验证前不会进入提示词。",
-  "context_guide_relationship_evolution": "关系事实根据源文证据演变。已接受事实会指导后续上下文；被隔离事实仍可见，但不会影响翻译。",
+  "context_guide_relationship_evolution": "关系事实根据源文证据演变。已接受事实会指导后续上下文，临时事实等待更多证据，被隔离事实仍可见但不会影响翻译。",
   "context_guide_editor_diagnostics": "“需要审阅”表示已保留有效草稿并附有编辑意见，并非翻译失败。严重失败表示存在确定性或结构性阻断。",
   "context_guide_raw": "原始视图显示持久上下文。“最新状态”为当前版本；分块快照显示当时后续分块已知的信息。编辑快照会重新同步后续分块。",
   "context_edit_resync_title": "编辑此快照并重新同步所有后续分块",
@@ -356,5 +356,6 @@
   "editor_retry_timeout": "高级编辑重试未能在界面等待时间内完成。",
   "context_narrator_voice_tab": "叙述者声音", "context_guide_narrator_voice": "基于证据的叙述者档案可跨章节生效，但不会覆盖对话专用称谓。锁定的手动档案优先。", "context_narrator_add": "+ 添加叙述者档案", "context_narrator_empty": "尚未建立叙述者声音档案。",
   "context_narrator_profile_summary": "{{key}}（{{identity}}）· 视角：{{pov}} · 范围：{{scope}} · 置信度：{{confidence}} · 分块：{{start}}–{{end}} · {{lock}}\n{{dimensions}}", "context_narrator_locked": "已锁定", "context_narrator_unlocked": "未锁定", "context_narrator_lock": "锁定", "context_narrator_unlock": "解锁", "context_narrator_conflict": "分块 {{chunk}}：{{reason}}", "context_narrator_accept": "接受转换", "context_narrator_reject": "拒绝转换", "context_narrator_editor_title": "叙述者声音档案",
+  "context_narrator_diagnostics": "已完成单元：{{completed}} · 分析次数：{{attempts}} · 下次重试：{{next}} · 待回填：{{pending}}", "context_relationship_summary": "{{source}} → {{target}}\n  {{type}} · {{hierarchy}} · {{scope}}\n  {{status}} · 证据：{{evidence}} · 支持单元：{{units}} · 原因：{{reason}}", "context_relationship_status_accepted": "已根据源文证据接受", "context_relationship_status_provisional": "等待更多证据", "context_relationship_status_quarantined": "因语义矛盾而隔离", "context_relationship_status_unknown": "未知验证状态",
   "context_narrator_field_narrator_key": "叙述者键", "context_narrator_field_narrator_identity": "叙述者身份", "context_narrator_field_point_of_view": "叙述视角", "context_narrator_field_self_reference": "自称", "context_narrator_field_formality": "正式度 / 礼貌度", "context_narrator_field_speech_level": "语言层级", "context_narrator_field_gender": "性别", "context_narrator_field_number": "数", "context_narrator_field_dialect": "方言 / 地域语域", "context_narrator_field_tense": "叙述时态", "context_narrator_field_stylistic_markers": "风格标记（逗号分隔）", "context_narrator_field_start_chunk_index": "起始分块索引", "context_narrator_field_end_chunk_index": "结束分块索引（留空表示持续）"
 }

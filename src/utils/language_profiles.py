@@ -20,6 +20,16 @@ class TextMatchPolicy:
 
 
 @dataclass(frozen=True)
+class NarratorDefaultPolicy:
+    """Safe provisional first-person behavior for one target language."""
+
+    strategy: str = "evidence_only"
+    self_reference: str = ""
+    fallback_self_reference: str = ""
+    requires_first_person_evidence: bool = True
+
+
+@dataclass(frozen=True)
 class LanguageProfile:
     """Internal language profile for prompt, matching, and addressing behavior."""
 
@@ -37,6 +47,9 @@ class LanguageProfile:
     residue_social_terms: FrozenSet[str] = field(default_factory=frozenset)
     narrator_voice_dimensions: Tuple[str, ...] = (
         "point_of_view", "number", "tense", "style",
+    )
+    narrator_default_policy: NarratorDefaultPolicy = field(
+        default_factory=NarratorDefaultPolicy
     )
 
 
@@ -117,6 +130,26 @@ _VOICE_DIMENSIONS: Dict[str, Tuple[str, ...]] = {
     "tr": ("point_of_view", "number", "gender", "formality", "tense", "style"),
 }
 
+_NARRATOR_DEFAULT_POLICIES: Dict[str, NarratorDefaultPolicy] = {
+    "en": NarratorDefaultPolicy("explicit", "I"),
+    "fr": NarratorDefaultPolicy("explicit", "je"),
+    "de": NarratorDefaultPolicy("explicit", "ich"),
+    "vi": NarratorDefaultPolicy("explicit", "tôi"),
+    "ru": NarratorDefaultPolicy("explicit", "я"),
+    "hi": NarratorDefaultPolicy("explicit", "मैं"),
+    "nl": NarratorDefaultPolicy("explicit", "ik"),
+    "es": NarratorDefaultPolicy("pro_drop"),
+    "ar": NarratorDefaultPolicy("pro_drop"),
+    "it": NarratorDefaultPolicy("pro_drop"),
+    "pt": NarratorDefaultPolicy("pro_drop"),
+    "pl": NarratorDefaultPolicy("pro_drop"),
+    "tr": NarratorDefaultPolicy("pro_drop"),
+    "zh": NarratorDefaultPolicy("omission_preferred", "", "我"),
+    "ja": NarratorDefaultPolicy("omission_preferred", "", "私"),
+    "ko": NarratorDefaultPolicy("omission_preferred", "", "저"),
+    "th": NarratorDefaultPolicy("persona_required"),
+}
+
 _ALIASES = {
     alias.casefold(): code
     for code, profile in _PROFILES.items()
@@ -143,10 +176,18 @@ def get_language_profile(language: str | None) -> LanguageProfile:
         return GENERIC_PROFILE
     profile = _PROFILES.get(_ALIASES.get(key, ""), GENERIC_PROFILE)
     dimensions = _VOICE_DIMENSIONS.get(profile.code)
-    if not dimensions or profile.narrator_voice_dimensions == dimensions:
+    default_policy = _NARRATOR_DEFAULT_POLICIES.get(
+        profile.code, NarratorDefaultPolicy()
+    )
+    if (
+        (not dimensions or profile.narrator_voice_dimensions == dimensions)
+        and profile.narrator_default_policy == default_policy
+    ):
         return profile
     return LanguageProfile(**{
-        **profile.__dict__, "narrator_voice_dimensions": dimensions,
+        **profile.__dict__,
+        "narrator_voice_dimensions": dimensions or profile.narrator_voice_dimensions,
+        "narrator_default_policy": default_policy,
     })
 
 

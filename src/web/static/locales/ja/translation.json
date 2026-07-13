@@ -240,7 +240,7 @@
   "context_preview_title": "コンテキストプレビュー",
   "context_guide_general": "グローバルコンテキストは正式な人物、性別、別名、用語を保存し、後続チャンクで再利用されます。編集すると再同期が始まります。",
   "context_guide_current_addressing": "有効な話者→聞き手の呼称は後続の会話を直接導きます。隔離されたルールは、発話証拠が修正・検証されるまでプロンプトから除外されます。",
-  "context_guide_relationship_evolution": "関係情報は原文の証拠から更新されます。承認済みの情報は後続に反映され、隔離された情報は表示のみで翻訳に影響しません。",
+  "context_guide_relationship_evolution": "関係情報は原文の証拠から更新されます。承認済みの情報は後続に反映され、暫定情報は裏付けを待ち、隔離された情報は表示のみで翻訳に影響しません。",
   "context_guide_editor_diagnostics": "要確認は、有効な下書きを編集上の指摘付きで保持した状態であり、翻訳失敗ではありません。重大な失敗は決定的または構造的な問題を示します。",
   "context_guide_raw": "Raw View は永続コンテキストを表示します。最新状態が現在版で、チャンクのスナップショットは当時の知識を示します。編集すると後続チャンクが再同期されます。",
   "context_edit_resync_title": "このスナップショットを編集して、以降のすべてのチャンクを再同期します",
@@ -356,5 +356,6 @@
   "editor_retry_timeout": "エディターの再試行は画面の待機時間内に完了しませんでした。",
   "context_narrator_voice_tab": "語り手の声", "context_guide_narrator_voice": "根拠に基づく語り手プロファイルは章をまたいで適用されますが、会話固有の呼称を上書きしません。ロック済みの手動プロファイルが優先されます。", "context_narrator_add": "+ 語り手プロファイルを追加", "context_narrator_empty": "語り手の声のプロファイルはまだ確立されていません。",
   "context_narrator_profile_summary": "{{key}}（{{identity}}）· 視点：{{pov}} · 範囲：{{scope}} · 信頼度：{{confidence}} · チャンク：{{start}}–{{end}} · {{lock}}\n{{dimensions}}", "context_narrator_locked": "ロック済み", "context_narrator_unlocked": "未ロック", "context_narrator_lock": "ロック", "context_narrator_unlock": "ロック解除", "context_narrator_conflict": "チャンク {{chunk}}：{{reason}}", "context_narrator_accept": "遷移を承認", "context_narrator_reject": "遷移を却下", "context_narrator_editor_title": "語り手の声プロファイル",
+  "context_narrator_diagnostics": "完了単位：{{completed}} · 分析回数：{{attempts}} · 次回再試行：{{next}} · バックフィル待ち：{{pending}}", "context_relationship_summary": "{{source}} → {{target}}\n  {{type}} · {{hierarchy}} · {{scope}}\n  {{status}} · 根拠：{{evidence}} · 支持単位：{{units}} · 理由：{{reason}}", "context_relationship_status_accepted": "原文の根拠により承認", "context_relationship_status_provisional": "裏付け待ち", "context_relationship_status_quarantined": "意味上の矛盾により隔離", "context_relationship_status_unknown": "検証状態不明",
   "context_narrator_field_narrator_key": "語り手キー", "context_narrator_field_narrator_identity": "語り手の識別", "context_narrator_field_point_of_view": "視点", "context_narrator_field_self_reference": "自称", "context_narrator_field_formality": "形式度 / 丁寧さ", "context_narrator_field_speech_level": "発話レベル", "context_narrator_field_gender": "性別", "context_narrator_field_number": "数", "context_narrator_field_dialect": "方言 / 地域レジスター", "context_narrator_field_tense": "語りの時制", "context_narrator_field_stylistic_markers": "文体マーカー（カンマ区切り）", "context_narrator_field_start_chunk_index": "開始チャンク番号", "context_narrator_field_end_chunk_index": "終了チャンク番号（継続時は空欄）"
 }
