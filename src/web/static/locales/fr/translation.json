@@ -349,7 +349,7 @@
   "editor_retry": "Relancer l'éditeur",
   "editor_retry_queued": "En attente...",
   "editor_retry_running": "Nouvelle tentative...",
-  "editor_retry_started": "La nouvelle tentative de l'éditeur principal a démarré immédiatement.",
+  "editor_retry_started": "La nouvelle tentative de l'éditeur principal est en file d'attente.",
   "editor_retry_succeeded": "La nouvelle tentative est terminée et le brouillon validé a été enregistré.",
   "editor_retry_review_required": "La nouvelle tentative est terminée, mais des problèmes majeurs exigent encore une vérification.",
   "editor_retry_failed": "Échec de la nouvelle tentative de l'éditeur : {{error}}",

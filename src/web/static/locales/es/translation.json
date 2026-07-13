@@ -349,7 +349,7 @@
   "editor_retry": "Reintentar editor",
   "editor_retry_queued": "En cola...",
   "editor_retry_running": "Reintentando...",
-  "editor_retry_started": "El reintento del editor principal comenzó inmediatamente.",
+  "editor_retry_started": "El reintento del editor principal está en cola.",
   "editor_retry_succeeded": "El reintento terminó y guardó el borrador validado.",
   "editor_retry_review_required": "El reintento terminó, pero aún hay problemas importantes que requieren revisión.",
   "editor_retry_failed": "Error en el reintento del editor: {{error}}",

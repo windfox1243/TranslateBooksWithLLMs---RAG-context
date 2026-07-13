@@ -403,11 +403,16 @@ def _build_corrective_refinement_config(config, output_filepath=None):
     return correction
 
 
-def _active_translation_conflict(state_manager, *, action="resume"):
+def _active_translation_conflict(
+    state_manager,
+    *,
+    action="resume",
+    ignore_translation_id=None,
+):
     active_translations = []
     for tid, tdata in state_manager.get_all_translations().items():
         status = tdata.get('status')
-        if status in ['running', 'queued']:
+        if status in ['running', 'queued'] and tid != ignore_translation_id:
             active_translations.append({
                 'id': tid,
                 'status': status,
@@ -640,6 +645,119 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                         "log": (
                             "Context re-sync finished, but "
                             f"translation could not resume: {e}"
+                        ),
+                    },
+                    state_manager,
+                )
+
+        return resume_cb
+
+    def make_editor_retry_auto_resume_callback(translation_id):
+        """Resume a job paused specifically for an editor-only retry."""
+
+        def resume_cb():
+            logger.info(
+                f"Auto-resuming translation {translation_id} after editor retry"
+            )
+            try:
+                fresh_checkpoint = (
+                    state_manager.checkpoint_manager.load_checkpoint(
+                        translation_id
+                    )
+                )
+                if not fresh_checkpoint:
+                    raise RuntimeError(
+                        "Translation checkpoint is unavailable."
+                    )
+                config = copy.deepcopy(fresh_checkpoint["job"]["config"])
+
+                preserved_path = config.get("preserved_input_path")
+                if not preserved_path:
+                    preserved_path = (
+                        state_manager.checkpoint_manager
+                        .get_preserved_input_path(translation_id)
+                    )
+                if not preserved_path:
+                    raise RuntimeError(
+                        "The preserved input file is unavailable."
+                    )
+
+                config["file_path"] = preserved_path
+                config["resume_from_index"] = fresh_checkpoint[
+                    "resume_from_index"
+                ]
+                config["is_resume"] = True
+
+                live_config = (
+                    state_manager.get_translation_field(
+                        translation_id,
+                        "config",
+                    )
+                    or {}
+                )
+                provider = (config.get("llm_provider") or "ollama").lower()
+                live_key = live_config.get(f"{provider}_api_key")
+                _rehydrate_resume_credentials(
+                    config,
+                    {"api_key": live_key} if live_key else None,
+                )
+                credential_error = _provider_credentials_error(config)
+                if credential_error is not None:
+                    raise RuntimeError(credential_error["message"])
+
+                if not state_manager.exists(translation_id):
+                    if not state_manager.restore_job_from_checkpoint(
+                        translation_id
+                    ):
+                        raise RuntimeError(
+                            "Could not restore the translation job."
+                        )
+
+                state_manager.set_interrupted(translation_id, False)
+                state_manager.set_translation_field(
+                    translation_id,
+                    "status",
+                    "running",
+                )
+                state_manager.checkpoint_manager.mark_running(translation_id)
+                emit_update(
+                    socketio,
+                    translation_id,
+                    {
+                        "status": "running",
+                        "log": (
+                            "Translation auto-resumed after Senior Editor "
+                            "retry."
+                        ),
+                    },
+                    state_manager,
+                )
+                start_translation_job(translation_id, config)
+            except Exception as exc:
+                logger.error(
+                    "Failed to auto-resume translation after Senior Editor "
+                    f"retry: {exc}"
+                )
+                if state_manager.exists(translation_id):
+                    state_manager.set_translation_field(
+                        translation_id,
+                        "status",
+                        "error",
+                    )
+                    state_manager.set_translation_field(
+                        translation_id,
+                        "error",
+                        str(exc),
+                    )
+                emit_update(
+                    socketio,
+                    translation_id,
+                    {
+                        "status": "error",
+                        "error": str(exc),
+                        "log": (
+                            "Senior Editor retry finished, but translation "
+                            f"could not resume: {exc}"
                         ),
                     },
                     state_manager,
@@ -2090,10 +2208,16 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         methods=['POST'],
     )
     def retry_editor_route(translation_id, chunk_index):
-        """Start an immediate editor-only retry for a preserved draft."""
+        """Queue an editor-only retry, pausing the same active job safely."""
+        live_job = state_manager.get_translation(translation_id) or {}
+        live_status = live_job.get("status")
+        pause_active_job = live_status == "running"
         active_error = _active_translation_conflict(
             state_manager,
             action="retry the Senior Editor",
+            ignore_translation_id=(
+                translation_id if pause_active_job else None
+            ),
         )
         if active_error is not None:
             return active_error
@@ -2134,6 +2258,8 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "status": "queued",
             "requested_at": int(time.time()),
             "source_run_id": latest_run.get("id"),
+            "pause_requested": pause_active_job,
+            "auto_resume": pause_active_job,
         }
         chunk_data["editor_retry"] = queued_state
         chunk_data["editor_retry_pending"] = True
@@ -2149,8 +2275,58 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             _release_editor_retry(translation_id, chunk_index)
             return jsonify({"error": "Could not queue editor retry"}), 500
 
+        if pause_active_job:
+            state_manager.set_interrupted(translation_id, True)
+            emit_update(
+                socketio,
+                translation_id,
+                {
+                    "log": (
+                        "Senior Editor retry requested: waiting for the active "
+                        "chunk to finish before pausing translation."
+                    ),
+                },
+                state_manager,
+            )
+
         def run_retry_background():
+            paused_status = None
             try:
+                if pause_active_job:
+                    live_config = live_job.get("config") or {}
+                    try:
+                        pause_timeout = int(
+                            live_config.get("request_timeout", 120)
+                        ) + 15
+                    except (TypeError, ValueError):
+                        pause_timeout = 135
+                    pause_timeout = max(60, min(pause_timeout, 600))
+                    for _ in range(pause_timeout):
+                        status_data = (
+                            state_manager.get_translation(translation_id) or {}
+                        )
+                        paused_status = status_data.get("status")
+                        if not paused_status:
+                            persisted_job = (
+                                state_manager.checkpoint_manager.get_job(
+                                    translation_id
+                                ) or {}
+                            )
+                            paused_status = persisted_job.get("status")
+                        if paused_status in {
+                            "paused", "interrupted", "partial", "completed",
+                            "failed", "error",
+                        }:
+                            break
+                        time.sleep(1)
+                    else:
+                        state_manager.set_interrupted(translation_id, False)
+                        raise TimeoutError(
+                            "Active translation did not pause within "
+                            f"{pause_timeout} seconds; Senior Editor retry "
+                            "aborted to avoid racing with translation."
+                        )
+
                 latest_checkpoint = (
                     state_manager.checkpoint_manager.load_checkpoint(
                         translation_id
@@ -2204,6 +2380,16 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                     chunk_status="completed",
                 )
             finally:
+                if pause_active_job and paused_status in {
+                    "paused", "interrupted", "partial",
+                }:
+                    make_editor_retry_auto_resume_callback(
+                        translation_id
+                    )()
+                elif pause_active_job and paused_status in {
+                    "completed", "failed", "error",
+                }:
+                    state_manager.set_interrupted(translation_id, False)
                 _release_editor_retry(translation_id, chunk_index)
 
         thread = threading.Thread(

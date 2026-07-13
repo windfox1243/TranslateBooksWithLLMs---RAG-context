@@ -377,6 +377,7 @@ async def translate_paragraphs_plain(
 
     context_session = None
     checkpoint_context_data_by_index: Dict[int, Dict] = {}
+    completed_translations_by_index: Dict[int, str] = {}
     failed_editor_drafts_by_index: Dict[int, str] = {}
     continuation_reused_indices = set()
     continuation_context_seed = None
@@ -413,6 +414,14 @@ async def translate_paragraphs_plain(
         for row in checkpoint_manager.db.get_chunks(translation_id) or []:
             row_index = row.get("chunk_index")
             row_data = row.get("chunk_data") or {}
+            if (
+                isinstance(row_index, int)
+                and row.get("status") in {"completed", "partial"}
+                and row.get("translated_text")
+            ):
+                completed_translations_by_index[row_index] = row.get(
+                    "translated_text"
+                )
             if (
                 isinstance(row_index, int)
                 and global_chunk_offset
@@ -708,6 +717,26 @@ async def translate_paragraphs_plain(
         unit_prompt_options = dict(prompt_options or {})
         unit_prompt_options.setdefault("source_language", source_language)
         unit_prompt_options.setdefault("target_language", target_language)
+        if sequential:
+            from src.utils.translation_quality import (
+                build_narrative_voice_context,
+            )
+
+            previous_translations = [
+                text
+                for index, text in sorted(
+                    completed_translations_by_index.items()
+                )
+                if index < global_chunk_offset + i
+            ]
+            narrative_voice_context = build_narrative_voice_context(
+                previous_translations,
+                target_language,
+            )
+            if narrative_voice_context:
+                unit_prompt_options["narrative_voice_context"] = (
+                    narrative_voice_context
+                )
         directed_context = build_directed_addressing_prompt_context(
             translation_id=translation_id or "",
             db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
@@ -948,6 +977,9 @@ async def translate_paragraphs_plain(
                 cleaned = strip_hallucinated_markup(
                     cleaned, chunks[i].get('main_content', ''))
                 translated_parts[i] = cleaned
+                completed_translations_by_index[
+                    global_chunk_offset + i
+                ] = cleaned
                 stats.successful_first_try += 1
                 chunk_succeeded = True
                 if sequential:

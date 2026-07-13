@@ -2021,6 +2021,9 @@ async def run_chunk_reflection_pass(
         ensure_ascii=False,
         indent=2,
     ) if residue_findings else ""
+    narrative_voice_context = str(
+        options.get("narrative_voice_context") or ""
+    ).strip()
 
     if log_callback:
         emit_progress_log(
@@ -2055,6 +2058,7 @@ async def run_chunk_reflection_pass(
         custom_instructions=custom_instructions,
         glossary_block=glossary_block,
         deterministic_findings=deterministic_findings,
+        narrative_voice_context=narrative_voice_context,
         source_available=source_available,
         native_schema=True,
     )
@@ -2066,6 +2070,7 @@ async def run_chunk_reflection_pass(
         custom_instructions=custom_instructions,
         glossary_block=glossary_block,
         deterministic_findings=deterministic_findings,
+        narrative_voice_context=narrative_voice_context,
         source_available=source_available,
         native_schema=False,
     )
@@ -2620,6 +2625,7 @@ async def run_chunk_reflection_pass(
             glossary_block=glossary_block,
             novel_context=active_novel_context,
             source_available=source_available,
+            narrative_voice_context=narrative_voice_context,
         )
         validation_errors = []
         repair_response = None

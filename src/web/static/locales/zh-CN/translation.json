@@ -349,7 +349,7 @@
   "editor_retry": "重试编辑器",
   "editor_retry_queued": "已排队...",
   "editor_retry_running": "正在重试...",
-  "editor_retry_started": "高级编辑重试已立即开始。",
+  "editor_retry_started": "高级编辑重试已加入队列。",
   "editor_retry_succeeded": "高级编辑重试已完成并保存经过验证的草稿。",
   "editor_retry_review_required": "高级编辑重试已完成，但仍有重大问题需要人工检查。",
   "editor_retry_failed": "高级编辑重试失败：{{error}}",

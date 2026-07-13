@@ -349,7 +349,7 @@
   "editor_retry": "Retry editor",
   "editor_retry_queued": "Queued...",
   "editor_retry_running": "Retrying...",
-  "editor_retry_started": "Senior Editor retry started immediately.",
+  "editor_retry_started": "Senior Editor retry queued.",
   "editor_retry_succeeded": "Senior Editor retry completed and saved the validated draft.",
   "editor_retry_review_required": "Senior Editor retry completed, but major findings still require review.",
   "editor_retry_failed": "Senior Editor retry failed: {{error}}",

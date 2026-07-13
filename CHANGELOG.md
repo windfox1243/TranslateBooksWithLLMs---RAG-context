@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.15.0-beta.41 - 2026-07-13
+
+### Fixed
+
+- **Senior Editor Retry During Translation**:
+  Retrying an eligible Senior Editor result now requests a safe pause when the
+  same translation is active, waits for the current chunk boundary, performs
+  the editor-only retry, and automatically resumes from the checkpoint. A
+  different active translation still prevents the retry.
+- **Vietnamese Narrator Pronoun Drift**:
+  Senior Editor audit, repair, and manual retry prompts now receive a compact
+  narrator-voice baseline derived from prior completed chunks. Pair-specific
+  dialogue addressing such as `tớ/cậu` can no longer silently override an
+  established first-person narration style such as `tôi` across chapters.
+
 ## 1.15.0-beta.40 - 2026-07-13
 
 ### Fixed
