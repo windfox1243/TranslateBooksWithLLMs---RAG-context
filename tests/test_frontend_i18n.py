@@ -528,6 +528,12 @@ def test_editor_model_picker_is_conditional_searchable_and_inheritable() -> None
     assert "dataset?.persistedValue" in settings_manager
     assert "envSettings['EDITOR_PROVIDER']" in settings_manager
     assert "envSettings['EDITOR_MODEL']" in settings_manager
+    assert "{ id: 'editorProvider', event: 'change' }" in settings_manager
+    assert "{ id: 'editorModel', event: 'change' }" in settings_manager
+    assert "{ id: 'editorApiKey', event: 'input' }" in settings_manager
+    assert "['saveSettingsBtn', 'editorSaveSettingsBtn']" in settings_manager
+    assert 'id="editorSaveSettingsBtn"' in template
+    assert 'data-i18n="settings:save_settings"' in template
     assert "editor_provider: DomHelpers.getElement('enableReflection')?.checked" in form_manager
     assert "config.editor_model !== undefined" in form_manager
     assert 'id="editorKeyOptions"' in template

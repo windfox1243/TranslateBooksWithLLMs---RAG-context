@@ -35,6 +35,10 @@
   First-person narration such as Apollo Rainbow's Vietnamese `tôi` remains
   isolated from dialogue-specific `tớ/cậu`, while supported chapter, scene, and
   explicit narrator transitions remain possible.
+- **Senior Editor Settings Save Action**:
+  The Senior Editor provider, model, and separate API-key fields now enable both
+  `.env` save actions, with a directly accessible save button in the Senior
+  Editor section.
 
 ## 1.15.0-beta.41 - 2026-07-13
 

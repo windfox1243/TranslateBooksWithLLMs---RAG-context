@@ -165,6 +165,9 @@ export const SettingsManager = {
             { id: 'disableAutoPause', event: 'change' },
             { id: 'bypassContextGating', event: 'change' },
             { id: 'enableReflection', event: 'change' },
+            { id: 'editorProvider', event: 'change' },
+            { id: 'editorModel', event: 'change' },
+            { id: 'editorApiKey', event: 'input' },
             { id: 'parallelWorkers', event: 'input' }
         ];
 
@@ -181,16 +184,20 @@ export const SettingsManager = {
      */
     _markEnvDirty() {
         if (isInitializing) return;
-        const btn = DomHelpers.getElement('saveSettingsBtn');
-        if (btn) btn.disabled = false;
+        ['saveSettingsBtn', 'editorSaveSettingsBtn'].forEach((id) => {
+            const btn = DomHelpers.getElement(id);
+            if (btn) btn.disabled = false;
+        });
     },
 
     /**
      * Disable the .env Save button — nothing to save
      */
     _clearEnvDirty() {
-        const btn = DomHelpers.getElement('saveSettingsBtn');
-        if (btn) btn.disabled = true;
+        ['saveSettingsBtn', 'editorSaveSettingsBtn'].forEach((id) => {
+            const btn = DomHelpers.getElement(id);
+            if (btn) btn.disabled = true;
+        });
     },
 
     /**
