@@ -517,6 +517,7 @@ class GenericTranslator:
                     target_language=target_language,
                     model_name=str(prompt_options.get("editor_model") or model_name),
                     llm_client=prompt_options.get("_editor_llm_client") or llm_client,
+                    file_type=self.adapter.format_name,
                 )
 
             async def _translate_unit(i, analyze_context=True):
@@ -543,6 +544,7 @@ class GenericTranslator:
                         target_language=target_language,
                         model_name=str(prompt_options.get("editor_model") or model_name),
                         llm_client=prompt_options.get("_editor_llm_client") or llm_client,
+                        file_type=self.adapter.format_name,
                     )
 
                 base_instructions = (prompt_options or {}).get('custom_instructions', '')

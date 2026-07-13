@@ -1,13 +1,11 @@
 name: Build macOS Executable
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-macos:
@@ -127,7 +125,7 @@ jobs:
         ## Usage
 
         - Web UI: http://localhost:5000
-        - Supported formats: .txt, .epub, .srt, .docx, .odt
+        - Supported formats: .txt, .epub, .srt, .docx
         - Output files: TranslateBook_Data/translated_files/
 
         ## Links
@@ -167,40 +165,3 @@ jobs:
         echo "**Artifacts:**" >> $GITHUB_STEP_SUMMARY
         echo "- TranslateBook-macOS-${{ matrix.artifact_suffix }}.zip (executable + README)" >> $GITHUB_STEP_SUMMARY
         echo "- TranslateBook (standalone)" >> $GITHUB_STEP_SUMMARY
-
-  create-release:
-    needs: build-macos
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        pattern: TranslateBook-macOS-*
-        merge-multiple: false
-
-    - name: List downloaded files
-      run: |
-        ls -la
-        find . -name "*.zip" -type f
-
-    - name: Extract release notes
-      run: |
-        python3 scripts/extract_release_notes.py CHANGELOG.md ${{ github.ref_name }} RELEASE_NOTES.md
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        name: ${{ github.ref_name }}
-        files: |
-          TranslateBook-macOS-Intel/TranslateBook-macOS-Intel.zip
-          TranslateBook-macOS-AppleSilicon/TranslateBook-macOS-AppleSilicon.zip
-        body_path: RELEASE_NOTES.md
-        draft: false
-        prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

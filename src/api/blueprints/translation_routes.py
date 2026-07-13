@@ -2133,6 +2133,11 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         """Get relationship graph nodes and edges for a translation job."""
 
         db = state_manager.checkpoint_manager.db
+        from src.utils.relationship_reasoning_engine import (
+            migrate_relationship_reasoning_v2,
+        )
+
+        migration = migrate_relationship_reasoning_v2(db, translation_id)
         status = request.args.get('status')
         statuses = [status] if status else None
         nodes = db.get_relationship_nodes(translation_id)
@@ -2144,6 +2149,8 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "edges": edges,
             "node_count": len(nodes),
             "edge_count": len(edges),
+            "validator_version": 2,
+            "migration": migration,
         }), 200
 
     @bp.route('/api/translation/<translation_id>/editor-diagnostics', methods=['GET'])
@@ -2548,12 +2555,31 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
 
         db = state_manager.checkpoint_manager.db
         if request.method == 'GET':
+            from src.utils.narrator_voice import (
+                eligible_bootstrap_boundary,
+                narrator_policy_payload,
+            )
+
             timeline = db.get_narrator_voice_timeline(translation_id)
+            chunks = db.get_chunks(translation_id)
             stale_chunks = [
                 int(item.get("chunk_index", 0))
-                for item in db.get_chunks(translation_id)
+                for item in chunks
                 if (item.get("chunk_data") or {}).get("narrator_voice_stale")
             ]
+            completed_count = sum(
+                1 for item in chunks
+                if item.get("status") in {"completed", "partial"}
+                and str(item.get("translated_text") or "").strip()
+            )
+            job = db.get_job(translation_id) or {}
+            config = job.get("config") or {}
+            target_language = str(config.get("target_language") or "")
+            boundary = eligible_bootstrap_boundary(completed_count)
+            attempts = db.get_narrator_bootstrap_attempts(translation_id)
+            attempts.extend(db.get_narrator_bootstrap_attempts(
+                translation_id, attempt_kind="preflight",
+            ))
             return jsonify({
                 "translation_id": translation_id,
                 "context_revision": _context_revision(translation_id),
@@ -2564,6 +2590,22 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                 "transitions": timeline["transitions"],
                 "conflicts": db.get_narrator_voice_conflicts(translation_id),
                 "stale_chunks": stale_chunks,
+                "policy": narrator_policy_payload(target_language),
+                "bootstrap": {
+                    "completed_units": completed_count,
+                    "current_boundary": boundary,
+                    "next_boundary": (
+                        2 if boundary is None else boundary + 4
+                    ),
+                    "attempts": sorted(
+                        attempts, key=lambda item: str(item.get("created_at") or "")
+                    ),
+                },
+                "backfill": {
+                    "status": "pending" if stale_chunks else "idle",
+                    "pending_units": stale_chunks,
+                    "pending_count": len(stale_chunks),
+                },
             }), 200
 
         data = request.get_json() or {}

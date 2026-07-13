@@ -1,0 +1,57 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    uses: ./.github/workflows/build-windows.yml
+
+  macos:
+    uses: ./.github/workflows/build-macos.yml
+
+  publish:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: TranslateBook*
+          path: downloaded
+
+      - name: Assemble and verify release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          cp downloaded/TranslateBook-Windows/TranslateBook-Windows.zip release-assets/
+          cp downloaded/TranslateBook-Source/TranslateBook-Source.zip release-assets/
+          cp downloaded/TranslateBook.exe/TranslateBook.exe release-assets/
+          cp downloaded/TranslateBook-macOS-Intel/TranslateBook-macOS-Intel.zip release-assets/
+          cp downloaded/TranslateBook-macOS-AppleSilicon/TranslateBook-macOS-AppleSilicon.zip release-assets/
+          cp downloaded/TranslateBook-Intel/TranslateBook release-assets/TranslateBook-macOS-Intel
+          cp downloaded/TranslateBook-AppleSilicon/TranslateBook release-assets/TranslateBook-macOS-AppleSilicon
+          chmod +x release-assets/TranslateBook-macOS-Intel release-assets/TranslateBook-macOS-AppleSilicon
+          test "$(find release-assets -maxdepth 1 -type f | wc -l)" -eq 7
+          (cd release-assets && sha256sum * > SHA256SUMS.txt)
+
+      - name: Extract release notes
+        run: python3 scripts/extract_release_notes.py CHANGELOG.md ${{ github.ref_name }} RELEASE_NOTES.md
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          files: release-assets/*
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
