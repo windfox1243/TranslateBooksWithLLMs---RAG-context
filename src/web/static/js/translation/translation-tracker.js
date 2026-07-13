@@ -1327,8 +1327,13 @@ window.NovelContextUI = {
                 `${t('translation:context_addressing_register')}: ${rule.register || t('translation:context_addressing_unknown')}`,
                 `${t('translation:context_addressing_scope')}: ${rule.scope || t('translation:context_addressing_unknown')}`
             ];
+            const statusKey = {
+                active: 'translation:context_addressing_status_active',
+                provisional: 'translation:context_addressing_status_provisional',
+                quarantined: 'translation:context_addressing_status_quarantined'
+            }[rule.validation_status] || 'translation:context_addressing_status_unknown';
             details.push(
-                `${t('translation:context_addressing_status')}: ${rule.validation_status || 'active'}`
+                `${t('translation:context_addressing_status')}: ${t(statusKey)}`
             );
             if (rule.validation_reason) {
                 details.push(`${t('translation:context_addressing_reason')}: ${rule.validation_reason}`);
@@ -1667,6 +1672,42 @@ window.NovelContextUI = {
                 finish: run.finish_reason || '-'
             });
             row.appendChild(details);
+            const reasonCodes = Array.from(new Set(
+                (run.attempts || []).flatMap(attempt => (
+                    Array.isArray(attempt.reason_codes)
+                        ? attempt.reason_codes
+                        : []
+                )).filter(Boolean)
+            ));
+            const noteKey = {
+                no_issues: 'translation:editor_diagnostics_note_no_issues',
+                warnings_only: 'translation:editor_diagnostics_note_warnings_only',
+                locally_repaired: 'translation:editor_diagnostics_note_locally_repaired',
+                llm_repaired: 'translation:editor_diagnostics_note_llm_repaired',
+                review_required: 'translation:editor_diagnostics_note_review_required',
+                transport_failed: 'translation:editor_diagnostics_note_transport_failed',
+                blocked: 'translation:editor_diagnostics_note_blocked'
+            }[run.outcome] || 'translation:editor_diagnostics_note_unknown';
+            const note = document.createElement('div');
+            note.dataset.editorDiagnosticNote = String(run.id || '');
+            note.style.fontSize = '0.8rem';
+            note.style.marginTop = '0.35rem';
+            note.textContent = t(noteKey, {
+                count: run.unresolved_issue_count || 0,
+                reason: run.failure_class || run.blocked_reason
+                    || t('translation:context_addressing_unknown')
+            });
+            row.appendChild(note);
+            if (reasonCodes.length) {
+                const reasons = document.createElement('div');
+                reasons.style.fontSize = '0.75rem';
+                reasons.style.color = 'var(--text-muted-light)';
+                reasons.textContent = t(
+                    'translation:editor_diagnostics_reason_codes',
+                    { reasons: reasonCodes.join(', ') }
+                );
+                row.appendChild(reasons);
+            }
             const tokens = document.createElement('div');
             tokens.style.fontSize = '0.75rem';
             tokens.style.color = 'var(--text-muted-light)';
@@ -1807,6 +1848,7 @@ window.NovelContextUI = {
         const records = kind === 'addressing'
             ? [
                 ...(this.structuredAddressingResult?.rules || []),
+                ...(this.structuredAddressingResult?.provisional_rules || []),
                 ...(this.structuredAddressingResult?.quarantined_rules || [])
             ]
             : (this.structuredRelationshipResult?.edges || []).filter(

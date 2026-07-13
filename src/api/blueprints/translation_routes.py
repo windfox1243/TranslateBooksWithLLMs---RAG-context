@@ -60,7 +60,7 @@ def _prompt_options_from_start_request(data):
     prompt_options = dict((data or {}).get('prompt_options') or {})
     prompt_options.setdefault('use_relationship_reasoning', 'project')
     prompt_options.setdefault('use_relationship_llm_judge', 'selective')
-    prompt_options.setdefault('context_contract_version', 3)
+    prompt_options.setdefault('context_contract_version', 4)
     prompt_options.setdefault('source_residue_validation', True)
     if 'reflection_mode' not in prompt_options:
         prompt_options['reflection_mode'] = (
@@ -1861,7 +1861,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                 register=candidate.register,
                 social_basis=candidate.social_basis,
                 scope=candidate.scope,
-                contract_version=3,
+                contract_version=4,
                 confidence=max(candidate.confidence, 0.99),
                 is_locked=1 if data.get("is_locked", True) else 0,
                 chunk_index=-1,
@@ -1894,12 +1894,14 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         """Get directed character addressing rules for a translation job."""
         db = state_manager.checkpoint_manager.db
         requested_status = str(request.args.get('status') or '').strip().lower()
-        if requested_status not in {'active', 'quarantined', 'all'}:
+        if requested_status not in {'active', 'provisional', 'quarantined', 'all'}:
             requested_status = 'all'
         active_rules = db.get_addressing_rules(translation_id, 'active')
+        provisional_rules = db.get_addressing_rules(translation_id, 'provisional')
         quarantined_rules = db.get_addressing_rules(translation_id, 'quarantined')
         rules = (
             active_rules if requested_status == 'active'
+            else provisional_rules if requested_status == 'provisional'
             else quarantined_rules if requested_status == 'quarantined'
             else active_rules
         )
@@ -1948,7 +1950,9 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "rules": rules,
             "count": len(rules),
             "active_count": len(active_rules),
+            "provisional_count": len(provisional_rules),
             "quarantined_count": len(quarantined_rules),
+            "provisional_rules": provisional_rules,
             "quarantined_rules": quarantined_rules,
             "rejections": rejections,
         }), 200
