@@ -221,7 +221,7 @@ class GenericTranslator:
                     })
             else:
                 # 4. Create new translation job
-                prompt_options.setdefault("context_contract_version", 3)
+                prompt_options.setdefault("context_contract_version", 4)
                 prompt_options.setdefault("use_relationship_llm_judge", "selective")
                 prompt_options.setdefault("source_residue_validation", True)
                 self.checkpoint_manager.start_job(

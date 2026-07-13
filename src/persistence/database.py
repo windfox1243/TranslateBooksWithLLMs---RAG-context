@@ -280,6 +280,47 @@ class Database:
                   )
             """)
 
+            # Contract v3 could validate a source vocative and then promote the
+            # entire Vietnamese target tuple. Reclassify those copied-vocative
+            # tuples so existing jobs stop projecting unsupported pairs after
+            # upgrade. Manual and locked facts always retain precedence.
+            cursor.execute("""
+                UPDATE context_addressing_rules AS rule
+                SET validation_status = 'provisional',
+                    validation_reason = 'unsupported_vietnamese_target_pair',
+                    confidence = MIN(confidence, 0.79),
+                    social_basis = '[]',
+                    validated_at = CURRENT_TIMESTAMP
+                WHERE rule.contract_version >= 3
+                  AND rule.is_locked = 0
+                  AND rule.validation_status = 'active'
+                  AND rule.provenance NOT IN (
+                      'user_manual', 'manual', 'manual_context', 'rest_api'
+                  )
+                  AND EXISTS (
+                      SELECT 1 FROM translation_jobs AS job
+                      WHERE job.translation_id = rule.translation_id
+                        AND lower(COALESCE(
+                            CASE WHEN json_valid(job.config)
+                                THEN json_extract(
+                                    job.config, '$.target_language'
+                                )
+                                ELSE ''
+                            END,
+                            ''
+                        )) IN ('vietnamese', 'vi')
+                  )
+                  AND trim(rule.target_pronoun) = trim(rule.vocative)
+                  AND EXISTS (
+                      SELECT 1 FROM context_addressing_evidence AS evidence
+                      WHERE evidence.translation_id = rule.translation_id
+                        AND evidence.speaker_name = rule.speaker_name
+                        AND evidence.addressee_name = rule.addressee_name
+                        AND lower(trim(evidence.source_form)) =
+                            lower(trim(rule.target_pronoun))
+                  )
+            """)
+
             # Context Audit Logs Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS context_audit_logs (
@@ -1742,7 +1783,11 @@ class Database:
         reason: str = "",
     ) -> bool:
         """Activate or quarantine one directed addressing rule."""
-        normalized = status if status in {"active", "quarantined"} else "quarantined"
+        normalized = (
+            status
+            if status in {"active", "provisional", "quarantined"}
+            else "quarantined"
+        )
         with self._lock:
             try:
                 conn = self._get_connection()
