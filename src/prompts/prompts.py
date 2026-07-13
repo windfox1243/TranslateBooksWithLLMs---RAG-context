@@ -1770,10 +1770,12 @@ ADDITIONAL AUDIT OUTPUT RULES:
         user_sections.append(f"# GLOSSARY & TERM MAPPING:\n{glossary_block.strip()}")
     if deterministic_findings and deterministic_findings.strip():
         user_sections.append(
-            "# DETERMINISTIC SOURCE-RESIDUE FINDINGS (MANDATORY)\n"
+            "# DETERMINISTIC FINAL-OUTPUT FINDINGS (MANDATORY)\n"
             "These findings were produced by a non-LLM validator. Resolve each "
-            "high-confidence span and report a needs_repair issue with an exact "
-            f"draft_replacement when possible:\n{deterministic_findings.strip()}"
+            "high-confidence span. Narrator findings must be reported as blocker "
+            "rewrite issues and may never be downgraded to review_only. Report an "
+            "exact draft_replacement when a safe local edit is possible:\n"
+            f"{deterministic_findings.strip()}"
         )
     if narrative_voice_context and narrative_voice_context.strip():
         user_sections.append(

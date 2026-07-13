@@ -359,6 +359,8 @@
   "editor_diagnostics_note_blocked": "注：決定論的検証により結果がブロックされました（{{reason}}）。承認前にチャンクを修正する必要があります。",
   "editor_diagnostics_note_unknown": "注：この Editor 結果は不明な状態です。利用する前に結果状態と理由コードを確認してください。",
   "editor_diagnostics_reason_codes": "理由コード：{{reasons}}",
+  "editor_diagnostics_automatic_retry": "自動修正：{{attempt}}/{{maximum}} 回目 · 最終理由：{{terminal}} · 語り手の適合性：{{conformance}}",
+  "context_narrator_conformance_note": "ユニット {{chunk}} · {{status}} · 試行回数：{{attempts}} · 理由：{{reasons}}",
   "editor_retry": "エディターを再試行",
   "editor_retry_queued": "待機中...",
   "editor_retry_running": "再試行中...",

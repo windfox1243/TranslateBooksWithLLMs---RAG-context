@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.15.0-beta.45 - 2026-07-14
+
+### Fixed
+
+- Added a deterministic final narrator-conformance gate so source-grounded narration cannot publish a self-reference that conflicts with the effective narrator policy while dialogue, thoughts, letters, embedded stories, and ordinary subtitle dialogue remain isolated.
+- Replaced the single Senior Editor fallback with up to three bounded attempts for machine-verifiable failures. A repaired draft must pass independent conformance and structural validation; exhausted deterministic failures are preserved as blocked drafts instead of entering rebuilt output.
+- Added upgrade/resume auditing with content, profile, policy, and validator fingerprints. Only failing completed units are queued, exhausted fingerprints are not retried on every resume, and corrected batches rebuild output atomically before translation continues.
+- Added localized narrator-conformance and automatic-retry result notes to all seven frontend locales.
+
+### Tests
+
+- Added sanitized unit 12 and unit 13 regressions, retry convergence and exhaustion coverage, resume selection checks, and a 17-language by four-format narrator policy contract matrix.
+
 ## 1.15.0-beta.44 - 2026-07-13
 
 ### Added

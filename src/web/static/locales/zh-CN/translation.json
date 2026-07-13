@@ -359,6 +359,8 @@
   "editor_diagnostics_note_blocked": "说明：确定性验证阻止了此结果（{{reason}}）；该片段必须修正后才能接受。",
   "editor_diagnostics_note_unknown": "说明：此编辑结果使用了未知状态。依赖该结果前，请检查结果状态和原因代码。",
   "editor_diagnostics_reason_codes": "原因代码：{{reasons}}",
+  "editor_diagnostics_automatic_retry": "自动修复：第 {{attempt}}/{{maximum}} 次 · 最终原因：{{terminal}} · 叙述者一致性：{{conformance}}",
+  "context_narrator_conformance_note": "单元 {{chunk}} · {{status}} · 尝试次数：{{attempts}} · 原因：{{reasons}}",
   "editor_retry": "重试编辑器",
   "editor_retry_queued": "已排队...",
   "editor_retry_running": "正在重试...",

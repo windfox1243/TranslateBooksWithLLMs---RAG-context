@@ -522,3 +522,77 @@ def test_pronoun_counting_narrator_hint_was_removed():
     import src.utils.translation_quality as quality
 
     assert not hasattr(quality, "build_narrative_voice_context")
+
+
+@pytest.mark.asyncio
+async def test_warnings_only_cannot_hide_narrator_violation_and_retry_converges():
+    source = (
+        "I crossed the station.\n"
+        "I remembered the rain.\n"
+        "I promised I would continue."
+    )
+    leaking = (
+        "Tớ băng qua nhà ga.\n"
+        "Tớ nhớ cơn mưa.\n"
+        "Tớ tự hứa sẽ tiếp tục."
+    )
+    corrected = leaking.replace("Tớ", "Tôi")
+
+    class Client:
+        def __init__(self):
+            self.responses = [
+                '{"status":"no_issues","issues":[]}',
+                f"<TRANSLATION>{leaking}</TRANSLATION>",
+                f"<TRANSLATION>{corrected}</TRANSLATION>",
+            ]
+            self.calls = []
+
+        async def generate_async(self, **kwargs):
+            self.calls.append(kwargs)
+            return SimpleNamespace(content=self.responses[len(self.calls) - 1])
+
+    client = Client()
+    result = await run_chunk_reflection_pass(
+        source_chunk=source,
+        draft_translation=leaking,
+        target_language="Vietnamese",
+        model_name="test",
+        llm_client=client,
+        prompt_options={"source_language": "English", "file_type": "txt"},
+    )
+
+    assert result == corrected
+    assert len(client.calls) == 3
+    assert client.calls[2]["temperature"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_narrator_retry_exhaustion_blocks_preserved_draft():
+    source = "I crossed the station.\nI remembered rain.\nI kept moving."
+    leaking = "Tớ qua ga.\nTớ nhớ mưa.\nTớ tiếp tục."
+
+    class Client:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate_async(self, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return SimpleNamespace(content='{"status":"no_issues","issues":[]}')
+            return SimpleNamespace(
+                content=f"<TRANSLATION>{leaking}</TRANSLATION>"
+            )
+
+    client = Client()
+    with pytest.raises(ReflectionValidationError) as error:
+        await run_chunk_reflection_pass(
+            source_chunk=source,
+            draft_translation=leaking,
+            target_language="Vietnamese",
+            model_name="test",
+            llm_client=client,
+            prompt_options={"source_language": "English", "file_type": "txt"},
+        )
+
+    assert error.value.draft_translation == leaking
+    assert client.calls == 4

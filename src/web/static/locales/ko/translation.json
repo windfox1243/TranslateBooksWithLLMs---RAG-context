@@ -359,6 +359,8 @@
   "editor_diagnostics_note_blocked": "참고: 결정적 검증이 이 결과를 차단했습니다({{reason}}). 승인 전에 청크를 수정해야 합니다.",
   "editor_diagnostics_note_unknown": "참고: 이 Editor 결과는 알 수 없는 상태를 사용합니다. 신뢰하기 전에 결과 상태와 이유 코드를 확인하세요.",
   "editor_diagnostics_reason_codes": "이유 코드: {{reasons}}",
+  "editor_diagnostics_automatic_retry": "자동 수정: {{attempt}}/{{maximum}}회 · 최종 이유: {{terminal}} · 내레이터 일치: {{conformance}}",
+  "context_narrator_conformance_note": "단위 {{chunk}} · {{status}} · 시도: {{attempts}} · 이유: {{reasons}}",
   "editor_retry": "편집기 재시도",
   "editor_retry_queued": "대기 중...",
   "editor_retry_running": "재시도 중...",

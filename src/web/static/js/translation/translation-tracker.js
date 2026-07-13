@@ -1432,6 +1432,22 @@ window.NovelContextUI = {
             pending: backfill.pending_count || 0
         });
         pane.appendChild(diagnostic);
+        (backfill.units || []).filter(unit => (
+            ['fail', 'blocked'].includes(unit.conformance?.status)
+            || ['queued', 'blocked'].includes(unit.backfill?.status)
+        )).forEach(unit => {
+            const detail = document.createElement('p');
+            detail.className = 'context-guide-card';
+            const state = unit.backfill?.status || unit.conformance?.status;
+            detail.textContent = t('translation:context_narrator_conformance_note', {
+                chunk: Number(unit.chunk_index) + 1,
+                status: state,
+                attempts: unit.backfill?.attempts || 0,
+                reasons: (unit.conformance?.reason_codes || []).join(', ')
+                    || t('translation:context_addressing_unknown')
+            });
+            pane.appendChild(detail);
+        });
         const profiles = this.narratorVoiceResult?.profiles || [];
         if (!profiles.length) {
             const empty = document.createElement('p');
@@ -1698,6 +1714,23 @@ window.NovelContextUI = {
                     || t('translation:context_addressing_unknown')
             });
             row.appendChild(note);
+            const automaticRetry = run.diagnostics?.automatic_retry;
+            const conformance = run.diagnostics?.narrator_conformance;
+            if (automaticRetry || conformance) {
+                const retryNote = document.createElement('div');
+                retryNote.style.fontSize = '0.75rem';
+                retryNote.style.color = 'var(--text-muted-light)';
+                retryNote.textContent = t(
+                    'translation:editor_diagnostics_automatic_retry',
+                    {
+                        attempt: automaticRetry?.current_attempt || 0,
+                        maximum: automaticRetry?.maximum_attempts || 3,
+                        terminal: automaticRetry?.terminal_reason || '-',
+                        conformance: conformance?.status || 'not_checked'
+                    }
+                );
+                row.appendChild(retryNote);
+            }
             if (reasonCodes.length) {
                 const reasons = document.createElement('div');
                 reasons.style.fontSize = '0.75rem';

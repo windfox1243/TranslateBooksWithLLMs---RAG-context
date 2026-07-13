@@ -736,6 +736,14 @@ class GenericTranslator:
                         "file_type": self.adapter.format_name,
                         "editor_phase": "translation",
                     })
+                    if unit.metadata.get("dialogue_attribution"):
+                        unit_prompt_options["dialogue_attribution"] = (
+                            unit.metadata["dialogue_attribution"]
+                        )
+                    elif context_session and context_session.dialogue_attribution:
+                        unit_prompt_options["dialogue_attribution"] = (
+                            context_session.dialogue_attribution
+                        )
                     if context_session:
                         unit_prompt_options.setdefault(
                             "active_character_names",
