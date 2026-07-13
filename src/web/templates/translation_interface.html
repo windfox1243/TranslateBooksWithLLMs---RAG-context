@@ -1281,6 +1281,10 @@
                                 </div>
                                 <small class="setting-help" data-i18n="settings:editor_output_budget_help">Auto reserves output for reasoning and JSON. A MAX_TOKENS response retries once with a larger allowance and reduced reasoning.</small>
                             </div>
+                            <button type="button" id="editorSaveSettingsBtn" class="btn btn-primary" onclick="saveSettings()" disabled style="grid-column: 1 / -1; width: 100%;">
+                                <span class="material-symbols-outlined">save</span>
+                                <span data-i18n="settings:save_settings">Save Settings to .env</span>
+                            </button>
                         </div>
                     </div>
                 </div>
