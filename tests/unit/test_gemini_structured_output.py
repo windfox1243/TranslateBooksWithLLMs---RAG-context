@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from src.core.llm import LLMGenerationOptions, LLMResponse
-from src.core.llm.exceptions import StructuredOutputSchemaError
+from src.core.llm.exceptions import ProviderRequestError, StructuredOutputSchemaError
 from src.core.llm.providers.gemini import GeminiProvider
 from src.prompts.prompts import REFLECTION_RESPONSE_SCHEMA
 
@@ -19,7 +19,10 @@ class _GeminiResponse:
     def json(self):
         return {
             "candidates": [{
-                "content": {"parts": [{"text": '{"status":"no_issues","issues":[]}'}]},
+                "content": {"parts": [{"text": (
+                    '{"status":"no_issues","issues":[],'
+                    '"voice_observations":[]}'
+                )}]},
                 "finishReason": "STOP",
             }],
             "usageMetadata": {
@@ -62,7 +65,9 @@ async def test_gemini_sends_editor_contract_as_json_schema(monkeypatch):
         ),
     )
 
-    assert result.content == '{"status":"no_issues","issues":[]}'
+    assert result.content == (
+        '{"status":"no_issues","issues":[],"voice_observations":[]}'
+    )
     assert result.thinking_tokens == 5
     assert result.total_tokens == 12
     generation_config = sent_payloads[0]["generationConfig"]
@@ -84,7 +89,21 @@ async def test_gemini_sends_editor_contract_as_json_schema(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_gemini_schema_rejection_is_typed_and_not_retried(monkeypatch):
+@pytest.mark.parametrize("body", [
+    (
+        '{"error":{"code":400,"message":"Unknown name '
+        '\"additionalProperties\" at '
+        'generation_config.response_schema.properties"}}'
+    ),
+    (
+        '{"error":{"code":400,"message":"Request contains an invalid '
+        'argument.","status":"INVALID_ARGUMENT"}}'
+    ),
+])
+async def test_gemini_schema_rejection_is_typed_and_not_retried(
+    monkeypatch,
+    body,
+):
     provider = GeminiProvider(
         api_key="YOUR_API_KEY_HERE",
         model="gemini-3-flash-preview",
@@ -95,12 +114,7 @@ async def test_gemini_schema_rejection_is_typed_and_not_retried(monkeypatch):
         async def post(self, url, headers=None, json=None, timeout=None):
             nonlocal calls
             calls += 1
-            return _http_error_response(
-                url,
-                '{"error":{"code":400,"message":"Unknown name '
-                '\"additionalProperties\" at '
-                'generation_config.response_schema.properties"}}',
-            )
+            return _http_error_response(url, body)
 
     async def fake_get_client():
         return FakeClient()
@@ -116,6 +130,96 @@ async def test_gemini_schema_rejection_is_typed_and_not_retried(monkeypatch):
         )
 
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_gemini_generic_400_without_schema_remains_terminal(monkeypatch):
+    provider = GeminiProvider(
+        api_key="YOUR_API_KEY_HERE",
+        model="gemini-3.1-flash-lite",
+    )
+    calls = 0
+
+    class FakeClient:
+        async def post(self, url, headers=None, json=None, timeout=None):
+            nonlocal calls
+            calls += 1
+            return _http_error_response(
+                url,
+                '{"error":{"code":400,"message":"Request contains an invalid '
+                'argument.","status":"INVALID_ARGUMENT"}}',
+            )
+
+    async def fake_get_client():
+        return FakeClient()
+
+    monkeypatch.setattr(provider, "_get_client", fake_get_client)
+
+    with pytest.raises(ProviderRequestError) as exc_info:
+        await provider.generate(
+            "Review this translation.",
+            generation_options=LLMGenerationOptions(stage="reflection"),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_editor_falls_back_after_generic_gemini_schema_rejection(
+    monkeypatch,
+    clear_editor_schema_capabilities,
+):
+    from src.core.translator import run_chunk_reflection_pass
+
+    provider = GeminiProvider(
+        api_key="YOUR_API_KEY_HERE",
+        model="gemini-3.1-flash-lite",
+    )
+    sent_payloads = []
+    responses = iter([
+        _http_error_response(
+            provider.api_endpoint,
+            '{"error":{"code":400,"message":"Request contains an invalid '
+            'argument.","status":"INVALID_ARGUMENT"}}',
+        ),
+        _GeminiResponse(),
+        _GeminiResponse(),
+    ])
+
+    class FakeClient:
+        async def post(self, url, headers=None, json=None, timeout=None):
+            sent_payloads.append(json)
+            return next(responses)
+
+    async def fake_get_client():
+        return FakeClient()
+
+    monkeypatch.setattr(provider, "_get_client", fake_get_client)
+    options = {
+        "editor_provider_resolved": "gemini",
+        "editor_model_resolved": "gemini-3.1-flash-lite",
+    }
+
+    for _ in range(2):
+        result = await run_chunk_reflection_pass(
+            source_chunk="Source text.",
+            draft_translation="Draft text.",
+            target_language="English",
+            model_name="gemini-3.1-flash-lite",
+            llm_client=provider,
+            prompt_options=options,
+        )
+        assert result == "Draft text."
+
+    assert "responseJsonSchema" in sent_payloads[0]["generationConfig"]
+    assert "responseJsonSchema" not in sent_payloads[1]["generationConfig"]
+    fallback_text = (
+        sent_payloads[1]["systemInstruction"]["parts"][0]["text"]
+        + sent_payloads[1]["contents"][0]["parts"][0]["text"]
+    )
+    assert "<REFLECTION_JSON>" in fallback_text
+    assert "responseJsonSchema" not in sent_payloads[2]["generationConfig"]
 
 
 @pytest.fixture

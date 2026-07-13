@@ -73,6 +73,15 @@ def _is_structured_schema_rejection(body: str) -> bool:
             "responsejsonschema",
             "response_format",
             "responseformat",
+            # Gemini may collapse schema-complexity failures into this generic
+            # response without identifying responseJsonSchema.  The caller
+            # invokes this helper only for HTTP 400 structured-output requests,
+            # so treating INVALID_ARGUMENT as a schema rejection safely enables
+            # the existing unstructured fallback.  A repeated 400 from that
+            # fallback still follows the normal terminal-error path.
+            '"status":"invalid_argument"',
+            '"status": "invalid_argument"',
+            "request contains an invalid argument",
         )
     )
 

@@ -26,6 +26,11 @@
 
 ### Fixed
 
+- **Gemini Senior Editor Schema Fallback**:
+  Gemini structured-output complexity rejections that return only a generic
+  `INVALID_ARGUMENT` response now activate the existing tagged-JSON fallback.
+  Reflection continues without weakening the narrator voice contract, while
+  ordinary non-structured Gemini request errors remain terminal.
 - **Cross-Chapter Narrator Drift**:
   First-person narration such as Apollo Rainbow's Vietnamese `tôi` remains
   isolated from dialogue-specific `tớ/cậu`, while supported chapter, scene, and
