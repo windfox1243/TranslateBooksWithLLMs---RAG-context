@@ -153,6 +153,7 @@ class GenericTranslator:
             # 3. Check for checkpoint and resume
             restored_completed = set()
             failed_editor_drafts_by_index = {}
+            completed_translations_by_index = {}
             checkpoint_data = self.checkpoint_manager.load_checkpoint(self.translation_id)
             continuation_base_id = self.adapter.config.get('continuation_base_id')
             continuation_context_seed = None
@@ -200,6 +201,13 @@ class GenericTranslator:
                     and c.get('translated_text')
                     and (c.get('chunk_data') or {}).get('editor_validation')
                     and 0 <= c.get('chunk_index', -1) < total_units
+                }
+                completed_translations_by_index = {
+                    c["chunk_index"]: c.get("translated_text") or ""
+                    for c in checkpoint_data.get("chunks", [])
+                    if c.get("status") in {"completed", "partial"}
+                    and c.get("translated_text")
+                    and 0 <= c.get("chunk_index", -1) < total_units
                 }
                 if log_callback:
                     log_callback("checkpoint_resumed",
@@ -731,6 +739,26 @@ class GenericTranslator:
                     )
                     if relationship_context:
                         unit_prompt_options["relationship_context"] = relationship_context
+                    if sequential:
+                        from src.utils.translation_quality import (
+                            build_narrative_voice_context,
+                        )
+
+                        previous_translations = [
+                            text
+                            for index, text in sorted(
+                                completed_translations_by_index.items()
+                            )
+                            if index < i
+                        ]
+                        narrative_voice_context = build_narrative_voice_context(
+                            previous_translations,
+                            target_language,
+                        )
+                        if narrative_voice_context:
+                            unit_prompt_options["narrative_voice_context"] = (
+                                narrative_voice_context
+                            )
                     result = failed_editor_drafts_by_index.pop(i, None)
                     if result and log_callback:
                         log_callback(
@@ -1147,6 +1175,7 @@ class GenericTranslator:
                         })
 
                     if sequential:
+                        completed_translations_by_index[i] = translated_content
                         last_context = (
                             translated_content[-200:]
                             if len(translated_content) > 200

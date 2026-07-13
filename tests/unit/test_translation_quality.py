@@ -516,3 +516,30 @@ def test_editor_repair_validates_capitalization_only_correction():
         target_language="Vietnamese"
     )
     assert errors == []
+
+
+def test_vietnamese_narrative_voice_context_ignores_dialogue_pronouns():
+    from src.utils.translation_quality import build_narrative_voice_context
+
+    context = build_narrative_voice_context(
+        [
+            (
+                'Tôi bước vào phòng. "Tớ sẽ giúp cậu," tôi nói. '
+                "Tôi ngồi xuống và tôi suy nghĩ. Tôi không hề do dự. "
+                "Cuối cùng, tôi đứng dậy."
+            )
+        ],
+        "Vietnamese",
+    )
+
+    assert 'self-reference from prior completed chunks: "tôi"' in context
+    assert '"tớ": 0' in context
+
+
+def test_narrative_voice_context_requires_a_stable_baseline():
+    from src.utils.translation_quality import build_narrative_voice_context
+
+    assert build_narrative_voice_context(
+        ["Tôi nghĩ vậy, nhưng tớ cũng không chắc."],
+        "Vietnamese",
+    ) == ""

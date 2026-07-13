@@ -230,6 +230,20 @@ async def run_editor_retry(
         "target_language": config.get("target_language") or "",
         "active_character_names": _active_character_names(chunk_data),
     })
+    from src.utils.translation_quality import build_narrative_voice_context
+
+    previous_translations = [
+        item.get("translated_text") or ""
+        for item in checkpoint.get("chunks", [])
+        if int(item.get("chunk_index", -1)) < int(chunk_index)
+        and item.get("status") in {"completed", "partial"}
+    ]
+    narrative_voice_context = build_narrative_voice_context(
+        previous_translations,
+        str(config.get("target_language") or ""),
+    )
+    if narrative_voice_context:
+        options["narrative_voice_context"] = narrative_voice_context
 
     from src.core.translator import (
         ReflectionValidationError,

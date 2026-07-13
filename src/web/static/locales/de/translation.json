@@ -349,7 +349,7 @@
   "editor_retry": "Editor erneut ausführen",
   "editor_retry_queued": "Eingereiht...",
   "editor_retry_running": "Wiederholung läuft...",
-  "editor_retry_started": "Die Senior-Editor-Wiederholung wurde sofort gestartet.",
+  "editor_retry_started": "Die Senior-Editor-Wiederholung wurde eingereiht.",
   "editor_retry_succeeded": "Die Wiederholung wurde abgeschlossen und der validierte Entwurf gespeichert.",
   "editor_retry_review_required": "Die Wiederholung wurde abgeschlossen, aber wichtige Befunde müssen noch geprüft werden.",
   "editor_retry_failed": "Editor-Wiederholung fehlgeschlagen: {{error}}",

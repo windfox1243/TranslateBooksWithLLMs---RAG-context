@@ -349,7 +349,7 @@
   "editor_retry": "エディターを再試行",
   "editor_retry_queued": "待機中...",
   "editor_retry_running": "再試行中...",
-  "editor_retry_started": "シニアエディターの再試行を直ちに開始しました。",
+  "editor_retry_started": "シニアエディターの再試行をキューに追加しました。",
   "editor_retry_succeeded": "再試行が完了し、検証済みの下書きを保存しました。",
   "editor_retry_review_required": "再試行は完了しましたが、重大な問題は引き続き確認が必要です。",
   "editor_retry_failed": "エディターの再試行に失敗しました：{{error}}",

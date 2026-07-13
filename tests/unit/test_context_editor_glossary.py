@@ -336,6 +336,24 @@ def test_reflection_prompt_uses_json_contract():
     assert "Output NO_ISSUES" not in prompt_pair.system
 
 
+def test_reflection_prompt_enforces_derived_narrator_voice_across_chapters():
+    from src.prompts.prompts import generate_chunk_reflection_prompt
+
+    prompt_pair = generate_chunk_reflection_prompt(
+        source_chunk="But no one recognized my potential.",
+        draft_translation="Nhưng không ai nhận ra tiềm năng của tớ.",
+        target_language="Vietnamese",
+        narrative_voice_context=(
+            'Established Vietnamese first-person narrative self-reference '
+            'from prior completed chunks: "tôi".'
+        ),
+    )
+
+    assert "ESTABLISHED NARRATOR VOICE" in prompt_pair.user
+    assert 'completed chunks: "tôi"' in prompt_pair.user
+    assert "enforce it across chapter boundaries" in prompt_pair.system
+
+
 @pytest.mark.asyncio
 async def test_run_chunk_reflection_pass_sends_context_and_structured_feedback_to_repair():
     """Repair receives active lore plus parsed structured issues."""

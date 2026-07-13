@@ -12,7 +12,7 @@ CORRECTED_TAG_IN = "<CORRECTED_TAG_IN>"
 CORRECTED_TAG_OUT = "<CORRECTED_TAG_OUT>"
 REFLECTION_JSON_TAG_IN = "<REFLECTION_JSON>"
 REFLECTION_JSON_TAG_OUT = "</REFLECTION_JSON>"
-REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v5"
+REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v6"
 REFLECTION_CONTRACT_VERSION = "editor-issue-v5"
 
 REFLECTION_RESPONSE_SCHEMA = {
@@ -1628,6 +1628,7 @@ def generate_chunk_reflection_prompt(
     deterministic_findings: str = "",
     source_available: bool = True,
     native_schema: bool = False,
+    narrative_voice_context: str = "",
 ) -> PromptPair:
     """
     Generate a chunk reflection prompt acting as a Senior Translation Editor / Critic.
@@ -1679,6 +1680,7 @@ RIGOROUS 4-STEP AUDIT PROCEDURE:
 2. DIALOGUE VS NARRATION PRONOUN ISOLATION & INTERNAL MONOLOGUE:
    - Check whether dialogue-specific self-references or intimate pronouns{pronoun_examples} have improperly leaked into third-person objective story narration outside quotes.
    - INTERNAL MONOLOGUE & THOUGHTS: Do NOT flag internal monologue, character thoughts{monologue_guidance} as pronoun bleed errors. Intimate self-references in internal monologue and character thoughts are completely natural and valid.
+   - ESTABLISHED NARRATOR VOICE: When a narrative voice baseline is provided, enforce it across chapter boundaries in narration and non-addressed internal monologue. A pair-specific dialogue self-reference never overrides that baseline outside speech or a thought directly addressed to that person.
 
 3. GENDER & CHARACTER LORE ALIGNMENT:
    - Cross-check pronouns against the ACTIVE NOVEL LORE and custom instructions.
@@ -1719,6 +1721,11 @@ ADDITIONAL AUDIT OUTPUT RULES:
             "high-confidence span and report a needs_repair issue with an exact "
             f"draft_replacement when possible:\n{deterministic_findings.strip()}"
         )
+    if narrative_voice_context and narrative_voice_context.strip():
+        user_sections.append(
+            "# ESTABLISHED NARRATOR VOICE (DERIVED FROM PRIOR COMPLETED CHUNKS)\n"
+            + narrative_voice_context.strip()
+        )
     user_sections.append(f"# ACTIVE NOVEL LORE & ADDRESSING RULES (Background defaults apply ONLY when source text lacks an explicit spoken nickname/title. Explicit source nicknames like 'Spe-chan' take 100% priority over lore entries like 'Special'):\n{novel_context.strip() if novel_context.strip() else 'None'}")
     user_sections.append(
         "# NUMBERED DRAFT TRANSLATION TO AUDIT:\n"
@@ -1740,6 +1747,7 @@ def generate_chunk_repair_prompt(
     glossary_block: str = "",
     novel_context: str = "",
     source_available: bool = True,
+    narrative_voice_context: str = "",
 ) -> PromptPair:
     """
     Generate a chunk repair prompt applying critique feedback to produce the final pristine chunk.
@@ -1764,6 +1772,11 @@ Output ONLY the final repaired translation text inside {translate_tag_in} and {t
         user_sections.append(f"# CUSTOM INSTRUCTIONS & STYLE GUIDELINES:\n{custom_instructions.strip()}")
     if glossary_block and glossary_block.strip():
         user_sections.append(f"# GLOSSARY & TERM MAPPING:\n{glossary_block.strip()}")
+    if narrative_voice_context and narrative_voice_context.strip():
+        user_sections.append(
+            "# ESTABLISHED NARRATOR VOICE (DERIVED FROM PRIOR COMPLETED CHUNKS)\n"
+            + narrative_voice_context.strip()
+        )
     user_sections.append(f"# ACTIVE NOVEL LORE & ADDRESSING RULES:\n{novel_context.strip() if novel_context.strip() else 'None'}")
     user_sections.append(f"# SENIOR EDITOR CRITIQUE & REQUIRED FIXES:\n{critique_feedback.strip()}")
     user_sections.append(f"Output your pristine repaired translation in {translate_tag_in}...{translate_tag_out} now:")
