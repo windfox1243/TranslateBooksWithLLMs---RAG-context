@@ -161,6 +161,51 @@ export const ApiClient = {
         });
     },
 
+    async getNarratorVoice(translationId) {
+        return await apiRequest(`/api/translation/${translationId}/narrator-voice`);
+    },
+
+    async saveNarratorVoiceProfile(translationId, profile) {
+        return await apiRequest(`/api/translation/${translationId}/narrator-voice`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(profile)
+        });
+    },
+
+    async lockNarratorVoiceProfile(translationId, profileId, payload) {
+        return await apiRequest(
+            `/api/translation/${translationId}/narrator-voice/${profileId}/lock`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }
+        );
+    },
+
+    async deleteNarratorVoiceProfile(translationId, profileId, payload) {
+        return await apiRequest(
+            `/api/translation/${translationId}/narrator-voice/${profileId}`,
+            {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }
+        );
+    },
+
+    async resolveNarratorVoiceConflict(translationId, conflictId, resolution) {
+        return await apiRequest(
+            `/api/translation/${translationId}/narrator-conflicts/${conflictId}/resolve`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ resolution })
+            }
+        );
+    },
+
     async getRecoveryPreview(translationId) {
         return await apiRequest(`/api/translation/${translationId}/recovery-preview`);
     },

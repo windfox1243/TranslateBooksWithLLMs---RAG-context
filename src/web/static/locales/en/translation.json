@@ -353,5 +353,12 @@
   "editor_retry_succeeded": "Senior Editor retry completed and saved the validated draft.",
   "editor_retry_review_required": "Senior Editor retry completed, but major findings still require review.",
   "editor_retry_failed": "Senior Editor retry failed: {{error}}",
-  "editor_retry_timeout": "Senior Editor retry did not finish before the UI timeout."
+  "editor_retry_timeout": "Senior Editor retry did not finish before the UI timeout.",
+  "context_narrator_voice_tab": "Narrator Voice",
+  "context_guide_narrator_voice": "Evidence-backed narrator profiles apply across chapters without overriding dialogue-specific addressing. Locked manual profiles take precedence.",
+  "context_narrator_add": "+ Add narrator profile", "context_narrator_empty": "No narrator voice profile has been established yet.",
+  "context_narrator_profile_summary": "{{key}} ({{identity}}) · POV: {{pov}} · scope: {{scope}} · confidence: {{confidence}} · chunks: {{start}}–{{end}} · {{lock}}\n{{dimensions}}",
+  "context_narrator_locked": "locked", "context_narrator_unlocked": "unlocked", "context_narrator_lock": "Lock", "context_narrator_unlock": "Unlock",
+  "context_narrator_conflict": "Chunk {{chunk}}: {{reason}}", "context_narrator_accept": "Accept transition", "context_narrator_reject": "Reject transition", "context_narrator_editor_title": "Narrator Voice Profile",
+  "context_narrator_field_narrator_key": "Narrator key", "context_narrator_field_narrator_identity": "Narrator identity", "context_narrator_field_point_of_view": "Point of view", "context_narrator_field_self_reference": "Self-reference", "context_narrator_field_formality": "Formality / politeness", "context_narrator_field_speech_level": "Speech level", "context_narrator_field_gender": "Gender", "context_narrator_field_number": "Number", "context_narrator_field_dialect": "Dialect / regional register", "context_narrator_field_tense": "Narrative tense", "context_narrator_field_stylistic_markers": "Stylistic markers (comma-separated)", "context_narrator_field_start_chunk_index": "Start chunk index", "context_narrator_field_end_chunk_index": "End chunk index (blank for open-ended)"
 }

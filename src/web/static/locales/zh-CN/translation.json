@@ -353,5 +353,8 @@
   "editor_retry_succeeded": "高级编辑重试已完成并保存经过验证的草稿。",
   "editor_retry_review_required": "高级编辑重试已完成，但仍有重大问题需要人工检查。",
   "editor_retry_failed": "高级编辑重试失败：{{error}}",
-  "editor_retry_timeout": "高级编辑重试未能在界面等待时间内完成。"
+  "editor_retry_timeout": "高级编辑重试未能在界面等待时间内完成。",
+  "context_narrator_voice_tab": "叙述者声音", "context_guide_narrator_voice": "基于证据的叙述者档案可跨章节生效，但不会覆盖对话专用称谓。锁定的手动档案优先。", "context_narrator_add": "+ 添加叙述者档案", "context_narrator_empty": "尚未建立叙述者声音档案。",
+  "context_narrator_profile_summary": "{{key}}（{{identity}}）· 视角：{{pov}} · 范围：{{scope}} · 置信度：{{confidence}} · 分块：{{start}}–{{end}} · {{lock}}\n{{dimensions}}", "context_narrator_locked": "已锁定", "context_narrator_unlocked": "未锁定", "context_narrator_lock": "锁定", "context_narrator_unlock": "解锁", "context_narrator_conflict": "分块 {{chunk}}：{{reason}}", "context_narrator_accept": "接受转换", "context_narrator_reject": "拒绝转换", "context_narrator_editor_title": "叙述者声音档案",
+  "context_narrator_field_narrator_key": "叙述者键", "context_narrator_field_narrator_identity": "叙述者身份", "context_narrator_field_point_of_view": "叙述视角", "context_narrator_field_self_reference": "自称", "context_narrator_field_formality": "正式度 / 礼貌度", "context_narrator_field_speech_level": "语言层级", "context_narrator_field_gender": "性别", "context_narrator_field_number": "数", "context_narrator_field_dialect": "方言 / 地域语域", "context_narrator_field_tense": "叙述时态", "context_narrator_field_stylistic_markers": "风格标记（逗号分隔）", "context_narrator_field_start_chunk_index": "起始分块索引", "context_narrator_field_end_chunk_index": "结束分块索引（留空表示持续）"
 }

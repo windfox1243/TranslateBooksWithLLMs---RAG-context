@@ -598,6 +598,23 @@ async def translate_paragraphs_plain(
     pending_addressing_by_index: Dict[int, Dict] = {}
     pending_relationships_by_index: Dict[int, Dict] = {}
 
+    if (
+        sequential and checkpoint_manager and translation_id
+        and (
+            (prompt_options or {}).get("reflection_mode")
+            or (prompt_options or {}).get("auto_update_context")
+        )
+    ):
+        from src.utils.narrator_voice import bootstrap_narrator_voice
+        await bootstrap_narrator_voice(
+            db=checkpoint_manager.db,
+            translation_id=translation_id,
+            chunks=checkpoint_manager.db.get_chunks(translation_id) or [],
+            target_language=target_language,
+            model_name=str((prompt_options or {}).get("editor_model") or model_name),
+            llm_client=(prompt_options or {}).get("_editor_llm_client") or llm_client,
+        )
+
     async def _translate_chunk(i, analyze_context=True):
         """Translate one chunk. Reads previous_translation_context only in
         sequential mode (parallel runs have no stable previous chunk)."""
@@ -606,6 +623,19 @@ async def translate_paragraphs_plain(
         main_content = chunks[i].get('main_content', '')
         if not main_content.strip():
             return ('empty', main_content)
+        if i > 0 and sequential and checkpoint_manager and translation_id and (
+            (prompt_options or {}).get("reflection_mode")
+            or (prompt_options or {}).get("auto_update_context")
+        ):
+            from src.utils.narrator_voice import bootstrap_narrator_voice
+            await bootstrap_narrator_voice(
+                db=checkpoint_manager.db,
+                translation_id=translation_id,
+                chunks=checkpoint_manager.db.get_chunks(translation_id) or [],
+                target_language=target_language,
+                model_name=str((prompt_options or {}).get("editor_model") or model_name),
+                llm_client=(prompt_options or {}).get("_editor_llm_client") or llm_client,
+            )
 
         should_analyze_context = (
             analyze_context
@@ -717,26 +747,22 @@ async def translate_paragraphs_plain(
         unit_prompt_options = dict(prompt_options or {})
         unit_prompt_options.setdefault("source_language", source_language)
         unit_prompt_options.setdefault("target_language", target_language)
-        if sequential:
-            from src.utils.translation_quality import (
-                build_narrative_voice_context,
-            )
-
-            previous_translations = [
-                text
-                for index, text in sorted(
-                    completed_translations_by_index.items()
-                )
-                if index < global_chunk_offset + i
-            ]
-            narrative_voice_context = build_narrative_voice_context(
-                previous_translations,
-                target_language,
-            )
-            if narrative_voice_context:
-                unit_prompt_options["narrative_voice_context"] = (
-                    narrative_voice_context
-                )
+        from src.utils.narrator_voice import build_narrator_voice_context
+        voice_db = getattr(checkpoint_manager, "db", None) if checkpoint_manager else None
+        voice_chunk_index = global_chunk_offset + i
+        narrative_voice_context = build_narrator_voice_context(
+            translation_id or "", voice_db,
+            chunk_index=voice_chunk_index,
+            target_language=target_language,
+        )
+        if narrative_voice_context:
+            unit_prompt_options["narrative_voice_context"] = narrative_voice_context
+        unit_prompt_options.update({
+            "_checkpoint_db": voice_db,
+            "chunk_index": voice_chunk_index,
+            "chapter_index": chunks[i].get("chapter_index"),
+            "scene_key": str(chunks[i].get("scene_key") or ""),
+        })
         directed_context = build_directed_addressing_prompt_context(
             translation_id=translation_id or "",
             db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,

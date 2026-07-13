@@ -1249,6 +1249,19 @@ async def _translate_all_chunks_with_checkpoint(
     async def _translate_one(i, analyze_context=True):
         chunk = chunks[i]
         global_chunk_idx = _global_chunk_index(i)
+        if global_chunk_idx > 0 and checkpoint_manager and translation_id and (
+            prompt_options.get("reflection_mode")
+            or prompt_options.get("auto_update_context")
+        ):
+            from src.utils.narrator_voice import bootstrap_narrator_voice
+            await bootstrap_narrator_voice(
+                db=checkpoint_manager.db,
+                translation_id=translation_id,
+                chunks=checkpoint_manager.db.get_chunks(translation_id) or [],
+                target_language=target_language,
+                model_name=str(prompt_options.get("editor_model") or model_name),
+                llm_client=prompt_options.get("_editor_llm_client") or llm_client,
+            )
         checkpoint_context_data = checkpoint_context_data_by_global_index.get(
             global_chunk_idx
         )
@@ -1396,10 +1409,25 @@ async def _translate_all_chunks_with_checkpoint(
             "jobs_db_path": getattr(
                 getattr(checkpoint_manager, "db", None), "db_path", None,
             ),
-            "chunk_index": i,
+            "chunk_index": global_chunk_idx,
             "file_type": "epub",
             "editor_phase": "translation",
+            "_checkpoint_db": (
+                getattr(checkpoint_manager, "db", None)
+                if checkpoint_manager else None
+            ),
+            "chapter_index": chunk.get("chapter_index"),
+            "scene_key": str(chunk.get("scene_key") or ""),
         })
+        from src.utils.narrator_voice import build_narrator_voice_context
+        narrative_voice_context = build_narrator_voice_context(
+            translation_id or "",
+            getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
+            chunk_index=global_chunk_idx,
+            target_language=target_language,
+        )
+        if narrative_voice_context:
+            chunk_prompt_options["narrative_voice_context"] = narrative_voice_context
         directed_context = build_directed_addressing_prompt_context(
             translation_id=translation_id or "",
             db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,

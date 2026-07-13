@@ -70,7 +70,11 @@ async def test_gemini_sends_editor_contract_as_json_schema(monkeypatch):
     assert "responseSchema" not in generation_config
     gemini_schema = generation_config["responseJsonSchema"]
     assert gemini_schema["additionalProperties"] is False
-    assert gemini_schema["propertyOrdering"] == ["status", "issues"]
+    assert gemini_schema["propertyOrdering"] == [
+        "status", "issues", "voice_observations",
+    ]
+    voice_schema = gemini_schema["properties"]["voice_observations"]["items"]
+    assert voice_schema["propertyOrdering"][0] == "segment_id"
     issue_schema = gemini_schema["properties"]["issues"]["items"]
     assert issue_schema["propertyOrdering"][0] == "issue_id"
     replacement_schema = issue_schema["properties"]["draft_replacement"]
