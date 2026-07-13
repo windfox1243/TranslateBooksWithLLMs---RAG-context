@@ -359,6 +359,8 @@
   "editor_diagnostics_note_blocked": "Hinweis: Die deterministische Validierung blockierte dieses Ergebnis ({{reason}}); der Abschnitt muss vor der Annahme korrigiert werden.",
   "editor_diagnostics_note_unknown": "Hinweis: Dieses Editor-Ergebnis hat einen unbekannten Status. Prüfen Sie Ergebnisstatus und Grundcodes, bevor Sie sich darauf verlassen.",
   "editor_diagnostics_reason_codes": "Grundcodes: {{reasons}}",
+  "editor_diagnostics_automatic_retry": "Automatische Korrektur: Versuch {{attempt}}/{{maximum}} · Endgrund: {{terminal}} · Erzählerkonformität: {{conformance}}",
+  "context_narrator_conformance_note": "Einheit {{chunk}} · {{status}} · Versuche: {{attempts}} · Gründe: {{reasons}}",
   "editor_retry": "Editor erneut ausführen",
   "editor_retry_queued": "Eingereiht...",
   "editor_retry_running": "Wiederholung läuft...",

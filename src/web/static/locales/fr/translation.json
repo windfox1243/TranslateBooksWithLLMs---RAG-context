@@ -359,6 +359,8 @@
   "editor_diagnostics_note_blocked": "Note : la validation déterministe a bloqué ce résultat ({{reason}}) ; le segment doit être corrigé avant acceptation.",
   "editor_diagnostics_note_unknown": "Note : ce résultat du réviseur utilise un état inconnu. Vérifiez l’état du résultat et les codes de motif avant de vous y fier.",
   "editor_diagnostics_reason_codes": "Codes de motif : {{reasons}}",
+  "editor_diagnostics_automatic_retry": "Correction automatique : tentative {{attempt}}/{{maximum}} · motif final : {{terminal}} · conformité du narrateur : {{conformance}}",
+  "context_narrator_conformance_note": "Unité {{chunk}} · {{status}} · tentatives : {{attempts}} · motifs : {{reasons}}",
   "editor_retry": "Relancer l'éditeur",
   "editor_retry_queued": "En attente...",
   "editor_retry_running": "Nouvelle tentative...",
