@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.15.0-beta.40 - 2026-07-13
+
+### Fixed
+
+- **Senior Editor Model Persistence**:
+  The dedicated Senior Editor provider and model now survive asynchronous model
+  list refreshes, page reloads, and application restarts. Explicit settings saves
+  persist both values to `.env`, while temporary loading options can no longer
+  overwrite the selected model with an empty value.
+
 ## 1.15.0-beta.39 - 2026-07-13
 
 ### Added

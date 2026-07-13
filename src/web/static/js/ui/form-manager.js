@@ -501,6 +501,17 @@ export const FormManager = {
                     enableReflectionCheckbox.checked = config.enable_chunk_reflection;
                 }
             }
+            if (
+                config.editor_provider !== undefined
+                || config.editor_model !== undefined
+            ) {
+                EditorModelManager.setSelection(
+                    config.editor_provider || '',
+                    config.editor_model || '',
+                    true,
+                    false,
+                );
+            }
 
             // Parallel requests default (seeds the input; per-job request overrides it)
             if (config.parallel_translations) {

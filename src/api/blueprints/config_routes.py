@@ -244,6 +244,8 @@ def create_config_blueprint(server_session_id=None):
             "disable_auto_pause": str(_config.DISABLE_AUTO_PAUSE).strip().lower() == 'true',
             "bypass_context_gating": bool(_config.BYPASS_CONTEXT_GATING),
             "enable_chunk_reflection": str(_config.ENABLE_CHUNK_REFLECTION).strip().lower() == 'true',
+            "editor_provider": _config.EDITOR_PROVIDER or "",
+            "editor_model": _config.EDITOR_MODEL or "",
             # Webhook notifications — returned as-is for editing. URLs and tokens
             # only ever travel between this server and the same-origin browser
             # session that already controls the .env on disk.
@@ -1004,7 +1006,9 @@ def create_config_blueprint(server_session_id=None):
             'NOTIFY_ON_FAILURE',
             'NOTIFY_ON_INTERRUPTION',
             'NOTIFY_TIMEOUT_SECONDS',
-            'ENABLE_CHUNK_REFLECTION'
+            'ENABLE_CHUNK_REFLECTION',
+            'EDITOR_PROVIDER',
+            'EDITOR_MODEL'
         }
 
         try:
@@ -1144,6 +1148,8 @@ def create_config_blueprint(server_session_id=None):
             "ollama_api_endpoint": _config.OLLAMA_API_ENDPOINT or "",
             "openai_api_endpoint": _config.OPENAI_API_ENDPOINT or "",
             "enable_chunk_reflection": str(_config.ENABLE_CHUNK_REFLECTION).lower() == 'true',
+            "editor_provider": _config.EDITOR_PROVIDER or "",
+            "editor_model": _config.EDITOR_MODEL or "",
         })
 
     return bp
