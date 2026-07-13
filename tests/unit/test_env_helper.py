@@ -9,11 +9,15 @@ def test_ensure_env_defaults():
 
         added = ensure_env_defaults(env_file)
         assert "ENABLE_CHUNK_REFLECTION" in added
+        assert "EDITOR_PROVIDER" in added
+        assert "EDITOR_MODEL" in added
 
         content = env_file.read_text(encoding="utf-8")
         assert "LLM_PROVIDER=gemini" in content
         assert "GEMINI_API_KEY=test_key" in content
         assert "ENABLE_CHUNK_REFLECTION=false" in content
+        assert "EDITOR_PROVIDER=" in content
+        assert "EDITOR_MODEL=" in content
 
         # Running again should not re-add existing keys
         added_second = ensure_env_defaults(env_file)

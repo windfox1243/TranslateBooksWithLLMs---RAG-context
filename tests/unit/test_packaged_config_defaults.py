@@ -64,6 +64,8 @@ def test_explicit_config_root_env_overrides_inherited_process_values(tmp_path):
 def test_api_config_exposes_provider_reflection_and_masked_key_count(monkeypatch):
     monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
     monkeypatch.setattr(config, "ENABLE_CHUNK_REFLECTION", "true")
+    monkeypatch.setattr(config, "EDITOR_PROVIDER", "gemini")
+    monkeypatch.setattr(config, "EDITOR_MODEL", "gemini-editor-model")
     monkeypatch.setattr(config, "GEMINI_API_KEY", "FIRST_PLACEHOLDER,SECOND_PLACEHOLDER")
 
     app = Flask(__name__)
@@ -75,7 +77,32 @@ def test_api_config_exposes_provider_reflection_and_masked_key_count(monkeypatch
     payload = response.get_json()
     assert payload["llm_provider"] == "gemini"
     assert payload["enable_chunk_reflection"] is True
+    assert payload["editor_provider"] == "gemini"
+    assert payload["editor_model"] == "gemini-editor-model"
     assert payload["gemini_api_key_configured"] is True
     assert payload["gemini_api_key_count"] == 2
     assert "FIRST_PLACEHOLDER" not in response.get_data(as_text=True)
     assert "SECOND_PLACEHOLDER" not in response.get_data(as_text=True)
+
+
+def test_settings_persist_editor_provider_and_model(monkeypatch, tmp_path):
+    import src.api.blueprints.config_routes as config_routes
+
+    monkeypatch.setattr(config, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(config_routes, "reload_config", lambda: None)
+    app = Flask(__name__)
+    app.register_blueprint(create_config_blueprint(server_session_id=1))
+
+    with app.test_client() as client:
+        response = client.post(
+            "/api/settings",
+            json={
+                "EDITOR_PROVIDER": "gemini",
+                "EDITOR_MODEL": "gemini-editor-model",
+            },
+        )
+
+    assert response.status_code == 200
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "EDITOR_PROVIDER=gemini" in env_text
+    assert "EDITOR_MODEL=gemini-editor-model" in env_text

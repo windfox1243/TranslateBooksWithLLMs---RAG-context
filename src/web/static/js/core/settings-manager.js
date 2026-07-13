@@ -285,6 +285,13 @@ export const SettingsManager = {
         }
     },
 
+    saveEditorSelection(provider, model) {
+        this.saveLocalPreferences({
+            editorProvider: String(provider || '').trim(),
+            editorModel: String(model || '').trim(),
+        });
+    },
+
     /**
      * Load and apply saved local preferences to the form
      */
@@ -441,8 +448,16 @@ export const SettingsManager = {
             plainTextMode: plainTextModeCheckbox ? plainTextModeCheckbox.checked : false,
             chapterMode: chapterModeCheckbox ? chapterModeCheckbox.checked : false,
             enableReflection: enableReflectionCheckbox ? enableReflectionCheckbox.checked : false,
-            editorProvider: DomHelpers.getValue('editorProvider') || '',
-            editorModel: DomHelpers.getValue('editorModel') || '',
+            editorProvider: (
+                DomHelpers.getElement('editorProvider')?.dataset?.persistedValue
+                ?? DomHelpers.getValue('editorProvider')
+                ?? ''
+            ),
+            editorModel: (
+                DomHelpers.getElement('editorModel')?.dataset?.persistedValue
+                ?? DomHelpers.getValue('editorModel')
+                ?? ''
+            ),
             customInstructionFile: DomHelpers.getValue('customInstructionSelect') || '',
             novelContextFile: DomHelpers.getValue('novelContextSelect') || '',
             autoUpdateContext: DomHelpers.getElement('autoUpdateContext')?.checked || false
@@ -537,6 +552,16 @@ export const SettingsManager = {
             // Save chunk reflection flag (runtime behavior default)
             const enableReflectionCheckbox = DomHelpers.getElement('enableReflection');
             envSettings['ENABLE_CHUNK_REFLECTION'] = (enableReflectionCheckbox && enableReflectionCheckbox.checked) ? 'true' : 'false';
+            envSettings['EDITOR_PROVIDER'] = (
+                DomHelpers.getElement('editorProvider')?.dataset?.persistedValue
+                ?? DomHelpers.getValue('editorProvider')
+                ?? ''
+            );
+            envSettings['EDITOR_MODEL'] = (
+                DomHelpers.getElement('editorModel')?.dataset?.persistedValue
+                ?? DomHelpers.getValue('editorModel')
+                ?? ''
+            );
 
             // Save parallel-requests default (the per-job request still overrides
             // this; it only seeds the input on next load). Backend clamps it.

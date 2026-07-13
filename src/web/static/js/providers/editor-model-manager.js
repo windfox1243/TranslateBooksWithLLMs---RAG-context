@@ -6,6 +6,7 @@
  */
 
 import { ApiClient } from '../core/api-client.js';
+import { SettingsManager } from '../core/settings-manager.js';
 import { StateManager } from '../core/state-manager.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
 import { SearchableSelectFactory } from '../ui/searchable-select.js';
@@ -53,7 +54,10 @@ export const EditorModelManager = {
         this.initialized = true;
         attachProviderSearchable(provider, {
             placeholder: t('settings:search_providers_placeholder'),
-            onChange: () => {
+            onChange: (value) => {
+                this.rememberSelection(value || '', '', true);
+                model.value = '';
+                SearchableSelectFactory.get('editorModel')?.refresh();
                 this.syncCredential();
                 this.loadModels();
                 this.syncGenerationControls();
@@ -61,7 +65,8 @@ export const EditorModelManager = {
         });
         attachModelSearchable(model, {
             placeholder: t('settings:search_models_placeholder'),
-            onChange: () => {
+            onChange: (value) => {
+                this.rememberSelection(this.selectedProvider(), value || '', true);
                 window.dispatchEvent(new CustomEvent('editorModelChanged'));
                 this.syncGenerationControls();
             },
@@ -83,7 +88,12 @@ export const EditorModelManager = {
         window.addEventListener('localeChanged', () => this.refreshLocalizedDisplay());
 
         const pending = window.__pendingEditorSelection || {};
-        this.setSelection(pending.provider || provider.value, pending.model || model.value, false);
+        this.setSelection(
+            pending.provider || provider.value,
+            pending.model || model.value,
+            false,
+            false,
+        );
         delete window.__pendingEditorSelection;
         this.syncVisibility();
     },
@@ -221,7 +231,7 @@ export const EditorModelManager = {
     },
 
     effectiveProvider() {
-        return DomHelpers.getValue('editorProvider') || DomHelpers.getValue('llmProvider') || 'ollama';
+        return this.selectedProvider() || DomHelpers.getValue('llmProvider') || 'ollama';
     },
 
     modelRequestOptions(provider) {
@@ -239,7 +249,7 @@ export const EditorModelManager = {
     },
 
     effectiveModel() {
-        return (DomHelpers.getValue('editorModel') || DomHelpers.getValue('model') || '').trim();
+        return (this.selectedModel() || DomHelpers.getValue('model') || '').trim();
     },
 
     effectiveEndpoint(provider = this.effectiveProvider()) {
@@ -255,6 +265,32 @@ export const EditorModelManager = {
 
     usesSeparateProvider() {
         return this.effectiveProvider() !== (DomHelpers.getValue('llmProvider') || 'ollama');
+    },
+
+    selectedProvider() {
+        const select = DomHelpers.getElement('editorProvider');
+        return String(
+            select?.dataset?.persistedValue ?? select?.value ?? ''
+        ).trim();
+    },
+
+    selectedModel() {
+        const select = DomHelpers.getElement('editorModel');
+        return String(
+            select?.dataset?.persistedValue ?? select?.value ?? ''
+        ).trim();
+    },
+
+    rememberSelection(providerValue = '', modelValue = '', persist = true) {
+        const provider = DomHelpers.getElement('editorProvider');
+        const model = DomHelpers.getElement('editorModel');
+        const cleanProvider = String(providerValue || '').trim();
+        const cleanModel = String(modelValue || '').trim();
+        if (provider) provider.dataset.persistedValue = cleanProvider;
+        if (model) model.dataset.persistedValue = cleanModel;
+        if (persist) {
+            SettingsManager.saveEditorSelection(cleanProvider, cleanModel);
+        }
     },
 
     syncCredential() {
@@ -296,7 +332,7 @@ export const EditorModelManager = {
             ),
         };
         if (!enabled) return { promptOptions, credentials: {} };
-        const provider = DomHelpers.getValue('editorProvider') || '';
+        const provider = this.selectedProvider();
         const effectiveProvider = this.effectiveProvider();
         const budgetMode = DomHelpers.getValue('editorOutputBudget') || 'auto';
         const outputBudget = budgetMode === 'custom'
@@ -304,7 +340,7 @@ export const EditorModelManager = {
             : budgetMode;
         Object.assign(promptOptions, {
             editor_provider: provider,
-            editor_model: (DomHelpers.getValue('editorModel') || '').trim(),
+            editor_model: this.selectedModel(),
             editor_api_endpoint: this.effectiveEndpoint(effectiveProvider),
             editor_thinking_level: DomHelpers.getValue('editorThinkingLevel') || 'auto',
             editor_reasoning_supported: (
@@ -341,7 +377,7 @@ export const EditorModelManager = {
 
         const sequence = ++this.loadSequence;
         const provider = this.effectiveProvider();
-        const selected = model.value;
+        const selected = this.selectedModel();
         setPlaceholderOption(model, 'common:loading');
         SearchableSelectFactory.get('editorModel')?.refresh();
 
@@ -384,7 +420,12 @@ export const EditorModelManager = {
         this.syncGenerationControls();
     },
 
-    setSelection(providerValue = '', modelValue = '', reload = true) {
+    setSelection(
+        providerValue = '',
+        modelValue = '',
+        reload = true,
+        persist = true,
+    ) {
         const provider = DomHelpers.getElement('editorProvider');
         const model = DomHelpers.getElement('editorModel');
         if (!provider || !model) return;
@@ -400,6 +441,7 @@ export const EditorModelManager = {
             model.appendChild(option);
         }
         model.value = modelValue || '';
+        this.rememberSelection(providerValue, modelValue, persist);
         SearchableSelectFactory.get('editorModel')?.refresh();
         if (reload && DomHelpers.getElement('enableReflection')?.checked) this.loadModels();
         this.syncCredential();

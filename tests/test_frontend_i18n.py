@@ -521,10 +521,15 @@ def test_editor_model_picker_is_conditional_searchable_and_inheritable() -> None
     assert "ApiClient.getModels(provider" in manager
     assert "populateModelSelectInto(model, models" in manager
     assert "container.style.display = enabled ? 'grid' : 'none'" in manager
-    assert "DomHelpers.getValue('editorProvider') || DomHelpers.getValue('llmProvider')" in manager
-    assert "editorProvider: DomHelpers.getValue('editorProvider') || ''" in settings_manager
-    assert "editorModel: DomHelpers.getValue('editorModel') || ''" in settings_manager
+    assert "this.selectedProvider() || DomHelpers.getValue('llmProvider')" in manager
+    assert "SettingsManager.saveEditorSelection(cleanProvider, cleanModel)" in manager
+    assert "select?.dataset?.persistedValue ?? select?.value" in manager
+    assert "saveEditorSelection(provider, model)" in settings_manager
+    assert "dataset?.persistedValue" in settings_manager
+    assert "envSettings['EDITOR_PROVIDER']" in settings_manager
+    assert "envSettings['EDITOR_MODEL']" in settings_manager
     assert "editor_provider: DomHelpers.getElement('enableReflection')?.checked" in form_manager
+    assert "config.editor_model !== undefined" in form_manager
     assert 'id="editorKeyOptions"' in template
     assert "this.usesSeparateProvider()" in manager
     assert "EditorModelManager.applyToRequest(config)" in form_manager
