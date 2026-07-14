@@ -286,7 +286,7 @@ class GenericTranslator:
                     })
             else:
                 # 4. Create new translation job
-                prompt_options.setdefault("context_contract_version", 4)
+                prompt_options.setdefault("context_contract_version", 5)
                 prompt_options.setdefault("use_relationship_llm_judge", "selective")
                 prompt_options.setdefault("source_residue_validation", True)
                 self.checkpoint_manager.start_job(
@@ -650,6 +650,29 @@ class GenericTranslator:
                             total_chunks=total_units,
                             scene_key=unit.metadata.get("chapter_index"),
                         )
+                        # Deterministic social evidence is committed before the
+                        # draft request so an honorific or explicit hierarchy in
+                        # this source unit can guide the translation of the same
+                        # unit. LLM-derived candidates retain their existing
+                        # transaction boundary below.
+                        if self.translation_id and getattr(
+                            self.checkpoint_manager, "db", None
+                        ):
+                            from src.core.context import commit_source_social_evidence
+
+                            commit_source_social_evidence(
+                                translation_id=self.translation_id,
+                                db=self.checkpoint_manager.db,
+                                global_lore=context_session.global_lore,
+                                source_text=unit.content,
+                                dialogue_attribution=(
+                                    context_session.dialogue_attribution
+                                ),
+                                source_language=source_language,
+                                target_language=target_language,
+                                chunk_index=i,
+                                log_callback=log_callback,
+                            )
                         if log_callback:
                             log_callback(
                                 "novel_context_updated",
@@ -685,6 +708,8 @@ class GenericTranslator:
                             and getattr(self.checkpoint_manager, "db", None)
                             and relationship_mode != "off"
                         ):
+                            from src.core.context import relevant_character_names
+
                             locked_facts = [
                                 edge for edge in self.checkpoint_manager.db.get_relationship_edges(
                                     self.translation_id,
@@ -709,13 +734,12 @@ class GenericTranslator:
                                 "source_text": unit.content,
                                 "candidates": judged_candidates,
                                 "parser_status": context_session.relationship_parse_status,
-                                "active_character_names": [
-                                    value
-                                    for value in (
-                                        context_session.dialogue_attribution.get("state_after") or {}
-                                    ).values()
-                                    if value and str(value).casefold() != "unknown"
-                                ],
+                                "active_character_names": relevant_character_names(
+                                    global_lore=context_session.global_lore,
+                                    source_text=unit.content,
+                                    dialogue_attribution=context_session.dialogue_attribution,
+                                    source_language=source_language,
+                                ),
                             }
                             if relationship_mode == "project":
                                 if prompt_options.get(
@@ -815,14 +839,15 @@ class GenericTranslator:
                             context_session.dialogue_attribution
                         )
                     if context_session:
+                        from src.core.context import relevant_character_names
                         unit_prompt_options.setdefault(
                             "active_character_names",
-                            [
-                                value for value in (
-                                    context_session.dialogue_attribution.get("state_after") or {}
-                                ).values()
-                                if value and str(value).casefold() != "unknown"
-                            ],
+                            relevant_character_names(
+                                global_lore=context_session.global_lore,
+                                source_text=unit.content,
+                                dialogue_attribution=context_session.dialogue_attribution,
+                                source_language=source_language,
+                            ),
                         )
                     directed_context = build_directed_addressing_prompt_context(
                         translation_id=self.translation_id,
@@ -859,6 +884,15 @@ class GenericTranslator:
                     )
                     if narrative_voice_context:
                         unit_prompt_options["narrative_voice_context"] = narrative_voice_context
+                    from src.core.context import build_unit_prompt_context
+                    unit_prompt_options["prompt_context_bundle"] = (
+                        build_unit_prompt_context(
+                            addressing=directed_context,
+                            relationships=relationship_context,
+                            narrator=narrative_voice_context,
+                            nearby_source=(unit.context_before, unit.context_after),
+                        )
+                    )
                     unit_prompt_options.update({
                         "_checkpoint_db": voice_db,
                         "chapter_index": getattr(unit, "chapter_index", None),
@@ -1153,6 +1187,8 @@ class GenericTranslator:
                                     contract_version=contract_version,
                                 )
                             if relationship_mode != "off":
+                                from src.core.context import relevant_character_names
+
                                 sync_context_update_relationships_to_db(
                                     translation_id=self.translation_id,
                                     db=db,
@@ -1162,13 +1198,12 @@ class GenericTranslator:
                                     parser_status=context_session.relationship_parse_status,
                                     target_language=target_language,
                                     chunk_index=i,
-                                    active_character_names=[
-                                        value
-                                        for value in (
-                                            context_session.dialogue_attribution.get("state_after") or {}
-                                        ).values()
-                                        if value and str(value).casefold() != "unknown"
-                                    ],
+                                    active_character_names=relevant_character_names(
+                                        global_lore=context_session.global_lore,
+                                        source_text=unit.content,
+                                        dialogue_attribution=context_session.dialogue_attribution,
+                                        source_language=source_language,
+                                    ),
                                     log_callback=log_callback,
                                 )
                         if prompt_options.get("use_db_directed_addressing", True):

@@ -1316,6 +1316,23 @@ async def _translate_all_chunks_with_checkpoint(
                     total_chunks=len(chunks),
                     scene_key=chunk.get("chapter_index"),
                 )
+                if (
+                    checkpoint_manager and translation_id
+                    and hasattr(checkpoint_manager, "db")
+                ):
+                    from src.core.context import commit_source_social_evidence
+
+                    commit_source_social_evidence(
+                        translation_id=translation_id,
+                        db=checkpoint_manager.db,
+                        global_lore=context_session.global_lore,
+                        source_text=chunk["text"],
+                        dialogue_attribution=context_session.dialogue_attribution,
+                        source_language=source_language,
+                        target_language=target_language,
+                        chunk_index=global_chunk_idx,
+                        log_callback=log_callback,
+                    )
                 if log_callback:
                     log_callback("novel_context_updated", f"Novel context prepared for chunk {i+1}.")
                     for change_log in change_logs:
@@ -1338,6 +1355,8 @@ async def _translate_all_chunks_with_checkpoint(
                     and hasattr(checkpoint_manager, "db")
                     and relationship_mode != "off"
                 ):
+                    from src.core.context import relevant_character_names
+
                     locked_facts = [
                         edge for edge in checkpoint_manager.db.get_relationship_edges(
                             translation_id,
@@ -1362,13 +1381,12 @@ async def _translate_all_chunks_with_checkpoint(
                         "source_text": chunk['text'],
                         "candidates": judged_candidates,
                         "parser_status": context_session.relationship_parse_status,
-                        "active_character_names": [
-                            value
-                            for value in (
-                                context_session.dialogue_attribution.get("state_after") or {}
-                            ).values()
-                            if value and str(value).casefold() != "unknown"
-                        ],
+                        "active_character_names": relevant_character_names(
+                            global_lore=context_session.global_lore,
+                            source_text=chunk["text"],
+                            dialogue_attribution=context_session.dialogue_attribution,
+                            source_language=source_language,
+                        ),
                     }
                     if relationship_mode == "project":
                         if prompt_options.get(
@@ -1449,6 +1467,18 @@ async def _translate_all_chunks_with_checkpoint(
         )
         if narrative_voice_context:
             chunk_prompt_options["narrative_voice_context"] = narrative_voice_context
+        if context_session and context_session.dialogue_attribution:
+            from src.core.context import relevant_character_names
+
+            chunk_prompt_options["dialogue_attribution"] = (
+                context_session.dialogue_attribution
+            )
+            chunk_prompt_options["active_character_names"] = relevant_character_names(
+                global_lore=context_session.global_lore,
+                source_text=chunk["text"],
+                dialogue_attribution=context_session.dialogue_attribution,
+                source_language=source_language,
+            )
         directed_context = build_directed_addressing_prompt_context(
             translation_id=translation_id or "",
             db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
@@ -1468,6 +1498,12 @@ async def _translate_all_chunks_with_checkpoint(
         )
         if relationship_context:
             chunk_prompt_options["relationship_context"] = relationship_context
+        from src.core.context import build_unit_prompt_context
+        chunk_prompt_options["prompt_context_bundle"] = build_unit_prompt_context(
+            addressing=directed_context,
+            relationships=relationship_context,
+            narrator=narrative_voice_context,
+        )
         return await translate_chunk_with_fallback(
             chunk_text=chunk['text'],
             local_tag_map=chunk['local_tag_map'],

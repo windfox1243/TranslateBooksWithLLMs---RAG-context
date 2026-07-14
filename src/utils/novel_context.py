@@ -7256,6 +7256,20 @@ class NovelContextSession:
         """Return a compressed full-context snapshot."""
         return compress_dynamic_state(self.content)
 
+    def analysis_result(self):
+        """Expose the latest source analysis through the v5 typed contract."""
+        from src.core.context import ContextAnalysisResult
+
+        return ContextAnalysisResult(
+            dialogue_attribution=dict(self.dialogue_attribution or {}),
+            relationship_candidates=list(self.relationship_candidates),
+            addressing_observations=list(self.addressing_candidates),
+            diagnostics={
+                "relationship_parse_status": self.relationship_parse_status,
+                "addressing_parse_status": self.addressing_parse_status,
+            },
+        )
+
     def register_editor_terms(self, term_pairs: List[Tuple[str, str]]) -> List[str]:
         """Register term replacements ordered by Senior Editor critique into global lore & glossary."""
         if not term_pairs:
@@ -7440,6 +7454,31 @@ class NovelContextSession:
 
         target_lang = target_language or self.prompt_options.get("target_language") or "Vietnamese"
         source_lang = source_language or self.prompt_options.get("source_language") or "English"
+
+        contract_version = int(
+            self.prompt_options.get("context_contract_version", 1) or 1
+        )
+
+        # Contract v5 treats source analysis as authoritative for lore and
+        # relationships.  The final translation is only allowed to contribute
+        # deterministic target-language observations after structural success;
+        # it must not trigger a second full lore/relationship analysis request.
+        if contract_version >= 5:
+            alias_map = _character_alias_map(self.global_lore)
+            sanitized_dynamic = _sanitize_vietnamese_dynamic_state(
+                dynamic_state=self.dynamic_state,
+                alias_map=alias_map,
+                character_genders=_character_gender_map(self.global_lore),
+                character_profiles=_character_profile_map(self.global_lore),
+                translated_chunk=translated_chunk,
+                dialogue_attribution=self.dialogue_attribution,
+                target_language=target_lang,
+            )
+            if sanitized_dynamic and sanitized_dynamic.strip() != self.dynamic_state.strip():
+                self.dynamic_state = sanitized_dynamic
+                self.save()
+                return True
+            return False
 
         if llm_client and source_chunk:
             from src.utils.dialogue_attribution import detect_dialogue_turns

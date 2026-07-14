@@ -17,6 +17,10 @@ _PROTECTED_PATTERN = re.compile(
     r"https?://\S+|www\.\S+",
     re.IGNORECASE,
 )
+_MULTIWORD_PROPER_NAME_RE = re.compile(
+    r"(?<!\w)[A-Z][\w'’-]*(?:\s+[A-Z][\w'’-]*){1,4}(?!\w)",
+    re.UNICODE,
+)
 @dataclass(frozen=True)
 class ResidueFinding:
     """One high-confidence source-language span that survived in a draft."""
@@ -108,6 +112,96 @@ def _mask_protected_intervals(text: str, protected: Iterable[str]) -> str:
             flags=re.IGNORECASE,
         )
     return result
+
+
+def identity_preserving_proper_names(
+    source_text: str,
+    draft_text: str,
+) -> List[str]:
+    """Return multiword proper-name spans preserved exactly by the draft."""
+
+    draft = str(draft_text or "")
+    result: List[str] = []
+    for match in _MULTIWORD_PROPER_NAME_RE.finditer(str(source_text or "")):
+        value = match.group(0).strip()
+        if value and re.search(
+            rf"(?<!\w){re.escape(value)}(?!\w)", draft, re.IGNORECASE,
+        ):
+            result.append(value)
+    return list(dict.fromkeys(result))
+
+
+def filter_protected_span_editor_issues(
+    draft_text: str,
+    issues: Iterable[Dict[str, Any]],
+    *,
+    protected_terms: Optional[Iterable[str]] = None,
+    glossary_terms: Optional[Dict[str, str]] = None,
+) -> tuple[List[Dict[str, Any]], List[str]]:
+    """Reject model edits whose target is wholly owned by protected spans.
+
+    A model may incorrectly propose translating a token inside a proper name
+    even when deterministic residue scanning masked the complete entity. Keep
+    an issue only if at least one occurrence of its exact edit target exists
+    outside every complete protected span.
+    """
+
+    text = str(draft_text or "")
+    terms = {
+        str(item).strip() for item in protected_terms or [] if str(item).strip()
+    }
+    for source, target in (glossary_terms or {}).items():
+        if _normalized(source) == _normalized(target) and str(source).strip():
+            terms.add(str(source).strip())
+    protected_intervals: List[tuple[int, int, str]] = []
+    for term in sorted(terms, key=len, reverse=True):
+        pattern = re.escape(term)
+        if term[:1].isalnum() and term[-1:].isalnum():
+            pattern = rf"(?<!\w){pattern}(?!\w)"
+        protected_intervals.extend(
+            (match.start(), match.end(), term)
+            for match in re.finditer(pattern, text, re.IGNORECASE)
+        )
+
+    retained: List[Dict[str, Any]] = []
+    rejected_ids: List[str] = []
+    for issue in issues:
+        replacement = issue.get("draft_replacement")
+        target = str(
+            replacement.get("draft")
+            if isinstance(replacement, dict)
+            else issue.get("draft_quote") or ""
+        ).strip()
+        if not target or not protected_intervals:
+            retained.append(issue)
+            continue
+        occurrences = list(re.finditer(re.escape(target), text, re.IGNORECASE))
+        wholly_protected = bool(occurrences) and all(
+            any(
+                protected_start <= match.start()
+                and match.end() <= protected_end
+                for protected_start, protected_end, _term in protected_intervals
+            )
+            for match in occurrences
+        )
+        replacement_text = str(
+            replacement.get("replacement")
+            if isinstance(replacement, dict) else ""
+        ).casefold()
+        destructively_overlaps = bool(occurrences) and all(
+            any(
+                match.start() < protected_end
+                and protected_start < match.end()
+                and term.casefold() not in replacement_text
+                for protected_start, protected_end, term in protected_intervals
+            )
+            for match in occurrences
+        )
+        if wholly_protected or destructively_overlaps:
+            rejected_ids.append(str(issue.get("issue_id") or "unknown"))
+        else:
+            retained.append(issue)
+    return retained, rejected_ids
 
 
 def find_source_residue(
@@ -333,6 +427,51 @@ def validate_issue_locators(
         elif local_quote.count(old) > 1:
             errors.append(f"replacement_ambiguous_in_locator:{issue_id}")
     return errors
+
+
+def normalize_unique_issue_locators(
+    draft_text: str,
+    issues: Iterable[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], List[str]]:
+    """Ground local edits whose exact replacement span already identifies them."""
+
+    draft = str(draft_text or "")
+    segments = build_editor_segments(draft)
+    normalized: List[Dict[str, Any]] = []
+    repaired_ids: List[str] = []
+    for raw_issue in issues or []:
+        issue = dict(raw_issue)
+        replacement = issue.get("draft_replacement")
+        if (
+            str(issue.get("repair_kind") or "").casefold() == "local_replace"
+            and isinstance(replacement, dict)
+        ):
+            old = str(replacement.get("draft") or "").strip()
+            if old:
+                candidates = [
+                    segment for segment in segments
+                    if segment["text"].casefold().count(old.casefold()) == 1
+                ]
+                selected = None
+                requested_segment = str(issue.get("segment_id") or "").upper()
+                if requested_segment:
+                    selected = next((
+                        segment for segment in candidates
+                        if segment["segment_id"] == requested_segment
+                    ), None)
+                if selected is None and len(candidates) == 1:
+                    selected = candidates[0]
+                if selected is not None:
+                    current_errors = validate_issue_locators(draft, [issue])
+                    if current_errors:
+                        issue["segment_id"] = selected["segment_id"]
+                        issue["draft_quote"] = old
+                        if not validate_issue_locators(draft, [issue]):
+                            repaired_ids.append(
+                                str(issue.get("issue_id") or "unknown")
+                            )
+        normalized.append(issue)
+    return normalized, repaired_ids
 
 
 def apply_local_editor_patches(
@@ -576,6 +715,22 @@ def validate_editor_repair(
         for finding in remaining
         if finding.blocking
     )
+    identity_terms = set(identity_preserving_proper_names(
+        source_text, draft_text,
+    ))
+    identity_terms.update(
+        str(source).strip()
+        for source, target in (glossary_terms or {}).items()
+        if _normalized(source) == _normalized(target) and str(source).strip()
+    )
+    for term in sorted(identity_terms, key=len, reverse=True):
+        pattern = re.escape(term)
+        if term[:1].isalnum() and term[-1:].isalnum():
+            pattern = rf"(?<!\w){pattern}(?!\w)"
+        before_count = len(re.findall(pattern, str(draft_text or ""), re.IGNORECASE))
+        after_count = len(re.findall(pattern, str(repaired_text or ""), re.IGNORECASE))
+        if before_count and after_count < before_count:
+            errors.append(f"protected_term_removed: {term}")
     return errors
 
 

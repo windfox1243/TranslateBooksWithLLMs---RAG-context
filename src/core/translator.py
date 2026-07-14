@@ -1560,13 +1560,16 @@ def _render_reflection_novel_context(
             active_context = raw_context.strip()
     directed_context = str(options.get("directed_addressing_context") or "").strip()
     relationship_context = str(options.get("relationship_context") or "").strip()
+    prompt_context_bundle = str(options.get("prompt_context_bundle") or "").strip()
     blocks = []
-    if directed_context:
+    if prompt_context_bundle:
+        blocks.append(prompt_context_bundle)
+    elif directed_context:
         blocks.append(
             "# STRUCTURED DIRECTED ADDRESSING RULES\n"
             f"{directed_context}"
         )
-    if relationship_context:
+    if relationship_context and not prompt_context_bundle:
         blocks.append(
             "# STRUCTURED RELATIONSHIP CONTEXT\n"
             f"{relationship_context}"
@@ -1575,6 +1578,12 @@ def _render_reflection_novel_context(
         blocks.append(
             "# ACTIVE MARKDOWN NOVEL CONTEXT\n"
             f"{active_context}"
+        )
+    neighbor_context = str(options.get("editor_neighbor_context") or "").strip()
+    if neighbor_context:
+        blocks.append(
+            "# ADJACENT WINDOW CONTEXT (READ-ONLY; DO NOT REWRITE)\n"
+            f"{neighbor_context}"
         )
     return "\n\n".join(blocks).strip()
 
@@ -1654,7 +1663,7 @@ async def _generate_editor_response(
     return result
 
 
-async def run_chunk_reflection_pass(
+async def _run_chunk_reflection_pass_impl(
     source_chunk: str,
     draft_translation: str,
     target_language: str,
@@ -1683,7 +1692,10 @@ async def run_chunk_reflection_pass(
     from src.utils.addressing_schema import context_contract_version
     from src.utils.translation_quality import (
         apply_local_editor_patches,
+        filter_protected_span_editor_issues,
         find_source_residue,
+        identity_preserving_proper_names,
+        normalize_unique_issue_locators,
         residue_findings_to_editor_issues,
         validate_editor_repair,
         validate_issue_locators,
@@ -1725,6 +1737,15 @@ async def run_chunk_reflection_pass(
         editor_controls.get("mode"),
         reported_limit=editor_output_limit,
     )
+    escalation_client = options.get("_editor_escalation_llm_client")
+    escalation_model = str(options.get("editor_escalation_model") or "").strip()
+    escalation_enabled = bool(
+        options.get("editor_escalation_enabled", False)
+        and escalation_client
+        and escalation_model
+    )
+    escalation_pending = False
+    escalation_used = False
     schema_capability_key = (
         editor_provider,
         editor_model.casefold(),
@@ -1852,6 +1873,22 @@ async def run_chunk_reflection_pass(
         fallback_system_prompt: Optional[str] = None,
     ) -> Any:
         nonlocal editor_request_count, recovered_truncation
+        nonlocal escalation_pending, escalation_used
+        active_client = editor_client
+        active_model = editor_model
+        active_controls = editor_controls
+        if escalation_pending and stage.startswith("repair_"):
+            active_client = escalation_client
+            active_model = escalation_model
+            active_controls = resolve_thinking_controls(
+                str(options.get("editor_escalation_provider") or editor_provider),
+                active_model,
+                options.get("editor_escalation_thinking_level") or "minimal",
+                role="editor",
+                endpoint=str(options.get("editor_escalation_endpoint") or ""),
+            )
+            escalation_pending = False
+            escalation_used = True
         schema = (
             REFLECTION_RESPONSE_SCHEMA
             if structured and options.get("editor_native_schema", True)
@@ -1919,10 +1956,10 @@ async def run_chunk_reflection_pass(
                 return response
             editor_request_count += 1
             retried = await _generate_editor_response(
-                llm_client=editor_client,
+                llm_client=active_client,
                 prompt=active_prompt,
                 system_prompt=active_system_prompt,
-                model_name=editor_model,
+                model_name=active_model,
                 temperature=0.0,
                 max_output_tokens=retry_tokens,
                 response_schema=active_schema,
@@ -1943,16 +1980,16 @@ async def run_chunk_reflection_pass(
                 raise RuntimeError("Senior Editor request budget exhausted")
             editor_request_count += 1
             response = await _generate_editor_response(
-                llm_client=editor_client,
+                llm_client=active_client,
                 prompt=active_prompt,
                 system_prompt=active_system_prompt,
-                model_name=editor_model,
+                model_name=active_model,
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
                 response_schema=schema,
                 stage=stage,
                 **{
-                    key: editor_controls.get(key) for key in (
+                    key: active_controls.get(key) for key in (
                         "thinking_level", "thinking_budget",
                         "thinking_enabled", "reasoning_effort",
                     )
@@ -1978,16 +2015,16 @@ async def run_chunk_reflection_pass(
             raise RuntimeError("Senior Editor request budget exhausted")
         editor_request_count += 1
         response = await _generate_editor_response(
-            llm_client=editor_client,
+            llm_client=active_client,
             prompt=fallback_prompt or prompt,
             system_prompt=fallback_system_prompt or system_prompt,
-            model_name=editor_model,
+            model_name=active_model,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
             response_schema=None,
             stage=f"{stage}_tagged_fallback",
             **{
-                key: editor_controls.get(key) for key in (
+                key: active_controls.get(key) for key in (
                     "thinking_level", "thinking_budget",
                     "thinking_enabled", "reasoning_effort",
                 )
@@ -2015,9 +2052,15 @@ async def run_chunk_reflection_pass(
     protected_terms.extend(
         str(item) for item in options.get("preserved_terms") or [] if item
     )
+    protected_terms.extend(
+        identity_preserving_proper_names(source_chunk, draft_translation)
+    )
     try:
         from src.utils.novel_context import (
+            GLOSSARY_SECTION,
             _character_profile_map,
+            _find_lore_section,
+            _parse_bullet_entries,
             character_alias_map,
             extract_global_lore,
         )
@@ -2032,6 +2075,14 @@ async def run_chunk_reflection_pass(
         aliases = character_alias_map(raw_lore)
         protected_terms.extend(str(item) for item in aliases.keys())
         protected_terms.extend(str(item) for item in aliases.values())
+        glossary_bounds = _find_lore_section(raw_lore, GLOSSARY_SECTION)
+        if glossary_bounds:
+            for source_term, target_term in _parse_bullet_entries(
+                raw_lore[glossary_bounds[1]:glossary_bounds[2]]
+            ):
+                if source_term and target_term:
+                    glossary_terms.setdefault(source_term, target_term)
+                    protected_terms.extend((source_term, target_term))
     except Exception:
         pass
     residue_findings = []
@@ -2299,6 +2350,13 @@ async def run_chunk_reflection_pass(
                 )
 
     if reflection_contract_invalid(reflection_result):
+        invalid_issues = [
+            issue for issue in reflection_result.issues
+            if (
+                _issue_requires_draft_replacement(issue)
+                and not issue.get("draft_replacement")
+            )
+        ]
         valid_issues = [
             issue for issue in reflection_result.issues
             if not (
@@ -2306,7 +2364,10 @@ async def run_chunk_reflection_pass(
                 and not issue.get("draft_replacement")
             )
         ]
-        invalid_issue_count = len(reflection_result.issues) - len(valid_issues)
+        invalid_issue_count = len(invalid_issues)
+        deterministic_invalid = sum(
+            1 for issue in invalid_issues if issue.get("deterministic")
+        )
         if valid_issues and reflection_result.parse_status == "json":
             reflection_result = ReflectionResult(
                 "needs_repair",
@@ -2315,8 +2376,9 @@ async def run_chunk_reflection_pass(
                 reflection_result.parse_status,
                 reflection_result.voice_observations,
             )
-            contract_review_required = invalid_issue_count > 0
-            review_issue_count += invalid_issue_count
+            contract_review_required = deterministic_invalid > 0
+            review_issue_count += deterministic_invalid
+            warning_count += invalid_issue_count - deterministic_invalid
             if log_callback:
                 emit_progress_log(
                     log_callback,
@@ -2493,6 +2555,29 @@ async def run_chunk_reflection_pass(
                 data={"findings": narrator_conformance["violating_segments"]},
             )
 
+    retained_issues, protected_issue_ids = filter_protected_span_editor_issues(
+        draft_translation,
+        reflection_result.issues,
+        protected_terms=protected_terms,
+        glossary_terms=glossary_terms,
+    )
+    if protected_issue_ids:
+        reflection_result = ReflectionResult(
+            "needs_repair" if retained_issues else "no_issues",
+            retained_issues,
+            reflection_result.raw_text,
+            reflection_result.parse_status,
+            reflection_result.voice_observations,
+        )
+        if log_callback:
+            emit_progress_log(
+                log_callback,
+                "editor_protected_span_issues_ignored",
+                "Ignored editor changes that targeted complete protected entity spans.",
+                layer="senior_editor_reflection",
+                data={"issue_ids": protected_issue_ids},
+            )
+
     if not reflection_result.needs_repair:
         if log_callback:
             emit_progress_log(
@@ -2509,6 +2594,25 @@ async def run_chunk_reflection_pass(
         )
         return persist_final_voice(draft_translation)
 
+    normalized_issues, normalized_locator_ids = normalize_unique_issue_locators(
+        draft_translation, reflection_result.issues,
+    )
+    if normalized_locator_ids:
+        reflection_result = ReflectionResult(
+            reflection_result.status,
+            normalized_issues,
+            reflection_result.raw_text,
+            reflection_result.parse_status,
+            reflection_result.voice_observations,
+        )
+        if log_callback:
+            emit_progress_log(
+                log_callback,
+                "editor_locators_grounded",
+                "Grounded editor edits from unique exact draft spans.",
+                layer="senior_editor_reflection",
+                data={"issue_ids": normalized_locator_ids},
+            )
     locator_errors = validate_issue_locators(
         draft_translation, reflection_result.issues,
     )
@@ -2579,6 +2683,14 @@ async def run_chunk_reflection_pass(
 
     if locator_errors:
         invalid_ids = {item.rsplit(":", 1)[-1] for item in locator_errors}
+        invalid_issues = [
+            issue for issue in reflection_result.issues
+            if str(issue.get("issue_id") or "") in invalid_ids
+        ]
+        deterministic_invalid_ids = {
+            str(issue.get("issue_id") or "")
+            for issue in invalid_issues if issue.get("deterministic")
+        }
         reflection_result = ReflectionResult(
             "needs_repair",
             [
@@ -2589,12 +2701,13 @@ async def run_chunk_reflection_pass(
             reflection_result.parse_status,
             reflection_result.voice_observations,
         )
-        review_required = True
-        review_issue_count += len(invalid_ids)
+        review_required = review_required or bool(deterministic_invalid_ids)
+        review_issue_count += len(deterministic_invalid_ids)
+        warning_count += len(invalid_ids - deterministic_invalid_ids)
         if not reflection_result.issues:
             unresolved_issue_count = len(invalid_ids)
             finish_run(
-                "review_required",
+                "review_required" if deterministic_invalid_ids else "warnings_only",
                 parse_status=reflection_result.parse_status,
                 failure_class=(
                     "locator_ambiguous"
@@ -2606,7 +2719,17 @@ async def run_chunk_reflection_pass(
                 issue_count=len(invalid_ids),
                 diagnostics={"reason_codes": locator_errors},
             )
-            return persist_final_voice(draft_translation)
+            final_text = persist_final_voice(draft_translation)
+            if deterministic_invalid_ids:
+                return review_required_translation(
+                    final_text,
+                    {
+                        "stage": "locator_validation",
+                        "status": "review_required",
+                        "final_reason_codes": locator_errors,
+                    },
+                )
+            return final_text
 
     no_op_issue_ids = {
         str(issue.get("issue_id") or "")
@@ -2695,7 +2818,18 @@ async def run_chunk_reflection_pass(
                         "ignored_no_op_issue_ids": sorted(no_op_issue_ids),
                     },
                 )
-                return persist_final_voice(patched_draft)
+                final_text = persist_final_voice(patched_draft)
+                if review_required:
+                    return review_required_translation(
+                        final_text,
+                        {
+                            "stage": "locator_validation",
+                            "status": "review_required",
+                            "final_reason_codes": locator_errors,
+                            "repair_mode": "local_patch",
+                        },
+                    )
+                return final_text
         else:
             patched_draft = original_draft
             unresolved_issues = list(actionable_issues)
@@ -2717,7 +2851,18 @@ async def run_chunk_reflection_pass(
             issue_count=len(reflection_result.issues),
             diagnostics={"reason_codes": patch_errors},
         )
-        return persist_final_voice(patched_draft)
+        final_text = persist_final_voice(patched_draft)
+        if review_required:
+            return review_required_translation(
+                final_text,
+                {
+                    "stage": "locator_validation",
+                    "status": "review_required",
+                    "final_reason_codes": locator_errors,
+                    "repair_mode": "local_patch",
+                },
+            )
+        return final_text
 
     reflection_result = ReflectionResult(
         "needs_repair",
@@ -2727,6 +2872,39 @@ async def run_chunk_reflection_pass(
         reflection_result.voice_observations,
     )
     draft_translation = patched_draft
+
+    # A failed exact-span edit is not evidence that the whole translation needs
+    # rewriting.  Rewriting here greatly increases prompt size and can damage
+    # unrelated text, especially with compact editor models.  Locator repair has
+    # already had its one bounded retry above, so retain the best structurally
+    # valid draft and surface the remaining local issues for human review.
+    if all(_issue_requires_draft_replacement(issue) for issue in unresolved_issues):
+        reason_codes = [
+            *patch_errors,
+            *[
+                f"local_patch_unresolved:{issue.get('issue_id') or 'unknown'}"
+                for issue in unresolved_issues
+            ],
+        ]
+        finish_run(
+            "review_required",
+            parse_status=reflection_result.parse_status,
+            failure_class="local_patch_unresolved",
+            issue_count=len(reflection_result.issues) + review_issue_count,
+            diagnostics={
+                "reason_codes": reason_codes,
+                "repair_mode": "bounded_local_patch",
+            },
+        )
+        return review_required_translation(
+            persist_final_voice(draft_translation),
+            {
+                "stage": "local_patch",
+                "status": "review_required",
+                "final_reason_codes": reason_codes,
+                "repair_mode": "bounded_local_patch",
+            },
+        )
 
     from src.utils.unified_logger import get_logger, LogType
     critique_summary = format_critique_tldr(critique)
@@ -2916,6 +3094,21 @@ async def run_chunk_reflection_pass(
         })
         failure_signature = tuple(sorted(set(validation_errors)))
         if failure_signature and failure_signature == previous_failure_signature:
+            if (
+                escalation_enabled and not escalation_used
+                and repair_attempt + 1 < max_automatic_repair_attempts
+            ):
+                escalation_pending = True
+                if log_callback:
+                    emit_progress_log(
+                        log_callback,
+                        "editor_escalation_scheduled",
+                        "Senior Editor state: one configured escalation will review the unchanged validation failure.",
+                        level="warning",
+                        layer="senior_editor_repair",
+                    )
+                previous_failure_signature = None
+                continue
             if log_callback:
                 emit_progress_log(
                     log_callback,
@@ -2990,3 +3183,150 @@ async def run_chunk_reflection_pass(
     return review_required_translation(
         persist_final_voice(draft_translation), diagnostics,
     )
+
+
+def _split_text_preserving(value: str, count: int) -> List[str]:
+    """Split at paragraph boundaries while preserving exact reconstruction."""
+
+    text = str(value or "")
+    if count <= 1 or not text:
+        return [text]
+    paragraph_boundaries = [
+        match.end() for match in re.finditer(r"\n\s*\n", text)
+    ]
+    line_boundaries = [match.end() for match in re.finditer(r"\n", text)]
+    sentence_boundaries = [
+        match.end() for match in re.finditer(r"(?<=[.!?。！？])\s+", text)
+    ]
+    word_boundaries = [match.end() for match in re.finditer(r"\s+", text)]
+    chosen: List[int] = []
+    previous = 0
+    for index in range(1, count):
+        target = int(len(text) * index / count)
+        boundary = 0
+        for boundaries in (
+            paragraph_boundaries, line_boundaries, sentence_boundaries,
+            word_boundaries,
+        ):
+            candidates = [
+                item for item in boundaries if previous < item < len(text)
+            ]
+            if candidates:
+                boundary = min(candidates, key=lambda item: abs(item - target))
+                break
+        if not boundary:
+            boundary = max(previous + 1, min(target, len(text) - 1))
+        if boundary <= previous:
+            continue
+        chosen.append(boundary)
+        previous = boundary
+    points = [0, *chosen, len(text)]
+    return [text[points[i]:points[i + 1]] for i in range(len(points) - 1)]
+
+
+async def run_chunk_reflection_pass(*args: Any, **kwargs: Any):
+    """Compatibility wrapper with bounded, complete editor review windows."""
+
+    from src.core.editor import EditorService, review_required_translation
+
+    signature = inspect.signature(_run_chunk_reflection_pass_impl)
+    bound = signature.bind_partial(*args, **kwargs)
+    bound.apply_defaults()
+    values = dict(bound.arguments)
+    options = dict(values.get("prompt_options") or {})
+    source = str(values.get("source_chunk") or "")
+    draft = str(values.get("draft_translation") or "")
+    file_type = str(options.get("file_type") or "txt").casefold()
+    # Full-unit review is the default. Windowing is an explicit provider/model
+    # capacity fallback so relevant long-range evidence is not hidden merely
+    # because a unit crosses an arbitrary application threshold.
+    max_input_tokens = int(
+        options.get("editor_max_input_tokens")
+        or options.get("editor_model_input_limit")
+        or 0
+    )
+    # The fixed editor contract and selected context use roughly 4k tokens.
+    # Reserve that space, then split source/draft content conservatively.
+    estimated_tokens = 4000 + int((len(source) + len(draft)) / 4)
+    can_window = file_type in {"txt", "text", "docx", "epub"}
+    if (
+        not options.get("_editor_windowed")
+        and can_window
+        and max_input_tokens > 0
+        and estimated_tokens > max_input_tokens
+    ):
+        usable_tokens = max(2000, max_input_tokens - 4000)
+        window_count = max(
+            2,
+            int((len(source) + len(draft) + usable_tokens * 4 - 1) / (usable_tokens * 4)),
+        )
+        source_windows = _split_text_preserving(source, window_count)
+        draft_windows = _split_text_preserving(draft, window_count)
+        window_count = max(len(source_windows), len(draft_windows))
+        while len(source_windows) < window_count:
+            source_windows.append("")
+        while len(draft_windows) < window_count:
+            draft_windows.append("")
+        final_windows: List[str] = []
+        review_diagnostics = []
+        for index, (source_window, draft_window) in enumerate(
+            zip(source_windows, draft_windows), start=1,
+        ):
+            window_values = dict(values)
+            window_options = dict(options)
+            window_options.update({
+                "_editor_windowed": True,
+                "editor_window_index": index,
+                "editor_window_count": window_count,
+                "editor_neighbor_context": "\n\n".join(
+                    part for part in (
+                        (
+                            "Previous source/draft tail:\n"
+                            + source_windows[index - 2][-800:]
+                            + "\n---\n"
+                            + draft_windows[index - 2][-800:]
+                        ) if index > 1 else "",
+                        (
+                            "Next source/draft head:\n"
+                            + source_windows[index][:800]
+                            + "\n---\n"
+                            + draft_windows[index][:800]
+                        ) if index < window_count else "",
+                    ) if part
+                ),
+            })
+            window_values.update({
+                "source_chunk": source_window,
+                "draft_translation": draft_window,
+                "prompt_options": window_options,
+                "repair_validator": None,
+            })
+            result = await EditorService().review_chunk(**window_values)
+            final_windows.append(str(result))
+            if getattr(result, "quality_status", "passed") == "review_required":
+                review_diagnostics.append(
+                    getattr(result, "editor_validation", {}) or {
+                        "window_index": index,
+                        "status": "review_required",
+                    }
+                )
+        final_text = "".join(final_windows)
+        validator = values.get("repair_validator")
+        structural_error = validator(final_text) if validator else None
+        if structural_error:
+            review_diagnostics.append({
+                "stage": "window_reassembly",
+                "status": "review_required",
+                "reason": str(structural_error),
+            })
+        if review_diagnostics:
+            return review_required_translation(
+                final_text,
+                {
+                    "stage": "windowed_editor",
+                    "status": "review_required",
+                    "windows": review_diagnostics,
+                },
+            )
+        return final_text
+    return await EditorService().review_chunk(**values)
