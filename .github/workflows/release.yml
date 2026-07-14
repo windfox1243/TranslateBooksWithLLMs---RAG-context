@@ -9,14 +9,19 @@ permissions:
   contents: write
 
 jobs:
+  tests:
+    uses: ./.github/workflows/test.yml
+
   windows:
+    needs: tests
     uses: ./.github/workflows/build-windows.yml
 
   macos:
+    needs: tests
     uses: ./.github/workflows/build-macos.yml
 
   publish:
-    needs: [windows, macos]
+    needs: [tests, windows, macos]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

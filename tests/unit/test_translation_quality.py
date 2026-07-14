@@ -558,7 +558,11 @@ async def test_warnings_only_cannot_hide_narrator_violation_and_retry_converges(
         target_language="Vietnamese",
         model_name="test",
         llm_client=client,
-        prompt_options={"source_language": "English", "file_type": "txt"},
+        prompt_options={
+            "source_language": "English",
+            "file_type": "txt",
+            "narrator_self_reference_override": "tôi",
+        },
     )
 
     assert result == corrected
@@ -567,7 +571,7 @@ async def test_warnings_only_cannot_hide_narrator_violation_and_retry_converges(
 
 
 @pytest.mark.asyncio
-async def test_narrator_retry_exhaustion_blocks_preserved_draft():
+async def test_narrator_retry_exhaustion_preserves_review_required_draft():
     source = "I crossed the station.\nI remembered rain.\nI kept moving."
     leaking = "Tớ qua ga.\nTớ nhớ mưa.\nTớ tiếp tục."
 
@@ -584,15 +588,20 @@ async def test_narrator_retry_exhaustion_blocks_preserved_draft():
             )
 
     client = Client()
-    with pytest.raises(ReflectionValidationError) as error:
-        await run_chunk_reflection_pass(
-            source_chunk=source,
-            draft_translation=leaking,
-            target_language="Vietnamese",
-            model_name="test",
-            llm_client=client,
-            prompt_options={"source_language": "English", "file_type": "txt"},
-        )
+    result = await run_chunk_reflection_pass(
+        source_chunk=source,
+        draft_translation=leaking,
+        target_language="Vietnamese",
+        model_name="test",
+        llm_client=client,
+        prompt_options={
+            "source_language": "English",
+            "file_type": "txt",
+            "narrator_self_reference_override": "tôi",
+        },
+    )
 
-    assert error.value.draft_translation == leaking
-    assert client.calls == 4
+    assert result == leaking
+    assert result.quality_status == "review_required"
+    assert result.editor_validation["status"] == "blocked"
+    assert client.calls == 3

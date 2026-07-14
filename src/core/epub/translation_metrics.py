@@ -32,6 +32,7 @@ class TranslationMetrics:
     successful_after_retry: int = 0
     fallback_used: int = 0  # Phase 3: Chunks returned untranslated after all phases failed
     failed_chunks: int = 0
+    review_required_chunks: int = 0
     
     # === Progress tracking ===
     processed_chunks: int = 0  # Chunks fully processed (regardless of success/failure)
@@ -296,6 +297,7 @@ class TranslationMetrics:
             "successful_after_retry": self.successful_after_retry,
             "fallback_used": self.fallback_used,
             "failed_chunks": self.failed_chunks,
+            "review_required_chunks": self.review_required_chunks,
             "retry_attempts": self.retry_attempts,
             "placeholder_errors": self.placeholder_errors,
             "quality_warning_fired": self.quality_warning_fired,
@@ -343,6 +345,7 @@ class TranslationMetrics:
         metrics.successful_after_retry = data.get("successful_after_retry", 0)
         metrics.fallback_used = data.get("fallback_used", 0)
         metrics.failed_chunks = data.get("failed_chunks", 0)
+        metrics.review_required_chunks = data.get("review_required_chunks", 0)
         # Progress counter. to_dict() reports completed_chunks = processed_chunks,
         # so this MUST round-trip or the progress bar restarts near zero on
         # resume (it would then count only the chunks done in the new session,
@@ -521,6 +524,7 @@ class TranslationMetrics:
         self.successful_after_retry += other.successful_after_retry
         self.fallback_used += other.fallback_used
         self.failed_chunks += other.failed_chunks
+        self.review_required_chunks += other.review_required_chunks
         self.retry_attempts += other.retry_attempts
         self.placeholder_errors += other.placeholder_errors
         # If either side already warned the user, don't re-warn after merging.

@@ -346,8 +346,31 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
         # correction deliberately replaces the same final output after replaying
         # refinement from its preserved first-pass translation.
         forced_output_path = config.get('_force_output_filepath')
+        resume_output_path = (
+            config.get('output_filepath')
+            or config.get('output_file_path')
+        ) if is_resume else None
         if forced_output_path:
             output_filepath_on_server = os.path.abspath(forced_output_path)
+            os.makedirs(
+                os.path.dirname(output_filepath_on_server),
+                exist_ok=True,
+            )
+        elif resume_output_path:
+            output_filepath_on_server = os.path.abspath(resume_output_path)
+            os.makedirs(
+                os.path.dirname(output_filepath_on_server),
+                exist_ok=True,
+            )
+        elif is_resume:
+            # Legacy checkpoints predate persisted output identity. Their
+            # configured filename is the original job output, so claim that
+            # exact path once and persist it below instead of creating another
+            # numbered sibling.
+            output_filepath_on_server = os.path.abspath(os.path.join(
+                output_dir,
+                config['output_filename'],
+            ))
             os.makedirs(
                 os.path.dirname(output_filepath_on_server),
                 exist_ok=True,
@@ -361,12 +384,20 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 tentative_output_path
             )
 
+        # A translation ID owns one canonical output. Persist it in every
+        # spelling used by legacy adapters so resume and editor rebuilds replace
+        # that file instead of creating a numbered sibling.
+        config['output_filepath'] = output_filepath_on_server
+        config['output_file_path'] = output_filepath_on_server
+
         # Update config with the actual filename (may have been modified)
         actual_output_filename = os.path.basename(output_filepath_on_server)
         if actual_output_filename != config['output_filename']:
             _log_message_callback("output_filename_modified",
                 f"ℹ️ Output filename modified to avoid overwriting: {config['output_filename']} → {actual_output_filename}")
             config['output_filename'] = actual_output_filename
+        if checkpoint_manager.get_job(translation_id):
+            checkpoint_manager.update_job_config(translation_id, config)
 
         # Upgrade/resume audits run before new translation units so a known
         # narrator-policy violation cannot remain in the rebuilt output.
@@ -383,9 +414,9 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 translation_id, 'narrator_backfill', resume_backfill,
             )
             if resume_backfill.get('failed'):
-                raise RuntimeError(
-                    "Narrator conformance backfill is blocked; review the "
-                    "preserved draft before resuming translation."
+                _log_message_callback(
+                    "narrator_backfill_review_required",
+                    "Narrator conformance review remains for preserved drafts; translation will continue.",
                 )
 
         # Log translation start with unified logger
@@ -854,6 +885,23 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             'output_dir': os.path.dirname(os.path.abspath(output_filepath_on_server)),
             'file_type': config['file_type']
         }
+
+        final_stats = state_manager.get_translation_field(
+            translation_id, 'stats'
+        ) or {}
+        review_required_chunks = int(
+            final_stats.get('review_required_chunks', 0) or 0
+        )
+        completed_chunks = int(final_stats.get('completed_chunks', 0) or 0)
+        quality_status = (
+            'review_required' if review_required_chunks > 0
+            else 'passed' if completed_chunks > 0
+            else 'not_checked'
+        )
+        state_manager.set_translation_field(
+            translation_id, 'quality_status', quality_status,
+        )
+        final_status_payload['quality_status'] = quality_status
 
         if state_manager.get_translation_field(translation_id, 'interrupted'):
             state_manager.set_translation_field(translation_id, 'status', 'interrupted')

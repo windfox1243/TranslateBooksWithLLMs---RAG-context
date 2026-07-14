@@ -929,7 +929,8 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             'start_time': time.time(),
             'total_chunks': 0,
             'completed_chunks': 0,
-            'failed_chunks': 0
+            'failed_chunks': 0,
+            'review_required_chunks': 0,
         })
 
         # Calculate elapsed time
@@ -945,11 +946,17 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         return jsonify({
             "translation_id": translation_id,
             "status": job_data.get('status'),
+            "quality_status": job_data.get(
+                'quality_status',
+                'review_required'
+                if stats.get('review_required_chunks', 0) else 'not_checked',
+            ),
             "progress": job_data.get('progress'),
             "stats": {
                 'total_chunks': stats.get('total_chunks', 0),
                 'completed_chunks': stats.get('completed_chunks', 0),
                 'failed_chunks': stats.get('failed_chunks', 0),
+                'review_required_chunks': stats.get('review_required_chunks', 0),
                 'start_time': stats.get('start_time'),
                 'elapsed_time': elapsed,
                 'context_chunk_indices': _available_context_chunk_indices(

@@ -37,6 +37,7 @@ from .progress_tracker import TokenProgressTracker
 from .chunking.token_chunker import TokenChunker
 from typing import List, Dict, Tuple, Optional, Any, Callable
 from src.utils.progress_logging import emit_progress_log
+from src.core.editor.contracts import ReflectionValidationError
 
 
 # Configuration for context overflow recovery
@@ -82,21 +83,6 @@ class ReflectionResult:
     @property
     def needs_repair(self) -> bool:
         return self.status == "needs_repair" and bool(self.issues)
-
-
-class ReflectionValidationError(RuntimeError):
-    """Raised when a contract-v2 editor gate cannot validate a chunk."""
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        diagnostics: Optional[Dict[str, Any]] = None,
-        draft_translation: str = "",
-    ) -> None:
-        super().__init__(message)
-        self.diagnostics = diagnostics or {}
-        self.draft_translation = draft_translation
 
 
 def _build_chunk_glossary_block(
@@ -1711,6 +1697,8 @@ async def run_chunk_reflection_pass(
     if not draft_translation or not draft_translation.strip() or not llm_client:
         return draft_translation
 
+    from src.core.editor import review_required_translation
+
     options = prompt_options or {}
     editor_client = options.get("_editor_llm_client") or llm_client
     editor_model = str(options.get("editor_model_resolved") or model_name)
@@ -2056,7 +2044,7 @@ async def run_chunk_reflection_pass(
             protected_terms=protected_terms,
             glossary_terms=glossary_terms,
         )
-    from src.utils.narrator_conformance import audit_narrator_conformance
+    from src.core.editor import audit_narrator_conformance
 
     narrator_conformance = audit_narrator_conformance(
         source_text=source_chunk,
@@ -2164,17 +2152,19 @@ async def run_chunk_reflection_pass(
             failure_class=failure_class,
             reason_codes=[f"provider_failure:{failure_class}"],
         )
+        has_residue = contract_v2 and any(
+            finding.blocking for finding in residue_findings
+        )
         finish_run(
-            "blocked" if contract_v2 and any(f.blocking for f in residue_findings)
-            else "transport_failed",
+            "review_required" if has_residue else "transport_failed",
             failure_class=failure_class,
             diagnostics={"reason": failure_class},
+            unresolved_issue_count=len(residue_findings) if has_residue else 0,
         )
-        if contract_v2 and any(f.blocking for f in residue_findings):
-            raise ReflectionValidationError(
-                "Senior Editor failed while deterministic source residue remained."
-            ) from e
-        return draft_translation
+        return review_required_translation(
+            draft_translation,
+            {"stage": "reflection", "status": "review_required", "reason": failure_class},
+        )
 
     reflection_result = parse_reflection_result(critique)
     initial_failure_class = ""
@@ -2355,7 +2345,7 @@ async def run_chunk_reflection_pass(
         if contract_v2:
             blocked = any(finding.blocking for finding in residue_findings)
             finish_run(
-                "blocked" if blocked else "review_required",
+                "review_required",
                 parse_status=reflection_result.parse_status,
                 failure_class=(
                     "contract_incomplete"
@@ -2363,17 +2353,18 @@ async def run_chunk_reflection_pass(
                     else "contract_parse"
                 ),
                 issue_count=len(reflection_result.issues),
+                unresolved_issue_count=(
+                    len(reflection_result.issues) + (1 if blocked else 0)
+                ),
             )
-            if blocked:
-                raise ReflectionValidationError(
-                    "Senior Editor contract failed while deterministic source residue remained.",
-                    diagnostics={
-                        "stage": "reflection_contract",
-                        "final_reason_codes": ["contract_parse", "residue_blocker"],
-                    },
-                    draft_translation=draft_translation,
-                )
-            return draft_translation
+            return review_required_translation(
+                draft_translation,
+                {
+                    "stage": "reflection_contract",
+                    "status": "review_required",
+                    "final_reason_codes": ["contract_parse"],
+                },
+            )
         return draft_translation
 
     if (
@@ -2467,7 +2458,7 @@ async def run_chunk_reflection_pass(
                 )
 
     if narrator_conformance.get("status") == "fail":
-        from src.utils.narrator_conformance import conformance_editor_issues
+        from src.core.editor import conformance_editor_issues
 
         narrator_issues = conformance_editor_issues(narrator_conformance)
         narrator_spans = {
@@ -2753,6 +2744,7 @@ async def run_chunk_reflection_pass(
         term_pairs = extract_term_replacements_from_critique(critique)
     validation_errors: List[str] = []
     repair_attempt_diagnostics = []
+    previous_failure_signature: Optional[tuple[str, ...]] = None
     if log_callback:
         emit_progress_log(
             log_callback,
@@ -2848,10 +2840,12 @@ async def run_chunk_reflection_pass(
                     ),
                 )
                 narrator_conformance = repaired_conformance
-                validation_errors.extend(
-                    f"{item.get('reason_code')}:{item.get('segment_id')}"
-                    for item in repaired_conformance.get("violating_segments") or []
-                )
+                if repaired_conformance.get("status") == "fail":
+                    validation_errors.extend(
+                        f"{item.get('reason_code')}:{item.get('segment_id')}"
+                        for item in repaired_conformance.get("violating_segments") or []
+                        if item.get("blocking", True)
+                    )
             if repaired_text and not validation_errors:
                 record_attempt(
                     f"repair_{repair_attempt + 1}", repair_response, raw_content,
@@ -2920,6 +2914,19 @@ async def run_chunk_reflection_pass(
                 for reason in validation_errors
             ),
         })
+        failure_signature = tuple(sorted(set(validation_errors)))
+        if failure_signature and failure_signature == previous_failure_signature:
+            if log_callback:
+                emit_progress_log(
+                    log_callback,
+                    "repair_no_progress",
+                    "Senior Editor state: stopping automatic repair because the validation findings did not improve.",
+                    level="warning",
+                    layer="senior_editor_repair",
+                    data={"attempt": repair_attempt + 1},
+                )
+            break
+        previous_failure_signature = failure_signature
 
     has_deterministic_blocker = any(
         bool(issue.get("deterministic"))
@@ -2945,18 +2952,20 @@ async def run_chunk_reflection_pass(
                 layer="senior_editor_repair",
                 data={"reasons": validation_errors},
             )
+        narrator_only = bool(validation_errors) and all(
+            str(reason).startswith("narrator_self_reference_mismatch:")
+            for reason in validation_errors
+        )
         finish_run(
-            "blocked",
+            "review_required",
             parse_status=reflection_result.parse_status,
-            failure_class="residue_blocker",
+            failure_class=("narrator_policy" if narrator_only else "repair_validation"),
             issue_count=len(reflection_result.issues),
             diagnostics=diagnostics,
+            unresolved_issue_count=len(validation_errors),
         )
-        raise ReflectionValidationError(
-            "Senior Editor repair did not pass validation: "
-            + "; ".join(validation_errors[:3]),
-            diagnostics=diagnostics,
-            draft_translation=draft_translation,
+        return review_required_translation(
+            persist_final_voice(draft_translation), diagnostics,
         )
     if log_callback:
         emit_progress_log(
@@ -2978,4 +2987,6 @@ async def run_chunk_reflection_pass(
         issue_count=len(reflection_result.issues),
         diagnostics=diagnostics,
     )
-    return persist_final_voice(draft_translation)
+    return review_required_translation(
+        persist_final_voice(draft_translation), diagnostics,
+    )

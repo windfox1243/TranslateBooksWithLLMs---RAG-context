@@ -569,9 +569,16 @@ async def translate_chunk_with_fallback(
                         translated,
                         global_indices,
                     )
+                    if attempt == 0:
+                        stats.successful_first_try += 1
+                    else:
+                        stats.successful_after_retry += 1
+                    stats.review_required_chunks += 1
+                    stats.record_processed()
                     return _ChunkTranslationOutcome(
                         preserved,
-                        succeeded=False,
+                        succeeded=True,
+                        quality_status="review_required",
                         editor_validation=exc.diagnostics,
                     )
                 if repaired and validate_placeholders(repaired, local_tag_map):
@@ -588,9 +595,18 @@ async def translate_chunk_with_fallback(
                 if log_callback:
                     log_callback("retry_success", f"✓ Translation succeeded after {attempt + 1} attempt(s)")
 
+            quality_status = getattr(translated, "quality_status", "passed")
+            editor_validation = getattr(translated, "editor_validation", None)
             result = placeholder_mgr.restore_to_global(translated, global_indices)
             stats.record_processed()  # Mark chunk as fully processed
-            return _ChunkTranslationOutcome(result, succeeded=True)
+            if quality_status == "review_required":
+                stats.review_required_chunks += 1
+            return _ChunkTranslationOutcome(
+                result,
+                succeeded=True,
+                quality_status=quality_status,
+                editor_validation=editor_validation,
+            )
         else:
             # Track placeholder error
             stats.placeholder_errors += 1
@@ -692,10 +708,14 @@ class _ChunkTranslationOutcome(str):
         cls,
         value: str,
         succeeded: bool,
+        quality_status: Optional[str] = None,
         editor_validation: Optional[Dict[str, Any]] = None,
     ):
         instance = super().__new__(cls, value)
         instance.succeeded = succeeded
+        instance.quality_status = quality_status or (
+            "passed" if succeeded else "not_checked"
+        )
         instance.editor_validation = editor_validation
         return instance
 
@@ -1576,6 +1596,15 @@ async def _translate_all_chunks_with_checkpoint(
         ctx_snapshot, dialogue_attribution, chunk_data = _context_data_for_save(i)
         if getattr(translated_text, "editor_validation", None):
             chunk_data["editor_validation"] = translated_text.editor_validation
+        chunk_data["quality_status"] = getattr(
+            translated_text,
+            "quality_status",
+            "passed" if succeeded else "not_checked",
+        )
+        if succeeded:
+            chunk_data.pop("execution_failure_class", None)
+        else:
+            chunk_data["execution_failure_class"] = "structure"
         chunks[i]['context_snapshot'] = ctx_snapshot
         chunks[i]['dialogue_attribution'] = dialogue_attribution
         

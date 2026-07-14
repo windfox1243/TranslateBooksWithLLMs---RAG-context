@@ -106,6 +106,11 @@ def _save_retry_state(
 ) -> bool:
     chunk_data = dict(chunk.get("chunk_data") or {})
     chunk_data["editor_retry"] = dict(state)
+    if state.get("status") == "succeeded":
+        chunk_data["quality_status"] = "passed"
+    elif state.get("status") in {"review_required", "blocked", "failed"}:
+        chunk_data["quality_status"] = "review_required"
+    chunk_data.pop("execution_failure_class", None)
     if state.get("status") in TERMINAL_RETRY_STATES:
         chunk_data.pop("editor_retry_pending", None)
         if state.get("status") == "succeeded":
@@ -296,7 +301,7 @@ async def run_editor_retry(
         _save_retry_state(
             checkpoint_manager, translation_id, chunk, state,
             translated_text=exc.draft_translation or draft_text,
-            chunk_status="failed",
+            chunk_status="completed",
         )
         return state
 
@@ -361,7 +366,7 @@ def audit_completed_narrator_conformance(
 ) -> Dict[str, Any]:
     """Queue only completed units that fail the current deterministic policy."""
 
-    from src.utils.narrator_conformance import (
+    from src.core.editor import (
         audit_narrator_conformance,
         conformance_fingerprint,
     )
@@ -394,7 +399,11 @@ def audit_completed_narrator_conformance(
             db=checkpoint_manager.db,
             translation_id=translation_id,
             chunk_index=index,
-            explicit_override=str(options.get("narrator_self_reference") or ""),
+            explicit_override=str(
+                options.get("narrator_self_reference_override")
+                or options.get("narrator_self_reference")
+                or ""
+            ),
         )
         fingerprint = conformance_fingerprint(
             source_text=source_text, target_text=target_text, policy=audit,
@@ -489,7 +498,7 @@ async def run_pending_narrator_backfill(
                 output_dir=Path(output_dir),
                 refresh_output=False,
             )
-            if result.get("status") == "succeeded":
+            if result.get("status") in {"succeeded", "review_required"}:
                 completed.append(chunk_index)
             else:
                 latest_checkpoint = checkpoint_manager.load_checkpoint(
@@ -508,13 +517,15 @@ async def run_pending_narrator_backfill(
                 })
                 latest_data["narrator_backfill"] = backfill_state
                 latest_data["narrator_voice_stale"] = True
+                latest_data["quality_status"] = "review_required"
+                latest_data.pop("execution_failure_class", None)
                 checkpoint_manager.save_checkpoint(
                     translation_id=translation_id,
                     chunk_index=chunk_index,
                     original_text=latest_chunk.get("original_text") or "",
                     translated_text=latest_chunk.get("translated_text") or "",
                     chunk_data=latest_data,
-                    chunk_status="failed",
+                    chunk_status="completed",
                 )
                 failed.append({
                     "chunk_index": chunk_index,
@@ -530,13 +541,15 @@ async def run_pending_narrator_backfill(
             })
             chunk_data["narrator_backfill"] = backfill_state
             chunk_data["narrator_voice_stale"] = True
+            chunk_data["quality_status"] = "review_required"
+            chunk_data.pop("execution_failure_class", None)
             checkpoint_manager.save_checkpoint(
                 translation_id=translation_id,
                 chunk_index=chunk_index,
                 original_text=chunk.get("original_text") or "",
                 translated_text=chunk.get("translated_text") or "",
                 chunk_data=chunk_data,
-                chunk_status="failed",
+                chunk_status="completed",
             )
             failed.append({
                 "chunk_index": chunk_index,
