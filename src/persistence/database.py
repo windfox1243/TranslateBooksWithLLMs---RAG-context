@@ -136,6 +136,7 @@ class Database:
                     file_type TEXT NOT NULL,
                     config JSON NOT NULL,
                     progress JSON NOT NULL,
+                    quality_status TEXT NOT NULL DEFAULT 'not_checked',
                     translation_context JSON,
                     server_session_id TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -150,6 +151,11 @@ class Database:
             columns = [row[1] for row in cursor.fetchall()]
             if 'server_session_id' not in columns:
                 cursor.execute("ALTER TABLE translation_jobs ADD COLUMN server_session_id TEXT")
+            if 'quality_status' not in columns:
+                cursor.execute(
+                    "ALTER TABLE translation_jobs ADD COLUMN quality_status "
+                    "TEXT NOT NULL DEFAULT 'not_checked'"
+                )
 
             # Checkpoint chunks table
             cursor.execute("""
@@ -160,12 +166,27 @@ class Database:
                     translated_text TEXT,
                     chunk_data JSON,
                     status TEXT NOT NULL,
+                    quality_status TEXT NOT NULL DEFAULT 'not_checked',
+                    execution_failure_class TEXT,
                     completed_at TIMESTAMP,
                     PRIMARY KEY (translation_id, chunk_index),
                     FOREIGN KEY (translation_id) REFERENCES translation_jobs(translation_id)
                         ON DELETE CASCADE
                 )
             """)
+
+            cursor.execute("PRAGMA table_info(checkpoint_chunks)")
+            chunk_columns = [row[1] for row in cursor.fetchall()]
+            if 'quality_status' not in chunk_columns:
+                cursor.execute(
+                    "ALTER TABLE checkpoint_chunks ADD COLUMN quality_status "
+                    "TEXT NOT NULL DEFAULT 'not_checked'"
+                )
+            if 'execution_failure_class' not in chunk_columns:
+                cursor.execute(
+                    "ALTER TABLE checkpoint_chunks ADD COLUMN "
+                    "execution_failure_class TEXT"
+                )
 
             # Context Entities Table
             cursor.execute("""
@@ -847,6 +868,7 @@ class Database:
                     'total_chunks': 0,
                     'completed_chunks': 0,
                     'failed_chunks': 0,
+                    'review_required_chunks': 0,
                     'start_time': time.time(),  # Use timestamp for compatibility with existing code
                     # Marks the uniform checkpoint convention: current_chunk_index
                     # is the LAST COMPLETED unit for every format (resume = +1).
@@ -884,6 +906,7 @@ class Database:
         total_chunks: Optional[int] = None,
         completed_chunks: Optional[int] = None,
         failed_chunks: Optional[int] = None,
+        review_required_chunks: Optional[int] = None,
         status: Optional[str] = None,
         epub_accumulated_stats: Optional[Dict[str, Any]] = None
     ) -> bool:
@@ -930,6 +953,8 @@ class Database:
                     progress['completed_chunks'] = completed_chunks
                 if failed_chunks is not None:
                     progress['failed_chunks'] = failed_chunks
+                if review_required_chunks is not None:
+                    progress['review_required_chunks'] = review_required_chunks
                 if epub_accumulated_stats is not None:
                     progress['epub_accumulated_stats'] = epub_accumulated_stats
 
@@ -945,6 +970,16 @@ class Database:
                         updates.append("paused_at = CURRENT_TIMESTAMP")
                     elif status == 'completed':
                         updates.append("completed_at = CURRENT_TIMESTAMP")
+
+                quality_status = (
+                    'review_required'
+                    if int(progress.get('review_required_chunks') or 0) > 0
+                    else 'passed'
+                    if int(progress.get('completed_chunks') or 0) > 0
+                    else 'not_checked'
+                )
+                updates.append("quality_status = ?")
+                params.append(quality_status)
 
                 params.append(translation_id)
 
@@ -966,7 +1001,9 @@ class Database:
         original_text: str,
         translated_text: Optional[str] = None,
         chunk_data: Optional[Dict[str, Any]] = None,
-        status: str = 'completed'
+        status: str = 'completed',
+        quality_status: Optional[str] = None,
+        execution_failure_class: Optional[str] = None,
     ) -> bool:
         """
         Save a translated chunk to database.
@@ -987,19 +1024,62 @@ class Database:
                 conn = self._get_connection()
                 cursor = conn.cursor()
 
+                data = dict(chunk_data or {})
+                resolved_quality_status = str(
+                    quality_status
+                    or data.get('quality_status')
+                    or ('passed' if status == 'completed' else 'not_checked')
+                )
+                resolved_failure_class = (
+                    execution_failure_class
+                    or data.get('execution_failure_class')
+                )
                 cursor.execute("""
                     INSERT OR REPLACE INTO checkpoint_chunks
                     (translation_id, chunk_index, original_text, translated_text,
-                     chunk_data, status, completed_at)
-                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                     chunk_data, status, quality_status,
+                     execution_failure_class, completed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """, (
                     translation_id,
                     chunk_index,
                     original_text,
                     translated_text,
-                    json.dumps(chunk_data) if chunk_data else None,
-                    status
+                    json.dumps(data) if data else None,
+                    status,
+                    resolved_quality_status,
+                    resolved_failure_class,
                 ))
+
+                chunk_counts = cursor.execute("""
+                    SELECT
+                        SUM(CASE WHEN quality_status = 'review_required' THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
+                    FROM checkpoint_chunks
+                    WHERE translation_id = ?
+                """, (translation_id,)).fetchone()
+                quality_count = int(chunk_counts[0] or 0)
+                completed_count = int(chunk_counts[1] or 0)
+                job_row = cursor.execute(
+                    "SELECT progress FROM translation_jobs WHERE translation_id = ?",
+                    (translation_id,),
+                ).fetchone()
+                if job_row:
+                    progress = json.loads(job_row['progress'])
+                    progress['review_required_chunks'] = int(quality_count or 0)
+                    job_quality = (
+                        'review_required' if quality_count
+                        else 'passed' if completed_count
+                        else 'not_checked'
+                    )
+                    cursor.execute("""
+                        UPDATE translation_jobs
+                        SET progress = ?, quality_status = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE translation_id = ?
+                    """, (
+                        json.dumps(progress), job_quality, translation_id,
+                    ))
 
                 conn.commit()
                 return True
@@ -1034,6 +1114,7 @@ class Database:
                 return {
                     'translation_id': row['translation_id'],
                     'status': row['status'],
+                    'quality_status': row['quality_status'],
                     'file_type': row['file_type'],
                     'config': json.loads(row['config']),
                     'progress': json.loads(row['progress']),
@@ -1102,6 +1183,8 @@ class Database:
                         'translated_text': row['translated_text'],
                         'chunk_data': json.loads(row['chunk_data']) if row['chunk_data'] else None,
                         'status': row['status'],
+                        'quality_status': row['quality_status'],
+                        'execution_failure_class': row['execution_failure_class'],
                         'completed_at': row['completed_at']
                     })
 
@@ -1152,6 +1235,27 @@ class Database:
                 print(f"Error getting chunk status counts: {e}")
                 return {}
 
+    def get_chunk_quality_counts(self, translation_id: str) -> Dict[str, int]:
+        """Return checkpoint chunk counts grouped by quality status."""
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT quality_status, COUNT(*) AS count
+                    FROM checkpoint_chunks
+                    WHERE translation_id = ?
+                    GROUP BY quality_status
+                """, (translation_id,))
+                return {
+                    row['quality_status']: row['count']
+                    for row in cursor.fetchall()
+                    if row['quality_status']
+                }
+            except Exception as e:
+                print(f"Error getting chunk quality counts: {e}")
+                return {}
+
     def get_resumable_jobs(self, max_age_days: int = 30) -> List[Dict[str, Any]]:
         """
         Get all jobs that can resume or seed an Add New Content job.
@@ -1182,6 +1286,7 @@ class Database:
                     jobs.append({
                         'translation_id': row['translation_id'],
                         'status': row['status'],
+                        'quality_status': row['quality_status'],
                         'file_type': row['file_type'],
                         'config': json.loads(row['config']),
                         'progress': json.loads(row['progress']),

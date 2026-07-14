@@ -17,6 +17,7 @@ import { renderTranslationTitle, getFileIcon, createGenericEPUBIcon } from './pr
 import { LifecycleManager } from '../utils/lifecycle-manager.js';
 import { ApiKeyUtils } from '../utils/api-key-utils.js';
 import { t } from '../i18n/i18n.js';
+import { buildReviewRequiredNotice, deriveQualityStatus } from './job-quality.js';
 
 // Storage configuration with versioning
 const STORAGE_VERSION = 1;
@@ -798,10 +799,13 @@ export const TranslationTracker = {
         const statsHtml = this._buildCompletionStatsHtml(file, resultData);
         const dismissLabel = t('translation:completion_card_dismiss');
         const isPartial = resultData.status === 'partial';
-        const titleIcon = isPartial ? 'warning' : 'check_circle';
+        const reviewRequired = deriveQualityStatus(resultData) === 'review_required';
+        const titleIcon = isPartial || reviewRequired ? 'warning' : 'check_circle';
         const titleText = t(isPartial
             ? 'translation:translation_partial_card_title'
-            : 'translation:translation_completed_card_title');
+            : reviewRequired
+                ? 'translation:translation_completed_review_card_title'
+                : 'translation:translation_completed_card_title');
 
         card.innerHTML = '';
 
@@ -829,6 +833,10 @@ export const TranslationTracker = {
         const warningBlock = this._buildCompletionWarningBlock(file, resultData);
         if (warningBlock) {
             card.appendChild(warningBlock);
+        }
+        const reviewNotice = buildReviewRequiredNotice(resultData);
+        if (reviewNotice) {
+            card.appendChild(reviewNotice);
         }
 
         const actionsGroup = FileActions.createActionGroup({
@@ -875,7 +883,7 @@ export const TranslationTracker = {
         if (file.fileType === 'epub' && file.thumbnail) {
             const img = document.createElement('img');
             img.src = `/api/thumbnails/${encodeURIComponent(file.thumbnail)}`;
-            img.alt = 'Cover';
+            img.alt = t('translation:book_cover_alt');
             img.onerror = () => {
                 wrap.innerHTML = createGenericEPUBIcon();
             };
@@ -918,6 +926,11 @@ export const TranslationTracker = {
 
         if (failed > 0) {
             items.push(`<span class="completion-card__stat--error">${t('translation:completion_failed_chunks', { count: failed })}</span>`);
+        }
+
+        const reviewRequired = stats.review_required_chunks || 0;
+        if (reviewRequired > 0) {
+            items.push(`<span class="completion-card__stat--warn">${t('translation:completion_review_required_chunks', { count: reviewRequired })}</span>`);
         }
 
         if (fallbacks > 0) {

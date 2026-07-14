@@ -181,3 +181,20 @@ async def test_alignment_holds_in_parallel_mode(monkeypatch):
             assert out[i].strip() == ""
         else:
             assert out[i] == f"T::{src}"
+
+
+@pytest.mark.asyncio
+async def test_translation_exception_keeps_source_without_stale_result(monkeypatch):
+    async def failing_request(**_kwargs):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(
+        plain_pipeline,
+        "generate_translation_request",
+        failing_request,
+    )
+
+    source = ["A paragraph that cannot be translated."]
+    out = await _run(source)
+
+    assert out == source

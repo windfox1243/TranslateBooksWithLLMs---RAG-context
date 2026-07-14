@@ -122,7 +122,10 @@ class TestResumeCredentialValidation:
         }
 
     def test_empty_body_resume_without_env_key_is_rejected(self, app_ctx, monkeypatch):
+        import src.api.blueprints.translation_routes as routes
+
         monkeypatch.delenv('GEMINI_API_KEY', raising=False)
+        monkeypatch.setattr(routes._config, 'GEMINI_API_KEY', '')
         result = _apply_resume_overrides(self._restored_config(), {})
         assert result is not None
         _response, status = result

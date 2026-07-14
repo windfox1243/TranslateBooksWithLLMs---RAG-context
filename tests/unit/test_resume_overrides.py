@@ -74,7 +74,10 @@ def test_api_key_use_env_sentinel_resolves_from_env(app_ctx, monkeypatch):
 
 
 def test_cloud_provider_without_key_is_rejected(app_ctx, monkeypatch):
+    import src.api.blueprints.translation_routes as routes
+
     monkeypatch.delenv('GEMINI_API_KEY', raising=False)
+    monkeypatch.setattr(routes._config, 'GEMINI_API_KEY', '')
     config = _base_config()
     result = _apply_resume_overrides(config, {
         'llm_provider': 'gemini',
