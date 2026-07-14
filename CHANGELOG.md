@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.15.0-beta.46 - 2026-07-14
+
+### Added
+
+- Added independent execution and quality states for translation units and jobs. Structurally valid drafts with unresolved editorial findings now complete as `review_required` instead of being counted as provider or translation failures.
+- Added persisted quality counters, API responses, and localized completion-card guidance across all seven UI locales.
+- Added architecture documentation for job outcomes, editor boundaries, checkpoint persistence, resume behavior, and future modularization.
+- Added a required pytest gate for pull requests and releases.
+
+### Fixed
+
+- Made inferred narrator defaults advisory while keeping explicit and locked narrator policies blocking.
+- Reduced narrator false positives by grounding target spans against aligned source narration and excluding dialogue, thoughts, and contextual Vietnamese third-person forms.
+- Preserved the original output path when resuming a job instead of creating a second filename.
+- Preserved structurally valid drafts when Senior Editor transport, schema, or non-blocking validation work is inconclusive, and stopped repair loops that repeat identical findings.
+- Reclassified valid drafts from older failed editor checkpoints during resume without modifying their translated text.
+- Built source release archives directly from tracked Git files so newly added modules cannot be omitted.
+
+### Tests
+
+- Added narrator policy, dialogue masking, contextual pronoun, job quality, checkpoint migration, and valid-draft preservation regressions.
+
 ## 1.15.0-beta.45 - 2026-07-14
 
 ### Fixed

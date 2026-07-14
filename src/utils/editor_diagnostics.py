@@ -15,7 +15,8 @@ EDITOR_FAILURE_CLASSES = {
     "provider_blocked", "provider_truncated", "transport", "schema_rejected",
     "contract_parse", "contract_incomplete", "contract_issue",
     "locator_missing", "locator_ambiguous", "local_patch_conflict",
-    "repair_validation", "residue_blocker", "adapter_invalid", "internal",
+    "repair_validation", "residue_blocker", "narrator_policy",
+    "adapter_invalid", "internal",
 }
 
 

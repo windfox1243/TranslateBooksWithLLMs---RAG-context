@@ -37,12 +37,14 @@ class TranslationStateManager:
         with self._lock:
             self._translations[translation_id] = {
                 'status': 'queued',
+                'quality_status': 'not_checked',
                 'progress': 0,
                 'stats': {
                     'start_time': time.time(),
                     'total_chunks': 0,
                     'completed_chunks': 0,
                     'failed_chunks': 0,
+                    'review_required_chunks': 0,
                     # OpenRouter cost tracking
                     'openrouter_cost': 0.0,
                     'openrouter_prompt_tokens': 0,
@@ -144,6 +146,7 @@ class TranslationStateManager:
                 summaries.append({
                     "translation_id": tid,
                     "status": data.get('status'),
+                    "quality_status": data.get('quality_status', 'not_checked'),
                     "progress": data.get('progress'),
                     "start_time": stats.get('start_time'),
                     "output_filename": config.get('output_filename'),
@@ -152,6 +155,8 @@ class TranslationStateManager:
                     # Include stats for UI restoration
                     "total_chunks": stats.get('total_chunks', 0),
                     "completed_chunks": stats.get('completed_chunks', 0),
+                    "failed_chunks": stats.get('failed_chunks', 0),
+                    "review_required_chunks": stats.get('review_required_chunks', 0),
                     "progress_percent": stats.get('progress_percent'),
                     "current_phase": stats.get('current_phase'),
                     "enable_refinement": stats.get('enable_refinement', False),
@@ -202,6 +207,7 @@ class TranslationStateManager:
             # Use deepcopy for config to prevent mutation of stored config
             self._translations[translation_id] = {
                 'status': 'paused',  # Will be set to 'running' when resumed
+                'quality_status': job.get('quality_status', 'not_checked'),
                 'progress': 0,
                 'stats': copy.deepcopy(job['progress']),
                 'logs': [f"[{datetime.now().strftime('%H:%M:%S')}] Job restored from checkpoint."],

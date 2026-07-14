@@ -6181,7 +6181,9 @@ def resolve_novel_context_path(filename: str, novel_contexts_dir: Path) -> Path:
     # If the app is frozen, or if the path contains 'Novel_Contexts' / 'TranslateBook_Data',
     # redirect the file resolution to the current local novel_contexts_dir.
     # This prevents absolute paths from old/unbuilt directories leaking in when the executable is moved.
-    base_name = os.path.basename(filename)
+    # os.path.basename only understands the host separator. Check both so
+    # Windows checkpoints migrate correctly on Linux or macOS, and vice versa.
+    base_name = re.split(r"[\\/]", str(filename))[-1]
     if is_safe_filename(base_name):
         import sys
         is_frozen = getattr(sys, 'frozen', False)

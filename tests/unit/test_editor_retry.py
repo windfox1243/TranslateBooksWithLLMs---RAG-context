@@ -136,7 +136,9 @@ def test_upgrade_audit_queues_only_failing_completed_unit():
                     "config": {
                         "source_language": "English",
                         "target_language": "Vietnamese",
-                        "prompt_options": {},
+                        "prompt_options": {
+                            "narrator_self_reference_override": "tôi"
+                        },
                     },
                 },
                 "chunks": [

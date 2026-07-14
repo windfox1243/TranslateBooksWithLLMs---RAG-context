@@ -114,8 +114,8 @@ jobs:
         # Create zip archive
         Compress-Archive -Path release\* -DestinationPath TranslateBook-Windows.zip -Force
 
-        # Create source zip archive
-        Compress-Archive -Path src, launcher.py, translate.py, translation_api.py, requirements.txt, start.bat, start.sh, setup-and-update.bat, README.md, LICENSE, CHANGELOG.md -DestinationPath TranslateBook-Source.zip -Force
+        # Archive every tracked source file so packaging cannot omit new modules.
+        git archive --format=zip --output=TranslateBook-Source.zip HEAD
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
