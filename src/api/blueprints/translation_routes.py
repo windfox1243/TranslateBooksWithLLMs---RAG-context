@@ -60,7 +60,7 @@ def _prompt_options_from_start_request(data):
     prompt_options = dict((data or {}).get('prompt_options') or {})
     prompt_options.setdefault('use_relationship_reasoning', 'project')
     prompt_options.setdefault('use_relationship_llm_judge', 'selective')
-    prompt_options.setdefault('context_contract_version', 4)
+    prompt_options.setdefault('context_contract_version', 5)
     prompt_options.setdefault('source_residue_validation', True)
     if 'reflection_mode' not in prompt_options:
         prompt_options['reflection_mode'] = (
@@ -1868,7 +1868,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                 register=candidate.register,
                 social_basis=candidate.social_basis,
                 scope=candidate.scope,
-                contract_version=4,
+                contract_version=5,
                 confidence=max(candidate.confidence, 0.99),
                 is_locked=1 if data.get("is_locked", True) else 0,
                 chunk_index=-1,
@@ -1917,6 +1917,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         )
 
         audits = db.get_context_audit_logs(translation_id, limit=500)
+        evidence = db.get_addressing_evidence(translation_id, limit=1000)
         rejection_by_pair = {}
         rejections = []
         for item in audits:
@@ -1962,6 +1963,8 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "provisional_rules": provisional_rules,
             "quarantined_rules": quarantined_rules,
             "rejections": rejections,
+            "evidence": evidence,
+            "evidence_count": len(evidence),
         }), 200
 
     @bp.route('/<translation_id>/addressing-audit-log', methods=['GET'])
@@ -2153,6 +2156,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         statuses = [status] if status else None
         nodes = db.get_relationship_nodes(translation_id)
         edges = db.get_relationship_edges(translation_id, statuses=statuses)
+        evidence = db.get_relationship_evidence(translation_id, limit=1000)
         return jsonify({
             "translation_id": translation_id,
             "context_revision": _context_revision(translation_id),
@@ -2160,6 +2164,8 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             "edges": edges,
             "node_count": len(nodes),
             "edge_count": len(edges),
+            "evidence": evidence,
+            "evidence_count": len(evidence),
             "validator_version": 2,
             "migration": migration,
         }), 200

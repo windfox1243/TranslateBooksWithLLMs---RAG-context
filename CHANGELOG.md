@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.15.0-beta.47 - 2026-07-14
+
+### Added
+
+- Added a language-profile social-evidence resolver that stores conversational hierarchy, institutional rank, and chronological age independently. Explicit senior and junior forms now create grounded directed relationships without treating neutral honorifics as hierarchy.
+- Added automatic Vietnamese `em/anh` and `em/chị` reconciliation when accepted hierarchy and gender evidence make a target pair safe, while preserving explicit source vocatives.
+- Added typed context-analysis and prompt-bundle contracts, shared source-unit preparation across text and checkpointed XHTML pipelines, and narrow job, editor, context, and narrator repository interfaces behind the compatible `Database` facade.
+- Added evidence fingerprints, observation counts, resolution state, and last-seen timestamps through an additive v4-to-v5 migration. Unsupported observations remain auditable but stay outside translation prompts until reconciled.
+- Added optional provider-capacity editor windows with adjacent read-only context and one optional configured larger-model escalation, both disabled by default. The complete filtered unit remains the default and has no application-level token ceiling.
+
+### Changed
+
+- New jobs default to context contract v5. Source facts are committed before drafting, while structurally valid target output receives deterministic synchronization without repeating the full lore and relationship analysis request.
+- Prompt retrieval now includes every grounded dialogue participant, source-mentioned known characters, accepted one-hop relationships, active addressing rules, narrator policy, nearby source text, and relevant selective lore instead of unrelated accumulated candidates.
+- Exact local editor failures preserve the best valid draft after one locator retry. Unsupported model-only locators remain non-blocking diagnostics, deterministic failures require review, and full-chunk rewriting is reserved for structural, completeness, or cross-cutting defects.
+
+### Fixed
+
+- Fixed hierarchy evidence being recognized in dialogue attribution but never persisted as a relationship or addressing rule.
+- Fixed partial local patches losing `review_required` metadata on return.
+- Protected complete glossary and entity spans so names such as `Lord Axe` do not trigger standalone social-title residue or weapon classification.
+- Kept execution status independent from editorial quality across the new editor compatibility boundary.
+
+### Tests
+
+- Added generalized Japanese, Korean, Chinese, and English hierarchy regressions; neutral-honorific, ambiguous-evidence, reverse-direction, reconciliation, evidence-deduplication, v4 migration, prompt-filtering, full-participant retrieval, bounded-window, optional-escalation, and editor-metadata coverage.
+
 ## 1.15.0-beta.46 - 2026-07-14
 
 ### Added

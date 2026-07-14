@@ -665,6 +665,23 @@ async def translate_paragraphs_plain(
                     total_chunks=len(chunks),
                     scene_key=chunks[i].get("chapter_index"),
                 )
+                if (
+                    checkpoint_manager and translation_id
+                    and hasattr(checkpoint_manager, "db")
+                ):
+                    from src.core.context import commit_source_social_evidence
+
+                    commit_source_social_evidence(
+                        translation_id=translation_id,
+                        db=checkpoint_manager.db,
+                        global_lore=context_session.global_lore,
+                        source_text=main_content,
+                        dialogue_attribution=context_session.dialogue_attribution,
+                        source_language=source_language,
+                        target_language=target_language,
+                        chunk_index=global_chunk_offset + i,
+                        log_callback=log_callback,
+                    )
                 if log_callback:
                     log_callback(
                         "novel_context_updated",
@@ -705,6 +722,8 @@ async def translate_paragraphs_plain(
                     and hasattr(checkpoint_manager, "db")
                     and relationship_mode != "off"
                 ):
+                    from src.core.context import relevant_character_names
+
                     locked_facts = [
                         edge for edge in checkpoint_manager.db.get_relationship_edges(
                             translation_id,
@@ -729,6 +748,12 @@ async def translate_paragraphs_plain(
                         "source_text": main_content,
                         "candidates": judged,
                         "parser_status": context_session.relationship_parse_status,
+                        "active_character_names": relevant_character_names(
+                            global_lore=context_session.global_lore,
+                            source_text=main_content,
+                            dialogue_attribution=context_session.dialogue_attribution,
+                            source_language=source_language,
+                        ),
                     }
                     apply_relationship_graph_to_session(
                         context_session,
@@ -775,6 +800,15 @@ async def translate_paragraphs_plain(
             unit_prompt_options["dialogue_attribution"] = chunks[i][
                 "dialogue_attribution"
             ]
+        if context_session:
+            from src.core.context import relevant_character_names
+
+            unit_prompt_options["active_character_names"] = relevant_character_names(
+                global_lore=context_session.global_lore,
+                source_text=main_content,
+                dialogue_attribution=unit_prompt_options.get("dialogue_attribution"),
+                source_language=source_language,
+            )
         directed_context = build_directed_addressing_prompt_context(
             translation_id=translation_id or "",
             db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
@@ -794,6 +828,16 @@ async def translate_paragraphs_plain(
         )
         if relationship_context:
             unit_prompt_options["relationship_context"] = relationship_context
+        from src.core.context import build_unit_prompt_context
+        unit_prompt_options["prompt_context_bundle"] = build_unit_prompt_context(
+            addressing=directed_context,
+            relationships=relationship_context,
+            narrator=narrative_voice_context,
+            nearby_source=(
+                chunks[i].get('context_before', ''),
+                chunks[i].get('context_after', ''),
+            ),
+        )
 
         translated = failed_editor_drafts_by_index.pop(i, None)
         if translated and log_callback:
@@ -940,6 +984,9 @@ async def translate_paragraphs_plain(
                     parser_status=relationships.get("parser_status", "absent"),
                     target_language=target_language,
                     chunk_index=global_chunk_offset + i,
+                    active_character_names=relationships.get(
+                        "active_character_names"
+                    ),
                     log_callback=log_callback,
                 )
         if addressing and prompt_options.get("use_db_directed_addressing", True):
