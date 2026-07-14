@@ -98,6 +98,8 @@ def commit_source_social_evidence(
 
 def build_unit_prompt_context(
     *,
+    global_lore: str = "",
+    reference_text: str = "",
     addressing: str = "",
     relationships: str = "",
     narrator: str = "",
@@ -105,7 +107,42 @@ def build_unit_prompt_context(
 ) -> str:
     """Render the typed prompt-context bundle without accumulated candidates."""
 
+    entities: List[str] = []
+    glossary: List[str] = []
+    if global_lore.strip() and reference_text.strip():
+        from src.utils.novel_context import (
+            ALIASES_SECTION,
+            CHARACTERS_SECTION,
+            GLOSSARY_SECTION,
+            _parse_bullet_entries,
+            _section_body,
+            render_novel_context_for_prompt,
+        )
+
+        selected = render_novel_context_for_prompt(
+            global_lore,
+            reference_text=reference_text,
+            max_tokens=0,
+            selective=True,
+            include_gender_roster=False,
+        )
+        for section in (CHARACTERS_SECTION, ALIASES_SECTION):
+            entities.extend(
+                f"- {name}: {value}"
+                for name, value in _parse_bullet_entries(
+                    _section_body(selected, section)
+                )
+            )
+        glossary.extend(
+            f"- {name}: {value}"
+            for name, value in _parse_bullet_entries(
+                _section_body(selected, GLOSSARY_SECTION)
+            )
+        )
+
     return PromptContextBundle(
+        entities=entities,
+        glossary=glossary,
         addressing=[addressing] if addressing else [],
         relationships=[relationships] if relationships else [],
         narrator=narrator,

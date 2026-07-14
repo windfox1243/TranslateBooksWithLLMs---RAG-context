@@ -1500,6 +1500,8 @@ async def _translate_all_chunks_with_checkpoint(
             chunk_prompt_options["relationship_context"] = relationship_context
         from src.core.context import build_unit_prompt_context
         chunk_prompt_options["prompt_context_bundle"] = build_unit_prompt_context(
+            global_lore=(context_session.global_lore if context_session else ""),
+            reference_text=chunk["text"],
             addressing=directed_context,
             relationships=relationship_context,
             narrator=narrative_voice_context,

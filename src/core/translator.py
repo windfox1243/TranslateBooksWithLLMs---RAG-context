@@ -3,6 +3,7 @@ Translation module for LLM communication
 """
 import inspect
 import json
+import hashlib
 import time
 import re
 from dataclasses import dataclass, field
@@ -1222,7 +1223,15 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(raw_issue, dict):
         return None
 
-    instruction = str(raw_issue.get("instruction") or "").strip()
+    # Accept older provider-emitted aliases at the parser boundary. The prompt
+    # contract remains canonical, but a semantically complete issue must not be
+    # discarded merely because a compact model used its familiar field names.
+    instruction = str(
+        raw_issue.get("instruction")
+        or raw_issue.get("reason")
+        or raw_issue.get("description")
+        or ""
+    ).strip()
     if not instruction:
         return None
 
@@ -1268,14 +1277,21 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
             else None
         )
     else:
-        draft_replacement = None
+        replacement_text = str(draft_replacement or "").strip()
+        draft_span = str(raw_issue.get("draft_quote") or "").strip()
+        draft_replacement = (
+            {"draft": draft_span, "replacement": replacement_text}
+            if draft_span and replacement_text else None
+        )
 
     try:
         confidence = max(0.0, min(1.0, float(raw_issue.get("confidence", 0.8))))
     except (TypeError, ValueError):
         confidence = 0.8
 
-    category = str(raw_issue.get("category") or "other").strip() or "other"
+    category = str(
+        raw_issue.get("category") or raw_issue.get("type") or "other"
+    ).strip() or "other"
     severity = str(raw_issue.get("severity") or "major").strip() or "major"
     repair_kind = str(raw_issue.get("repair_kind") or "").strip().casefold()
     if repair_kind not in {"local_replace", "rewrite", "review_only"}:
@@ -1288,8 +1304,12 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
     if severity.casefold() == "minor" or confidence < 0.80:
         repair_kind = "review_only"
     return {
-        "issue_id": str(raw_issue.get("issue_id") or "").strip(),
-        "segment_id": str(raw_issue.get("segment_id") or "").strip().upper(),
+        "issue_id": str(
+            raw_issue.get("issue_id") or raw_issue.get("id") or ""
+        ).strip(),
+        "segment_id": str(
+            raw_issue.get("segment_id") or raw_issue.get("draft_id") or ""
+        ).strip().upper(),
         "category": category,
         "severity": severity,
         "confidence": confidence,
@@ -1307,6 +1327,76 @@ def _issue_requires_draft_replacement(issue: Dict[str, Any]) -> bool:
     """Return whether an issue describes a direct, locally verifiable edit."""
 
     return str(issue.get("repair_kind") or "").casefold() == "local_replace"
+
+
+def _build_focused_locator_retry_prompt(
+    draft_text: str,
+    issues: List[Dict[str, Any]],
+    invalid_ids: set[str],
+    locator_errors: List[str],
+) -> str:
+    """Build a compact locator-only request from candidate draft neighborhoods."""
+
+    from src.utils.translation_quality import build_editor_segments
+
+    segments = build_editor_segments(draft_text)
+    by_id = {str(item.get("segment_id") or "").upper(): index for index, item in enumerate(segments)}
+    payload = []
+    for issue in issues:
+        issue_id = str(issue.get("issue_id") or "")
+        if issue_id not in invalid_ids:
+            continue
+        replacement = issue.get("draft_replacement") or {}
+        needles = [
+            str(replacement.get("draft") or "").strip(),
+            str(issue.get("draft_quote") or "").strip(),
+        ]
+        candidate_indexes = set()
+        requested = str(issue.get("segment_id") or "").upper()
+        if requested in by_id:
+            candidate_indexes.add(by_id[requested])
+        for index, segment in enumerate(segments):
+            folded = str(segment.get("text") or "").casefold()
+            if any(needle and needle.casefold() in folded for needle in needles):
+                candidate_indexes.add(index)
+        if not candidate_indexes:
+            terms = {
+                token.casefold()
+                for needle in needles
+                for token in re.findall(r"\w{3,}", needle, re.UNICODE)
+            }
+            scored = []
+            for index, segment in enumerate(segments):
+                folded = str(segment.get("text") or "").casefold()
+                score = sum(1 for term in terms if term in folded)
+                if score:
+                    scored.append((score, index))
+            candidate_indexes.update(
+                index for _score, index in sorted(scored, reverse=True)[:3]
+            )
+        expanded = set()
+        for index in candidate_indexes:
+            expanded.update(
+                candidate for candidate in (index - 1, index, index + 1)
+                if 0 <= candidate < len(segments)
+            )
+        payload.append({
+            "issue": issue,
+            "candidate_segments": [segments[index] for index in sorted(expanded)],
+        })
+    return (
+        "Correct only the invalid exact-span locators below. Return the same "
+        "reflection JSON schema with status needs_repair, only the corrected "
+        "issues, and voice_observations as an empty list. Preserve issue IDs "
+        "and repair instructions. Each segment_id must name one candidate "
+        "segment; draft_quote must occur exactly once inside it and contain "
+        "draft_replacement.draft. If no candidate supports an issue, change "
+        "that issue to review_only with no draft_replacement.\n\n"
+        "LOCATOR ERRORS:\n"
+        + json.dumps(locator_errors, ensure_ascii=False, separators=(",", ":"))
+        + "\n\nINVALID ISSUES AND CANDIDATE SEGMENTS:\n"
+        + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    )
 
 
 def _reflection_contract_incomplete(result: ReflectionResult) -> bool:
@@ -1561,6 +1651,9 @@ def _render_reflection_novel_context(
     directed_context = str(options.get("directed_addressing_context") or "").strip()
     relationship_context = str(options.get("relationship_context") or "").strip()
     prompt_context_bundle = str(options.get("prompt_context_bundle") or "").strip()
+    context_contract_version = int(
+        options.get("context_contract_version", 1) or 1
+    )
     blocks = []
     if prompt_context_bundle:
         blocks.append(prompt_context_bundle)
@@ -1574,7 +1667,9 @@ def _render_reflection_novel_context(
             "# STRUCTURED RELATIONSHIP CONTEXT\n"
             f"{relationship_context}"
         )
-    if active_context:
+    if active_context and not (
+        context_contract_version >= 5 and prompt_context_bundle
+    ):
         blocks.append(
             "# ACTIVE MARKDOWN NOVEL CONTEXT\n"
             f"{active_context}"
@@ -1692,6 +1787,7 @@ async def _run_chunk_reflection_pass_impl(
     from src.utils.addressing_schema import context_contract_version
     from src.utils.translation_quality import (
         apply_local_editor_patches,
+        build_editor_segments,
         filter_protected_span_editor_issues,
         find_source_residue,
         identity_preserving_proper_names,
@@ -1777,6 +1873,21 @@ async def _run_chunk_reflection_pass_impl(
     automatic_repair_attempts = 0
     narrator_conformance: Dict[str, Any] = {"status": "not_checked"}
     initial_narrator_finding_count = 0
+    request_compositions: List[Dict[str, Any]] = []
+    reflection_components: Dict[str, Any] = {}
+
+    def capture_request_composition(
+        stage: str, prompt: str, system_prompt: str,
+    ) -> None:
+        request_compositions.append({
+            "stage": stage,
+            "system_chars": len(system_prompt),
+            "user_chars": len(prompt),
+            "estimated_input_tokens": (len(system_prompt) + len(prompt) + 3) // 4,
+            "prompt_hash": hashlib.sha256(
+                (system_prompt + "\x1f" + prompt).encode("utf-8")
+            ).hexdigest(),
+        })
 
     def record_attempt(
         stage: str,
@@ -1835,6 +1946,10 @@ async def _run_chunk_reflection_pass_impl(
         payload.setdefault("warning_count", warning_count)
         diagnostics = dict(payload.get("diagnostics") or {})
         diagnostics.setdefault("narrator_conformance", narrator_conformance)
+        diagnostics.setdefault("prompt_composition", {
+            **reflection_components,
+            "requests": request_compositions,
+        })
         diagnostics.setdefault("automatic_retry", {
             "trigger": (
                 "deterministic_validation"
@@ -1955,6 +2070,9 @@ async def _run_chunk_reflection_pass_impl(
             if editor_request_count >= 6:
                 return response
             editor_request_count += 1
+            capture_request_composition(
+                f"{stage}_max_tokens_retry", active_prompt, active_system_prompt,
+            )
             retried = await _generate_editor_response(
                 llm_client=active_client,
                 prompt=active_prompt,
@@ -1979,6 +2097,7 @@ async def _run_chunk_reflection_pass_impl(
             if editor_request_count >= 6:
                 raise RuntimeError("Senior Editor request budget exhausted")
             editor_request_count += 1
+            capture_request_composition(stage, active_prompt, active_system_prompt)
             response = await _generate_editor_response(
                 llm_client=active_client,
                 prompt=active_prompt,
@@ -2014,6 +2133,11 @@ async def _run_chunk_reflection_pass_impl(
         if editor_request_count >= 6:
             raise RuntimeError("Senior Editor request budget exhausted")
         editor_request_count += 1
+        capture_request_composition(
+            f"{stage}_tagged_fallback",
+            fallback_prompt or prompt,
+            fallback_system_prompt or system_prompt,
+        )
         response = await _generate_editor_response(
             llm_client=active_client,
             prompt=fallback_prompt or prompt,
@@ -2095,7 +2219,10 @@ async def _run_chunk_reflection_pass_impl(
             protected_terms=protected_terms,
             glossary_terms=glossary_terms,
         )
-    from src.core.editor import audit_narrator_conformance
+    from src.core.editor import (
+        apply_narrator_conformance_patches,
+        audit_narrator_conformance,
+    )
 
     narrator_conformance = audit_narrator_conformance(
         source_text=source_chunk,
@@ -2111,12 +2238,54 @@ async def _run_chunk_reflection_pass_impl(
             options.get("narrator_self_reference_override") or ""
         ),
     )
-    initial_narrator_finding_count = len(
-        narrator_conformance.get("violating_segments") or []
+    draft_translation, narrator_patches = apply_narrator_conformance_patches(
+        draft_translation, narrator_conformance,
+    )
+    if narrator_patches:
+        result_state = "locally_patched"
+        resolved_issue_count += len(narrator_patches)
+        if log_callback:
+            emit_progress_log(
+                log_callback,
+                "narrator_conformance_locally_patched",
+                f"Applied {len(narrator_patches)} exact narrator-form patch(es).",
+                layer="narrator_voice",
+            )
+        narrator_conformance = audit_narrator_conformance(
+            source_text=source_chunk,
+            target_text=draft_translation,
+            source_language=source_language,
+            target_language=target_language,
+            file_type=str(options.get("file_type") or "txt"),
+            dialogue_attribution=options.get("dialogue_attribution") or {},
+            db=options.get("_checkpoint_db"),
+            translation_id=str(options.get("translation_id") or ""),
+            chunk_index=int(options.get("chunk_index", 0) or 0),
+            explicit_override=str(
+                options.get("narrator_self_reference_override") or ""
+            ),
+        )
+        if source_available and bool(
+            options.get("source_residue_validation", contract_v2)
+        ):
+            residue_findings = find_source_residue(
+                source_chunk,
+                draft_translation,
+                source_language=source_language,
+                target_language=target_language,
+                protected_terms=protected_terms,
+                glossary_terms=glossary_terms,
+            )
+    remaining_narrator_blockers = [
+        item for item in narrator_conformance.get("violating_segments") or []
+        if item.get("blocking")
+    ]
+    initial_narrator_finding_count = (
+        len(narrator_patches) + len(remaining_narrator_blockers)
     )
     deterministic_payloads = [
         finding.to_dict() for finding in residue_findings
-    ] + list(narrator_conformance.get("violating_segments") or [])
+    ] + remaining_narrator_blockers
     deterministic_findings = json.dumps(
         deterministic_payloads,
         ensure_ascii=False,
@@ -2175,6 +2344,23 @@ async def _run_chunk_reflection_pass_impl(
         source_available=source_available,
         native_schema=False,
     )
+    reflection_components.update({
+        "source_chars": len(source_chunk),
+        "draft_chars": len(draft_translation),
+        "context_chars": len(active_novel_context),
+        "glossary_chars": len(glossary_block),
+        "custom_instruction_chars": len(custom_instructions),
+        "deterministic_finding_chars": len(deterministic_findings),
+        "narrator_context_chars": len(narrative_voice_context),
+        "fixed_system_chars": len(reflection_pair.system),
+        "source_sha256": hashlib.sha256(source_chunk.encode("utf-8")).hexdigest(),
+        "draft_sha256": hashlib.sha256(draft_translation.encode("utf-8")).hexdigest(),
+        "source_complete": source_chunk.strip() in reflection_pair.user,
+        "draft_segment_chars": sum(
+            len(str(item.get("text") or ""))
+            for item in build_editor_segments(draft_translation)
+        ),
+    })
 
     try:
         response = await generate_editor(
@@ -2250,7 +2436,9 @@ async def _run_chunk_reflection_pass_impl(
             or (contract_v2 and _reflection_contract_incomplete(result))
         )
 
-    contract_review_required = False
+    contract_review_required = bool(remaining_narrator_blockers)
+    if remaining_narrator_blockers:
+        review_issue_count += len(remaining_narrator_blockers)
     if reflection_contract_invalid(reflection_result):
         malformed_issue_ids = {
             str(issue.get("issue_id") or "")
@@ -2269,23 +2457,32 @@ async def _run_chunk_reflection_pass_impl(
                     "contract_version": REFLECTION_CONTRACT_VERSION,
                 },
             )
-        retry_user_prompt = (
-            f"{reflection_pair.user}\n\n"
-            f"Your previous response was:\n{critique}\n\n"
-            "Your previous response contained malformed contract data. Return only one valid "
-            "JSON object. Every direct correction with a draft_quote "
-            "must include draft_replacement with exact draft and replacement spans. "
-            + (
-                "Correct only these issue IDs and return only those issues: "
-                + ", ".join(sorted(malformed_issue_ids)) + ". "
-                if malformed_issue_ids else ""
+        if malformed_issue_ids:
+            retry_user_prompt = _build_focused_locator_retry_prompt(
+                draft_translation,
+                reflection_result.issues,
+                malformed_issue_ids,
+                [
+                    f"draft_replacement_missing:{issue_id}"
+                    for issue_id in sorted(malformed_issue_ids)
+                ],
             )
-            + "Do not include prose, markdown, or bullets."
-        )
+            retry_system_prompt = (
+                "You correct malformed editor issue locators. Return one JSON "
+                "object only. Use only the supplied issues and candidate draft "
+                "segments; never rewrite or quote the complete chunk."
+            )
+        else:
+            retry_user_prompt = (
+                f"{reflection_pair.user}\n\n"
+                "The previous response was not a usable JSON contract. Return "
+                "one valid JSON object only, without prose or markdown."
+            )
+            retry_system_prompt = reflection_pair.system
         try:
             retry_response = await generate_editor(
                 prompt=retry_user_prompt,
-                system_prompt=reflection_pair.system,
+                system_prompt=retry_system_prompt,
                 temperature=0.0,
                 max_output_tokens=editor_output_tokens,
                 stage="reflection_contract_retry",
@@ -2390,6 +2587,27 @@ async def _run_chunk_reflection_pass_impl(
                     level="warning",
                     layer="senior_editor_reflection",
                 )
+        elif invalid_issues and reflection_result.parse_status == "json":
+            # Preserve a semantically useful concern when the model cannot
+            # provide a safe exact edit after the focused correction. It is
+            # review evidence, not a reason to resend the complete chunk.
+            reflection_result = ReflectionResult(
+                "needs_repair",
+                [
+                    {
+                        **issue,
+                        "repair_kind": "review_only",
+                        "draft_replacement": None,
+                    }
+                    for issue in invalid_issues
+                ],
+                reflection_result.raw_text,
+                reflection_result.parse_status,
+                reflection_result.voice_observations,
+            )
+            contract_review_required = deterministic_invalid > 0
+            review_issue_count += deterministic_invalid
+            warning_count += invalid_issue_count - deterministic_invalid
 
     if reflection_contract_invalid(reflection_result):
         if log_callback:
@@ -2587,7 +2805,7 @@ async def _run_chunk_reflection_pass_impl(
                 layer="senior_editor_reflection",
             )
         finish_run(
-            "no_issues",
+            "locally_repaired" if narrator_patches else "no_issues",
             parse_status=reflection_result.parse_status,
             issue_count=0,
             response_hash=response_hash(critique),
@@ -2630,19 +2848,20 @@ async def _run_chunk_reflection_pass_impl(
         )
     if locator_errors:
         invalid_ids = {item.rsplit(":", 1)[-1] for item in locator_errors}
-        locator_retry_prompt = (
-            f"{reflection_pair.user}\n\n"
-            f"Your previous response was:\n{critique}\n\n"
-            "LOCATOR CORRECTION: The following issue IDs did not identify an "
-            "exact unique span in the draft: " + ", ".join(sorted(invalid_ids)) +
-            ". Return the same JSON contract. Preserve every valid issue, but "
-            "set the correct segment_id and make draft_quote occur exactly "
-            "once inside that segment while containing draft_replacement.draft."
+        locator_retry_prompt = _build_focused_locator_retry_prompt(
+            draft_translation,
+            reflection_result.issues,
+            invalid_ids,
+            locator_errors,
         )
         try:
             locator_response = await generate_editor(
                 prompt=locator_retry_prompt,
-                system_prompt=reflection_pair.system,
+                system_prompt=(
+                    "You correct exact locators for structured translation "
+                    "editor issues. Use only the supplied candidate segments, "
+                    "return valid schema JSON, and do not rewrite translation text."
+                ),
                 temperature=0.0,
                 max_output_tokens=editor_output_tokens,
                 stage="locator_retry",

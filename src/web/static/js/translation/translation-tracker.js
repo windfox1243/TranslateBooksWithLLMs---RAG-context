@@ -1754,15 +1754,39 @@ window.NovelContextUI = {
                 );
                 row.appendChild(reasons);
             }
+            const attempts = (run.attempts || []).filter(attempt => (
+                Number(attempt.prompt_tokens || 0) > 0
+            ));
+            const requestSummary = document.createElement('div');
+            requestSummary.style.fontSize = '0.75rem';
+            requestSummary.style.color = 'var(--text-muted-light)';
+            requestSummary.style.marginTop = '0.25rem';
+            requestSummary.textContent = t('translation:editor_diagnostics_requests', {
+                count: run.request_count ?? attempts.length,
+                stages: Array.from(new Set(attempts.map(attempt => attempt.stage)))
+                    .filter(Boolean).join(', ') || '-'
+            });
+            row.appendChild(requestSummary);
+            const largestRequest = document.createElement('div');
+            largestRequest.style.fontSize = '0.75rem';
+            largestRequest.style.color = 'var(--text-muted-light)';
+            largestRequest.textContent = t(
+                'translation:editor_diagnostics_largest_request',
+                {
+                    prompt: run.max_request_prompt_tokens || 0,
+                    total: run.max_request_total_tokens || 0
+                }
+            );
+            row.appendChild(largestRequest);
             const tokens = document.createElement('div');
             tokens.style.fontSize = '0.75rem';
             tokens.style.color = 'var(--text-muted-light)';
             tokens.style.marginTop = '0.25rem';
             tokens.textContent = t('translation:editor_diagnostics_tokens', {
-                prompt: run.prompt_tokens || 0,
-                completion: run.completion_tokens || 0,
-                thinking: run.thinking_tokens || 0,
-                total: run.total_tokens || 0
+                prompt: run.cumulative_prompt_tokens ?? run.prompt_tokens ?? 0,
+                completion: run.cumulative_completion_tokens ?? run.completion_tokens ?? 0,
+                thinking: run.cumulative_thinking_tokens ?? run.thinking_tokens ?? 0,
+                total: run.cumulative_total_tokens ?? run.total_tokens ?? 0
             });
             row.appendChild(tokens);
             const chunkIndex = Number(run.chunk_index);
