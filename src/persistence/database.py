@@ -4,6 +4,7 @@ SQLite database manager for translation job persistence.
 
 import sqlite3
 import json
+import hashlib
 import os
 import shutil
 import time
@@ -11,6 +12,13 @@ from contextlib import contextmanager
 from typing import Optional, Dict, List, Any
 import threading
 from pathlib import Path
+
+
+def _evidence_fingerprint(*parts: Any) -> str:
+    normalized = "\x1f".join(
+        " ".join(str(part or "").casefold().strip().split()) for part in parts
+    )
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 _TRANSLATION_CHILD_TABLES = (
@@ -79,6 +87,30 @@ class Database:
 
         # Initialize schema
         self._initialize_schema()
+
+    @property
+    def jobs(self):
+        """Narrow job repository; legacy methods remain available on Database."""
+        from src.persistence.repositories import JobRepository
+        return JobRepository(self)
+
+    @property
+    def editor(self):
+        """Narrow editor repository; legacy methods remain available on Database."""
+        from src.persistence.repositories import EditorRepository
+        return EditorRepository(self)
+
+    @property
+    def context(self):
+        """Narrow structured-context repository compatibility boundary."""
+        from src.persistence.repositories import ContextRepository
+        return ContextRepository(self)
+
+    @property
+    def narrator(self):
+        """Narrow narrator repository; legacy methods remain available."""
+        from src.persistence.repositories import NarratorRepository
+        return NarratorRepository(self)
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get thread-local database connection."""
@@ -260,6 +292,11 @@ class Database:
                     provenance TEXT NOT NULL DEFAULT 'unknown',
                     dialogue_turn_id TEXT,
                     chunk_index INTEGER NOT NULL DEFAULT 0,
+                    fingerprint TEXT NOT NULL DEFAULT '',
+                    observation_count INTEGER NOT NULL DEFAULT 1,
+                    resolution_status TEXT NOT NULL DEFAULT 'open',
+                    last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(
                         translation_id, speaker_name, addressee_name,
@@ -267,6 +304,47 @@ class Database:
                     )
                 )
             """)
+            cursor.execute("PRAGMA table_info(context_addressing_evidence)")
+            addressing_evidence_columns = {row[1] for row in cursor.fetchall()}
+            for column, definition in {
+                "fingerprint": "TEXT NOT NULL DEFAULT ''",
+                "observation_count": "INTEGER NOT NULL DEFAULT 1",
+                "resolution_status": "TEXT NOT NULL DEFAULT 'open'",
+                # SQLite cannot add a column with a non-constant default to an
+                # existing table. Fresh databases still receive the default
+                # from CREATE TABLE; migrations backfill below.
+                "last_seen_at": "TIMESTAMP",
+                "resolved_at": "TIMESTAMP",
+            }.items():
+                if column not in addressing_evidence_columns:
+                    cursor.execute(
+                        f"ALTER TABLE context_addressing_evidence ADD COLUMN "
+                        f"{column} {definition}"
+                    )
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_addressing_evidence_fingerprint
+                ON context_addressing_evidence(translation_id, fingerprint)
+            """)
+            addressing_rows = cursor.execute("""
+                SELECT id, translation_id, speaker_name, addressee_name,
+                       source_form, usage, scope, evidence_quote
+                FROM context_addressing_evidence
+                WHERE fingerprint = '' OR fingerprint IS NULL
+            """).fetchall()
+            for row in addressing_rows:
+                cursor.execute("""
+                    UPDATE context_addressing_evidence
+                    SET fingerprint = ?,
+                        last_seen_at = COALESCE(last_seen_at, created_at, CURRENT_TIMESTAMP)
+                    WHERE id = ?
+                """, (
+                    _evidence_fingerprint(
+                        row["translation_id"], row["speaker_name"],
+                        row["addressee_name"], row["source_form"], row["usage"],
+                        row["scope"], row["evidence_quote"],
+                    ),
+                    row["id"],
+                ))
 
             # Contract-v2 beta builds could persist an indirect mention as a
             # durable directed rule. Quarantine only unlocked LLM-owned rules
@@ -454,6 +532,11 @@ class Database:
                     match_kind TEXT NOT NULL DEFAULT '',
                     source_start INTEGER,
                     source_end INTEGER,
+                    fingerprint TEXT NOT NULL DEFAULT '',
+                    observation_count INTEGER NOT NULL DEFAULT 1,
+                    resolution_status TEXT NOT NULL DEFAULT 'open',
+                    last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (edge_id)
                         REFERENCES context_relationship_edges(id) ON DELETE CASCADE
@@ -465,12 +548,40 @@ class Database:
                 "match_kind": "TEXT NOT NULL DEFAULT ''",
                 "source_start": "INTEGER",
                 "source_end": "INTEGER",
+                "fingerprint": "TEXT NOT NULL DEFAULT ''",
+                "observation_count": "INTEGER NOT NULL DEFAULT 1",
+                "resolution_status": "TEXT NOT NULL DEFAULT 'open'",
+                "last_seen_at": "TIMESTAMP",
+                "resolved_at": "TIMESTAMP",
             }.items():
                 if column not in relationship_evidence_columns:
                     cursor.execute(
                         f"ALTER TABLE context_relationship_evidence ADD COLUMN "
                         f"{column} {definition}"
                     )
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_relationship_evidence_fingerprint
+                ON context_relationship_evidence(translation_id, fingerprint)
+            """)
+            relationship_rows = cursor.execute("""
+                SELECT id, translation_id, edge_id, chunk_index,
+                       dialogue_turn_id, evidence_quote
+                FROM context_relationship_evidence
+                WHERE fingerprint = '' OR fingerprint IS NULL
+            """).fetchall()
+            for row in relationship_rows:
+                cursor.execute("""
+                    UPDATE context_relationship_evidence
+                    SET fingerprint = ?,
+                        last_seen_at = COALESCE(last_seen_at, created_at, CURRENT_TIMESTAMP)
+                    WHERE id = ?
+                """, (
+                    _evidence_fingerprint(
+                        row["translation_id"], row["edge_id"], row["chunk_index"],
+                        row["dialogue_turn_id"], row["evidence_quote"],
+                    ),
+                    row["id"],
+                ))
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS context_relationship_conflicts (
@@ -1956,22 +2067,35 @@ class Database:
 
         if not str(source_form or "").strip():
             return False
+        fingerprint = _evidence_fingerprint(
+            translation_id, speaker_name, addressee_name, source_form,
+            usage, scope, evidence_quote,
+        )
         with self._lock:
             try:
                 conn = self._get_connection()
                 cursor = conn.execute("""
-                    INSERT OR IGNORE INTO context_addressing_evidence (
+                    INSERT INTO context_addressing_evidence (
                         translation_id, speaker_name, addressee_name,
                         source_form, usage, source_language, evidence_quote,
                         scope, confidence, provenance, dialogue_turn_id,
-                        chunk_index
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        chunk_index, fingerprint, observation_count,
+                        resolution_status, last_seen_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'open', CURRENT_TIMESTAMP)
+                    ON CONFLICT(
+                        translation_id, speaker_name, addressee_name,
+                        source_form, usage, scope, evidence_quote
+                    ) DO UPDATE SET
+                        observation_count = observation_count + 1,
+                        last_seen_at = CURRENT_TIMESTAMP,
+                        confidence = MAX(confidence, excluded.confidence),
+                        fingerprint = excluded.fingerprint
                 """, (
                     translation_id, speaker_name, addressee_name,
                     str(source_form).strip(), usage or "direct_address",
                     source_language or "", evidence_quote or "",
                     scope or "durable", confidence, provenance or "unknown",
-                    dialogue_turn_id or "", chunk_index,
+                    dialogue_turn_id or "", chunk_index, fingerprint,
                 ))
                 self._commit_connection(conn)
                 return cursor.rowcount > 0
@@ -2009,6 +2133,32 @@ class Database:
             except Exception as e:
                 print(f"Error getting addressing evidence: {e}")
                 return []
+
+    def resolve_addressing_evidence(
+        self,
+        translation_id: str,
+        speaker_name: str,
+        addressee_name: str,
+        resolution_status: str,
+    ) -> int:
+        """Mark retained observations after pair-level reconciliation."""
+
+        status = str(resolution_status or "open").casefold().strip()
+        if status not in {"open", "promoted", "rejected", "superseded"}:
+            status = "open"
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.execute("""
+                UPDATE context_addressing_evidence
+                SET resolution_status = ?,
+                    resolved_at = CASE WHEN ? = 'open' THEN NULL ELSE CURRENT_TIMESTAMP END,
+                    last_seen_at = CURRENT_TIMESTAMP
+                WHERE translation_id = ? AND speaker_name = ? AND addressee_name = ?
+            """, (
+                status, status, translation_id, speaker_name, addressee_name,
+            ))
+            self._commit_connection(conn)
+            return int(cursor.rowcount or 0)
 
     def delete_addressing_rule(
         self,
@@ -2528,26 +2678,68 @@ class Database:
         source_start: Optional[int] = None,
         source_end: Optional[int] = None,
     ) -> Optional[int]:
+        fingerprint = _evidence_fingerprint(
+            translation_id, edge_id, chunk_index, dialogue_turn_id,
+            evidence_quote,
+        )
         with self._lock:
             try:
                 conn = self._get_connection()
+                existing = conn.execute("""
+                    SELECT id FROM context_relationship_evidence
+                    WHERE translation_id = ? AND fingerprint = ?
+                    ORDER BY id ASC LIMIT 1
+                """, (translation_id, fingerprint)).fetchone()
+                if existing:
+                    conn.execute("""
+                        UPDATE context_relationship_evidence
+                        SET observation_count = observation_count + 1,
+                            last_seen_at = CURRENT_TIMESTAMP,
+                            confidence = MAX(confidence, ?)
+                        WHERE id = ?
+                    """, (confidence, existing["id"]))
+                    self._commit_connection(conn)
+                    return int(existing["id"])
                 cursor = conn.execute("""
                     INSERT INTO context_relationship_evidence (
                         translation_id, edge_id, chunk_index, file_id,
                         dialogue_turn_id, evidence_quote, provenance,
                         parser_status, confidence, match_kind, source_start,
-                        source_end
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        source_end, fingerprint, observation_count,
+                        resolution_status, last_seen_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'open', CURRENT_TIMESTAMP)
                 """, (
                     translation_id, edge_id, chunk_index, file_id,
                     dialogue_turn_id, evidence_quote, provenance,
                     parser_status, confidence, match_kind, source_start, source_end,
+                    fingerprint,
                 ))
                 self._commit_connection(conn)
                 return int(cursor.lastrowid)
             except Exception as e:
                 print(f"Error adding relationship evidence: {e}")
                 return None
+
+    def resolve_relationship_evidence(
+        self,
+        translation_id: str,
+        edge_id: int,
+        resolution_status: str,
+    ) -> int:
+        status = str(resolution_status or "open").casefold().strip()
+        if status not in {"open", "promoted", "rejected", "superseded"}:
+            status = "open"
+        with self._lock:
+            conn = self._get_connection()
+            cursor = conn.execute("""
+                UPDATE context_relationship_evidence
+                SET resolution_status = ?,
+                    resolved_at = CASE WHEN ? = 'open' THEN NULL ELSE CURRENT_TIMESTAMP END,
+                    last_seen_at = CURRENT_TIMESTAMP
+                WHERE translation_id = ? AND edge_id = ?
+            """, (status, status, translation_id, edge_id))
+            self._commit_connection(conn)
+            return int(cursor.rowcount or 0)
 
     def get_relationship_evidence(
         self,

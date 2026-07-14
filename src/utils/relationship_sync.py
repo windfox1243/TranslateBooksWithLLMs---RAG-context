@@ -121,6 +121,11 @@ def _register_context_nodes(
         for term, details in _parse_bullet_entries(
             global_lore[glossary_bounds[1]:glossary_bounds[2]]
         ):
+            # Identity-preserving glossary mappings are protected names, not
+            # semantic object declarations. A lexical token inside a proper
+            # name must not classify the entity without independent metadata.
+            if normalize_relationship_name(term) == normalize_relationship_name(details):
+                continue
             entity_type = classify_entity_type("", f"{term} {details}")
             if entity_type == "character":
                 continue
@@ -347,6 +352,14 @@ def sync_markdown_relationships_to_db(
         language=target_language,
         log_callback=log_callback,
     )
+    if any(decision.status in {"accepted", "unchanged"} for decision in decisions):
+        from src.core.context.reconciliation import ContextReconciler
+
+        ContextReconciler(db).reconcile_translation(
+            translation_id,
+            target_language=target_language,
+            chunk_index=chunk_index,
+        )
     quarantine_incompatible_addressing_rules(
         translation_id=translation_id,
         db=db,
