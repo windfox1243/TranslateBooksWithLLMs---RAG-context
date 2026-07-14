@@ -180,7 +180,7 @@ LLM_PROVIDER=ollama
 DEFAULT_MODEL=qwen3:14b
 API_ENDPOINT=http://localhost:11434/api/generate
 MAX_TOKENS_PER_CHUNK=450
-NOVEL_CONTEXT_PROMPT_MAX_TOKENS=1800
+NOVEL_CONTEXT_PROMPT_MAX_TOKENS=0
 NOVEL_CONTEXT_UPDATE_INTERVAL=1
 NOVEL_CONTEXT_SOURCE_MEMORY_CHARS=6000
 GEMINI_API_KEY=
@@ -190,7 +190,7 @@ OPENROUTER_API_KEY=
 
 **Faster on cloud providers?** Set `PARALLEL_TRANSLATIONS` (or `--parallel N`, or the "Parallel requests" field in the web UI) above 1 to translate several chunks at once. Local providers (Ollama) ignore it since a single instance serializes requests. Higher values are faster but can hit provider rate limits.
 
-**Using auto novel context?** The full context file remains editable and durable, but prompts receive a selected, budgeted context block in the user prompt so the system prompt stays cacheable. Keep `NOVEL_CONTEXT_UPDATE_INTERVAL=1` for maximum consistency, or raise it to reduce extra context-analysis calls. `NOVEL_CONTEXT_SOURCE_MEMORY_CHARS` gives the analyzer a bounded tail of previous source chunks so facts split across chunk boundaries can still be resolved.
+**Using auto novel context?** The full context file remains editable and durable, but prompts receive only scene-relevant accepted context so the system prompt stays cacheable. Selection is always active; `NOVEL_CONTEXT_PROMPT_MAX_TOKENS=0` leaves the selected bundle uncapped, while a positive value adds a final provider-capacity safeguard. Keep `NOVEL_CONTEXT_UPDATE_INTERVAL=1` for maximum consistency, or raise it to reduce extra context-analysis calls. `NOVEL_CONTEXT_SOURCE_MEMORY_CHARS` gives the analyzer a bounded tail of previous source chunks so facts split across chunk boundaries can still be resolved.
 
 **Multiple API keys?** Any `*_API_KEY` variable accepts a comma-separated list (e.g. `GEMINI_API_KEY=key1,key2,key3`). The system rotates between keys automatically when one hits a rate limit - useful to chain free-tier accounts. See [docs/API_KEY_ROTATION.md](docs/API_KEY_ROTATION.md).
 

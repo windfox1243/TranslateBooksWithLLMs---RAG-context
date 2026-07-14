@@ -60,6 +60,34 @@ def bounded_diagnostics(value: Any) -> Dict[str, Any]:
             result[key] = [bounded_excerpt(entry) for entry in list(item or [])[:12]]
         elif key == "attempts":
             result[key] = [bounded_diagnostics(entry) for entry in list(item or [])[:4]]
+        elif key == "automatic_retry" and isinstance(item, dict):
+            result[key] = bounded_diagnostics(item)
+        elif key == "narrator_conformance" and isinstance(item, dict):
+            result[key] = {
+                field: item.get(field)
+                for field in (
+                    "status", "strategy", "policy_source", "enforcement",
+                    "profile_revision",
+                )
+                if isinstance(item.get(field), (str, int, float, bool))
+            }
+        elif key == "prompt_composition" and isinstance(item, dict):
+            safe = {
+                field: raw
+                for field, raw in item.items()
+                if field != "requests"
+                and isinstance(raw, (str, int, float, bool))
+            }
+            safe["requests"] = [
+                {
+                    field: raw
+                    for field, raw in request.items()
+                    if isinstance(raw, (str, int, float, bool))
+                }
+                for request in list(item.get("requests") or [])[:8]
+                if isinstance(request, dict)
+            ]
+            result[key] = safe
         elif isinstance(item, (str, int, float, bool)) or item is None:
             result[key] = bounded_excerpt(item) if isinstance(item, str) else item
     return result

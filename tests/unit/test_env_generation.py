@@ -9,7 +9,7 @@ from src.utils.env_helper import create_env_file, render_compact_env
 def test_compact_env_contains_current_knobs_without_reference_wall():
     text = render_compact_env()
 
-    assert "NOVEL_CONTEXT_PROMPT_MAX_TOKENS=1800" in text
+    assert "NOVEL_CONTEXT_PROMPT_MAX_TOKENS=0" in text
     assert "NOVEL_CONTEXT_UPDATE_INTERVAL=1" in text
     assert "NOVEL_CONTEXT_SOURCE_MEMORY_CHARS=6000" in text
     assert "MAX_TOKENS_PER_CHUNK=450" in text
@@ -29,7 +29,7 @@ def test_create_env_file_does_not_copy_env_example(tmp_path, monkeypatch):
     assert create_env_file() is True
     text = (tmp_path / ".env").read_text(encoding="utf-8")
 
-    assert "NOVEL_CONTEXT_PROMPT_MAX_TOKENS=1800" in text
+    assert "NOVEL_CONTEXT_PROMPT_MAX_TOKENS=0" in text
     assert "NOVEL_CONTEXT_UPDATE_INTERVAL=1" in text
     assert "NOVEL_CONTEXT_SOURCE_MEMORY_CHARS=6000" in text
     assert "MULTI_KEY_SUPPORT_DOCS=1" not in text
@@ -66,7 +66,7 @@ def test_launcher_first_run_writes_compact_env_with_reference_copy(
     env_text = (data_dir / ".env").read_text(encoding="utf-8")
     example_text = (data_dir / ".env.example").read_text(encoding="utf-8")
 
-    assert "NOVEL_CONTEXT_PROMPT_MAX_TOKENS=1800" in env_text
+    assert "NOVEL_CONTEXT_PROMPT_MAX_TOKENS=0" in env_text
     assert "NOVEL_CONTEXT_UPDATE_INTERVAL=1" in env_text
     assert "NOVEL_CONTEXT_SOURCE_MEMORY_CHARS=6000" in env_text
     assert "REFERENCE_ONLY=1" not in env_text

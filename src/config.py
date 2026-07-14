@@ -134,7 +134,7 @@ _RELOADABLE_ENV_SETTINGS = (
     ('MAX_TOKENS_PER_CHUNK', 'MAX_TOKENS_PER_CHUNK', '450'),
     # Novel context prompt rendering. The full context file remains durable;
     # this limits only the selected context block injected into each prompt.
-    ('NOVEL_CONTEXT_PROMPT_MAX_TOKENS', 'NOVEL_CONTEXT_PROMPT_MAX_TOKENS', '1800'),
+    ('NOVEL_CONTEXT_PROMPT_MAX_TOKENS', 'NOVEL_CONTEXT_PROMPT_MAX_TOKENS', '0'),
     # Auto-update cadence for source-derived novel context. 1 preserves the
     # existing behavior (analyze every chunk); higher values analyze chunk 1,
     # then every Nth chunk while translation uses the latest available context.

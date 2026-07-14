@@ -180,8 +180,10 @@ async def test_incomplete_editor_replacement_contract_retries_once():
                 complete,
             ]
             self.calls = 0
+            self.requests = []
 
-        async def generate_async(self, **_kwargs):
+        async def generate_async(self, **kwargs):
+            self.requests.append(kwargs)
             response = self.responses[self.calls]
             self.calls += 1
             return SimpleNamespace(content=response)
@@ -202,6 +204,75 @@ async def test_incomplete_editor_replacement_contract_retries_once():
     assert repaired == "Anh, lại đây."
     # Only the malformed issue is corrected; the exact edit is then local.
     assert client.calls == 2
+    retry = client.requests[1]
+    assert "INVALID ISSUES AND CANDIDATE SEGMENTS" in retry["prompt"]
+    assert "Brother, come here." not in retry["prompt"]
+    assert "never rewrite or quote the complete chunk" in retry["system_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_unresolved_incomplete_local_issue_becomes_review_only():
+    incomplete = (
+        '{"status":"needs_repair","issues":[{'
+        '"issue_id":"bad-locator","category":"mistranslation",'
+        '"severity":"major","confidence":0.95,'
+        '"repair_kind":"local_replace","source_quote":"Brother",'
+        '"draft_quote":"Brother","instruction":"Check the address term.",'
+        '"draft_replacement":null,"glossary_update":null}]}'
+    )
+
+    class Client:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate_async(self, **_kwargs):
+            self.calls += 1
+            return SimpleNamespace(content=incomplete)
+
+    client = Client()
+    result = await run_chunk_reflection_pass(
+        source_chunk="Brother, come here.",
+        draft_translation="Brother, lại đây.",
+        target_language="Vietnamese",
+        model_name="test",
+        llm_client=client,
+        prompt_options={
+            "context_contract_version": 5,
+            "source_language": "English",
+        },
+    )
+
+    assert result == "Brother, lại đây."
+    assert client.calls == 2
+
+
+def test_compact_model_legacy_issue_aliases_normalize_to_canonical_contract():
+    from src.core.translator import parse_reflection_result
+
+    result = parse_reflection_result(
+        '{"status":"needs_repair","issues":[{'
+        '"id":"legacy-1","draft_id":"D0001","type":"terminology",'
+        '"severity":"major","confidence":0.93,'
+        '"draft_quote":"Brother","reason":"Use the glossary form.",'
+        '"draft_replacement":"Anh"}],'
+        '"voice_observations":[]}'
+    )
+
+    assert result.parse_status == "json"
+    assert result.issues == [{
+        "issue_id": "legacy-1",
+        "segment_id": "D0001",
+        "category": "terminology",
+        "severity": "major",
+        "confidence": 0.93,
+        "repair_kind": "local_replace",
+        "source_quote": "",
+        "draft_quote": "Brother",
+        "instruction": "Use the glossary form.",
+        "draft_replacement": {"draft": "Brother", "replacement": "Anh"},
+        "glossary_update": None,
+        "term_replacement": None,
+    }]
 
 
 @pytest.mark.asyncio
@@ -683,6 +754,41 @@ async def test_unsupported_model_locator_is_warning_not_review():
     assert client.calls == 2
 
 
+def test_focused_locator_retry_excludes_full_chunk_and_valid_siblings():
+    from src.core.translator import _build_focused_locator_retry_prompt
+
+    unrelated = "Unrelated paragraph that must not be resent. " * 300
+    draft = unrelated + "\nTarget phrase appears here.\n" + unrelated
+    issues = [
+        {
+            "issue_id": "invalid", "segment_id": "SEG-9999",
+            "source_quote": "Target source", "draft_quote": "Target phrase",
+            "instruction": "Correct the target phrase.",
+            "repair_kind": "local_replace",
+            "draft_replacement": {
+                "draft": "Target phrase", "replacement": "Correct phrase",
+            },
+        },
+        {
+            "issue_id": "valid-sibling", "segment_id": "SEG-0001",
+            "source_quote": "Other source", "draft_quote": "Unrelated paragraph",
+            "instruction": "Keep this valid issue.",
+            "repair_kind": "local_replace",
+            "draft_replacement": {
+                "draft": "Unrelated", "replacement": "Related",
+            },
+        },
+    ]
+    prompt = _build_focused_locator_retry_prompt(
+        draft, issues, {"invalid"}, ["locator_missing:invalid"],
+    )
+
+    assert "invalid" in prompt
+    assert "valid-sibling" not in prompt
+    assert "Target phrase appears here." in prompt
+    assert len(prompt) < len(draft) * 0.40
+
+
 @pytest.mark.asyncio
 async def test_unique_replacement_outside_quote_is_grounded_without_rewrite():
     malformed = (
@@ -832,7 +938,7 @@ def test_pronoun_counting_narrator_hint_was_removed():
 
 
 @pytest.mark.asyncio
-async def test_warnings_only_cannot_hide_narrator_violation_and_retry_converges():
+async def test_locked_narrator_violation_is_patched_before_reflection():
     source = (
         "I crossed the station.\n"
         "I remembered the rain.\n"
@@ -873,12 +979,12 @@ async def test_warnings_only_cannot_hide_narrator_violation_and_retry_converges(
     )
 
     assert result == corrected
-    assert len(client.calls) == 3
-    assert client.calls[2]["temperature"] == 0.0
+    assert len(client.calls) == 1
+    assert client.calls[0]["temperature"] == 0.2
 
 
 @pytest.mark.asyncio
-async def test_narrator_retry_exhaustion_preserves_review_required_draft():
+async def test_exact_narrator_mismatches_are_patched_before_model_repair():
     source = "I crossed the station.\nI remembered rain.\nI kept moving."
     leaking = "Tớ qua ga.\nTớ nhớ mưa.\nTớ tiếp tục."
 
@@ -908,7 +1014,6 @@ async def test_narrator_retry_exhaustion_preserves_review_required_draft():
         },
     )
 
-    assert result == leaking
-    assert result.quality_status == "review_required"
-    assert result.editor_validation["status"] == "blocked"
-    assert client.calls == 3
+    assert result == "Tôi qua ga.\nTôi nhớ mưa.\nTôi tiếp tục."
+    assert not hasattr(result, "quality_status")
+    assert client.calls == 1

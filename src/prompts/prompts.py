@@ -12,8 +12,8 @@ CORRECTED_TAG_IN = "<CORRECTED_TAG_IN>"
 CORRECTED_TAG_OUT = "<CORRECTED_TAG_OUT>"
 REFLECTION_JSON_TAG_IN = "<REFLECTION_JSON>"
 REFLECTION_JSON_TAG_OUT = "</REFLECTION_JSON>"
-REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v7"
-REFLECTION_CONTRACT_VERSION = "editor-issue-v6-voice"
+REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v8"
+REFLECTION_CONTRACT_VERSION = "editor-issue-v7-focused"
 
 REFLECTION_RESPONSE_SCHEMA = {
     "type": "object",
@@ -147,59 +147,33 @@ Apply these instructions to {apply_to} wherever they affect style, tone, termino
 
 def _build_reflection_json_contract_section(*, native_schema: bool = False) -> str:
     """Return the structured Senior Editor output contract."""
+    wrapper = (
+        "Return exactly one JSON object."
+        if native_schema else
+        f"Return exactly one JSON object inside {REFLECTION_JSON_TAG_IN} and "
+        f"{REFLECTION_JSON_TAG_OUT}."
+    )
+    example = "" if native_schema else f"""
+{REFLECTION_JSON_TAG_IN}
+{{"status":"no_issues","issues":[],"voice_observations":[]}}
+{REFLECTION_JSON_TAG_OUT}"""
     return f"""STRICT OUTPUT CONTRACT:
-- Output exactly one JSON object{'' if native_schema else f' inside {REFLECTION_JSON_TAG_IN} and {REFLECTION_JSON_TAG_OUT}'}.
-- Use status "no_issues" only when no repair is needed.
-- Use status "needs_repair" when any omission, mistranslation, glossary error, pronoun bleed, gender mismatch, register issue, style issue, fluency issue, consistency issue, placeholder issue, format issue, or other actionable defect exists.
-- Do not include prose, markdown, bullets, or comments outside the JSON object.
-- Keep issue instructions concise and directly repairable.
-- Return at most 12 issues, ordered by severity and confidence.
-- Give every issue a stable issue_id and confidence from 0.0 to 1.0.
-- Set repair_kind to local_replace only for an exact substitution, rewrite for a semantic/full-context correction, or review_only for uncertain evidence that must not be changed automatically.
-- Minor issues and issues below 0.80 confidence must use review_only.
-- Do not report optional stylistic preferences, equally valid alternatives, or
-  praise as review_only issues. Omit them. Use review_only only for uncertain
-  evidence of a material defect that a human may genuinely need to inspect.
-- For a direct edit, segment_id must identify the numbered draft segment and draft_quote must occur exactly once inside that segment and contain draft_replacement.draft.
-- For a direct local substitution, set draft_replacement to {{"draft": "exact current draft span", "replacement": "exact corrected target-language span"}}. Do not leave it null when a specific draft span must change.
-- Use glossary_update only for durable terminology that should apply to later chunks: {{"source": "...", "target": "..."}}. A one-off correction is not a glossary update.
-- term_replacement is a compatibility alias for glossary_update. Prefer glossary_update in new output.
-- Return voice_observations independently of issues. Include only exact, unique source and target evidence. Classify narration, dialogue, thought, letter, and embedded_story separately. Never infer narrator voice from raw pronoun frequency.
-- A voice observation is evidence, not an edit. Use an empty list when narrator identity, POV, or language-specific voice dimensions are not strongly supported.
-- Report a chapter/scene/explicit transition only when the source itself supports it. Dialogue alone is never a narrator transition.
-
-Required schema:
-{'' if native_schema else REFLECTION_JSON_TAG_IN}
-{{
-  "status": "no_issues",
-  "issues": [],
-  "voice_observations": []
-}}
-{'' if native_schema else REFLECTION_JSON_TAG_OUT}
-
-Repair schema:
-{'' if native_schema else REFLECTION_JSON_TAG_IN}
-{{
-  "status": "needs_repair",
-  "issues": [
-    {{
-      "category": "terminology",
-      "severity": "major",
-      "issue_id": "issue-1",
-      "segment_id": "SEG-0001",
-      "confidence": 0.95,
-      "repair_kind": "local_replace",
-      "source_quote": "exact source evidence",
-      "draft_quote": "problematic draft text or empty string",
-      "instruction": "specific repair instruction",
-      "draft_replacement": {{"draft": "exact draft span", "replacement": "exact corrected span"}},
-      "glossary_update": null,
-      "term_replacement": null
-    }}
-  ],
-  "voice_observations": []
-}}
-{'' if native_schema else REFLECTION_JSON_TAG_OUT}"""
+- {wrapper} No prose or markdown.
+- Return at most 12 material issues, ordered by severity and confidence.
+- Use no_issues only when no repair is needed; otherwise use needs_repair.
+- local_replace requires one exact numbered draft segment, a unique draft_quote,
+  and draft_replacement with exact current and replacement spans.
+- rewrite is only for structural, cross-cutting, or completeness defects that
+  cannot be repaired locally. Uncertain or minor evidence is review_only.
+- Omit preferences and equally valid alternatives. Confidence below 0.80 is
+  review_only and must not trigger automatic repair.
+- glossary_update is only for durable terminology; otherwise use null.
+- voice_observations are evidence, not edits. Use exact source/target spans,
+  keep discourse modes separate, and return [] when evidence is ambiguous.
+- Issue fields are exactly: issue_id, segment_id, category, severity,
+  confidence, repair_kind, source_quote, draft_quote, instruction,
+  draft_replacement, glossary_update. Do not rename or omit them.
+- Follow the supplied response schema exactly.{example}"""
 
 def _get_output_format_section(
     translate_tag_in: str,
@@ -488,23 +462,28 @@ def _build_novel_context_section(
     if not prompt_options:
         return ""
 
+    contract_version = int(prompt_options.get("context_contract_version", 1) or 1)
+    prompt_bundle = str(prompt_options.get("prompt_context_bundle") or "").strip()
     novel_context = prompt_options.get('novel_context')
-    if not novel_context or not str(novel_context).strip():
-        return ""
+    if contract_version >= 5 and prompt_bundle:
+        rendered_context = prompt_bundle
+    else:
+        if not novel_context or not str(novel_context).strip():
+            return ""
 
-    attribution = _canonicalized_dialogue_attribution(prompt_options)
-    state_after = attribution.get("state_after") or {}
-    active_speaker = state_after.get("speaker")
+        attribution = _canonicalized_dialogue_attribution(prompt_options)
+        state_after = attribution.get("state_after") or {}
+        active_speaker = state_after.get("speaker")
 
-    from src.utils.novel_context import render_novel_context_for_prompt
+        from src.utils.novel_context import render_novel_context_for_prompt
 
-    rendered_context = render_novel_context_for_prompt(
-        novel_context,
-        reference_text=reference_text,
-        max_tokens=prompt_options.get('novel_context_prompt_max_tokens'),
-        selective=prompt_options.get('novel_context_selective_injection', True),
-        active_speaker=active_speaker,
-    )
+        rendered_context = render_novel_context_for_prompt(
+            novel_context,
+            reference_text=reference_text,
+            max_tokens=prompt_options.get('novel_context_prompt_max_tokens'),
+            selective=prompt_options.get('novel_context_selective_injection', True),
+            active_speaker=active_speaker,
+        )
     if not rendered_context.strip():
         return ""
 
@@ -534,6 +513,11 @@ def _build_directed_addressing_section(prompt_options: dict) -> str:
     """Build a structured DB-backed directed-addressing prompt block."""
     if not prompt_options:
         return ""
+    if (
+        int(prompt_options.get("context_contract_version", 1) or 1) >= 5
+        and str(prompt_options.get("prompt_context_bundle") or "").strip()
+    ):
+        return ""
     directed_context = str(
         prompt_options.get("directed_addressing_context") or ""
     ).strip()
@@ -550,6 +534,11 @@ def _build_relationship_context_section(prompt_options: dict) -> str:
     """Build the accepted relationship graph prompt block in project mode."""
 
     if not prompt_options:
+        return ""
+    if (
+        int(prompt_options.get("context_contract_version", 1) or 1) >= 5
+        and str(prompt_options.get("prompt_context_bundle") or "").strip()
+    ):
         return ""
     relationship_context = str(
         prompt_options.get("relationship_context") or ""
@@ -718,11 +707,15 @@ For consistency and natural flow, here's what came immediately before:
     narrator_voice_context = str(
         prompt_options.get("narrative_voice_context") or ""
     ).strip()
+    bundle_has_narrator = (
+        int(prompt_options.get("context_contract_version", 1) or 1) >= 5
+        and bool(str(prompt_options.get("prompt_context_bundle") or "").strip())
+    )
     narrator_voice_section = (
         "# ESTABLISHED NARRATOR VOICE (HISTORICAL TIMELINE)\n"
         + narrator_voice_context
         + "\nApply it only to the matching narrator and discourse scope; dialogue addressing cannot override it.\n\n"
-        if narrator_voice_context else ""
+        if narrator_voice_context and not bundle_has_narrator else ""
     )
     novel_context_section = _build_novel_context_section(
         prompt_options,
@@ -1027,11 +1020,15 @@ For consistency and natural flow, here's what came immediately before:
     narrator_voice_context = str(
         prompt_options.get("narrative_voice_context") or ""
     ).strip()
+    bundle_has_narrator = (
+        int(prompt_options.get("context_contract_version", 1) or 1) >= 5
+        and bool(str(prompt_options.get("prompt_context_bundle") or "").strip())
+    )
     narrator_voice_section = (
         "# ESTABLISHED NARRATOR VOICE (HISTORICAL, READ-ONLY)\n"
         + narrator_voice_context
         + "\nRefinement must preserve this profile and must not infer or rewrite narrator history.\n\n"
-        if narrator_voice_context else ""
+        if narrator_voice_context and not bundle_has_narrator else ""
     )
     # Glossary block injected here (per-chunk dynamic) so the system prompt
     # stays cacheable across chunks.
@@ -1689,15 +1686,6 @@ def generate_chunk_reflection_prompt(
     Evaluates line-by-line fidelity, narrative vs. dialogue pronoun isolation, and term accuracy.
     """
     target_lang = target_language or "target language"
-    guidance = _get_language_specific_prompt_guidance(target_lang)
-    loc_example = guidance["loc_example"]
-    pronoun_examples = guidance["pronoun_examples"]
-    monologue_guidance = guidance["monologue_guidance"]
-    gender_examples = guidance["gender_examples"]
-    proper_name_example = guidance["proper_name_example"]
-    stutter_example = guidance["stutter_example"]
-    addressee_examples = guidance["addressee_examples"]
-
     from src.utils.translation_quality import format_editor_segments
 
     reflection_contract = _build_reflection_json_contract_section(
@@ -1709,55 +1697,27 @@ def generate_chunk_reflection_prompt(
         if source_available
         else "Perform monolingual target-language style, fluency, consistency, glossary, relationship, and formatting review. Do not claim omissions, mistranslations, or source residue because no aligned source is available."
     )
-    system_prompt = f"""You are a rigorous, evidence-driven Senior Literary Translation Editor specializing in {target_lang}.
+    system_prompt = f"""You are an evidence-driven literary translation editor for {target_lang}.
 {source_mode}
 
-STRICT BUT ACTIONABLE POLICY:
-- Report only defects supported by exact source/draft evidence.
-- Prefer no issue over a speculative stylistic preference.
-- Minor or below-0.80-confidence observations are review_only and must not trigger automatic rewriting.
+AUDIT POLICY:
+- Compare every source segment with the numbered draft for completeness,
+  meaning, terminology, proper names, grammar, register, and structure.
+- Report only material defects supported by exact source and draft evidence.
+- Explicit source names, nicknames, titles, honorifics, stuttering, and
+  intentional register changes override background defaults.
+- Use context only when the source is implicit. Never invent relationships,
+  gender, hierarchy, or reverse addressing from absent evidence.
+- Keep narration, dialogue, thought, letters, and embedded stories separate.
+  Pair-specific dialogue forms never define narrator voice.
+- Apply an established narrator policy across matching narrative scope and
+  chapters; do not extend it into dialogue or a different narrator.
+- A gendered vocative describes its addressee, not automatically its speaker.
+- Preserve concise identity-bearing names as complete spans. Do not classify or
+  translate a token inside a protected name independently.
+- Prefer no issue over speculative polishing. Preserve all valid wording.
 
-RIGOROUS 4-STEP AUDIT PROCEDURE:
-0. EXPLICIT SOURCE INTENT & TARGET LOCALIZATION (CRITICAL RULE):
-   - Respect explicit character names, nicknames, and direct address terms present in the source text dialogue or narration.
-   - PRESERVE CONCISE PROPER NAMES & TITLES: Flag and forbid over-expanding concise proper names, institution titles, or academy names in the source into long, bloated descriptive paraphrases{proper_name_example}. Enforce concise, natural proper name localization in {target_lang}.
-   - When the source text explicitly uses a specific spoken name, nickname, or honorific suffix (e.g. "Spe-chan", "Maruzensky-chan", "Maru-chan"), NEVER flag or force changing it to match a default background lore nickname/address form (e.g. "Special", "Maru-senpai"). Background lore addressing rules apply ONLY when the source text uses generic pronouns, unspecific address forms, or missing titles. Spoken source nicknames and honorifics take 100% absolute primacy over background lore defaults.
-   - ALWAYS localize terms using natural {target_lang} syntax, word order, and honorific rules{loc_example}.
-   - NEVER let background lore defaults erase an explicit character name, but DO allow natural grammatical localization of names, titles, and honorifics into standard {target_lang} phrasing.
-   - **SIMILAR NAMES WARNING:** Do not conflate similar-looking proper names (e.g. Alex vs. Alles). Treat them as distinct characters. Ensure that correction rules meant for one character (e.g. translating a specific 'Alex' as 'Alles') are not incorrectly applied to another distinct character who is actually named Alex.
-
-1. LINE & CLAUSE COMPLETENESS AUDIT:
-   - Compare every sentence, clause, dialogue tag, and narrative detail in the source chunk against the draft translation.
-   - Flag ANY omitted sentence, dropped phrase, or summarized paragraph.
-   - Note: Do NOT flag natural target language localization, idiom adaptation, or smooth sentence flow as dropped text if all narrative facts and dialogue lines are preserved.
-
-2. DIALOGUE VS NARRATION PRONOUN ISOLATION & INTERNAL MONOLOGUE:
-   - Check whether dialogue-specific self-references or intimate pronouns{pronoun_examples} have improperly leaked into third-person objective story narration outside quotes.
-   - INTERNAL MONOLOGUE & THOUGHTS: Do NOT flag internal monologue, character thoughts{monologue_guidance} as pronoun bleed errors. Intimate self-references in internal monologue and character thoughts are completely natural and valid.
-   - ESTABLISHED NARRATOR VOICE: When a narrative voice baseline is provided, enforce it across chapter boundaries in narration and non-addressed internal monologue. A pair-specific dialogue self-reference never overrides that baseline outside speech or a thought directly addressed to that person.
-
-3. GENDER & CHARACTER LORE ALIGNMENT:
-   - Cross-check pronouns against the ACTIVE NOVEL LORE and custom instructions.
-   - Flag gender mismatches{gender_examples}.
-   - ADDRESSEE VS SPEAKER ALIGNMENT: Vocatives, direct address forms, and second-person pronouns in spoken dialogue refer to the ADDRESSEE (the person being spoken to), NOT the speaker. Never flag a gendered address term{addressee_examples} as a gender error based on the speaker's gender when it matches the addressee.
-   - ADDRESSEE SHIFT ACCURACY: When a speaker turns from one addressee to another within the same scene (e.g. addressing a senior trainer then turning to speak to a peer classmate), verify that the pronouns and vocatives shift accurately to match the new addressee for each line.
-   - SITUATIONAL / ROLEPLAY SCENE ISOLATION: If background lore contains a situational or roleplay address entry (e.g. butler café roleplay, undercover disguise, stage play, acting), apply it ONLY within that specific scene setting. In standard narration, general conversations, or non-roleplay scenes, flag using roleplay address forms (like "Master" or "Chủ nhân") as a lore violation and require reverting to the source text and standard baseline relationship pronouns.
-   - ABSOLUTELY FORBIDDEN: NEVER flag or force changing explicit spoken nicknames/honorifics in source dialogue (e.g. "Spe-chan", "Maruzensky-chan") to match default background lore address entries (e.g. "Special", "Maru-senpai"). Forcing explicit source text nicknames to match background lore is an AUDIT BUG and is strictly prohibited.
-
-4. REGISTER HARMONY & NATURALNESS:
-   - Check for unnatural, unmotivated register shifts or robotic literal phrasing.
-   - UNMOTIVATED PRONOUN SHIFTS: Flag unmotivated pronoun jumping within dialogue when addressing the same character (e.g. randomly flipping between 'tôi', 'tớ', and 'em' across adjacent sentences to the same addressee without source context changes).
-   - Note: Do NOT flag intentional character emotional shifts (e.g. a character becoming angry, casual, or formal during a scene) or creative literary word choices as register errors.
-   - PROTECT DIALOGUE STUTTERING & DISFLUENCY: Do NOT flag stuttering, hesitations, or vocal quirks present in the source dialogue{stutter_example} as register flaws or unnatural phrasing. Erasing source stuttering to make dialogue sound overly smooth or polished is an AUDIT BUG.
-
-{reflection_contract}
-
-ADDITIONAL AUDIT OUTPUT RULES:
-- DO NOT list issues for sections or rules that are correct or passed validation. Only include actual actionable defects that require fixing.
-- DO NOT flag direct address terms or vocatives in dialogue matching the addressee's gender as speaker gender errors.
-- DO NOT flag explicit spoken names or nicknames from source dialogue as lore violations (e.g. replacing "Spe-chan" with "Special" or "Maruzensky-chan" with "Maru-senpai" is strictly prohibited).
-- DO NOT flag internal monologue or 1st-person character thoughts as pronoun bleed.
-- DO NOT flag stuttering, hesitations, or emotional vocal quirks present in source dialogue as register flaws."""
+{reflection_contract}"""
 
     user_sections = [
         f"# RAW SOURCE CHUNK:\n{source_chunk.strip()}"
@@ -1782,7 +1742,10 @@ ADDITIONAL AUDIT OUTPUT RULES:
             "# ESTABLISHED NARRATOR VOICE (EVIDENCE-BACKED HISTORICAL TIMELINE)\n"
             + narrative_voice_context.strip()
         )
-    user_sections.append(f"# ACTIVE NOVEL LORE & ADDRESSING RULES (Background defaults apply ONLY when source text lacks an explicit spoken nickname/title. Explicit source nicknames like 'Spe-chan' take 100% priority over lore entries like 'Special'):\n{novel_context.strip() if novel_context.strip() else 'None'}")
+    user_sections.append(
+        "# RELEVANT CONTEXT (use only when the source is implicit):\n"
+        + (novel_context.strip() if novel_context.strip() else "None")
+    )
     user_sections.append(
         "# NUMBERED DRAFT TRANSLATION TO AUDIT:\n"
         + format_editor_segments(draft_translation)

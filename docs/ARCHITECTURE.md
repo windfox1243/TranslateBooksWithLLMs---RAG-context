@@ -88,15 +88,31 @@ names.
 The editor compatibility entrypoint delegates to `EditorService`. Deterministic
 adapter, narrator, glossary, proper-name, and phrase-aware residue checks run
 before model repair. Full-unit review is the default after relevant-context
-retrieval, with no application-level token ceiling. A configured provider/model
-input limit can split oversized units into complete aligned windows with
-adjacent read-only context; those windows are then reassembled and structurally
-validated. Exact local issues receive bounded locator repair. An unsupported
-model-only locator remains a diagnostic warning, while a failed deterministic
-locator requires review. Only structural or cross-cutting defects permit a full
-rewrite. Repeated validation fingerprints stop the loop. A separately
-configured escalation client may receive one final attempt, but escalation is
-disabled by default.
+retrieval, with no application-level token ceiling or default windowing. The
+initial audit always receives the complete filtered source and draft; hashes in
+the request diagnostics prove that neither was truncated. Selective retrieval
+is always active for contract v5, even when no optional provider-capacity budget
+is configured, and the typed prompt bundle is the only structured-context
+injection for that contract.
+
+Narrator validation uses paragraph and line offsets plus dialogue, thought, and
+letter masking instead of proportional sentence alignment. Conclusive locked or
+active narration mismatches are patched at their exact target offsets before a
+model call; ambiguous discourse evidence remains advisory. Exact local issues
+receive one bounded locator correction containing only invalid issue IDs and
+candidate neighborhoods. An unsupported model-only locator remains a diagnostic
+warning, while a failed deterministic locator requires review. Only structural,
+completeness, or cross-cutting consistency defects permit a full rewrite.
+Repeated validation fingerprints stop the loop. A separately configured
+escalation client may receive one final attempt, but escalation is disabled by
+default.
+
+Editor usage is reported on two independent scales. Request telemetry exposes
+the largest individual request and its stage, while compatibility totals remain
+cumulative across reflection, locator correction, local repair, and any full
+rewrite. Prompt-composition diagnostics separate fixed instructions, source,
+draft, selected context, glossary, deterministic findings, and critique so a
+large cumulative total cannot be mistaken for one oversized request.
 
 ## Extension guidance
 
