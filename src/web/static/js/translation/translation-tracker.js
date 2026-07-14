@@ -1675,11 +1675,18 @@ window.NovelContextUI = {
             warnings: result.summary?.warnings || 0
         });
         pane.appendChild(summary);
+        const allRuns = result.runs || [];
         const latestRunByChunk = new Map();
-        (result.runs || []).forEach(run => {
+        allRuns.forEach(run => {
             latestRunByChunk.set(Number(run.chunk_index), run);
         });
-        (result.runs || []).slice().reverse().forEach(run => {
+        const latestRuns = allRuns.filter(run => (
+            latestRunByChunk.get(Number(run.chunk_index)) === run
+        ));
+        const historicalRuns = allRuns.filter(run => (
+            latestRunByChunk.get(Number(run.chunk_index)) !== run
+        ));
+        const renderRun = (run, target, isLatestForChunk) => {
             const row = document.createElement('div');
             row.style.padding = '0.6rem 0';
             row.style.borderTop = '1px solid var(--border-color)';
@@ -1690,6 +1697,20 @@ window.NovelContextUI = {
                 reason: run.failure_class || '-'
             });
             row.appendChild(label);
+            const phaseKey = run.phase === 'manual_retry'
+                ? 'translation:editor_diagnostics_phase_manual_retry'
+                : 'translation:editor_diagnostics_phase_translation';
+            const runMeta = document.createElement('div');
+            runMeta.style.fontSize = '0.75rem';
+            runMeta.style.fontWeight = isLatestForChunk ? '600' : '400';
+            runMeta.style.color = 'var(--text-muted-light)';
+            runMeta.textContent = t(
+                isLatestForChunk
+                    ? 'translation:editor_diagnostics_run_latest'
+                    : 'translation:editor_diagnostics_run_previous',
+                { phase: t(phaseKey) }
+            );
+            row.appendChild(runMeta);
             const details = document.createElement('div');
             details.style.fontSize = '0.75rem';
             details.style.color = 'var(--text-muted-light)';
@@ -1790,7 +1811,6 @@ window.NovelContextUI = {
             });
             row.appendChild(tokens);
             const chunkIndex = Number(run.chunk_index);
-            const isLatestForChunk = latestRunByChunk.get(chunkIndex) === run;
             const retryState = result.retry_states?.[String(chunkIndex)]
                 || run.retry_state || { status: 'idle' };
             if (isLatestForChunk
@@ -1830,8 +1850,23 @@ window.NovelContextUI = {
                 };
                 row.appendChild(retry);
             }
-            pane.appendChild(row);
-        });
+            target.appendChild(row);
+        };
+        latestRuns.slice().reverse().forEach(run => renderRun(run, pane, true));
+        if (historicalRuns.length) {
+            const history = document.createElement('details');
+            history.style.marginTop = '0.75rem';
+            const historySummary = document.createElement('summary');
+            historySummary.textContent = t(
+                'translation:editor_diagnostics_history',
+                { count: historicalRuns.length }
+            );
+            history.appendChild(historySummary);
+            historicalRuns.slice().reverse().forEach(run => (
+                renderRun(run, history, false)
+            ));
+            pane.appendChild(history);
+        }
     },
 
     _pollEditorRetry: async function(translationId, chunkIndex) {

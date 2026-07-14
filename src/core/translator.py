@@ -2320,30 +2320,70 @@ async def _run_chunk_reflection_pass_impl(
         draft_translation=draft_translation,
     )
 
-    reflection_pair = generate_chunk_reflection_prompt(
-        source_chunk=source_chunk,
-        draft_translation=draft_translation,
-        target_language=target_language,
-        novel_context=active_novel_context,
-        custom_instructions=custom_instructions,
-        glossary_block=glossary_block,
-        deterministic_findings=deterministic_findings,
-        narrative_voice_context=narrative_voice_context,
-        source_available=source_available,
-        native_schema=True,
+    retry_seed_issues = []
+    for seed_index, item in enumerate(
+        list(options.get("editor_retry_unresolved_issues") or [])[:12], start=1
+    ):
+        if (
+            not isinstance(item, dict)
+            or str(item.get("repair_kind") or "").casefold() != "local_replace"
+        ):
+            continue
+        seed = dict(item)
+        seed.setdefault("issue_id", f"retry-{seed_index}")
+        retry_seed_issues.append(seed)
+    use_focused_manual_retry = bool(
+        str(options.get("editor_phase") or "").casefold() == "manual_retry"
+        and retry_seed_issues
+        and not deterministic_findings
     )
-    reflection_fallback_pair = generate_chunk_reflection_prompt(
-        source_chunk=source_chunk,
-        draft_translation=draft_translation,
-        target_language=target_language,
-        novel_context=active_novel_context,
-        custom_instructions=custom_instructions,
-        glossary_block=glossary_block,
-        deterministic_findings=deterministic_findings,
-        narrative_voice_context=narrative_voice_context,
-        source_available=source_available,
-        native_schema=False,
-    )
+    if use_focused_manual_retry:
+        from src.prompts.prompts import PromptPair
+
+        retry_ids = {str(item.get("issue_id")) for item in retry_seed_issues}
+        retry_reasons = [
+            str(item) for item in list(options.get("editor_retry_reason_codes") or [])
+            if item
+        ] or [f"local_patch_unresolved:{item}" for item in sorted(retry_ids)]
+        focused_prompt = _build_focused_locator_retry_prompt(
+            draft_translation,
+            retry_seed_issues,
+            retry_ids,
+            retry_reasons,
+        )
+        focused_system = (
+            "You are retrying previously unresolved local translation edits. "
+            "Use only the supplied issue evidence and candidate draft segments. "
+            "Return one canonical reflection JSON object; never rewrite the "
+            "complete chunk or introduce unrelated edits."
+        )
+        reflection_pair = PromptPair(focused_system, focused_prompt)
+        reflection_fallback_pair = reflection_pair
+    else:
+        reflection_pair = generate_chunk_reflection_prompt(
+            source_chunk=source_chunk,
+            draft_translation=draft_translation,
+            target_language=target_language,
+            novel_context=active_novel_context,
+            custom_instructions=custom_instructions,
+            glossary_block=glossary_block,
+            deterministic_findings=deterministic_findings,
+            narrative_voice_context=narrative_voice_context,
+            source_available=source_available,
+            native_schema=True,
+        )
+        reflection_fallback_pair = generate_chunk_reflection_prompt(
+            source_chunk=source_chunk,
+            draft_translation=draft_translation,
+            target_language=target_language,
+            novel_context=active_novel_context,
+            custom_instructions=custom_instructions,
+            glossary_block=glossary_block,
+            deterministic_findings=deterministic_findings,
+            narrative_voice_context=narrative_voice_context,
+            source_available=source_available,
+            native_schema=False,
+        )
     reflection_components.update({
         "source_chars": len(source_chunk),
         "draft_chars": len(draft_translation),
@@ -2356,6 +2396,10 @@ async def _run_chunk_reflection_pass_impl(
         "source_sha256": hashlib.sha256(source_chunk.encode("utf-8")).hexdigest(),
         "draft_sha256": hashlib.sha256(draft_translation.encode("utf-8")).hexdigest(),
         "source_complete": source_chunk.strip() in reflection_pair.user,
+        "input_mode": (
+            "focused_manual_retry" if use_focused_manual_retry else "complete_audit"
+        ),
+        "retry_source_run_id": options.get("editor_retry_source_run_id") or 0,
         "draft_segment_chars": sum(
             len(str(item.get("text") or ""))
             for item in build_editor_segments(draft_translation)
@@ -3057,6 +3101,126 @@ async def _run_chunk_reflection_pass_impl(
             resolved_issue_count = 0
             unresolved_issue_count = len(actionable_issues) + review_issue_count
 
+    local_patch_followup_attempted = False
+    if (
+        unresolved_issues
+        and str(options.get("editor_phase") or "").casefold() == "manual_retry"
+        and all(_issue_requires_draft_replacement(issue) for issue in unresolved_issues)
+    ):
+        local_patch_followup_attempted = True
+        followup_base = original_draft if patch_errors else patched_draft
+        followup_ids = {
+            str(issue.get("issue_id") or "") for issue in unresolved_issues
+            if str(issue.get("issue_id") or "")
+        }
+        followup_reasons = [
+            *patch_errors,
+            *[
+                f"local_patch_unresolved:{issue.get('issue_id') or 'unknown'}"
+                for issue in unresolved_issues
+            ],
+        ]
+        followup_prompt = _build_focused_locator_retry_prompt(
+            followup_base,
+            unresolved_issues,
+            followup_ids,
+            followup_reasons,
+        )
+        followup_errors: List[str] = []
+        followup_response = None
+        followup_raw = ""
+        followup_result = ReflectionResult("no_issues", [], "", "empty")
+        try:
+            followup_response = await generate_editor(
+                prompt=followup_prompt,
+                system_prompt=(
+                    "You correct one bounded set of unresolved local translation "
+                    "edits. Use only the supplied candidate neighborhoods. Return "
+                    "canonical reflection JSON and never rewrite the complete chunk."
+                ),
+                temperature=0.0,
+                max_output_tokens=editor_output_tokens,
+                stage="local_patch_retry",
+                structured=True,
+            )
+            followup_raw = str(
+                getattr(followup_response, "content", "") or ""
+            ).strip()
+            followup_result = parse_reflection_result(followup_raw)
+            corrected_issues = [
+                issue for issue in followup_result.issues
+                if not followup_ids
+                or str(issue.get("issue_id") or "") in followup_ids
+            ]
+            corrected_issues, _normalized = normalize_unique_issue_locators(
+                followup_base, corrected_issues,
+            )
+            if reflection_contract_invalid(followup_result) or not corrected_issues:
+                followup_errors.append("local_patch_retry_contract_invalid")
+            else:
+                followup_errors.extend(
+                    validate_issue_locators(followup_base, corrected_issues)
+                )
+            retry_patched = followup_base
+            retry_unresolved = list(corrected_issues)
+            if not followup_errors:
+                retry_patched, retry_unresolved, retry_patch_errors = (
+                    apply_local_editor_patches(followup_base, corrected_issues)
+                )
+                followup_errors.extend(retry_patch_errors)
+            if not followup_errors and not retry_unresolved:
+                followup_errors.extend(validate_editor_repair(
+                    retry_patched,
+                    corrected_issues,
+                    draft_text=followup_base,
+                    source_text=source_chunk,
+                    source_language=source_language,
+                    target_language=target_language,
+                    protected_terms=protected_terms,
+                    glossary_terms=glossary_terms,
+                ))
+            record_attempt(
+                "local_patch_retry",
+                followup_response,
+                followup_raw,
+                parse_status=followup_result.parse_status,
+                failure_class=("local_patch_conflict" if followup_errors else ""),
+                reason_codes=followup_errors,
+                issues=corrected_issues,
+            )
+            if not followup_errors and not retry_unresolved:
+                patched_draft = retry_patched
+                resolved_issue_count += len(corrected_issues)
+                unresolved_issues = []
+                unresolved_issue_count = review_issue_count
+                patch_errors = []
+                result_state = "locally_patched"
+                reflection_result = ReflectionResult(
+                    "needs_repair",
+                    corrected_issues,
+                    followup_raw,
+                    followup_result.parse_status,
+                    followup_result.voice_observations,
+                )
+            else:
+                patch_errors.extend(
+                    error for error in followup_errors if error not in patch_errors
+                )
+        except Exception as exc:
+            followup_errors.append(
+                f"local_patch_retry_failed:{type(exc).__name__}"
+            )
+            patch_errors.extend(
+                error for error in followup_errors if error not in patch_errors
+            )
+            record_attempt(
+                "local_patch_retry", followup_response, followup_raw,
+                parse_status=followup_result.parse_status,
+                failure_class="local_patch_conflict",
+                reason_codes=followup_errors,
+                issues=followup_result.issues,
+            )
+
     if not unresolved_issues:
         finish_run(
             (
@@ -3068,7 +3232,13 @@ async def _run_chunk_reflection_pass_impl(
             parse_status=reflection_result.parse_status,
             failure_class="local_patch_conflict" if patch_errors else None,
             issue_count=len(reflection_result.issues),
-            diagnostics={"reason_codes": patch_errors},
+            diagnostics={
+                "reason_codes": patch_errors,
+                "repair_mode": (
+                    "focused_local_patch_retry"
+                    if local_patch_followup_attempted else "local_patch"
+                ),
+            },
         )
         final_text = persist_final_voice(patched_draft)
         if review_required:
@@ -3113,6 +3283,7 @@ async def _run_chunk_reflection_pass_impl(
             diagnostics={
                 "reason_codes": reason_codes,
                 "repair_mode": "bounded_local_patch",
+                "focused_followup_attempted": local_patch_followup_attempted,
             },
         )
         return review_required_translation(
@@ -3122,6 +3293,8 @@ async def _run_chunk_reflection_pass_impl(
                 "status": "review_required",
                 "final_reason_codes": reason_codes,
                 "repair_mode": "bounded_local_patch",
+                "unresolved_issues": unresolved_issues,
+                "editor_run_id": recorder.run_id,
             },
         )
 

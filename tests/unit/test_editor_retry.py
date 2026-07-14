@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.core.editor import review_required_translation
 from src.core.editor_retry import (
     audit_completed_narrator_conformance,
     editor_retry_state,
@@ -61,7 +62,21 @@ async def test_editor_retry_runs_immediately_and_saves_result(monkeypatch, tmp_p
                         "original_text": "Hello.",
                         "translated_text": "Xin chào.",
                         "status": "completed",
-                        "chunk_data": {},
+                        "chunk_data": {
+                            "editor_validation": {
+                                "final_reason_codes": ["local_patch_unresolved:old-1"],
+                                "unresolved_issues": [{
+                                    "issue_id": "old-1",
+                                    "repair_kind": "local_replace",
+                                    "draft_quote": "Xin chào.",
+                                    "draft_replacement": {
+                                        "draft": "Xin chào.",
+                                        "replacement": "Chào bạn.",
+                                    },
+                                }],
+                            },
+                            "editor_retry": {"source_run_id": 6},
+                        },
                     }
                 ],
             }
@@ -92,7 +107,22 @@ async def test_editor_retry_runs_immediately_and_saves_result(monkeypatch, tmp_p
     async def fake_reflection(**kwargs):
         assert kwargs["llm_client"] is editor_client
         assert kwargs["prompt_options"]["editor_phase"] == "manual_retry"
-        return "Xin chào!"
+        assert kwargs["prompt_options"]["editor_retry_source_run_id"] == 6
+        assert kwargs["prompt_options"]["editor_retry_unresolved_issues"][0][
+            "issue_id"
+        ] == "old-1"
+        return review_required_translation(
+            "Xin chào!",
+            {
+                "stage": "local_patch",
+                "status": "review_required",
+                "final_reason_codes": ["local_patch_unresolved:new-1"],
+                "unresolved_issues": [{
+                    "issue_id": "new-1",
+                    "repair_kind": "local_replace",
+                }],
+            },
+        )
 
     async def fake_refresh(*_args, **_kwargs):
         return {"status": "updated", "filename": "translated.txt"}
@@ -113,6 +143,9 @@ async def test_editor_retry_runs_immediately_and_saves_result(monkeypatch, tmp_p
     assert state["outcome"] == "warnings_only"
     assert state["output_sync"]["status"] == "updated"
     assert checkpoints.saved[-1]["translated_text"] == "Xin chào!"
+    assert checkpoints.saved[-1]["chunk_data"]["editor_validation"][
+        "unresolved_issues"
+    ][0]["issue_id"] == "new-1"
     assert (
         checkpoints.saved[-1]["chunk_data"]["editor_retry"]["status"]
         == "succeeded"
