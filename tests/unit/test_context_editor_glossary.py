@@ -545,3 +545,31 @@ async def test_sync_translated_output_with_llm_client(tmp_path):
     )
 
     assert success is True
+
+
+@pytest.mark.asyncio
+async def test_v5_sync_does_not_repeat_full_context_analysis(tmp_path):
+    from src.utils.novel_context import NovelContextSession
+
+    context_file = tmp_path / "v5_context.txt"
+    context_file.write_text("=== GLOBAL LORE ===\n[GLOSSARY]\n", encoding="utf-8")
+    session = NovelContextSession(
+        path=context_file,
+        prompt_options={"context_contract_version": 5},
+        global_lore="=== GLOBAL LORE ===\n[GLOSSARY]\n",
+        dynamic_state="",
+    )
+    mock_llm = MagicMock()
+    mock_llm.generate_async = AsyncMock(
+        side_effect=AssertionError("v5 target sync must not rerun lore analysis")
+    )
+
+    success = await session.sync_translated_output(
+        translated_chunk="Tất nhiên rồi.",
+        source_chunk='"Of course."',
+        llm_client=mock_llm,
+        model_name="test-model",
+    )
+
+    assert isinstance(success, bool)
+    mock_llm.generate_async.assert_not_awaited()

@@ -17,6 +17,7 @@ from .contracts import (
     ReflectionValidationError,
     review_required_translation,
 )
+from .service import EditorService
 
 __all__ = [
     "NARRATOR_CONFORMANCE_VERSION",
@@ -27,4 +28,5 @@ __all__ = [
     "EditorTranslation",
     "ReflectionValidationError",
     "review_required_translation",
+    "EditorService",
 ]
