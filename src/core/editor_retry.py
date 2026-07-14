@@ -87,6 +87,24 @@ def _active_character_names(chunk_data: Dict[str, Any]) -> list[str]:
     return result
 
 
+def _unresolved_issue_seed(chunk_data: Dict[str, Any]) -> tuple[list[Dict[str, Any]], list[str]]:
+    """Load the previous bounded local-edit contract for a focused retry."""
+
+    validation = chunk_data.get("editor_validation")
+    if not isinstance(validation, dict):
+        return [], []
+    issues = [
+        dict(item) for item in list(validation.get("unresolved_issues") or [])[:12]
+        if isinstance(item, dict)
+        and str(item.get("repair_kind") or "").casefold() == "local_replace"
+    ]
+    reasons = [
+        str(item) for item in list(validation.get("final_reason_codes") or [])[:12]
+        if item
+    ]
+    return issues, reasons
+
+
 def _latest_editor_run(db: Any, translation_id: str, chunk_index: int) -> Dict[str, Any]:
     diagnostics = db.get_editor_diagnostics(translation_id)
     return next((
@@ -242,6 +260,7 @@ async def run_editor_retry(
     source_text = str(chunk.get("original_text") or "")
     draft_text = str(chunk.get("translated_text") or "")
     chunk_data = dict(chunk.get("chunk_data") or {})
+    retry_issue_seed, retry_reason_codes = _unresolved_issue_seed(chunk_data)
     options.update({
         "_editor_llm_client": editor_client,
         "editor_provider_resolved": editor_spec.provider,
@@ -257,6 +276,12 @@ async def run_editor_retry(
         "target_language": config.get("target_language") or "",
         "active_character_names": _active_character_names(chunk_data),
         "dialogue_attribution": chunk_data.get("dialogue_attribution") or {},
+        "editor_retry_unresolved_issues": retry_issue_seed,
+        "editor_retry_reason_codes": retry_reason_codes,
+        "editor_retry_source_run_id": (
+            (chunk_data.get("editor_retry") or {}).get("source_run_id")
+            if isinstance(chunk_data.get("editor_retry"), dict) else None
+        ),
     })
     from src.utils.narrator_voice import build_narrator_voice_context
 
@@ -320,6 +345,10 @@ async def run_editor_retry(
         "output_sync": {"status": "pending"},
         "completed_at": int(time.time()),
     }
+    result_validation = getattr(result, "editor_validation", None)
+    if isinstance(result_validation, dict) and result_validation:
+        chunk_data["editor_validation"] = dict(result_validation)
+    retry_chunk = {**chunk, "chunk_data": chunk_data}
     final_chunk_status = (
         "completed"
         if status in {"succeeded", "review_required"}
@@ -328,7 +357,7 @@ async def run_editor_retry(
     _save_retry_state(
         checkpoint_manager,
         translation_id,
-        chunk,
+        retry_chunk,
         state,
         translated_text=str(result or draft_text),
         chunk_status=final_chunk_status,
@@ -350,7 +379,7 @@ async def run_editor_retry(
         checkpoint_manager,
         translation_id,
         {
-            **chunk,
+            **retry_chunk,
             "translated_text": str(result or draft_text),
             "status": final_chunk_status,
         },
