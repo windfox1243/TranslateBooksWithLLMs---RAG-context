@@ -2613,9 +2613,8 @@ def test_senior_editor_reflection_prompt_includes_addressee_vs_speaker_alignment
         draft_translation="Sample draft",
         target_language="Vietnamese",
     )
-    assert "ADDRESSEE VS SPEAKER ALIGNMENT" in prompt_pair.system
-    assert "refer to the ADDRESSEE (the person being spoken to), NOT the speaker" in prompt_pair.system
-    assert "DO NOT flag direct address terms or vocatives in dialogue matching the addressee's gender" in prompt_pair.system
+    assert "A gendered vocative describes its addressee" in prompt_pair.system
+    assert "not automatically its speaker" in prompt_pair.system
 
 
 
@@ -5772,14 +5771,12 @@ def test_senior_editor_reflection_prompt_includes_explicit_source_text_primacy()
         novel_context="- Meek-chan → Tomio Momozawa: \"Huấn luyện viên Momozawa\"",
     )
 
-    assert "EXPLICIT SOURCE INTENT & TARGET LOCALIZATION" in prompt_pair_vi.system
-    assert "ALWAYS localize terms using natural Vietnamese syntax" in prompt_pair_vi.system
-    assert "NEVER flag or force changing it to match a default background lore nickname/address form" in prompt_pair_vi.system
-    assert "Spe-chan" in prompt_pair_vi.system
-    assert "replacing \"Spe-chan\" with \"Special\" or \"Maruzensky-chan\" with \"Maru-senpai\" is strictly prohibited" in prompt_pair_vi.system
-    assert "Do NOT flag internal monologue, character thoughts" in prompt_pair_vi.system
-    assert "In Vietnamese internal monologue, 'mình'/'tôi' are standard for self-reflection, while intimate address pairs" in prompt_pair_vi.system
-    assert "Explicit source nicknames like 'Spe-chan' take 100% priority over lore entries like 'Special'" in prompt_pair_vi.user
+    assert "Explicit source names, nicknames, titles, honorifics" in prompt_pair_vi.system
+    assert "override background defaults" in prompt_pair_vi.system
+    assert "Use context only when the source is implicit" in prompt_pair_vi.system
+    assert "Spe-chan" not in prompt_pair_vi.system
+    assert "Maruzensky" not in prompt_pair_vi.system
+    assert "# RELEVANT CONTEXT" in prompt_pair_vi.user
 
     prompt_pair_ja = generate_chunk_reflection_prompt(
         source_chunk="\"Momozawa Trainer, are you staying?\"",
@@ -5788,25 +5785,57 @@ def test_senior_editor_reflection_prompt_includes_explicit_source_text_primacy()
         novel_context="- Meek-chan → Tomio Momozawa: \"桃沢トレーナー\"",
     )
 
-    assert "EXPLICIT SOURCE INTENT & TARGET LOCALIZATION" in prompt_pair_ja.system
-    assert "ALWAYS localize terms using natural Japanese syntax" in prompt_pair_ja.system
-    assert "Spoken source nicknames and honorifics take 100% absolute primacy over background lore defaults" in prompt_pair_ja.system
-    assert "桃沢トレーナー" in prompt_pair_ja.system
+    assert "Explicit source names, nicknames, titles, honorifics" in prompt_pair_ja.system
+    assert "editor for Japanese" in prompt_pair_ja.system
 
     prompt_pair_zh = generate_chunk_reflection_prompt(
         source_chunk="\"Momozawa Trainer, are you staying?\"",
         draft_translation="\"桃泽教练，您要留下来吗？\"",
         target_language="Chinese",
     )
-    assert "桃泽教练" in prompt_pair_zh.system
-    assert "哥" in prompt_pair_zh.system
+    assert "editor for Chinese" in prompt_pair_zh.system
 
     prompt_pair_fr = generate_chunk_reflection_prompt(
         source_chunk="\"Are you staying?\"",
         draft_translation="\"Restez-vous ?\"",
         target_language="French",
     )
-    assert "tu" in prompt_pair_fr.system and "vous" in prompt_pair_fr.system
+    assert "editor for French" in prompt_pair_fr.system
+
+
+def test_v5_prompt_bundle_is_authoritative_without_legacy_context_duplication():
+    from src.core.translator import _render_reflection_novel_context
+    from src.prompts.prompts import generate_translation_prompt
+
+    bundle = "# RELEVANT ENTITIES\n- Current Character: Female"
+    legacy = "# GLOBAL LORE\n- Unrelated Legacy Character: Male"
+    options = {
+        "context_contract_version": 5,
+        "prompt_context_bundle": bundle,
+        "novel_context": legacy,
+        "directed_addressing_context": "DUPLICATE ADDRESSING",
+        "relationship_context": "DUPLICATE RELATIONSHIP",
+        "narrative_voice_context": "DUPLICATE NARRATOR",
+    }
+    prompt = generate_translation_prompt(
+        main_content="Current Character entered.",
+        context_before="",
+        context_after="",
+        previous_translation_context="",
+        source_language="English",
+        target_language="Vietnamese",
+        prompt_options=options,
+    )
+    editor_context = _render_reflection_novel_context(
+        legacy, options, "Current Character entered.", "Nhân vật bước vào.",
+    )
+
+    assert prompt.user.count(bundle) == 1
+    assert "Unrelated Legacy Character" not in prompt.user
+    assert "DUPLICATE ADDRESSING" not in prompt.user
+    assert "DUPLICATE RELATIONSHIP" not in prompt.user
+    assert "DUPLICATE NARRATOR" not in prompt.user
+    assert editor_context == bundle
 
 
 def test_format_critique_tldr():

@@ -1840,6 +1840,31 @@ class Database:
                     row["diagnostics"] = {}
                 row["diagnostics"].pop("issues", None)
                 row["attempts"] = attempts_by_run.get(int(row["id"]), [])
+                attempts = row["attempts"]
+                row["request_count"] = len([
+                    item for item in attempts
+                    if int(item.get("prompt_tokens", 0) or 0) > 0
+                ])
+                row["max_request_prompt_tokens"] = max(
+                    (int(item.get("prompt_tokens", 0) or 0) for item in attempts),
+                    default=0,
+                )
+                row["max_request_total_tokens"] = max(
+                    (int(item.get("total_tokens", 0) or 0) for item in attempts),
+                    default=0,
+                )
+                row["cumulative_prompt_tokens"] = int(
+                    row.get("prompt_tokens", 0) or 0
+                )
+                row["cumulative_completion_tokens"] = int(
+                    row.get("completion_tokens", 0) or 0
+                )
+                row["cumulative_thinking_tokens"] = int(
+                    row.get("thinking_tokens", 0) or 0
+                )
+                row["cumulative_total_tokens"] = int(
+                    row.get("total_tokens", 0) or 0
+                )
             successful = sum(
                 outcomes.get(name, 0)
                 for name in (

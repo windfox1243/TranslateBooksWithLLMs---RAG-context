@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.15.0-beta.48 - 2026-07-14
+
+### Added
+
+- Added per-stage editor prompt composition diagnostics, complete source and draft hashes, request counts, largest-request totals, and cumulative token totals while preserving the existing cumulative database fields.
+- Added reactive frontend diagnostics for largest request, request count, request stages, and cumulative usage across all seven supported locales.
+
+### Changed
+
+- Selective contract-v5 context retrieval now runs even when no prompt budget is configured. The typed prompt bundle is the sole structured-context injection and includes relevant participants, accepted relationships, active addressing, glossary entities, narrator policy, and nearby scene evidence without duplicating legacy Markdown state.
+- Compacted and generalized the editor contract while retaining the complete filtered source and draft in the initial audit. Prompt budgets remain optional provider-capacity safeguards rather than context-selection switches.
+- Replaced proportional narrator alignment with offset-preserving discourse mapping. Exact narrative mismatches are patched deterministically, while dialogue, thoughts, letters, and ambiguous alignments remain advisory.
+- Locator correction now sends only invalid issues and bounded candidate neighborhoods. Unresolved local issues preserve the best valid draft for review instead of triggering a full-chunk rewrite.
+
+### Fixed
+
+- Fixed misleading 40k-plus editor figures by distinguishing the largest individual request from cumulative multi-request usage.
+- Deduplicated exact narrator findings and excluded already repairable narrator observations from model prompts.
+- Prevented contract-v5 relationships, addressing rules, and narrator policy from being injected through both typed SQLite projections and legacy Markdown context.
+
+### Tests
+
+- Added regressions for budget-independent selective retrieval, authoritative v5 prompt bundles, complete-input hashes, focused locator retries, exact narrator patching, legacy diagnostics compatibility, and synchronized locale interpolation.
+
 ## 1.15.0-beta.47 - 2026-07-14
 
 ### Added

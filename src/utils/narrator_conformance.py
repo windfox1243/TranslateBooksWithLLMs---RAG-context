@@ -26,6 +26,9 @@ class NarratorConformanceFinding:
     observed_form: str
     discourse_mode: str = "narration"
     blocking: bool = True
+    target_start: int = -1
+    target_end: int = -1
+    alignment_confidence: str = "exact"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -85,6 +88,7 @@ def _is_non_narrative_line(line: str) -> bool:
         not stripped
         or stripped.startswith(_QUOTE_OPEN)
         or stripped.startswith(_THOUGHT_OPEN)
+        or stripped.startswith(("—", "–", "- "))
         or folded.startswith(_LETTER_PREFIXES)
         or stripped in {"—", "---", "***"}
     )
@@ -239,20 +243,45 @@ def _mask_embedded_discourse(text: str) -> str:
     return "".join(chars)
 
 
-def _aligned_source_segment(
-    source_segments: List[Dict[str, Any]],
-    target_index: int,
-    target_count: int,
-) -> Optional[Dict[str, Any]]:
-    """Return the conservative order-aligned source segment for a target span."""
+def _line_spans(text: str) -> List[Dict[str, Any]]:
+    """Return non-empty line blocks with offsets preserved."""
 
-    if not source_segments:
-        return None
-    if target_count <= 1:
-        return source_segments[0]
-    ratio = target_index / max(1, target_count - 1)
-    source_index = round(ratio * max(0, len(source_segments) - 1))
-    return source_segments[source_index]
+    spans: List[Dict[str, Any]] = []
+    for match in re.finditer(r"[^\r\n]+(?:\r?\n|$)", str(text or "")):
+        value = match.group(0)
+        if value.strip():
+            spans.append({"start": match.start(), "end": match.end(), "text": value})
+    if not spans and str(text or "").strip():
+        spans.append({"start": 0, "end": len(str(text)), "text": str(text)})
+    return spans
+
+
+def _containing_span(
+    spans: List[Dict[str, Any]], offset: int,
+) -> tuple[int, Optional[Dict[str, Any]]]:
+    for index, span in enumerate(spans):
+        if int(span["start"]) <= offset < int(span["end"]):
+            return index, span
+    return -1, None
+
+
+def _vietnamese_observed_occurrences(
+    segment: str, expected: str,
+) -> List[tuple[str, int, int]]:
+    """Return exact strong-form offsets without normalizing text length."""
+
+    results: List[tuple[str, int, int]] = []
+    for form in ("tớ", "tao"):
+        if _norm(form) == _norm(expected):
+            continue
+        for match in re.finditer(
+            rf"(?<!\w){re.escape(form)}(?!\w)", str(segment or ""), re.IGNORECASE,
+        ):
+            results.append((form, match.start(), match.end()))
+    if _norm(expected) != "tôi":
+        for match in re.finditer(r"(?<!\w)tôi(?!\w)", str(segment or ""), re.IGNORECASE):
+            results.append(("tôi", match.start(), match.end()))
+    return results
 
 
 def audit_narrator_conformance(
@@ -289,16 +318,16 @@ def audit_narrator_conformance(
     findings: List[NarratorConformanceFinding] = []
     source_masked = _mask_embedded_discourse(source_text)
     target_masked = _mask_embedded_discourse(target_text)
-    source_segments = [
-        item for item in build_editor_segments(source_masked)
-        if not _is_non_narrative_line(item["text"])
-    ]
+    source_lines = _line_spans(source_masked)
+    target_lines = _line_spans(target_masked)
     target_segments = build_editor_segments(target_masked)
     original_target = str(target_text or "")
     source_code = _language_code(source_language)
     enforcement = str(policy.get("enforcement") or "advisory")
-    for target_index, segment in enumerate(target_segments):
-        masked_text = str(segment.get("text") or "").strip()
+    seen_findings = set()
+    for segment in target_segments:
+        masked_segment = str(segment.get("text") or "")
+        masked_text = masked_segment.strip()
         text = original_target[
             int(segment.get("start") or 0):int(segment.get("end") or 0)
         ].strip()
@@ -306,28 +335,47 @@ def audit_narrator_conformance(
             continue
         if _is_non_narrative_line(text):
             continue
-        source_segment = _aligned_source_segment(
-            source_segments, target_index, len(target_segments),
+        target_line_index, _target_line = _containing_span(
+            target_lines, int(segment.get("start") or 0),
         )
-        if source_segment is None or _count_terms(
-            source_segment.get("text") or "",
+        exact_alignment = (
+            target_line_index >= 0
+            and len(source_lines) == len(target_lines)
+            and target_line_index < len(source_lines)
+        )
+        source_line = source_lines[target_line_index] if exact_alignment else None
+        source_is_first_person = bool(source_line and _count_terms(
+            source_line.get("text") or "",
             _SOURCE_FIRST_PERSON.get(source_code, ()),
             source_code,
-        ) == 0:
-            continue
-        observed = (
-            _vietnamese_observed_forms(masked_text, expected)
+        ))
+        occurrences = (
+            _vietnamese_observed_occurrences(masked_segment, expected)
             if code == "vi" else []
         )
-        for form in observed:
+        for form, local_start, local_end in occurrences:
+            absolute_start = int(segment.get("start") or 0) + local_start
+            absolute_end = int(segment.get("start") or 0) + local_end
+            key = (absolute_start, absolute_end, _norm(form), _norm(expected))
+            if key in seen_findings:
+                continue
+            seen_findings.add(key)
+            is_blocking = (
+                enforcement == "blocking"
+                and exact_alignment
+                and source_is_first_person
+            )
             findings.append(NarratorConformanceFinding(
                 reason_code="narrator_self_reference_mismatch",
                 segment_id=str(segment.get("segment_id") or ""),
-                source_span=str(source_segment.get("text") or "").strip(),
+                source_span=str((source_line or {}).get("text") or "").strip(),
                 target_span=text,
                 expected_form=expected,
                 observed_form=form,
-                blocking=enforcement == "blocking",
+                blocking=is_blocking,
+                target_start=absolute_start,
+                target_end=absolute_end,
+                alignment_confidence="exact" if exact_alignment else "ambiguous",
             ))
     if findings:
         result["status"] = (
@@ -337,6 +385,40 @@ def audit_narrator_conformance(
         result["reason_codes"] = sorted({item.reason_code for item in findings})
         result["violating_segments"] = [item.to_dict() for item in findings]
     return result
+
+
+def apply_narrator_conformance_patches(
+    target_text: str, audit: Dict[str, Any],
+) -> tuple[str, List[Dict[str, Any]]]:
+    """Apply exact blocking narrator-form substitutions outside embedded discourse."""
+
+    text = str(target_text or "")
+    expected = str(audit.get("self_reference") or "").strip()
+    if not expected:
+        return text, []
+    patches: List[Dict[str, Any]] = []
+    seen = set()
+    for item in audit.get("violating_segments") or []:
+        if not item.get("blocking") or item.get("alignment_confidence") != "exact":
+            continue
+        raw_start = item.get("target_start", -1)
+        raw_end = item.get("target_end", -1)
+        start = int(-1 if raw_start is None else raw_start)
+        end = int(-1 if raw_end is None else raw_end)
+        observed = str(item.get("observed_form") or "")
+        key = (start, end, _norm(observed), _norm(expected))
+        current = text[start:end] if 0 <= start < end <= len(text) else ""
+        if key in seen or start < 0 or end <= start or current.casefold() != observed.casefold():
+            continue
+        seen.add(key)
+        replacement = (
+            expected[:1].upper() + expected[1:]
+            if current[:1].isupper() else expected
+        )
+        patches.append({"start": start, "end": end, "replacement": replacement})
+    for patch in sorted(patches, key=lambda item: item["start"], reverse=True):
+        text = text[:patch["start"]] + patch["replacement"] + text[patch["end"]:]
+    return text, list(reversed(patches))
 
 
 def conformance_fingerprint(
@@ -363,15 +445,15 @@ def conformance_editor_issues(audit: Dict[str, Any]) -> List[Dict[str, Any]]:
         "category": "narrator_voice",
         "severity": "blocker" if item.get("blocking") else "major",
         "confidence": 1.0,
-        "repair_kind": "rewrite",
+        "repair_kind": "review_only",
         "deterministic": bool(item.get("blocking")),
         "reason_code": item.get("reason_code"),
         "source_quote": item.get("source_span") or "",
         "draft_quote": item.get("target_span") or "",
         "instruction": (
-            "Repair only the identified narrative span so the narrator uses "
-            f"'{item.get('expected_form')}'. Do not change dialogue, letters, "
-            "vocatives, or pair-specific addressing."
+            "Review the identified narrative span because its exact narrator "
+            f"form could not be patched safely to '{item.get('expected_form')}'. "
+            "Do not rewrite dialogue, letters, vocatives, or surrounding text."
         ),
         "draft_replacement": None,
         "glossary_update": None,
