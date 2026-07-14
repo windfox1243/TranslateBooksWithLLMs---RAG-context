@@ -11,6 +11,7 @@ from pathlib import Path
 from .format_adapter import FormatAdapter
 from src.core.llm_client import LLMClient
 from src.utils.unified_logger import get_logger
+from src.core.jobs import UnitTranslationOutcome
 
 logger = get_logger(__name__)
 
@@ -152,6 +153,7 @@ class GenericTranslator:
 
             # 3. Check for checkpoint and resume
             restored_completed = set()
+            restored_failed = set()
             failed_editor_drafts_by_index = {}
             completed_translations_by_index = {}
             checkpoint_data = self.checkpoint_manager.load_checkpoint(self.translation_id)
@@ -202,6 +204,64 @@ class GenericTranslator:
                     and (c.get('chunk_data') or {}).get('editor_validation')
                     and 0 <= c.get('chunk_index', -1) < total_units
                 }
+                # Beta.45 stored usable editor-review drafts as failed chunks.
+                # Reclassify them only on an explicit resume, and only after the
+                # format adapter confirms the preserved content is structurally
+                # valid. This avoids retranslating valid book content.
+                for chunk in checkpoint_data.get('chunks', []):
+                    index = chunk.get('chunk_index', -1)
+                    draft = chunk.get('translated_text') or ''
+                    data = dict(chunk.get('chunk_data') or {})
+                    if not (
+                        chunk.get('status') in {'failed', 'editor_retry'}
+                        and draft
+                        and data.get('editor_validation')
+                        and 0 <= index < total_units
+                        and self.adapter.validate_unit_translation(
+                            units[index].unit_id, draft
+                        ) is None
+                    ):
+                        continue
+                    if await self.adapter.save_unit_translation(
+                        units[index].unit_id, draft
+                    ):
+                        data['quality_status'] = 'review_required'
+                        data.pop('execution_failure_class', None)
+                        self.checkpoint_manager.save_checkpoint(
+                            translation_id=self.translation_id,
+                            chunk_index=index,
+                            original_text=units[index].content,
+                            translated_text=draft,
+                            chunk_data=data,
+                            total_chunks=total_units,
+                            chunk_status='completed',
+                        )
+                        restored_completed.add(index)
+                        failed_editor_drafts_by_index.pop(index, None)
+                checkpoint_data = self.checkpoint_manager.load_checkpoint(
+                    self.translation_id
+                )
+                restored_completed = {
+                    c['chunk_index'] for c in checkpoint_data.get('chunks', [])
+                    if c.get('status') == 'completed'
+                    and not (c.get('chunk_data') or {}).get('editor_retry_pending')
+                    and 0 <= c.get('chunk_index', -1) < total_units
+                }
+                remaining_failed = sum(
+                    1 for c in checkpoint_data.get('chunks', [])
+                    if c.get('status') != 'completed'
+                    and 0 <= c.get('chunk_index', -1) < total_units
+                )
+                self.checkpoint_manager.db.update_job_progress(
+                    self.translation_id,
+                    completed_chunks=len(restored_completed),
+                    failed_chunks=remaining_failed,
+                )
+                restored_failed = {
+                    c['chunk_index'] for c in checkpoint_data.get('chunks', [])
+                    if c.get('status') != 'completed'
+                    and 0 <= c.get('chunk_index', -1) < total_units
+                }
                 completed_translations_by_index = {
                     c["chunk_index"]: c.get("translated_text") or ""
                     for c in checkpoint_data.get("chunks", [])
@@ -217,7 +277,12 @@ class GenericTranslator:
                     stats_callback({
                         'total_chunks': total_units,
                         'completed_chunks': len(restored_completed),
-                        'failed_chunks': 0
+                        'failed_chunks': remaining_failed,
+                        'review_required_chunks': sum(
+                            1 for c in checkpoint_data.get('chunks', [])
+                            if (c.get('chunk_data') or {}).get('quality_status')
+                            == 'review_required'
+                        ),
                     })
             else:
                 # 4. Create new translation job
@@ -494,9 +559,14 @@ class GenericTranslator:
             max_validation_attempts = 1 + max(0, UNIT_VALIDATION_RETRIES)
 
             last_context = ""
-            failed_count = 0
+            failed_count = len(restored_failed)
             completed_count = len(restored_completed)
-            failed_indices = set()
+            failed_indices = set(restored_failed)
+            review_required_indices = {
+                c['chunk_index'] for c in (checkpoint_data or {}).get('chunks', [])
+                if (c.get('chunk_data') or {}).get('quality_status') == 'review_required'
+                and 0 <= c.get('chunk_index', -1) < total_units
+            }
             reused_context_data_by_index = {}
             pending_db_addressing_context_by_index = {}
             pending_relationship_context_by_index = {}
@@ -831,28 +901,41 @@ class GenericTranslator:
 
                     # Optional 2-pass Senior Translation Editor reflection & repair pass
                     if result and (prompt_options or {}).get("reflection_mode"):
-                        from src.core.translator import run_chunk_reflection_pass
-                        result = await run_chunk_reflection_pass(
-                            source_chunk=unit.content,
-                            draft_translation=result,
-                            target_language=target_language,
-                            model_name=model_name,
-                            llm_client=llm_client,
-                            novel_context=(prompt_options or {}).get("novel_context", ""),
-                            custom_instructions=(prompt_options or {}).get("custom_instructions", ""),
-                            glossary_block=(prompt_options or {}).get("glossary_block", ""),
-                            log_callback=log_callback,
-                            context_session=context_session,
-                            prompt_options=unit_prompt_options,
-                            repair_validator=lambda repaired, unit_id=unit.unit_id: (
-                                self.adapter.validate_unit_translation(
-                                    unit_id, repaired
-                                )
-                            ),
+                        from src.core.translator import (
+                            ReflectionValidationError,
+                            run_chunk_reflection_pass,
                         )
+                        try:
+                            result = await run_chunk_reflection_pass(
+                                source_chunk=unit.content,
+                                draft_translation=result,
+                                target_language=target_language,
+                                model_name=model_name,
+                                llm_client=llm_client,
+                                novel_context=(prompt_options or {}).get("novel_context", ""),
+                                custom_instructions=(prompt_options or {}).get("custom_instructions", ""),
+                                glossary_block=(prompt_options or {}).get("glossary_block", ""),
+                                log_callback=log_callback,
+                                context_session=context_session,
+                                prompt_options=unit_prompt_options,
+                                repair_validator=lambda repaired, unit_id=unit.unit_id: (
+                                    self.adapter.validate_unit_translation(
+                                        unit_id, repaired
+                                    )
+                                ),
+                            )
+                        except ReflectionValidationError as exc:
+                            result = UnitTranslationOutcome.review_required(
+                                exc.draft_translation or result,
+                                exc.diagnostics,
+                            )
 
+                    result_text = (
+                        result.text if isinstance(result, UnitTranslationOutcome)
+                        else result
+                    )
                     feedback = self.adapter.validate_unit_translation(
-                        unit.unit_id, result
+                        unit.unit_id, result_text
                     )
                     if feedback is None:
                         return result
@@ -915,6 +998,11 @@ class GenericTranslator:
                 diagnostics = getattr(error, "diagnostics", None)
                 preserved_draft = getattr(error, "draft_translation", "")
                 chunk_data = dict(unit.metadata or {})
+                chunk_data["quality_status"] = "not_checked"
+                chunk_data["execution_failure_class"] = (
+                    "structure" if isinstance(error, _ValidationFailed)
+                    else "translation"
+                )
                 if diagnostics:
                     chunk_data["editor_validation"] = diagnostics
                     failed_editor_drafts_by_index[i] = preserved_draft
@@ -1168,11 +1256,22 @@ class GenericTranslator:
                     await self.adapter.save_unit_translation(
                         unit.unit_id, result.content
                     )
-                    _record_failure(i, unit)
+                    _record_failure(i, unit, result)
                     next_index = i + 1
                     continue
 
                 translated_content = result
+                outcome = (
+                    result if isinstance(result, UnitTranslationOutcome)
+                    else UnitTranslationOutcome.completed(
+                        str(result),
+                        quality_status=getattr(result, 'quality_status', 'passed'),
+                        diagnostics=getattr(result, 'editor_validation', None),
+                    ) if result else UnitTranslationOutcome.failed(
+                        failure_class='content'
+                    )
+                )
+                translated_content = outcome.text
                 if translated_content:
                     save_success = await self.adapter.save_unit_translation(
                         unit.unit_id, translated_content
@@ -1186,6 +1285,18 @@ class GenericTranslator:
                         continue
 
                     completed_count += 1
+                    failed_indices.discard(i)
+                    failed_count = len(failed_indices)
+                    if outcome.quality_status == 'review_required':
+                        review_required_indices.add(i)
+                    else:
+                        review_required_indices.discard(i)
+                    if unit.metadata is None:
+                        unit.metadata = {}
+                    unit.metadata['quality_status'] = outcome.quality_status
+                    unit.metadata.pop('execution_failure_class', None)
+                    if outcome.diagnostics:
+                        unit.metadata['editor_validation'] = outcome.diagnostics
                     await _sync_successful_translated_context(
                         i,
                         unit,
@@ -1200,13 +1311,15 @@ class GenericTranslator:
                         translated_text=translated_content,
                         chunk_data=unit.metadata,
                         total_chunks=total_units,
-                        completed_chunks=completed_count
+                        completed_chunks=completed_count,
+                        failed_chunks=failed_count,
                     )
                     if stats_callback:
                         stats_callback({
                             'total_chunks': total_units,
                             'completed_chunks': completed_count,
-                            'failed_chunks': failed_count
+                            'failed_chunks': failed_count,
+                            'review_required_chunks': len(review_required_indices),
                         })
 
                     if sequential:
@@ -1266,10 +1379,21 @@ class GenericTranslator:
                         await self.adapter.save_unit_translation(
                             unit.unit_id, result.content
                         )
-                        _record_failure(i, unit)
+                        _record_failure(i, unit, result)
                         continue
 
-                    translated_content = result
+                    if not result:
+                        _record_failure(i, unit, result)
+                        continue
+                    outcome = (
+                        result if isinstance(result, UnitTranslationOutcome)
+                        else UnitTranslationOutcome.completed(
+                            str(result),
+                            quality_status=getattr(result, 'quality_status', 'passed'),
+                            diagnostics=getattr(result, 'editor_validation', None),
+                        )
+                    )
+                    translated_content = outcome.text
                     if not translated_content:
                         _record_failure(i, unit)
                         continue
@@ -1292,6 +1416,16 @@ class GenericTranslator:
                     failed_indices.discard(i)
                     failed_count = len(failed_indices)
                     completed_count += 1
+                    if outcome.quality_status == 'review_required':
+                        review_required_indices.add(i)
+                    else:
+                        review_required_indices.discard(i)
+                    if unit.metadata is None:
+                        unit.metadata = {}
+                    unit.metadata['quality_status'] = outcome.quality_status
+                    unit.metadata.pop('execution_failure_class', None)
+                    if outcome.diagnostics:
+                        unit.metadata['editor_validation'] = outcome.diagnostics
                     self.checkpoint_manager.save_checkpoint(
                         translation_id=self.translation_id,
                         chunk_index=i,
@@ -1306,7 +1440,8 @@ class GenericTranslator:
                         stats_callback({
                             'total_chunks': total_units,
                             'completed_chunks': completed_count,
-                            'failed_chunks': failed_count
+                            'failed_chunks': failed_count,
+                            'review_required_chunks': len(review_required_indices),
                         })
                     if log_callback:
                         log_callback(

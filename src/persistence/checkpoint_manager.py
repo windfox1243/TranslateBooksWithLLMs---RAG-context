@@ -258,6 +258,7 @@ class CheckpointManager:
         total_chunks: Optional[int] = None,
         completed_chunks: Optional[int] = None,
         failed_chunks: Optional[int] = None,
+        review_required_chunks: Optional[int] = None,
         epub_accumulated_stats: Optional[Dict[str, Any]] = None,
         chunk_status: Optional[str] = None,
     ) -> bool:
@@ -289,6 +290,11 @@ class CheckpointManager:
             chunk_status
         )
 
+        if review_required_chunks is None and chunk_saved:
+            review_required_chunks = self.db.get_chunk_quality_counts(
+                translation_id
+            ).get('review_required', 0)
+
         # Update job progress
         progress_saved = self.db.update_job_progress(
             translation_id,
@@ -296,6 +302,7 @@ class CheckpointManager:
             total_chunks=total_chunks,
             completed_chunks=completed_chunks,
             failed_chunks=failed_chunks,
+            review_required_chunks=review_required_chunks,
             epub_accumulated_stats=epub_accumulated_stats
         )
 
@@ -379,6 +386,17 @@ class CheckpointManager:
                     'completed',
                     progress.get('completed_chunks', 0),
                 )
+            quality_counts = self.db.get_chunk_quality_counts(
+                job['translation_id']
+            )
+            progress['review_required_chunks'] = quality_counts.get(
+                'review_required', 0
+            )
+            job['quality_status'] = (
+                'review_required'
+                if progress['review_required_chunks'] > 0
+                else job.get('quality_status', 'not_checked')
+            )
             total = progress.get('total_chunks', 0)
             completed = progress.get('completed_chunks', 0)
 

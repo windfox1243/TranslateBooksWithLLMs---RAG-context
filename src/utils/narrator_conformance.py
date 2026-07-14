@@ -13,7 +13,7 @@ from src.utils.language_profiles import get_language_profile
 from src.utils.translation_quality import build_editor_segments
 
 
-NARRATOR_CONFORMANCE_VERSION = 1
+NARRATOR_CONFORMANCE_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -131,6 +131,7 @@ def resolve_narrator_policy(
         return {
             "strategy": "explicit", "self_reference": explicit_override,
             "policy_source": "custom_instruction", "profile_revision": 0,
+            "enforcement": "blocking",
         }
     candidates: List[Dict[str, Any]] = []
     if db is not None and translation_id and hasattr(db, "get_narrator_voice_profiles"):
@@ -160,6 +161,11 @@ def resolve_narrator_policy(
             ),
             "profile_revision": int(chosen.get("revision") or 0),
             "profile_id": chosen.get("id"),
+            "enforcement": (
+                "blocking"
+                if chosen.get("is_locked") or chosen.get("status") == "active"
+                else "advisory"
+            ),
         }
     default = get_language_profile(target_language).narrator_default_policy
     return {
@@ -167,6 +173,7 @@ def resolve_narrator_policy(
         "self_reference": default.self_reference,
         "policy_source": "language_default",
         "profile_revision": 0,
+        "enforcement": "advisory",
     }
 
 
@@ -174,7 +181,12 @@ def _vietnamese_observed_forms(segment: str, expected: str) -> List[str]:
     folded = _norm(segment)
     forms = []
     strong = ("tớ", "tao")
-    contextual = ("mình", "em", "anh", "chị", "con", "cháu", "ta")
+    # These alternatives are unambiguous enough to validate mechanically in
+    # narrative text. Kinship and social forms such as ``anh``, ``chị``,
+    # ``em``, ``con``, ``mình`` and ``ta`` can be either first-, second-, or
+    # third-person Vietnamese references. They require contextual review and
+    # must never become deterministic blockers based on sentence position.
+    contextual: tuple[str, ...] = ()
     for form in strong:
         if _norm(form) != _norm(expected) and re.search(
             rf"(?<!\w){re.escape(_norm(form))}(?!\w)", folded,
@@ -190,6 +202,57 @@ def _vietnamese_observed_forms(segment: str, expected: str) -> List[str]:
     if _norm(expected) != "tôi" and re.search(r"(?<!\w)tôi(?!\w)", folded):
         forms.append("tôi")
     return list(dict.fromkeys(forms))
+
+
+_QUOTE_PAIRS = {
+    '"': '"', "“": "”", "„": "”", "«": "»", "『": "』", "「": "」",
+}
+_THOUGHT_PAIRS = {"(": ")", "（": "）"}
+
+
+def _mask_embedded_discourse(text: str) -> str:
+    """Blank quoted dialogue and parenthetical thoughts while preserving offsets."""
+
+    raw = str(text or "")
+    chars = list(raw)
+    closing = ""
+    start = -1
+    for index, char in enumerate(raw):
+        if not closing:
+            if char in _QUOTE_PAIRS:
+                closing = _QUOTE_PAIRS[char]
+                start = index
+            elif char in _THOUGHT_PAIRS:
+                closing = _THOUGHT_PAIRS[char]
+                start = index
+            continue
+        if char == closing:
+            for offset in range(start, index + 1):
+                if chars[offset] not in "\r\n":
+                    chars[offset] = " "
+            closing = ""
+            start = -1
+    if closing and start >= 0:
+        for offset in range(start, len(chars)):
+            if chars[offset] not in "\r\n":
+                chars[offset] = " "
+    return "".join(chars)
+
+
+def _aligned_source_segment(
+    source_segments: List[Dict[str, Any]],
+    target_index: int,
+    target_count: int,
+) -> Optional[Dict[str, Any]]:
+    """Return the conservative order-aligned source segment for a target span."""
+
+    if not source_segments:
+        return None
+    if target_count <= 1:
+        return source_segments[0]
+    ratio = target_index / max(1, target_count - 1)
+    source_index = round(ratio * max(0, len(source_segments) - 1))
+    return source_segments[source_index]
 
 
 def audit_narrator_conformance(
@@ -224,36 +287,53 @@ def audit_narrator_conformance(
     code = _language_code(target_language)
     expected = str(policy.get("self_reference") or "")
     findings: List[NarratorConformanceFinding] = []
+    source_masked = _mask_embedded_discourse(source_text)
+    target_masked = _mask_embedded_discourse(target_text)
     source_segments = [
-        item for item in build_editor_segments(source_text)
+        item for item in build_editor_segments(source_masked)
         if not _is_non_narrative_line(item["text"])
     ]
-    source_span = next((
-        item["text"].strip() for item in source_segments
-        if _count_terms(
-            item["text"], _SOURCE_FIRST_PERSON.get(_language_code(source_language), ()),
-            _language_code(source_language),
-        )
-    ), "")
-    for segment in build_editor_segments(target_text):
-        text = str(segment.get("text") or "").strip()
+    target_segments = build_editor_segments(target_masked)
+    original_target = str(target_text or "")
+    source_code = _language_code(source_language)
+    enforcement = str(policy.get("enforcement") or "advisory")
+    for target_index, segment in enumerate(target_segments):
+        masked_text = str(segment.get("text") or "").strip()
+        text = original_target[
+            int(segment.get("start") or 0):int(segment.get("end") or 0)
+        ].strip()
+        if not masked_text:
+            continue
         if _is_non_narrative_line(text):
             continue
+        source_segment = _aligned_source_segment(
+            source_segments, target_index, len(target_segments),
+        )
+        if source_segment is None or _count_terms(
+            source_segment.get("text") or "",
+            _SOURCE_FIRST_PERSON.get(source_code, ()),
+            source_code,
+        ) == 0:
+            continue
         observed = (
-            _vietnamese_observed_forms(text, expected)
+            _vietnamese_observed_forms(masked_text, expected)
             if code == "vi" else []
         )
         for form in observed:
             findings.append(NarratorConformanceFinding(
                 reason_code="narrator_self_reference_mismatch",
                 segment_id=str(segment.get("segment_id") or ""),
-                source_span=source_span,
+                source_span=str(source_segment.get("text") or "").strip(),
                 target_span=text,
                 expected_form=expected,
                 observed_form=form,
+                blocking=enforcement == "blocking",
             ))
     if findings:
-        result["status"] = "fail"
+        result["status"] = (
+            "fail" if any(item.blocking for item in findings)
+            else "review_required"
+        )
         result["reason_codes"] = sorted({item.reason_code for item in findings})
         result["violating_segments"] = [item.to_dict() for item in findings]
     return result
@@ -281,10 +361,10 @@ def conformance_editor_issues(audit: Dict[str, Any]) -> List[Dict[str, Any]]:
         "issue_id": f"narrator-{index + 1}",
         "segment_id": item.get("segment_id") or "",
         "category": "narrator_voice",
-        "severity": "blocker",
+        "severity": "blocker" if item.get("blocking") else "major",
         "confidence": 1.0,
         "repair_kind": "rewrite",
-        "deterministic": True,
+        "deterministic": bool(item.get("blocking")),
         "reason_code": item.get("reason_code"),
         "source_quote": item.get("source_span") or "",
         "draft_quote": item.get("target_span") or "",

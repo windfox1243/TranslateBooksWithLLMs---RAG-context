@@ -43,9 +43,10 @@ def test_unit_13_detects_narrative_to_but_preserves_dialogue_pronouns():
         target_language="Vietnamese",
     )
 
-    assert audit["status"] == "fail"
+    assert audit["status"] == "review_required"
     assert audit["reason_codes"] == ["narrator_self_reference_mismatch"]
     assert len(audit["violating_segments"]) == 2
+    assert all(item["blocking"] is False for item in audit["violating_segments"])
     assert all(item["observed_form"] == "tớ" for item in audit["violating_segments"])
     assert all("Special Week" not in item["target_span"] for item in audit["violating_segments"])
 
@@ -107,4 +108,42 @@ def test_srt_dialogue_is_excluded_but_voice_over_is_audited():
     )
 
     assert ordinary["status"] == "not_applicable"
-    assert voice_over["status"] == "fail"
+    assert voice_over["status"] == "review_required"
+
+
+def test_explicit_narrator_policy_makes_mismatch_blocking():
+    audit = audit_narrator_conformance(
+        source_text=FIRST_PERSON_SOURCE,
+        target_text="Tớ qua ga.\nTớ nhớ mưa.\nTớ tiếp tục.",
+        source_language="English",
+        target_language="Vietnamese",
+        explicit_override="tôi",
+    )
+
+    assert audit["status"] == "fail"
+    assert all(item["blocking"] is True for item in audit["violating_segments"])
+
+
+def test_contextual_third_person_form_is_not_a_narrator_mismatch():
+    audit = audit_narrator_conformance(
+        source_text="He crossed the station. He remembered the rain.",
+        target_text="Anh ấy qua ga. Anh nhớ cơn mưa.",
+        source_language="English",
+        target_language="Vietnamese",
+    )
+
+    assert audit["status"] == "not_applicable"
+    assert audit["violating_segments"] == []
+
+
+def test_inline_dialogue_is_masked_before_narrator_audit():
+    audit = audit_narrator_conformance(
+        source_text="I stopped. \"I will wait,\" she said. I continued.",
+        target_text="Tôi dừng lại. \"Tớ sẽ đợi,\" cô ấy nói. Tôi đi tiếp.",
+        source_language="English",
+        target_language="Vietnamese",
+        explicit_override="tôi",
+    )
+
+    assert audit["status"] == "pass"
+    assert audit["violating_segments"] == []
