@@ -41,16 +41,33 @@ def _golden_path(name: str) -> Path:
     return GOLDEN_DIR / f"{name}.json"
 
 
+def _normalize_platform_text(value):
+    """Keep characterization payloads stable across CRLF and LF platforms."""
+    if isinstance(value, str):
+        return value.replace("\r\n", "\n").replace("\r", "\n")
+    if isinstance(value, list):
+        return [_normalize_platform_text(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _normalize_platform_text(item)
+            for key, item in value.items()
+        }
+    return value
+
+
 def _compare_or_write(name: str, payload: dict):
     GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
     path = _golden_path(name)
+    payload = _normalize_platform_text(payload)
     serialized = json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
     if UPDATE or not path.exists():
         path.write_text(serialized + "\n", encoding="utf-8")
         if not UPDATE:
             pytest.skip(f"golden bootstrapped: {path.name} (re-run to compare)")
         return
-    expected = json.loads(path.read_text(encoding="utf-8"))
+    expected = _normalize_platform_text(
+        json.loads(path.read_text(encoding="utf-8"))
+    )
     assert payload == expected, (
         f"Progress trace for '{name}' diverged from golden {path.name}. "
         f"If intentional, re-run with UPDATE_CHARACTERIZATION=1 and review the diff."
