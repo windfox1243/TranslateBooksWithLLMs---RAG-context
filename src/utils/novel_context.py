@@ -6330,13 +6330,7 @@ def _compose_source_analysis_text(source_context: str, source_chunk: str) -> str
 
 def _context_prompt_budget_chars(max_tokens: Optional[int]) -> int:
     if max_tokens is None:
-        try:
-            from src import config as _config
-            max_tokens = int(
-                getattr(_config, "NOVEL_CONTEXT_PROMPT_MAX_TOKENS", 1800)
-            )
-        except Exception:
-            max_tokens = 1800
+        return 0
     try:
         token_budget = int(max_tokens)
     except (TypeError, ValueError):
@@ -6449,6 +6443,9 @@ def _append_line_with_budget(
     max_chars: int,
     reserved_chars: int,
 ) -> bool:
+    if max_chars <= 0:
+        lines.append(line)
+        return True
     candidate = lines + [line]
     if len("\n".join(candidate)) + reserved_chars <= max_chars:
         lines.append(line)
@@ -6505,9 +6502,6 @@ def render_novel_context_for_prompt(
         if not max_chars or len(normalized) <= max_chars:
             return normalized
         return normalized[:max_chars].rstrip()
-    if not max_chars:
-        return normalized
-
     global_lore = extract_global_lore(normalized)
     dynamic_state = extract_dynamic_state_from_text(normalized) or ""
 
@@ -6536,7 +6530,9 @@ def render_novel_context_for_prompt(
         glossary_entries,
         dynamic_state.strip(),
     )):
-        return normalized if len(normalized) <= max_chars else normalized[:max_chars].rstrip()
+        if not max_chars or len(normalized) <= max_chars:
+            return normalized
+        return normalized[:max_chars].rstrip()
 
     has_first_person = bool(re.search(r"\b(i|me|my|myself|mine)\b", reference_text, re.IGNORECASE))
     selected_character_keys: set[str] = set()

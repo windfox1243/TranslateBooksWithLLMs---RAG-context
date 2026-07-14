@@ -331,8 +331,8 @@ def test_reflection_prompt_uses_json_contract():
     )
 
     assert REFLECTION_JSON_TAG_IN in prompt_pair.system
-    assert '"status": "needs_repair"' in prompt_pair.system
-    assert "Do not include prose, markdown, bullets, or comments outside the JSON object" in prompt_pair.system
+    assert "otherwise use needs_repair" in prompt_pair.system
+    assert "No prose or markdown" in prompt_pair.system
     assert "Output NO_ISSUES" not in prompt_pair.system
 
 
@@ -351,7 +351,8 @@ def test_reflection_prompt_enforces_derived_narrator_voice_across_chapters():
 
     assert "ESTABLISHED NARRATOR VOICE" in prompt_pair.user
     assert 'completed chunks: "tôi"' in prompt_pair.user
-    assert "enforce it across chapter boundaries" in prompt_pair.system
+    assert "across matching narrative scope and" in prompt_pair.system
+    assert "chapters" in prompt_pair.system
 
 
 @pytest.mark.asyncio
