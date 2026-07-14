@@ -276,6 +276,114 @@ def test_compact_model_legacy_issue_aliases_normalize_to_canonical_contract():
 
 
 @pytest.mark.asyncio
+async def test_manual_retry_uses_previous_unresolved_issue_without_full_chunk():
+    class Client:
+        def __init__(self):
+            self.requests = []
+
+        async def generate_async(self, **kwargs):
+            self.requests.append(kwargs)
+            return SimpleNamespace(
+                content='{"status":"no_issues","issues":[],"voice_observations":[]}'
+            )
+
+    client = Client()
+    source = "UNIQUE FULL SOURCE DETAIL THAT MUST NOT BE RESENT"
+    result = await run_chunk_reflection_pass(
+        source_chunk=source,
+        draft_translation="Bản nháp có cụm từ cần sửa.",
+        target_language="Vietnamese",
+        model_name="test",
+        llm_client=client,
+        prompt_options={
+            "context_contract_version": 5,
+            "source_language": "English",
+            "editor_phase": "manual_retry",
+            "editor_retry_unresolved_issues": [{
+                "issue_id": "old-1",
+                "segment_id": "D0001",
+                "category": "wording",
+                "severity": "major",
+                "confidence": 0.95,
+                "repair_kind": "local_replace",
+                "source_quote": "source evidence",
+                "draft_quote": "cụm từ cần sửa",
+                "instruction": "Correct the local phrase.",
+                "draft_replacement": {
+                    "draft": "cụm từ cần sửa",
+                    "replacement": "cụm từ đúng",
+                },
+                "glossary_update": None,
+            }],
+            "editor_retry_reason_codes": ["local_patch_unresolved:old-1"],
+        },
+    )
+
+    assert result == "Bản nháp có cụm từ cần sửa."
+    assert len(client.requests) == 1
+    assert source not in client.requests[0]["prompt"]
+    assert "old-1" in client.requests[0]["prompt"]
+    assert "INVALID ISSUES AND CANDIDATE SEGMENTS" in client.requests[0]["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_manual_retry_gets_one_focused_followup_for_patch_conflict():
+    initial = (
+        '{"status":"needs_repair","issues":['
+        '{"issue_id":"overlap-1","segment_id":"D0001",'
+        '"category":"wording","severity":"major","confidence":0.95,'
+        '"repair_kind":"local_replace","source_quote":"証拠",'
+        '"draft_quote":"alpha beta gamma","instruction":"Fix first span.",'
+        '"draft_replacement":{"draft":"alpha beta","replacement":"X"},'
+        '"glossary_update":null},'
+        '{"issue_id":"overlap-2","segment_id":"D0001",'
+        '"category":"wording","severity":"major","confidence":0.95,'
+        '"repair_kind":"local_replace","source_quote":"証拠",'
+        '"draft_quote":"alpha beta gamma","instruction":"Fix second span.",'
+        '"draft_replacement":{"draft":"beta gamma","replacement":"Y"},'
+        '"glossary_update":null}],"voice_observations":[]}'
+    )
+    corrected = (
+        '{"status":"needs_repair","issues":['
+        '{"issue_id":"overlap-1","segment_id":"D0001",'
+        '"category":"wording","severity":"major","confidence":0.99,'
+        '"repair_kind":"local_replace","source_quote":"証拠",'
+        '"draft_quote":"alpha beta gamma","instruction":"Apply one local edit.",'
+        '"draft_replacement":{"draft":"alpha beta gamma","replacement":"X Y"},'
+        '"glossary_update":null}],"voice_observations":[]}'
+    )
+
+    class Client:
+        def __init__(self):
+            self.responses = [initial, corrected]
+            self.requests = []
+
+        async def generate_async(self, **kwargs):
+            self.requests.append(kwargs)
+            return SimpleNamespace(content=self.responses.pop(0))
+
+    client = Client()
+    result = await run_chunk_reflection_pass(
+        source_chunk="証拠",
+        draft_translation="alpha beta gamma",
+        target_language="English",
+        model_name="test",
+        llm_client=client,
+        prompt_options={
+            "context_contract_version": 5,
+            "source_language": "Japanese",
+            "editor_phase": "manual_retry",
+        },
+    )
+
+    assert result == "X Y"
+    assert [request["stage"] for request in client.requests] == [
+        "reflection", "local_patch_retry",
+    ]
+    assert "alpha beta gamma" in client.requests[1]["prompt"]
+
+
+@pytest.mark.asyncio
 async def test_unresolved_semantic_repair_preserves_valid_draft_for_review():
     critique = (
         '{"status":"needs_repair","issues":[{'

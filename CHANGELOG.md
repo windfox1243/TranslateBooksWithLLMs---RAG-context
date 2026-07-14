@@ -13,16 +13,20 @@
 - Compacted and generalized the editor contract while retaining the complete filtered source and draft in the initial audit. Prompt budgets remain optional provider-capacity safeguards rather than context-selection switches.
 - Replaced proportional narrator alignment with offset-preserving discourse mapping. Exact narrative mismatches are patched deterministically, while dialogue, thoughts, letters, and ambiguous alignments remain advisory.
 - Locator correction now sends only invalid issues and bounded candidate neighborhoods. Unresolved local issues preserve the best valid draft for review instead of triggering a full-chunk rewrite.
+- Manual editor retries now reuse the previous unresolved local-edit contract in a focused request instead of repeating the complete audit. If the corrected locator still cannot be applied, the manual run receives one additional bounded local-patch correction without permitting a full-chunk rewrite.
 
 ### Fixed
 
 - Fixed misleading 40k-plus editor figures by distinguishing the largest individual request from cumulative multi-request usage.
 - Deduplicated exact narrator findings and excluded already repairable narrator observations from model prompts.
 - Prevented contract-v5 relationships, addressing rules, and narrator policy from being injected through both typed SQLite projections and legacy Markdown context.
+- Fixed manual retries appearing to leave the original diagnostic unchanged. The latest run is now shown by default with its phase, while immutable earlier runs are grouped under collapsible history.
+- Fixed retry-produced unresolved issue metadata being discarded from the checkpoint, which prevented a later retry from targeting the prior failure.
 
 ### Tests
 
 - Added regressions for budget-independent selective retrieval, authoritative v5 prompt bundles, complete-input hashes, focused locator retries, exact narrator patching, legacy diagnostics compatibility, and synchronized locale interpolation.
+- Added manual-retry regressions for persisted issue seeds, focused prompts that exclude the complete chunk, one bounded local-patch follow-up, and latest-versus-history diagnostics rendering.
 
 ## 1.15.0-beta.47 - 2026-07-14
 
