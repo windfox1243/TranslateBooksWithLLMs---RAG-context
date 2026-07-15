@@ -135,6 +135,7 @@ export const SettingsManager = {
             { id: 'enableReflection', event: 'change' },
             { id: 'editorProvider', event: 'change' },
             { id: 'editorModel', event: 'change' },
+            { id: 'autoReviewRepairThreshold', event: 'input' },
             { id: 'customInstructionSelect', event: 'change' },
             { id: 'novelContextSelect', event: 'change' },
             { id: 'autoUpdateContext', event: 'change' }
@@ -367,6 +368,12 @@ export const SettingsManager = {
                 model: prefs.editorModel || '',
             };
         }
+        if (prefs.autoReviewRepairThreshold !== undefined) {
+            DomHelpers.setValue(
+                'autoReviewRepairThreshold',
+                String(prefs.autoReviewRepairThreshold)
+            );
+        }
         // Note: disableAutoPause is now loaded from .env via /api/config in FormManager,
         // not from localStorage.
 
@@ -464,6 +471,15 @@ export const SettingsManager = {
                 DomHelpers.getElement('editorModel')?.dataset?.persistedValue
                 ?? DomHelpers.getValue('editorModel')
                 ?? ''
+            ),
+            autoReviewRepairThreshold: Math.max(
+                0,
+                Math.min(
+                    parseInt(
+                        DomHelpers.getValue('autoReviewRepairThreshold'), 10
+                    ) || 0,
+                    20
+                )
             ),
             customInstructionFile: DomHelpers.getValue('customInstructionSelect') || '',
             novelContextFile: DomHelpers.getValue('novelContextSelect') || '',

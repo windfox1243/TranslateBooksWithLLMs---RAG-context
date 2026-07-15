@@ -2155,6 +2155,20 @@ class Database:
             ).fetchone()
         return self.get_editor_repair_batch(row["batch_id"]) if row else None
 
+    def get_latest_editor_repair_batch(
+        self, translation_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Return the newest repair batch, including its persisted item state."""
+        with self._lock:
+            conn = self._get_connection()
+            row = conn.execute(
+                "SELECT batch_id FROM editor_repair_batches "
+                "WHERE translation_id = ? "
+                "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (translation_id,),
+            ).fetchone()
+        return self.get_editor_repair_batch(row["batch_id"]) if row else None
+
     def create_refinement_pass(
         self, pass_id: str, translation_id: str, *, context_revision: int = 0,
         source_mode: str = "checkpoint", alignment_mode: str = "exact",
@@ -2258,6 +2272,34 @@ class Database:
                 except (TypeError, ValueError):
                     item["chunk_data"] = {}
             return results
+
+    def get_running_refinement_pass(
+        self, translation_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Return the newest in-progress refinement pass for threshold repair."""
+        with self._lock:
+            conn = self._get_connection()
+            row = conn.execute(
+                "SELECT * FROM refinement_passes WHERE translation_id=? "
+                "AND status='running' ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (translation_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_refinement_results(self, pass_id: str) -> List[Dict[str, Any]]:
+        """Return persisted units for a specific promoted or running pass."""
+        with self._lock:
+            conn = self._get_connection()
+            results = [dict(item) for item in conn.execute(
+                "SELECT * FROM refinement_chunk_results WHERE pass_id=? "
+                "ORDER BY chunk_index", (pass_id,),
+            ).fetchall()]
+        for item in results:
+            try:
+                item["chunk_data"] = json.loads(item.get("chunk_data") or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                item["chunk_data"] = {}
+        return results
 
     def upsert_addressing_rule(
         self,

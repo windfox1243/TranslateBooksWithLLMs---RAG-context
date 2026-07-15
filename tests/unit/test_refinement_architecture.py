@@ -1196,6 +1196,43 @@ def test_workflow_steps_and_resync_logs_use_the_canonical_ui_channel():
     assert "emit_update(" in generic
 
 
+def test_editor_repair_batch_exposes_reactive_live_operation_logs():
+    project_root = Path(__file__).resolve().parents[2]
+    tracker = (
+        project_root / "src" / "web" / "static" / "js"
+        / "translation" / "translation-tracker.js"
+    ).read_text(encoding="utf-8")
+    message_logger = (
+        project_root / "src" / "web" / "static" / "js"
+        / "ui" / "message-logger.js"
+    ).read_text(encoding="utf-8")
+
+    assert "handleEditorRepairBatchUpdate" in tracker
+    assert "editor_repair_batch_status_repairing" in tracker
+    assert "active_repair_batch" in tracker
+    assert "latest_repair_batch" in tracker
+    assert "MessageLogger.addI18nStepLog" in tracker
+    assert "data-i18n-params" in message_logger
+
+
+def test_review_threshold_and_phase_boundary_repairs_cover_both_phases():
+    project_root = Path(__file__).resolve().parents[2]
+    handlers = (
+        project_root / "src" / "api" / "handlers.py"
+    ).read_text(encoding="utf-8")
+    form = (
+        project_root / "src" / "web" / "templates"
+        / "translation_interface.html"
+    ).read_text(encoding="utf-8")
+
+    assert "_threshold_review_repair('translation')" in handlers
+    assert "_threshold_review_repair('refinement')" in handlers
+    assert "await _phase_boundary_review_repair('translation')" in handlers
+    assert "await _phase_boundary_review_repair('refinement')" in handlers
+    assert 'id="autoReviewRepairThreshold"' in form
+    assert 'value="3"' in form
+
+
 def test_context_resync_save_does_not_replace_latest_with_historical_snapshot():
     project_root = Path(__file__).resolve().parents[2]
     tracker = (

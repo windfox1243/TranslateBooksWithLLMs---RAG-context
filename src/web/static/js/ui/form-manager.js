@@ -1090,7 +1090,8 @@ window.loadSelectedProfile = async function() {
             ttsRate: data.tts_rate,
             ttsFormat: data.tts_format,
             ttsBitrate: data.tts_bitrate,
-            outputFilenamePattern: data.output_filename_pattern
+            outputFilenamePattern: data.output_filename_pattern,
+            autoReviewRepairThreshold: data.auto_review_repair_threshold
         };
         Object.entries(valueFields).forEach(([id, value]) => {
             if (value !== undefined) DomHelpers.setValue(id, String(value));
@@ -1137,6 +1138,9 @@ window.promptSaveProfile = async function() {
         editor_thinking_level: formData.prompt_options?.editor_thinking_level || 'auto',
         editor_max_output_tokens: String(
             formData.prompt_options?.editor_max_output_tokens || 'auto'
+        ),
+        auto_review_repair_threshold: Number(
+            formData.prompt_options?.auto_review_repair_threshold ?? 3
         ),
         plain_text_mode: !!formData.prompt_options?.plain_text_mode,
         chapter_mode: !!formData.prompt_options?.chapter_mode,

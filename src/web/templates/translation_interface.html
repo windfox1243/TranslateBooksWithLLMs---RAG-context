@@ -1281,6 +1281,13 @@
                                 </div>
                                 <small class="setting-help" data-i18n="settings:editor_output_budget_help">Auto reserves output for reasoning and JSON. A MAX_TOKENS response retries once with a larger allowance and reduced reasoning.</small>
                             </div>
+                            <div class="form-group" style="margin-bottom: 0; grid-column: 1 / -1;">
+                                <label for="autoReviewRepairThreshold" data-i18n="settings:auto_review_repair_threshold_label"></label>
+                                <div class="neu-inset-light">
+                                    <input type="number" class="form-control" id="autoReviewRepairThreshold" min="0" max="20" step="1" value="3" data-i18n-attr="title:settings:auto_review_repair_threshold_title">
+                                </div>
+                                <small class="setting-help" data-i18n="settings:auto_review_repair_threshold_help"></small>
+                            </div>
                             <button type="button" id="editorSaveSettingsBtn" class="btn btn-primary" onclick="saveSettings()" disabled style="grid-column: 1 / -1; width: 100%;">
                                 <span class="material-symbols-outlined">save</span>
                                 <span data-i18n="settings:save_settings">Save Settings to .env</span>

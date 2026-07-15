@@ -87,6 +87,8 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
     if not state_manager.exists(translation_id):
         return
 
+    checkpoint_manager = state_manager.get_checkpoint_manager()
+
     state_manager.set_translation_field(translation_id, 'status', 'running')
     emit_update(socketio, translation_id, {'status': 'running', 'log': 'Translation task started by worker.'}, state_manager)
 
@@ -199,6 +201,122 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             else:
                 logger.info(message_content)
 
+    def _auto_review_event(event, batch):
+        """Emit localized-client metadata plus a concise terminal milestone."""
+        payload = {
+            "event": event,
+            "batch_id": batch.get("batch_id"),
+            "translation_id": translation_id,
+            "scope": batch.get("scope"),
+            "phase": batch.get("phase"),
+            "status": batch.get("status"),
+            "stay_paused": False,
+            "total_items": int(batch.get("total_items") or 0),
+            "completed_items": int(batch.get("completed_items") or 0),
+            "succeeded_items": int(batch.get("succeeded_items") or 0),
+            "failed_items": int(batch.get("failed_items") or 0),
+        }
+        for key in (
+            "chunk_index", "position", "boundary", "output_status",
+        ):
+            if key in batch:
+                payload[key] = batch[key]
+        print(
+            f"[{time.strftime('%H:%M:%S')}] [Automatic review repair] "
+            f"{event} phase={payload['phase']} "
+            f"progress={payload['completed_items']}/{payload['total_items']}",
+            flush=True,
+        )
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "level": "INFO",
+            "type": "general",
+            "message": f"Automatic review repair: {event}",
+            "data": {
+                "ui_step": "editor_repair_batch",
+                "editor_repair_batch": payload,
+            },
+        }
+        logs = list(
+            state_manager.get_translation_field(translation_id, 'logs', [])
+            or []
+        )
+        logs.append(entry)
+        state_manager.set_translation_field(translation_id, 'logs', logs[-1000:])
+        emit_update(
+            socketio,
+            translation_id,
+            {"editor_repair_batch": payload},
+            state_manager,
+        )
+
+    try:
+        auto_review_threshold = int(
+            (config.get('prompt_options') or {}).get(
+                'auto_review_repair_threshold', 3,
+            )
+        )
+    except (TypeError, ValueError):
+        auto_review_threshold = 3
+    auto_review_threshold = max(0, min(auto_review_threshold, 20))
+    auto_review_coordinator = None
+    if (config.get('prompt_options') or {}).get('reflection_mode'):
+        from src.core.editor.auto_review_repair import (
+            AutoReviewRepairCoordinator,
+        )
+
+        auto_review_coordinator = AutoReviewRepairCoordinator(
+            translation_id=translation_id,
+            checkpoint_manager=checkpoint_manager,
+            output_dir=Path(output_dir),
+            threshold=auto_review_threshold,
+            event_callback=_auto_review_event,
+        )
+
+    def _threshold_review_repair(phase):
+        if auto_review_coordinator is None:
+            return
+        try:
+            auto_review_coordinator.repair_if_needed_blocking(phase)
+        except Exception as exc:
+            print(
+                f"[{time.strftime('%H:%M:%S')}] [Automatic review repair] "
+                f"threshold check failed: {type(exc).__name__}",
+                flush=True,
+            )
+
+    async def _phase_boundary_review_repair(phase):
+        if auto_review_coordinator is None:
+            return {"status": "disabled"}
+        result = await auto_review_coordinator.repair_if_needed(
+            phase, boundary=True,
+        )
+        if result.get("status") == "empty":
+            _auto_review_event("boundary_clear", {
+                "batch_id": f"boundary_{phase}_{int(time.time())}",
+                "scope": "auto_review_boundary",
+                "phase": phase,
+                "status": "completed",
+                "total_items": 0,
+                "completed_items": 0,
+                "succeeded_items": 0,
+                "failed_items": 0,
+                "boundary": True,
+            })
+        diagnostics = checkpoint_manager.db.get_editor_diagnostics(
+            translation_id
+        )
+        remaining = len(diagnostics.get("current_review_queue") or [])
+        current_stats = dict(
+            state_manager.get_translation_field(translation_id, 'stats', {})
+            or {}
+        )
+        current_stats['review_required_chunks'] = remaining
+        state_manager.set_translation_field(
+            translation_id, 'stats', current_stats,
+        )
+        return result
+
     # Single progress-emit seam. The translate_file → refine_file orchestration
     # still runs two independent engine-side trackers, but the *workflow phase*
     # is now owned here and passed explicitly per phase (TRANSLATING vs
@@ -263,16 +381,19 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             'enable_refinement': bool(config.get('refine_after')),
             'current_phase': 1,
         })
+        _threshold_review_repair('translation')
 
     def _refine_after_stats_callback(new_stats_dict):
         # Phase 2 of a refine-after workflow: maps to the [50, 100] band.
         _emit_progress(new_stats_dict, {'enable_refinement': True, 'current_phase': 2})
+        _threshold_review_repair('refinement')
 
     def _refine_only_stats_callback(new_stats_dict):
         # Single-phase refine-only: the whole bar is the refinement pass.
         _emit_progress(new_stats_dict, {
             'enable_refinement': False, 'refine_only': True, 'current_phase': 1,
         })
+        _threshold_review_repair('refinement')
 
     def _finalize_stats_callback(new_stats_dict):
         # Finalization pushes (e.g. final elapsed_time) must not re-assert a
@@ -298,7 +419,6 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
         OpenRouterProvider.set_cost_callback(_openrouter_cost_callback)
 
     # Get checkpoint manager and handle resume
-    checkpoint_manager = state_manager.get_checkpoint_manager()
     resume_from_index = config.get('resume_from_index', 0)
     is_resume = config.get('is_resume', False)
 
@@ -647,6 +767,8 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                     )
                 else:
                     raise RuntimeError("Refinement failed before an output file was produced")
+            if refine_success and not should_interrupt_current_task():
+                await _phase_boundary_review_repair('refinement')
         else:
             # The translate-phase callback advertises the two-phase workflow
             # up-front (via enable_refinement) when a refine-after pass will
@@ -719,6 +841,9 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                     "⚠️ Translation stopped with errors; the best available "
                     "output was saved and the checkpoint was kept.",
                 )
+
+            if translation_success and not should_interrupt_current_task():
+                await _phase_boundary_review_repair('translation')
 
             # Optional chained refinement pass on the translated output.
             should_refine_after = (
@@ -816,6 +941,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 if refine_completed_cleanly:
                     os.replace(refinement_output_path, final_output_path)
                     checkpoint_manager.mark_refinement_current(translation_id)
+                    await _phase_boundary_review_repair('refinement')
                     _log_message_callback(
                         "refine_after_complete",
                         "✅ Refinement pass completed; final output is ready.",

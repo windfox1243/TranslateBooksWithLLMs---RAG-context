@@ -55,6 +55,7 @@ BOOLEAN_FIELDS = {
 }
 INTEGER_FIELDS = {
     "parallel_workers": (1, 16),
+    "auto_review_repair_threshold": (0, 20),
 }
 
 

@@ -92,6 +92,13 @@ def _prompt_options_from_start_request(data):
         )
     except (TypeError, ValueError):
         prompt_options['editor_model_output_limit'] = 0
+    try:
+        prompt_options['auto_review_repair_threshold'] = max(
+            0,
+            min(int(prompt_options.get('auto_review_repair_threshold', 3)), 20),
+        )
+    except (TypeError, ValueError):
+        prompt_options['auto_review_repair_threshold'] = 3
     prompt_options['draft_reasoning_supported'] = bool(
         prompt_options.get('draft_reasoning_supported')
     )
@@ -495,6 +502,56 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
 
     uploads_dir = Path(output_dir) / 'uploads'
 
+    def _editor_batch_activity(
+        db, translation_id, batch_id, event, message, **details,
+    ):
+        """Persist and publish a safe repair-batch activity milestone."""
+        batch = db.get_editor_repair_batch(batch_id) or {}
+        payload = {
+            "event": str(event),
+            "batch_id": batch_id,
+            "translation_id": translation_id,
+            "status": batch.get("status"),
+            "total_items": int(batch.get("total_items") or 0),
+            "completed_items": int(batch.get("completed_items") or 0),
+            "succeeded_items": int(batch.get("succeeded_items") or 0),
+            "failed_items": int(batch.get("failed_items") or 0),
+            "stay_paused": bool(batch.get("stay_paused", True)),
+            **details,
+        }
+        timestamp = time.strftime('%Y-%m-%dT%H:%M:%S')
+        log_entry = {
+            "timestamp": timestamp,
+            "level": "ERROR" if event == "failed" else "INFO",
+            "type": "general",
+            "message": str(message),
+            "data": {
+                "ui_step": "editor_repair_batch",
+                "editor_repair_batch": payload,
+            },
+        }
+        print(
+            f"[{time.strftime('%H:%M:%S')}] [Editor repair] {message}",
+            flush=True,
+        )
+        if state_manager.exists(translation_id):
+            logs = list(
+                state_manager.get_translation_field(
+                    translation_id, 'logs', [],
+                ) or []
+            )
+            logs.append(log_entry)
+            state_manager.set_translation_field(
+                translation_id, 'logs', logs[-1000:],
+            )
+            if socketio is not None:
+                emit_update(
+                    socketio,
+                    translation_id,
+                    {"editor_repair_batch": payload},
+                    state_manager,
+                )
+
     def _context_revision(translation_id):
         job = state_manager.checkpoint_manager.db.get_job(translation_id) or {}
         try:
@@ -760,6 +817,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                     state_manager,
                 )
                 start_translation_job(translation_id, config)
+                return True
             except Exception as exc:
                 logger.error(
                     "Failed to auto-resume translation after Senior Editor "
@@ -789,6 +847,7 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                     },
                     state_manager,
                 )
+                return False
 
         return resume_cb
 
@@ -2260,6 +2319,15 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             else:
                 item["reason_key"] = "review_required"
         result["retry_states"] = retry_states
+        db = state_manager.checkpoint_manager.db
+        result["active_repair_batch"] = db.find_active_editor_repair_batch(
+            translation_id
+        )
+        get_latest_batch = getattr(db, "get_latest_editor_repair_batch", None)
+        result["latest_repair_batch"] = (
+            get_latest_batch(translation_id)
+            if callable(get_latest_batch) else result["active_repair_batch"]
+        )
         for run in result.get("runs") or []:
             run["retry_state"] = retry_states.get(
                 str(run.get("chunk_index")), {"status": "idle"}
@@ -2523,6 +2591,15 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         if active:
             return jsonify({"error": "A repair batch is already active", "batch": active}), 409
 
+        live_job = state_manager.get_translation(translation_id) or {}
+        pause_active_job = str(live_job.get("status") or "").casefold() in {
+            "running", "refining", "resyncing",
+        }
+        # A batch launched from an already paused/completed job cannot resume
+        # work that it did not pause itself.
+        if not pause_active_job:
+            stay_paused = True
+
         if scope == "narrator_stale":
             from src.core.editor_retry import audit_completed_narrator_conformance
             audit = audit_completed_narrator_conformance(
@@ -2545,9 +2622,17 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             stay_paused=stay_paused,
         ):
             return jsonify({"error": "Could not persist repair batch"}), 500
+        _editor_batch_activity(
+            db, translation_id, batch_id, "queued",
+            f"Batch {batch_id} queued with {len(chunk_indices)} item(s).",
+        )
         if not chunk_indices:
             db.update_editor_repair_batch(
                 batch_id, status="completed", completed_at=time.strftime('%Y-%m-%d %H:%M:%S'),
+            )
+            _editor_batch_activity(
+                db, translation_id, batch_id, "completed",
+                f"Batch {batch_id} completed; no repairable items were found.",
             )
             return jsonify(db.get_editor_repair_batch(batch_id)), 200
         if not _claim_editor_batch(translation_id):
@@ -2557,18 +2642,22 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
             )
             return jsonify({"error": "Another editor operation is active"}), 409
 
-        live_job = state_manager.get_translation(translation_id) or {}
-        pause_active_job = str(live_job.get("status") or "").casefold() in {
-            "running", "refining", "resyncing",
-        }
         if pause_active_job:
             state_manager.set_interrupted(translation_id, True)
+            _editor_batch_activity(
+                db, translation_id, batch_id, "pause_requested",
+                f"Batch {batch_id} requested a safe translation pause.",
+            )
 
         def run_batch_background():
             completed = succeeded = failed = 0
             try:
                 if pause_active_job:
                     db.update_editor_repair_batch(batch_id, status="pausing")
+                    _editor_batch_activity(
+                        db, translation_id, batch_id, "pausing",
+                        f"Batch {batch_id} is waiting for the in-flight unit to finish.",
+                    )
                     live_config = live_job.get("config") or {}
                     try:
                         timeout = int(live_config.get("request_timeout", 120)) + 15
@@ -2586,8 +2675,12 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                     batch_id, status="running",
                     started_at=time.strftime('%Y-%m-%d %H:%M:%S'),
                 )
+                _editor_batch_activity(
+                    db, translation_id, batch_id, "running",
+                    f"Batch {batch_id} started editor repairs.",
+                )
                 from src.core.editor_retry import run_editor_retry, _refresh_output
-                for chunk_index in chunk_indices:
+                for position, chunk_index in enumerate(chunk_indices, start=1):
                     current = db.get_editor_repair_batch(batch_id) or {}
                     if current.get("cancel_requested"):
                         break
@@ -2595,6 +2688,16 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                         batch_id, chunk_index, phase, status="running",
                         started_at=time.strftime('%Y-%m-%d %H:%M:%S'),
                     )
+                    _editor_batch_activity(
+                        db, translation_id, batch_id, "item_started",
+                        (
+                            f"Batch {batch_id} is repairing chunk {chunk_index + 1} "
+                            f"({position}/{len(chunk_indices)})."
+                        ),
+                        chunk_index=chunk_index,
+                        position=position,
+                    )
+                    ok = False
                     try:
                         result = asyncio.run(run_editor_retry(
                             translation_id=translation_id,
@@ -2627,24 +2730,88 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
                         batch_id, completed_items=completed,
                         succeeded_items=succeeded, failed_items=failed,
                     )
+                    _editor_batch_activity(
+                        db, translation_id, batch_id,
+                        "item_succeeded" if ok else "item_failed",
+                        (
+                            f"Batch {batch_id} finished chunk {chunk_index + 1}: "
+                            f"{'succeeded' if ok else 'failed'}."
+                        ),
+                        chunk_index=chunk_index,
+                        position=position,
+                        item_status="succeeded" if ok else "failed",
+                    )
                 current = db.get_editor_repair_batch(batch_id) or {}
                 if completed:
+                    _editor_batch_activity(
+                        db, translation_id, batch_id, "rebuilding",
+                        f"Batch {batch_id} is rebuilding the translated output.",
+                    )
                     checkpoint = state_manager.checkpoint_manager.load_checkpoint(translation_id) or {}
                     config = dict((checkpoint.get("job") or {}).get("config") or {})
-                    asyncio.run(_refresh_output(
+                    output_result = asyncio.run(_refresh_output(
                         translation_id, state_manager.checkpoint_manager,
                         Path(output_dir), str(config.get("output_filename") or ""),
                         bool(config.get("bilingual_output")),
                     ))
+                    _editor_batch_activity(
+                        db, translation_id, batch_id, "output_rebuilt",
+                        (
+                            f"Batch {batch_id} output rebuild finished: "
+                            f"{output_result.get('status') or 'unknown'}."
+                        ),
+                        output_status=output_result.get("status") or "unknown",
+                    )
                 final_status = "cancelled" if current.get("cancel_requested") else "completed"
                 db.update_editor_repair_batch(
                     batch_id, status=final_status,
                     completed_at=time.strftime('%Y-%m-%d %H:%M:%S'),
                 )
+                should_resume = (
+                    final_status == "completed"
+                    and pause_active_job
+                    and not stay_paused
+                    and failed == 0
+                )
+                if should_resume:
+                    db.update_editor_repair_batch(
+                        batch_id, error="resuming",
+                    )
+                    _editor_batch_activity(
+                        db, translation_id, batch_id, "resuming",
+                        f"Batch {batch_id} completed; resuming translation.",
+                    )
+                    resumed = make_editor_retry_auto_resume_callback(
+                        translation_id
+                    )()
+                    if resumed:
+                        db.update_editor_repair_batch(batch_id, error=None)
+                        _editor_batch_activity(
+                            db, translation_id, batch_id, "resumed",
+                            f"Batch {batch_id} completed and translation resumed.",
+                        )
+                    else:
+                        db.update_editor_repair_batch(
+                            batch_id, error="resume_failed",
+                        )
+                        _editor_batch_activity(
+                            db, translation_id, batch_id, "resume_failed",
+                            f"Batch {batch_id} completed but translation resume failed.",
+                        )
+                else:
+                    _editor_batch_activity(
+                        db, translation_id, batch_id, final_status,
+                        f"Batch {batch_id} {final_status}; the translation remains paused.",
+                    )
             except Exception as exc:
                 db.update_editor_repair_batch(
                     batch_id, status="failed", error=str(exc)[:500],
                     completed_at=time.strftime('%Y-%m-%d %H:%M:%S'),
+                )
+                _editor_batch_activity(
+                    db, translation_id, batch_id, "failed",
+                    f"Batch {batch_id} failed: {type(exc).__name__}.",
+                    error_type=type(exc).__name__,
                 )
             finally:
                 # A repair batch is an explicit pause-and-fix action.  Never
@@ -2679,6 +2846,10 @@ def create_translation_blueprint(state_manager, start_translation_job, output_di
         if batch.get("status") not in {"queued", "pausing", "running"}:
             return jsonify(batch), 409
         db.update_editor_repair_batch(batch_id, cancel_requested=1)
+        _editor_batch_activity(
+            db, translation_id, batch_id, "cancel_requested",
+            f"Cancellation requested for batch {batch_id}.",
+        )
         return jsonify(db.get_editor_repair_batch(batch_id)), 202
 
     @bp.route('/api/translation/<translation_id>/relationship-conflicts', methods=['GET'])

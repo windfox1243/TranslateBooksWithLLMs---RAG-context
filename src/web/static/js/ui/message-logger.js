@@ -204,6 +204,28 @@ export const MessageLogger = {
     },
 
     /**
+     * Add a workflow milestone that remains reactive to locale changes.
+     * @param {string} key - i18n key
+     * @param {Object} params - interpolation parameters
+     */
+    addI18nStepLog(key, params = {}) {
+        const logContainer = DomHelpers.getElement('logContainer');
+        if (!logContainer) return;
+        const logEntry = document.createElement('div');
+        logEntry.className = 'log-entry';
+        const timestamp = document.createElement('span');
+        timestamp.className = 'log-timestamp';
+        timestamp.textContent = `[${new Date().toLocaleTimeString()}]`;
+        const message = document.createElement('span');
+        message.setAttribute('data-i18n', key);
+        message.setAttribute('data-i18n-params', JSON.stringify(params));
+        message.textContent = t(key, params);
+        logEntry.append(timestamp, document.createTextNode(' '), message);
+        logContainer.appendChild(logEntry);
+        logContainer.scrollTop = logContainer.scrollHeight;
+    },
+
+    /**
      * Create a new log entry in the container
      * @param {string} message - Message to log
      * @private
