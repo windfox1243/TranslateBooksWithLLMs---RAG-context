@@ -48,6 +48,7 @@ def test_profile_round_trip_preserves_all_non_secret_settings(profile_client):
         "draft_thinking_level": "low",
         "editor_thinking_level": "minimal",
         "editor_max_output_tokens": "8192",
+        "auto_review_repair_threshold": 3,
         "translation_id": "old-job",
         "resume_from_index": 42,
         "context_snapshot": "old-snapshot",
@@ -76,6 +77,7 @@ def test_profile_round_trip_preserves_all_non_secret_settings(profile_client):
     assert returned["draft_thinking_level"] == "low"
     assert returned["editor_thinking_level"] == "minimal"
     assert returned["editor_max_output_tokens"] == "8192"
+    assert returned["auto_review_repair_threshold"] == 3
 
 
 @pytest.mark.parametrize(
@@ -105,6 +107,10 @@ def test_profile_names_and_values_are_validated(profile_client):
     assert client.post(
         "/api/profiles/Valid",
         json={"source_language": "English", "parallel_workers": 99},
+    ).status_code == 400
+    assert client.post(
+        "/api/profiles/Valid",
+        json={"source_language": "English", "auto_review_repair_threshold": 21},
     ).status_code == 400
 
 

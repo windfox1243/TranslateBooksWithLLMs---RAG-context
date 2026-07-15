@@ -229,6 +229,7 @@ async def run_editor_retry(
     output_dir: Path,
     refresh_output: bool = True,
     phase: str = "effective",
+    refinement_pass_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run one Senior Editor pass without resuming the translation job."""
 
@@ -239,9 +240,15 @@ async def run_editor_retry(
         item for item in checkpoint.get("chunks", [])
         if int(item.get("chunk_index", -1)) == int(chunk_index)
     ), None)
+    refinement_rows = (
+        checkpoint_manager.db.get_refinement_results(refinement_pass_id)
+        if refinement_pass_id
+        and hasattr(checkpoint_manager.db, "get_refinement_results")
+        else _active_refinement_results(checkpoint_manager.db, translation_id)
+    )
     active_refinement = {
         int(item.get("base_chunk_index", -1)): item
-        for item in _active_refinement_results(checkpoint_manager.db, translation_id)
+        for item in refinement_rows
         if item.get("base_chunk_index") is not None
     }.get(int(chunk_index)) if str(phase).casefold() != "translation" else None
     if str(phase).casefold() == "refinement" and not active_refinement:

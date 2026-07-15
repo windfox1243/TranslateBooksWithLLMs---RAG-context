@@ -463,10 +463,16 @@ export const TranslationTracker = {
      */
     handleTranslationUpdate(data) {
         const currentJob = StateManager.getState('translation.currentJob');
+        const lastJobId = StateManager.getState('translation.lastJobId');
+        if (data.editor_repair_batch
+            && data.translation_id === (currentJob?.translationId || lastJobId)) {
+            window.NovelContextUI?.handleEditorRepairBatchUpdate(
+                data.editor_repair_batch
+            );
+        }
 
         if (!currentJob || data.translation_id !== currentJob.translationId) {
             const isResyncStep = data.log_entry?.data?.ui_step === 'context_resync';
-            const lastJobId = StateManager.getState('translation.lastJobId');
             if (isResyncStep && data.translation_id === lastJobId && data.log) {
                 MessageLogger.addStepLog(data.log);
                 updateContextResyncControls(
@@ -1232,6 +1238,7 @@ window.NovelContextUI = {
     narratorVoiceResult: null,
     editorDiagnosticsResult: null,
     activeEditorRepairBatch: null,
+    lastEditorRepairBatchLogSignature: null,
     activeEditorRetryPolls: new Set(),
     localizedView: null,
     lastResyncState: null,
@@ -1407,6 +1414,9 @@ window.NovelContextUI = {
             this.editorDiagnosticsResult = await ApiClient.getEditorDiagnostics(
                 translationId
             );
+            const latestBatch = this.editorDiagnosticsResult.active_repair_batch
+                || this.editorDiagnosticsResult.latest_repair_batch;
+            if (latestBatch) this.handleEditorRepairBatchUpdate(latestBatch);
         } catch (_error) {
             this.editorDiagnosticsResult = null;
         }
@@ -1430,13 +1440,10 @@ window.NovelContextUI = {
         pane.textContent = '';
         this._appendContextGuide(pane, 'narrator-voice');
         const activeBatch = this.activeEditorRepairBatch;
-        if (activeBatch && ['queued', 'pausing', 'running'].includes(activeBatch.status)) {
+        if (activeBatch) {
             const batchStatus = document.createElement('p');
-            batchStatus.textContent = t('translation:editor_repair_batch_progress', {
-                completed: activeBatch.completed_items || 0,
-                total: activeBatch.total_items || 0,
-                failed: activeBatch.failed_items || 0
-            });
+            const descriptor = this._editorRepairBatchDescriptor(activeBatch);
+            batchStatus.textContent = t(descriptor.key, descriptor.params);
             pane.appendChild(batchStatus);
         }
         const add = document.createElement('button');
@@ -1576,10 +1583,8 @@ window.NovelContextUI = {
                     const batch = await ApiClient.createEditorRepairBatch(
                         translationId, 'narrator_stale'
                     );
-                    this.activeEditorRepairBatch = batch;
-                    MessageLogger.showMessage(
-                        t('translation:editor_repair_batch_started'), 'success'
-                    );
+                    this.lastEditorRepairBatchLogSignature = null;
+                    this.handleEditorRepairBatchUpdate(batch);
                     await this._pollEditorRepairBatch(translationId, batch.batch_id);
                 } catch (error) {
                     repairAll.disabled = false;
@@ -1718,27 +1723,33 @@ window.NovelContextUI = {
         });
         pane.appendChild(summary);
         const activeBatch = this.activeEditorRepairBatch;
-        if (activeBatch && ['queued', 'pausing', 'running'].includes(activeBatch.status)) {
+        if (activeBatch) {
             const batchRow = document.createElement('div');
             batchRow.style.margin = '0.5rem 0';
+            const operation = document.createElement('p');
+            const descriptor = this._editorRepairBatchDescriptor(activeBatch);
+            operation.textContent = t(descriptor.key, descriptor.params);
             const progress = document.createElement('span');
             progress.textContent = t('translation:editor_repair_batch_progress', {
                 completed: activeBatch.completed_items || 0,
                 total: activeBatch.total_items || 0,
                 failed: activeBatch.failed_items || 0
             });
-            const cancel = document.createElement('button');
-            cancel.type = 'button';
-            cancel.className = 'btn btn-sm btn-secondary';
-            cancel.style.marginLeft = '0.75rem';
-            cancel.textContent = t('translation:editor_repair_batch_cancel');
-            cancel.onclick = async () => {
-                cancel.disabled = true;
-                await ApiClient.cancelEditorRepairBatch(
-                    currentTranslationIdForContext(), activeBatch.batch_id
-                );
-            };
-            batchRow.append(progress, cancel);
+            batchRow.append(operation, progress);
+            if (['queued', 'pausing', 'running'].includes(activeBatch.status)) {
+                const cancel = document.createElement('button');
+                cancel.type = 'button';
+                cancel.className = 'btn btn-sm btn-secondary';
+                cancel.style.marginLeft = '0.75rem';
+                cancel.textContent = t('translation:editor_repair_batch_cancel');
+                cancel.onclick = async () => {
+                    cancel.disabled = true;
+                    await ApiClient.cancelEditorRepairBatch(
+                        currentTranslationIdForContext(), activeBatch.batch_id
+                    );
+                };
+                batchRow.appendChild(cancel);
+            }
             pane.appendChild(batchRow);
         }
         const currentQueue = result.current_review_queue || [];
@@ -1778,7 +1789,8 @@ window.NovelContextUI = {
                     const batch = await ApiClient.createEditorRepairBatch(
                         translationId, 'review_required'
                     );
-                    this.activeEditorRepairBatch = batch;
+                    this.lastEditorRepairBatchLogSignature = null;
+                    this.handleEditorRepairBatchUpdate(batch);
                     await this._pollEditorRepairBatch(translationId, batch.batch_id);
                 } catch (error) {
                     repairAll.disabled = false;
@@ -2020,12 +2032,7 @@ window.NovelContextUI = {
     _pollEditorRepairBatch: async function(translationId, batchId) {
         for (let attempt = 0; attempt < 1200; attempt += 1) {
             const batch = await ApiClient.getEditorRepairBatch(translationId, batchId);
-            this.activeEditorRepairBatch = batch;
-            MessageLogger.showMessage(t('translation:editor_repair_batch_progress', {
-                completed: batch.completed_items || 0,
-                total: batch.total_items || 0,
-                failed: batch.failed_items || 0
-            }), batch.failed_items ? 'warning' : 'info');
+            this.handleEditorRepairBatchUpdate(batch);
             if (['completed', 'cancelled', 'failed', 'interrupted'].includes(batch.status)) {
                 await Promise.all([
                     this.refreshEditorDiagnostics(),
@@ -2036,6 +2043,194 @@ window.NovelContextUI = {
             await new Promise(resolve => window.setTimeout(resolve, 1000));
         }
         throw new Error(t('translation:editor_repair_batch_timeout'));
+    },
+
+    _editorRepairBatchDescriptor: function(batch) {
+        const event = batch?.event || '';
+        const items = batch?.items || [];
+        const runningItem = items.find(item => item.status === 'running');
+        const completed = Number(batch?.completed_items || 0);
+        const total = Number(batch?.total_items || 0);
+        const chunkIndex = Number(batch?.chunk_index ?? runningItem?.chunk_index ?? -1);
+        const position = Number(batch?.position || Math.min(completed + 1, total));
+        const common = { completed, total };
+        const autoPhase = batch?.phase === 'refinement'
+            ? 'refinement' : 'translation';
+        if (event === 'auto_running') {
+            return {
+                key: `translation:editor_repair_batch_status_auto_running_${autoPhase}`,
+                params: common,
+                type: 'info'
+            };
+        }
+        if (event === 'boundary_clear') {
+            return {
+                key: `translation:editor_repair_batch_status_boundary_clear_${autoPhase}`,
+                params: common,
+                type: 'success'
+            };
+        }
+        if (event === 'auto_completed' || (
+            String(batch?.scope || '').startsWith('auto_review_')
+            && batch?.status === 'completed'
+        )) {
+            return {
+                key: `translation:editor_repair_batch_status_auto_completed_${autoPhase}`,
+                params: {
+                    ...common,
+                    succeeded: Number(batch?.succeeded_items || 0),
+                    failed: Number(batch?.failed_items || 0)
+                },
+                type: Number(batch?.failed_items || 0) ? 'warning' : 'success'
+            };
+        }
+        if (event === 'item_started' || (!event && runningItem)) {
+            return {
+                key: 'translation:editor_repair_batch_status_repairing',
+                params: { ...common, chunk: chunkIndex + 1, position },
+                type: 'info'
+            };
+        }
+        if (event === 'item_succeeded') {
+            return {
+                key: 'translation:editor_repair_batch_status_item_succeeded',
+                params: { ...common, chunk: chunkIndex + 1 },
+                type: 'success'
+            };
+        }
+        if (event === 'item_failed') {
+            return {
+                key: 'translation:editor_repair_batch_status_item_failed',
+                params: { ...common, chunk: chunkIndex + 1 },
+                type: 'warning'
+            };
+        }
+        if (event === 'pause_requested' || event === 'pausing'
+            || batch?.status === 'pausing') {
+            return {
+                key: 'translation:editor_repair_batch_status_pausing',
+                params: common,
+                type: 'info'
+            };
+        }
+        if (event === 'rebuilding' || event === 'output_rebuilt'
+            || (batch?.status === 'running' && total > 0 && completed >= total)) {
+            return {
+                key: 'translation:editor_repair_batch_status_rebuilding',
+                params: common,
+                type: 'info'
+            };
+        }
+        if (event === 'cancel_requested') {
+            return {
+                key: 'translation:editor_repair_batch_status_cancel_requested',
+                params: common,
+                type: 'warning'
+            };
+        }
+        if (event === 'resuming' || batch?.error === 'resuming') {
+            return {
+                key: 'translation:editor_repair_batch_status_resuming',
+                params: common,
+                type: 'info'
+            };
+        }
+        if (event === 'resume_failed' || batch?.error === 'resume_failed') {
+            return {
+                key: 'translation:editor_repair_batch_status_resume_failed',
+                params: common,
+                type: 'error'
+            };
+        }
+        if (event === 'resumed' || (
+            batch?.status === 'completed'
+            && batch?.stay_paused === false
+            && Number(batch?.failed_items || 0) === 0
+        )) {
+            return {
+                key: 'translation:editor_repair_batch_status_resumed',
+                params: {
+                    ...common,
+                    succeeded: Number(batch?.succeeded_items || 0)
+                },
+                type: 'success'
+            };
+        }
+        if (batch?.status === 'completed' || event === 'completed') {
+            return {
+                key: 'translation:editor_repair_batch_status_completed',
+                params: {
+                    ...common,
+                    succeeded: Number(batch?.succeeded_items || 0),
+                    failed: Number(batch?.failed_items || 0)
+                },
+                type: Number(batch?.failed_items || 0) ? 'warning' : 'success'
+            };
+        }
+        if (batch?.status === 'cancelled' || event === 'cancelled') {
+            return {
+                key: 'translation:editor_repair_batch_status_cancelled',
+                params: common,
+                type: 'warning'
+            };
+        }
+        if (['failed', 'interrupted', 'blocked'].includes(batch?.status)
+            || event === 'failed') {
+            return {
+                key: 'translation:editor_repair_batch_status_failed',
+                params: { ...common, error: batch?.error || batch?.error_type || batch?.status },
+                type: 'error'
+            };
+        }
+        if (batch?.status === 'running' || event === 'running') {
+            return {
+                key: 'translation:editor_repair_batch_status_running',
+                params: common,
+                type: 'info'
+            };
+        }
+        return {
+            key: 'translation:editor_repair_batch_status_queued',
+            params: common,
+            type: 'info'
+        };
+    },
+
+    handleEditorRepairBatchUpdate: function(update) {
+        if (!update?.batch_id) return;
+        const previous = this.activeEditorRepairBatch?.batch_id === update.batch_id
+            ? this.activeEditorRepairBatch : {};
+        const batch = {
+            ...previous,
+            ...update,
+            event: Object.prototype.hasOwnProperty.call(update, 'event')
+                ? update.event : '',
+            items: update.items || previous.items || []
+        };
+        this.activeEditorRepairBatch = batch;
+        const descriptor = this._editorRepairBatchDescriptor(batch);
+        const signature = [
+            batch.batch_id,
+            batch.event || batch.status,
+            batch.chunk_index ?? '',
+            batch.completed_items || 0,
+            batch.failed_items || 0
+        ].join(':');
+        if (signature !== this.lastEditorRepairBatchLogSignature) {
+            this.lastEditorRepairBatchLogSignature = signature;
+            MessageLogger.addI18nStepLog(descriptor.key, descriptor.params);
+            MessageLogger.showMessage(
+                t(descriptor.key, descriptor.params), descriptor.type
+            );
+        }
+        const editorPane = document.querySelector(
+            '[data-context-pane-key="editor-diagnostics"]'
+        );
+        if (editorPane) this._renderEditorDiagnostics(editorPane);
+        const narratorPane = document.querySelector(
+            '[data-context-pane-key="narrator-voice"]'
+        );
+        if (narratorPane) this._renderNarratorVoice(narratorPane);
     },
 
     _renderStructuredPane: function(pane, kind) {

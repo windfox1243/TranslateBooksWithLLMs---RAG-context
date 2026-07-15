@@ -149,6 +149,22 @@ def test_editor_repair_batch_persists_item_progress(tmp_path):
     assert result["items"][0]["status"] == "succeeded"
 
 
+def test_latest_editor_repair_batch_returns_completed_batch(tmp_path):
+    db = Database(str(tmp_path / "jobs.db"))
+    assert db.create_editor_repair_batch(
+        "older", "job", "review_required", "effective", [1]
+    )
+    assert db.update_editor_repair_batch("older", status="completed")
+    assert db.create_editor_repair_batch(
+        "newer", "job", "review_required", "effective", [2]
+    )
+
+    result = db.get_latest_editor_repair_batch("job")
+
+    assert result["batch_id"] == "newer"
+    assert result["items"][0]["chunk_index"] == 2
+
+
 def test_refinement_pass_promotes_only_complete_exact_results(tmp_path):
     db = Database(str(tmp_path / "jobs.db"))
     assert db.create_job("job", "txt", {})

@@ -19,6 +19,103 @@ class _RetryDB:
         }
 
 
+class _BatchDB(_RetryDB):
+    def __init__(self):
+        self.batches = {}
+        self.finished = threading.Event()
+
+    def get_editor_diagnostics(self, _translation_id):
+        return {
+            "classification": "current",
+            "summary": {},
+            "runs": [{
+                "id": 9,
+                "chunk_index": 0,
+                "outcome": "review_required",
+            }],
+            "current_review_queue": [{
+                "chunk_index": 0,
+                "phase": "translation",
+                "retryable": True,
+                "reason_codes": ["review_required"],
+                "outcome": "review_required",
+            }],
+        }
+
+    def get_active_refinement_results(self, _translation_id):
+        return []
+
+    def find_active_editor_repair_batch(self, translation_id):
+        for batch in reversed(list(self.batches.values())):
+            if (batch["translation_id"] == translation_id
+                    and batch["status"] in {"queued", "pausing", "running"}):
+                return deepcopy(batch)
+        return None
+
+    def create_editor_repair_batch(
+        self, batch_id, translation_id, scope, phase, chunk_indices,
+        *, stay_paused=True,
+    ):
+        self.batches[batch_id] = {
+            "batch_id": batch_id,
+            "translation_id": translation_id,
+            "scope": scope,
+            "phase": phase,
+            "status": "queued",
+            "stay_paused": stay_paused,
+            "cancel_requested": False,
+            "total_items": len(chunk_indices),
+            "completed_items": 0,
+            "succeeded_items": 0,
+            "failed_items": 0,
+            "error": None,
+            "items": [{
+                "chunk_index": index,
+                "phase": phase,
+                "status": "queued",
+            } for index in chunk_indices],
+        }
+        return True
+
+    def update_editor_repair_batch(self, batch_id, **changes):
+        self.batches[batch_id].update(changes)
+        if changes.get("status") in {"completed", "failed", "cancelled"}:
+            self.finished.set()
+        return True
+
+    def update_editor_repair_batch_item(
+        self, batch_id, chunk_index, phase, **changes,
+    ):
+        item = next(
+            item for item in self.batches[batch_id]["items"]
+            if item["chunk_index"] == chunk_index and item["phase"] == phase
+        )
+        item.update(changes)
+        return True
+
+    def get_editor_repair_batch(self, batch_id):
+        batch = self.batches.get(batch_id)
+        return deepcopy(batch) if batch else None
+
+    def get_latest_editor_repair_batch(self, translation_id):
+        matches = [
+            batch for batch in self.batches.values()
+            if batch["translation_id"] == translation_id
+        ]
+        return deepcopy(matches[-1]) if matches else None
+
+
+class _SocketRecorder:
+    def __init__(self):
+        self.events = []
+        self.resumed = threading.Event()
+
+    def emit(self, event, payload, namespace=None):
+        self.events.append((event, deepcopy(payload), namespace))
+        if payload.get("editor_repair_batch", {}).get("event") == "resumed":
+            self.resumed.set()
+
+
 class _RetryCheckpoints:
     def __init__(self, preserved_path):
         self.db = _RetryDB()
@@ -232,3 +329,112 @@ def test_retry_failure_still_resumes_the_paused_translation(
     assert resumed.wait(2)
     assert state.job["interrupted"] is False
     assert state.job["status"] == "running"
+
+
+def test_bulk_repair_reports_live_activity_and_remains_paused(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    preserved = tmp_path / "source.txt"
+    preserved.write_text("Source", encoding="utf-8")
+    checkpoints = _RetryCheckpoints(preserved)
+    checkpoints.db = _BatchDB()
+    state = _RetryState(checkpoints)
+    socketio = _SocketRecorder()
+
+    async def fake_retry(**_kwargs):
+        return {"status": "succeeded", "outcome": "warnings_only"}
+
+    async def fake_refresh(*_args, **_kwargs):
+        return {"status": "updated"}
+
+    monkeypatch.setattr("src.core.editor_retry.run_editor_retry", fake_retry)
+    monkeypatch.setattr("src.core.editor_retry._refresh_output", fake_refresh)
+    app = Flask(__name__)
+    app.register_blueprint(create_translation_blueprint(
+        state,
+        lambda *_args: None,
+        str(tmp_path),
+        socketio=socketio,
+    ))
+
+    response = app.test_client().post(
+        "/api/translation/job-1/editor-repair-batches",
+        json={"scope": "review_required", "stay_paused": True},
+    )
+
+    assert response.status_code == 202
+    assert checkpoints.db.finished.wait(2)
+    batch_id = response.get_json()["batch_id"]
+    batch = checkpoints.db.get_editor_repair_batch(batch_id)
+    assert batch["status"] == "completed"
+    assert batch["succeeded_items"] == 1
+    assert state.job["status"] == "interrupted"
+    stored_events = [
+        entry["data"]["editor_repair_batch"]["event"]
+        for entry in state.job.get("logs", [])
+        if entry.get("data", {}).get("editor_repair_batch")
+    ]
+    assert "item_started" in stored_events
+    assert "completed" in stored_events
+    socket_events = [
+        payload["editor_repair_batch"]["event"]
+        for _event, payload, _namespace in socketio.events
+        if payload.get("editor_repair_batch")
+    ]
+    assert "item_started" in socket_events
+    assert "completed" in socket_events
+    assert "is repairing chunk 1" in capsys.readouterr().out
+
+    diagnostics = app.test_client().get(
+        "/api/translation/job-1/editor-diagnostics"
+    ).get_json()
+    assert diagnostics["active_repair_batch"] is None
+    assert diagnostics["latest_repair_batch"]["status"] == "completed"
+
+
+def test_successful_review_batch_auto_resumes_when_requested(
+    monkeypatch,
+    tmp_path,
+):
+    preserved = tmp_path / "source.txt"
+    preserved.write_text("Source", encoding="utf-8")
+    checkpoints = _RetryCheckpoints(preserved)
+    checkpoints.db = _BatchDB()
+    state = _RetryState(checkpoints)
+    socketio = _SocketRecorder()
+    resumed = threading.Event()
+
+    async def fake_retry(**_kwargs):
+        return {"status": "succeeded", "outcome": "warnings_only"}
+
+    async def fake_refresh(*_args, **_kwargs):
+        return {"status": "updated"}
+
+    monkeypatch.setattr("src.core.editor_retry.run_editor_retry", fake_retry)
+    monkeypatch.setattr("src.core.editor_retry._refresh_output", fake_refresh)
+    app = Flask(__name__)
+    app.register_blueprint(create_translation_blueprint(
+        state,
+        lambda *_args: resumed.set(),
+        str(tmp_path),
+        socketio=socketio,
+    ))
+
+    response = app.test_client().post(
+        "/api/translation/job-1/editor-repair-batches",
+        json={
+            "scope": "review_required",
+            "stay_paused": False,
+        },
+    )
+
+    assert response.status_code == 202
+    assert resumed.wait(2)
+    assert socketio.resumed.wait(2)
+    assert state.job["status"] == "running"
+    batch = checkpoints.db.get_latest_editor_repair_batch("job-1")
+    assert batch["status"] == "completed"
+    assert batch["stay_paused"] is False
+    assert batch["error"] is None

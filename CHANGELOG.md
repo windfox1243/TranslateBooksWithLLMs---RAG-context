@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.15.1 - 2026-07-15
+
+### Added
+
+- Added configurable automatic repair after a threshold of review-required chunks, with a default threshold of three and a zero setting for phase-boundary-only repair.
+- Added mandatory final review-repair checks before refinement and after refinement, with persisted batch progress and one effective-output rebuild at the phase boundary.
+- Added live terminal and reactive UI activity for queued, pausing, running, per-item, rebuilding, cancelling, completed, and resume states.
+
+### Changed
+
+- Successful review-repair batches now resume jobs that were running before the safe pause. Jobs that were already paused remain paused, failed batches do not resume, and narrator repair continues to stay paused intentionally.
+- Automatic threshold repair runs at safe unit boundaries without exposing the job as manually paused, and applies independently to translation and refinement phases.
+- The automatic threshold is stored in profiles and local preferences, accepted throughout the translation request pipeline, and localized across all seven supported UI languages.
+
+### Fixed
+
+- Fixed individual editor retries silently omitting the requested phase and repair-batch cancellation referencing an undefined phase value.
+- Fixed completed repair work appearing idle because batch activity was absent from terminal output, persisted job logs, WebSocket updates, and refreshed diagnostics.
+- Fixed latest repair-batch lookup ambiguity when multiple batches share a timestamp.
+
+### Tests
+
+- Added automatic threshold, phase-boundary, output-rebuild, live activity, auto-resume, persistence, request-contract, profile-validation, and locale-reactivity regressions.
+- Passed the complete automated suite with 1,935 tests passing, one skipped, and ten intentionally deselected integration cases.
+
 ## 1.15.0 - 2026-07-15
 
 ### Added

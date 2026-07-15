@@ -356,6 +356,15 @@ export const EditorModelManager = {
                 )
                 || 0
             ),
+            auto_review_repair_threshold: Math.max(
+                0,
+                Math.min(
+                    parseInt(
+                        DomHelpers.getValue('autoReviewRepairThreshold'), 10
+                    ) || 0,
+                    20
+                )
+            ),
         });
         const credentials = {};
         if (this.usesSeparateProvider() && ApiKeyUtils.getFieldIdForProvider(effectiveProvider)) {
@@ -454,6 +463,12 @@ export const EditorModelManager = {
         }
         if (settings.editor_thinking_level) {
             this.pendingGenerationSettings.editorThinkingLevel = settings.editor_thinking_level;
+        }
+        if (settings.auto_review_repair_threshold !== undefined) {
+            DomHelpers.setValue(
+                'autoReviewRepairThreshold',
+                String(settings.auto_review_repair_threshold)
+            );
         }
         const budget = String(settings.editor_max_output_tokens || 'auto');
         const standard = ['auto', '4096', '8192', '16384', 'model_max'];

@@ -230,15 +230,24 @@ export const ApiClient = {
     async retrySeniorEditor(translationId, chunkIndex, phase = 'effective') {
         return await apiRequest(
             `/api/translation/${translationId}/chunks/${chunkIndex}/retry-editor`,
-            { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phase })
+            }
         );
     },
 
-    async createEditorRepairBatch(translationId, scope, phase = 'effective') {
+    async createEditorRepairBatch(
+        translationId,
+        scope,
+        phase = 'effective',
+        stayPaused = scope === 'narrator_stale'
+    ) {
         return await apiRequest(`/api/translation/${translationId}/editor-repair-batches`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ scope, phase, stay_paused: true })
+            body: JSON.stringify({ scope, phase, stay_paused: stayPaused })
         });
     },
 
@@ -254,7 +263,7 @@ export const ApiClient = {
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phase })
+                body: JSON.stringify({})
             }
         );
     },
