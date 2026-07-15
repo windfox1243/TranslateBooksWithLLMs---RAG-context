@@ -430,6 +430,18 @@ async def refine_subtitle_translations(
                 local_prompt_options["editor_source_mode"] = (
                     "checkpoint" if source_chunk.strip() else "monolingual"
                 )
+                from src.core.context.unit_pipeline import prepare_unit_prompt_options
+                local_prompt_options = prepare_unit_prompt_options(
+                    local_prompt_options,
+                    unit_index=block_idx,
+                    phase="refinement",
+                    file_type="srt",
+                    source_text=source_chunk,
+                    target_language=target_language,
+                    dialogue_attribution=dialogue_attribution,
+                    scene_key=str(block_idx),
+                    nearby_source=(previous_refined_block,),
+                )
 
                 def validate_subtitle_repair(value):
                     parsed_value = srt_processor.extract_block_translations_with_remapping(
@@ -491,11 +503,14 @@ async def refine_subtitle_translations(
         # subs fell back to original.
         # Emit stats per-subtitle so the UI ticks 1-by-1 (e.g. 781, 782, ...,
         # 786) instead of jumping by the block size all at once.
+        missing_in_block = 0
         for g_idx in group:
             if g_idx in block_refined:
                 refined_translations[g_idx] = block_refined[g_idx]
             else:
                 refined_translations[g_idx] = translations[g_idx]
+                failed_count += 1
+                missing_in_block += 1
                 if log_callback:
                     log_callback("srt_refinement_fallback",
                                  f"Subtitle {g_idx + 1}: keeping original (block missed this index)")
@@ -506,6 +521,32 @@ async def refine_subtitle_translations(
                     'completed_chunks': completed_count,
                     'failed_chunks': failed_count,
                 })
+
+        from src.core.refine.persistence import save_refinement_unit
+        block_translations = {
+            g_idx: refined_translations[g_idx] for g_idx in group
+        }
+        persisted_block = "\n".join(
+            f"[{local_idx}]{block_translations[g_idx]}"
+            for local_idx, g_idx in enumerate(group)
+        )
+        save_refinement_unit(
+            prompt_options,
+            unit_index=block_idx,
+            source_text=(
+                str(((prompt_options or {}).get("_refinement_source_queue") or [])[block_idx])
+                if block_idx < len((prompt_options or {}).get("_refinement_source_queue") or [])
+                else ""
+            ),
+            refined_text=persisted_block,
+            status=("completed" if missing_in_block == 0 else "failed"),
+            quality_status=("passed" if missing_in_block == 0 else "review_required"),
+            metadata={
+                "block_translations": block_translations,
+                "block_indices": group,
+                "structure": "srt",
+            },
+        )
 
         # Update previous_refined_block context (last up to 5 subtitles of this group).
         last_items = []

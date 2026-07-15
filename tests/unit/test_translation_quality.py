@@ -384,6 +384,62 @@ async def test_manual_retry_gets_one_focused_followup_for_patch_conflict():
 
 
 @pytest.mark.asyncio
+async def test_automatic_local_patch_uses_up_to_three_focused_attempts():
+    initial = (
+        '{"status":"needs_repair","issues":['
+        '{"issue_id":"a","segment_id":"D0001","category":"wording",'
+        '"severity":"major","confidence":0.95,"repair_kind":"local_replace",'
+        '"source_quote":"evidence","draft_quote":"alpha beta gamma",'
+        '"instruction":"first","draft_replacement":{"draft":"alpha beta",'
+        '"replacement":"X"},"glossary_update":null},'
+        '{"issue_id":"b","segment_id":"D0001","category":"wording",'
+        '"severity":"major","confidence":0.95,"repair_kind":"local_replace",'
+        '"source_quote":"evidence","draft_quote":"alpha beta gamma",'
+        '"instruction":"second","draft_replacement":{"draft":"beta gamma",'
+        '"replacement":"Y"},"glossary_update":null}],"voice_observations":[]}'
+    )
+    corrected = (
+        '{"status":"needs_repair","issues":[{"issue_id":"a",'
+        '"segment_id":"D0001","category":"wording","severity":"major",'
+        '"confidence":0.99,"repair_kind":"local_replace",'
+        '"source_quote":"evidence","draft_quote":"alpha beta gamma",'
+        '"instruction":"combined","draft_replacement":'
+        '{"draft":"alpha beta gamma","replacement":"X Y"},'
+        '"glossary_update":null}],"voice_observations":[]}'
+    )
+
+    class Client:
+        def __init__(self):
+            self.responses = [
+                initial,
+                '{"status":"no_issues","issues":[]}',
+                '{"status":"needs_repair","issues":[]}',
+                corrected,
+            ]
+            self.requests = []
+
+        async def generate_async(self, **kwargs):
+            self.requests.append(kwargs)
+            return SimpleNamespace(content=self.responses.pop(0))
+
+    client = Client()
+    result = await run_chunk_reflection_pass(
+        source_chunk="evidence",
+        draft_translation="alpha beta gamma",
+        target_language="English",
+        model_name="test",
+        llm_client=client,
+        prompt_options={"context_contract_version": 5, "source_language": "English"},
+    )
+
+    assert result == "X Y"
+    assert [item["stage"] for item in client.requests] == [
+        "reflection", "local_patch_retry", "local_patch_retry_2",
+        "local_patch_retry_3",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_unresolved_semantic_repair_preserves_valid_draft_for_review():
     critique = (
         '{"status":"needs_repair","issues":[{'

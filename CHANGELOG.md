@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.15.0 - 2026-07-15
+
+### Added
+
+- Added persistent bulk repair batches for review-required and narrator-stale units, including safe pause coordination, cancellation, restart recovery, sequential processing, and effective-phase output rebuilding.
+- Added actionable current-review diagnostics with sanitized reason codes, bounded problem details, retryability, phase, and attempt counts, plus reactive bulk-repair controls across all seven supported locales.
+- Added persistent refinement passes and unit results with exact checkpoint alignment, interruption-safe resume, atomic promotion, and effective-phase reconstruction for TXT, EPUB, DOCX, and SRT.
+- Added shared unit prompt context preparation for translation, refinement, automatic repair, manual retry, and narrator repair, together with source-memory and prompt-component telemetry.
+
+### Changed
+
+- Editor repair now preserves structured issue seeds, applies deterministic replacements first, and runs up to three bounded focused repairs before considering a full audit. Repeated no-progress responses and non-retryable provider failures stop early.
+- Manual and narrator repairs now target the promoted effective phase, preventing refined output from being replaced by first-pass checkpoints.
+- Narrator backfill now audits completed units and processes only proven conformance violations while leaving active jobs paused after bulk repair.
+- Review counters now represent each unit's latest effective state instead of historical attempts. Successful retries leave history intact while removing the unit from the current review queue.
+- Retained `NOVEL_CONTEXT_SOURCE_MEMORY_CHARS` with its 6000-character default because source-analysis memory is independent from selective translation-context injection.
+
+### Fixed
+
+- Prevented retry routes from discarding unresolved editor issues and launching unnecessarily large full audits.
+- Prevented structured-format refinement failures from retaining fallback text while reporting zero failed units.
+- Prevented partial refinement output from replacing phase-one output before a complete pass is atomically promoted.
+- Rejected consolidation protocol labels such as `CORRECTION` as generated character or alias names, prohibited identity merges based only on duplicate descriptions, and preserved unsupported candidates for review.
+- Required direct lexical evidence for addressing rules so an indirect mention of another character cannot establish the declared addressee's form.
+- Reset source-analysis memory at explicit scene boundaries while preserving continuity within a source unit and across skipped analyzer intervals.
+
+### Tests
+
+- Added retry, latest-state diagnostics, bulk repair persistence, narrator accounting, consolidation evidence, source-memory boundaries, refinement promotion, effective-phase rebuilding, structured-format failure reporting, DOCX reconstruction, and locale parity regressions.
+- Passed the complete automated suite with 1,927 tests passing, one skipped, and ten intentionally deselected integration cases.
+
 ## 1.15.0-beta.48 - 2026-07-14
 
 ### Added

@@ -11,6 +11,7 @@ File type detection supports:
 """
 
 import os
+import tempfile
 from typing import Optional, Callable, Dict, Any
 
 from .generic_translator import GenericTranslator
@@ -393,11 +394,10 @@ async def build_translated_output(
         'txt': TxtAdapter,
         'srt': SrtAdapter,
         'epub': EpubAdapter,
-        # Note: docx doesn't support checkpoint reconstruction yet
     }
 
     adapter_class = adapter_map.get(file_type)
-    if not adapter_class:
+    if not adapter_class and file_type != 'docx':
         return None, f"Unsupported file type: {file_type}"
 
     # Get file paths from config
@@ -409,6 +409,97 @@ async def build_translated_output(
 
     if not input_file_path or not output_file_path:
         return None, "Missing file paths in checkpoint configuration"
+
+    if file_type == 'docx':
+        prompt_options = dict(config.get('prompt_options') or {})
+        try:
+            from src.core.docx.docx_translation_adapter import DocxTranslationAdapter
+
+            checkpoint_data = checkpoint_manager.load_checkpoint(translation_id)
+            if not checkpoint_data:
+                return None, "No checkpoint data found"
+            overlays = {
+                int(item["base_chunk_index"]): item
+                for item in checkpoint_manager.db.get_active_refinement_results(
+                    translation_id
+                )
+                if item.get("base_chunk_index") is not None
+                and item.get("status") == "completed"
+            }
+            rows = sorted(
+                checkpoint_data.get("chunks", []),
+                key=lambda item: int(item.get("chunk_index", 0)),
+            )
+            translated_chunks = []
+            for row in rows:
+                overlay = overlays.get(int(row.get("chunk_index", -1)))
+                translated_chunks.append(str(
+                    (overlay or {}).get("refined_text")
+                    or row.get("translated_text") or ""
+                ))
+            if prompt_options.get('plain_text_mode'):
+                from src.core.common.plain_text_pipeline import (
+                    _reassemble,
+                    build_plain_segments,
+                )
+                from src.core.docx.plain_extractor import (
+                    build_minimal_docx,
+                    extract_plain_paragraphs,
+                )
+                content = extract_plain_paragraphs(input_file_path)
+                segments = build_plain_segments(
+                    content.paragraphs_text,
+                    int(config.get("max_tokens_per_chunk") or 450),
+                    paragraph_kinds=content.paragraphs_style,
+                    chapter_mode=bool(prompt_options.get("chapter_mode")),
+                )
+                if len(segments) != len(translated_chunks):
+                    return None, "DOCX plain-text checkpoint structure no longer matches the source"
+                translated_paragraphs = _reassemble(
+                    segments, translated_chunks, content.paragraphs_text
+                )
+                temporary_path = ""
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        suffix=".docx", delete=False
+                    ) as handle:
+                        temporary_path = handle.name
+                    build_minimal_docx(
+                        translated_paragraphs=translated_paragraphs,
+                        content=content,
+                        output_path=temporary_path,
+                        bilingual=bool(
+                            adapter_config.get("bilingual_output")
+                            or config.get("bilingual_output")
+                        ),
+                    )
+                    with open(temporary_path, "rb") as handle:
+                        return handle.read(), None
+                finally:
+                    if temporary_path and os.path.exists(temporary_path):
+                        os.remove(temporary_path)
+            adapter = DocxTranslationAdapter()
+            html_content, context = adapter.extract_content(input_file_path, None)
+            text, structure_map, _placeholder_format = adapter.preserve_structure(
+                html_content, context, None
+            )
+            chunks = adapter.create_chunks(
+                text,
+                structure_map,
+                int(config.get("max_tokens_per_chunk") or 450),
+                None,
+                chapter_mode=bool(prompt_options.get("chapter_mode")),
+            )
+            if len(chunks) != len(translated_chunks):
+                return None, "DOCX checkpoint structure no longer matches the source"
+            rebuilt_html = adapter.reconstruct_content(
+                translated_chunks, structure_map, context
+            )
+            return adapter.finalize_output(
+                rebuilt_html, input_file_path, context, None
+            ), None
+        except Exception as exc:
+            return None, f"Error reconstructing DOCX output: {exc}"
 
     # Create adapter instance
     try:
@@ -426,6 +517,28 @@ async def build_translated_output(
         checkpoint_data = checkpoint_manager.load_checkpoint(translation_id)
         if not checkpoint_data:
             return None, "No checkpoint data found"
+        refinement_results = checkpoint_manager.db.get_active_refinement_results(
+            translation_id
+        )
+        if refinement_results:
+            overlays = {
+                int(item["base_chunk_index"]): item
+                for item in refinement_results
+                if item.get("base_chunk_index") is not None
+                and item.get("status") == "completed"
+            }
+            for chunk in checkpoint_data.get("chunks", []):
+                overlay = overlays.get(int(chunk.get("chunk_index", -1)))
+                if not overlay:
+                    continue
+                chunk["translated_text"] = overlay.get("refined_text")
+                chunk["chunk_data"] = {
+                    **(chunk.get("chunk_data") or {}),
+                    **(overlay.get("chunk_data") or {}),
+                    "effective_phase": "refinement",
+                    "refinement_pass_id": overlay.get("pass_id"),
+                    "quality_status": overlay.get("quality_status") or "not_checked",
+                }
 
         # Resume from checkpoint (restores translated content)
         await adapter.resume_from_checkpoint(checkpoint_data)

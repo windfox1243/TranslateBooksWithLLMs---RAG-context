@@ -769,9 +769,14 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                     translation_prompt_options
                 )
                 refinement_prompt_options['_refine_after'] = True
+                final_output_path = Path(output_filepath_on_server)
+                refinement_output_path = final_output_path.with_name(
+                    f".{final_output_path.stem}.refining{final_output_path.suffix}"
+                )
+                refinement_output_path.unlink(missing_ok=True)
                 refine_success = await refine_file(
                     input_filepath=output_filepath_on_server,
-                    output_filepath=output_filepath_on_server,
+                    output_filepath=str(refinement_output_path),
                     target_language=config['target_language'],
                     model_name=config['model'],
                     llm_provider=config.get('llm_provider', 'ollama'),
@@ -809,16 +814,19 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                     and refinement_failed_chunks == 0
                 )
                 if refine_completed_cleanly:
+                    os.replace(refinement_output_path, final_output_path)
                     checkpoint_manager.mark_refinement_current(translation_id)
                     _log_message_callback(
                         "refine_after_complete",
                         "✅ Refinement pass completed; final output is ready.",
                     )
-                elif not should_interrupt_current_task():
-                    _log_message_callback(
-                        "refine_after_fallback",
-                        "⚠️ Refinement pass did not complete; keeping the translated output.",
-                    )
+                else:
+                    refinement_output_path.unlink(missing_ok=True)
+                    if not should_interrupt_current_task():
+                        _log_message_callback(
+                            "refine_after_fallback",
+                            "⚠️ Refinement pass did not complete; keeping the translated output.",
+                        )
 
         # If an EPUB translation was paused, the file was saved with a `[partial NN%]`
         # prefix. Re-point the tracking variables to the actual file on disk so the

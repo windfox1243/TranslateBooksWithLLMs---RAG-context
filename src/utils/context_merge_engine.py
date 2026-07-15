@@ -497,6 +497,20 @@ class ContextMergeEngine:
                     "directed addressing requires an exact spoken direct-address "
                     "or second-person source form in its evidence quote."
                 )
+            for item in target_evidence:
+                form_key = _norm(item.get("text"))
+                referenced_names = [
+                    name for name in (known_character_names or [])
+                    if _norm(name) and _norm(name) in form_key
+                ]
+                if referenced_names and not any(
+                    _matches_label(delta.addressee, name, target_language)
+                    for name in referenced_names
+                ):
+                    return reject(
+                        "direct-address evidence names a different character "
+                        "[direct_address_target_mismatch]."
+                    )
             v2_source_supported = True
             strong_evidence = True
 

@@ -997,6 +997,29 @@ async def refine_chunks(
                 )
             else:
                 local_prompt_options.pop("dialogue_attribution", None)
+            from src.core.context.unit_pipeline import prepare_unit_prompt_options
+            local_prompt_options = prepare_unit_prompt_options(
+                local_prompt_options,
+                unit_index=i,
+                phase="refinement",
+                file_type=str(local_prompt_options.get("file_type") or "txt"),
+                source_text=(
+                    str(original_chunks[i].get("source_content")
+                        or original_chunks[i].get("original_text") or "")
+                    if i < len(original_chunks) else ""
+                ),
+                target_language=target_language,
+                dialogue_attribution=dialogue_attribution,
+                chapter_index=(
+                    original_chunks[i].get("chapter_index")
+                    if i < len(original_chunks) else None
+                ),
+                scene_key=(
+                    str(original_chunks[i].get("scene_key") or "")
+                    if i < len(original_chunks) else ""
+                ),
+                nearby_source=(context_before, context_after),
+            )
 
             # Run the same structured Senior Editor used by translation.
             try:
@@ -1083,6 +1106,10 @@ async def refine_chunks(
 
             if refined_text is not None:
                 # Clean the refined text
+                refinement_quality = str(
+                    getattr(refined_text, "quality_status", "passed") or "passed"
+                )
+                refinement_validation = getattr(refined_text, "editor_validation", None)
                 refined_text = clean_translated_text(refined_text)
                 refined_parts.append(refined_text)
                 progress_tracker.mark_completed(i, chunk_elapsed)
@@ -1106,6 +1133,32 @@ async def refine_chunks(
                 refined_parts.append(draft_text)
                 progress_tracker.mark_failed(i)
                 last_refined_context = ""
+
+            from src.core.refine.persistence import save_refinement_unit
+            persisted_text = refined_text if refined_text is not None else draft_text
+            save_refinement_unit(
+                prompt_options,
+                unit_index=i,
+                source_text=(
+                    str(original_chunks[i].get("source_content")
+                        or original_chunks[i].get("original_text") or "")
+                    if i < len(original_chunks) else ""
+                ),
+                refined_text=persisted_text,
+                status=("completed" if refined_text is not None else "failed"),
+                quality_status=(
+                    refinement_quality if refined_text is not None else "review_required"
+                ),
+                metadata={
+                    "editor_validation": refinement_validation
+                    if refined_text is not None and isinstance(refinement_validation, dict)
+                    else {},
+                    "chapter_index": (
+                        original_chunks[i].get("chapter_index")
+                        if i < len(original_chunks) else None
+                    ),
+                },
+            )
 
             if stats_callback:
                 stats_callback(progress_tracker.get_stats().to_dict())
@@ -2333,8 +2386,7 @@ async def _run_chunk_reflection_pass_impl(
         seed.setdefault("issue_id", f"retry-{seed_index}")
         retry_seed_issues.append(seed)
     use_focused_manual_retry = bool(
-        str(options.get("editor_phase") or "").casefold() == "manual_retry"
-        and retry_seed_issues
+        retry_seed_issues
         and not deterministic_findings
     )
     if use_focused_manual_retry:
@@ -3104,7 +3156,6 @@ async def _run_chunk_reflection_pass_impl(
     local_patch_followup_attempted = False
     if (
         unresolved_issues
-        and str(options.get("editor_phase") or "").casefold() == "manual_retry"
         and all(_issue_requires_draft_replacement(issue) for issue in unresolved_issues)
     ):
         local_patch_followup_attempted = True
@@ -3120,106 +3171,132 @@ async def _run_chunk_reflection_pass_impl(
                 for issue in unresolved_issues
             ],
         ]
-        followup_prompt = _build_focused_locator_retry_prompt(
-            followup_base,
-            unresolved_issues,
-            followup_ids,
-            followup_reasons,
-        )
-        followup_errors: List[str] = []
-        followup_response = None
-        followup_raw = ""
-        followup_result = ReflectionResult("no_issues", [], "", "empty")
-        try:
-            followup_response = await generate_editor(
-                prompt=followup_prompt,
-                system_prompt=(
-                    "You correct one bounded set of unresolved local translation "
-                    "edits. Use only the supplied candidate neighborhoods. Return "
-                    "canonical reflection JSON and never rewrite the complete chunk."
-                ),
-                temperature=0.0,
-                max_output_tokens=editor_output_tokens,
-                stage="local_patch_retry",
-                structured=True,
+        previous_response_fingerprint = None
+        identical_no_progress = 0
+        for focused_attempt in range(1, 4):
+            followup_prompt = _build_focused_locator_retry_prompt(
+                followup_base,
+                unresolved_issues,
+                followup_ids,
+                followup_reasons,
             )
-            followup_raw = str(
-                getattr(followup_response, "content", "") or ""
-            ).strip()
-            followup_result = parse_reflection_result(followup_raw)
-            corrected_issues = [
-                issue for issue in followup_result.issues
-                if not followup_ids
-                or str(issue.get("issue_id") or "") in followup_ids
-            ]
-            corrected_issues, _normalized = normalize_unique_issue_locators(
-                followup_base, corrected_issues,
-            )
-            if reflection_contract_invalid(followup_result) or not corrected_issues:
-                followup_errors.append("local_patch_retry_contract_invalid")
-            else:
-                followup_errors.extend(
-                    validate_issue_locators(followup_base, corrected_issues)
+            followup_errors: List[str] = []
+            followup_response = None
+            followup_raw = ""
+            followup_result = ReflectionResult("no_issues", [], "", "empty")
+            try:
+                followup_response = await generate_editor(
+                    prompt=followup_prompt,
+                    system_prompt=(
+                        "You correct one bounded set of unresolved local translation "
+                        "edits. Use only the supplied candidate neighborhoods. Return "
+                        "canonical reflection JSON and never rewrite the complete chunk."
+                    ),
+                    temperature=0.0,
+                    max_output_tokens=editor_output_tokens,
+                    stage=(
+                        "local_patch_retry" if focused_attempt == 1
+                        else f"local_patch_retry_{focused_attempt}"
+                    ),
+                    structured=True,
                 )
-            retry_patched = followup_base
-            retry_unresolved = list(corrected_issues)
-            if not followup_errors:
-                retry_patched, retry_unresolved, retry_patch_errors = (
-                    apply_local_editor_patches(followup_base, corrected_issues)
+                followup_raw = str(
+                    getattr(followup_response, "content", "") or ""
+                ).strip()
+                response_fingerprint = hashlib.sha256(
+                    followup_raw.encode("utf-8")
+                ).hexdigest()
+                if response_fingerprint == previous_response_fingerprint:
+                    identical_no_progress += 1
+                else:
+                    identical_no_progress = 0
+                previous_response_fingerprint = response_fingerprint
+                followup_result = parse_reflection_result(followup_raw)
+                corrected_issues = [
+                    issue for issue in followup_result.issues
+                    if not followup_ids
+                    or str(issue.get("issue_id") or "") in followup_ids
+                ]
+                corrected_issues, _normalized = normalize_unique_issue_locators(
+                    followup_base, corrected_issues,
                 )
-                followup_errors.extend(retry_patch_errors)
-            if not followup_errors and not retry_unresolved:
-                followup_errors.extend(validate_editor_repair(
-                    retry_patched,
-                    corrected_issues,
-                    draft_text=followup_base,
-                    source_text=source_chunk,
-                    source_language=source_language,
-                    target_language=target_language,
-                    protected_terms=protected_terms,
-                    glossary_terms=glossary_terms,
-                ))
-            record_attempt(
-                "local_patch_retry",
-                followup_response,
-                followup_raw,
-                parse_status=followup_result.parse_status,
-                failure_class=("local_patch_conflict" if followup_errors else ""),
-                reason_codes=followup_errors,
-                issues=corrected_issues,
-            )
-            if not followup_errors and not retry_unresolved:
-                patched_draft = retry_patched
-                resolved_issue_count += len(corrected_issues)
-                unresolved_issues = []
-                unresolved_issue_count = review_issue_count
-                patch_errors = []
-                result_state = "locally_patched"
-                reflection_result = ReflectionResult(
-                    "needs_repair",
-                    corrected_issues,
+                if reflection_contract_invalid(followup_result) or not corrected_issues:
+                    followup_errors.append("local_patch_retry_contract_invalid")
+                else:
+                    followup_errors.extend(
+                        validate_issue_locators(followup_base, corrected_issues)
+                    )
+                retry_patched = followup_base
+                retry_unresolved = list(corrected_issues)
+                if not followup_errors:
+                    retry_patched, retry_unresolved, retry_patch_errors = (
+                        apply_local_editor_patches(followup_base, corrected_issues)
+                    )
+                    followup_errors.extend(retry_patch_errors)
+                if not followup_errors and not retry_unresolved:
+                    followup_errors.extend(validate_editor_repair(
+                        retry_patched,
+                        corrected_issues,
+                        draft_text=followup_base,
+                        source_text=source_chunk,
+                        source_language=source_language,
+                        target_language=target_language,
+                        protected_terms=protected_terms,
+                        glossary_terms=glossary_terms,
+                    ))
+                record_attempt(
+                    (
+                        "local_patch_retry" if focused_attempt == 1
+                        else f"local_patch_retry_{focused_attempt}"
+                    ),
+                    followup_response,
                     followup_raw,
-                    followup_result.parse_status,
-                    followup_result.voice_observations,
+                    parse_status=followup_result.parse_status,
+                    failure_class=("local_patch_conflict" if followup_errors else ""),
+                    reason_codes=followup_errors,
+                    issues=corrected_issues,
                 )
-            else:
+                if not followup_errors and not retry_unresolved:
+                    patched_draft = retry_patched
+                    resolved_issue_count += len(corrected_issues)
+                    unresolved_issues = []
+                    unresolved_issue_count = review_issue_count
+                    patch_errors = []
+                    result_state = "locally_patched"
+                    reflection_result = ReflectionResult(
+                        "needs_repair",
+                        corrected_issues,
+                        followup_raw,
+                        followup_result.parse_status,
+                        followup_result.voice_observations,
+                    )
+                    break
                 patch_errors.extend(
                     error for error in followup_errors if error not in patch_errors
                 )
-        except Exception as exc:
-            followup_errors.append(
-                f"local_patch_retry_failed:{type(exc).__name__}"
-            )
-            patch_errors.extend(
-                error for error in followup_errors if error not in patch_errors
-            )
-            record_attempt(
-                "local_patch_retry", followup_response, followup_raw,
-                parse_status=followup_result.parse_status,
-                failure_class="local_patch_conflict",
-                reason_codes=followup_errors,
-                issues=followup_result.issues,
-            )
+                if identical_no_progress >= 1:
+                    patch_errors.append("local_patch_retry_no_progress")
+                    break
+            except Exception as exc:
+                followup_errors.append(
+                    f"local_patch_retry_failed:{type(exc).__name__}"
+                )
+                patch_errors.extend(
+                    error for error in followup_errors if error not in patch_errors
+                )
+                record_attempt(
+                    (
+                        "local_patch_retry" if focused_attempt == 1
+                        else f"local_patch_retry_{focused_attempt}"
+                    ),
+                    followup_response,
+                    followup_raw,
+                    parse_status=followup_result.parse_status,
+                    failure_class="local_patch_conflict",
+                    reason_codes=followup_errors,
+                    issues=followup_result.issues,
+                )
+                break
 
     if not unresolved_issues:
         finish_run(

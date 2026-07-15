@@ -15,6 +15,42 @@ from src.utils.novel_context import (
 )
 
 
+@pytest.mark.asyncio
+async def test_docx_plain_checkpoint_rebuild_uses_effective_chunk_text(tmp_path):
+    from io import BytesIO
+    from docx import Document
+    from src.core.adapters import build_translated_output
+
+    source_path = tmp_path / "source.docx"
+    document = Document()
+    document.add_paragraph("Hello")
+    document.add_paragraph("World")
+    document.save(source_path)
+
+    manager = CheckpointManager(str(tmp_path / "jobs.db"))
+    assert manager.db.create_job("job", "docx", {
+        "preserved_input_path": str(source_path),
+        "output_file_path": str(tmp_path / "translated.docx"),
+        "max_tokens_per_chunk": 450,
+        "prompt_options": {"plain_text_mode": True},
+    })
+    assert manager.save_checkpoint(
+        translation_id="job",
+        chunk_index=0,
+        original_text="Hello\n\nWorld",
+        translated_text="Bonjour\n\nMonde",
+        chunk_status="completed",
+    )
+
+    output, error = await build_translated_output("job", manager)
+
+    assert error is None
+    rebuilt = Document(BytesIO(output))
+    assert [paragraph.text for paragraph in rebuilt.paragraphs] == [
+        "Bonjour", "Monde"
+    ]
+
+
 def test_full_context_snapshots_map_without_becoming_nested_dynamic_state():
     full_context = build_novel_context("GLOBAL LORE", "HISTORICAL STATE")
     db_chunks = [

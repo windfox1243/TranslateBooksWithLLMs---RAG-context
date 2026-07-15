@@ -227,10 +227,35 @@ export const ApiClient = {
         return await apiRequest(`/api/model/generation-capabilities?${params}`);
     },
 
-    async retrySeniorEditor(translationId, chunkIndex) {
+    async retrySeniorEditor(translationId, chunkIndex, phase = 'effective') {
         return await apiRequest(
             `/api/translation/${translationId}/chunks/${chunkIndex}/retry-editor`,
             { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+        );
+    },
+
+    async createEditorRepairBatch(translationId, scope, phase = 'effective') {
+        return await apiRequest(`/api/translation/${translationId}/editor-repair-batches`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scope, phase, stay_paused: true })
+        });
+    },
+
+    async getEditorRepairBatch(translationId, batchId) {
+        return await apiRequest(
+            `/api/translation/${translationId}/editor-repair-batches/${batchId}`
+        );
+    },
+
+    async cancelEditorRepairBatch(translationId, batchId) {
+        return await apiRequest(
+            `/api/translation/${translationId}/editor-repair-batches/${batchId}/cancel`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phase })
+            }
         );
     },
 

@@ -2445,6 +2445,7 @@ async def _refine_epub_chunks(
 
     total_chunks = len(translated_chunks)
     refined_chunks = []
+    refinement_failures = 0
 
     if log_callback:
         log_callback("epub_refinement_info",
@@ -2592,6 +2593,23 @@ async def _refine_epub_chunks(
         local_prompt_options["editor_source_mode"] = (
             "checkpoint" if source_chunk.strip() else "monolingual"
         )
+        from src.core.context.unit_pipeline import prepare_unit_prompt_options
+        local_prompt_options = prepare_unit_prompt_options(
+            local_prompt_options,
+            unit_index=source_cursor,
+            phase="refinement",
+            file_type=str(local_prompt_options.get("file_type") or "epub"),
+            source_text=source_chunk,
+            target_language=target_language,
+            dialogue_attribution=dialogue_attribution,
+            chapter_index=chunk_dict.get("chapter_index"),
+            scene_key=str(chunk_dict.get("scene_key") or ""),
+            nearby_source=(prompt_context_before, prompt_context_after),
+        )
+        refinement_quality = "passed"
+        refinement_validation = {}
+        persisted_refined_text = translated_text
+        persisted_refinement_status = "failed"
 
         # Run the shared structured Senior Editor and validate adapter structure.
         try:
@@ -2616,6 +2634,10 @@ async def _refine_epub_chunks(
                 prompt_options=local_prompt_options,
                 repair_validator=validate_refined_xhtml,
             )
+            refinement_quality = str(
+                getattr(refined_text, "quality_status", "passed") or "passed"
+            )
+            refinement_validation = getattr(refined_text, "editor_validation", {}) or {}
             if hide_refinement_placeholders:
                 from .token_alignment_fallback import TokenAlignmentFallback
                 refined_plain_text = _remove_placeholders_by_format(
@@ -2635,6 +2657,8 @@ async def _refine_epub_chunks(
                 placeholder_format,
             )
             refined_chunks.append(refined_with_global_indices)
+            persisted_refined_text = refined_with_global_indices
+            persisted_refinement_status = "completed"
             if log_callback:
                 log_callback("epub_chunk_refined", f"Chunk {idx + 1}/{total_chunks} refined successfully")
 
@@ -2644,8 +2668,27 @@ async def _refine_epub_chunks(
             if isinstance(e, _RLE):
                 raise
             # Fallback to original translation on error
+            refinement_failures += 1
             refined_chunks.append(translated_text)
             _log_error(log_callback, "epub_refinement_error", f"Chunk {idx + 1}/{total_chunks}: error during refinement: {e}")
+
+        from src.core.refine.persistence import save_refinement_unit
+        save_refinement_unit(
+            prompt_options,
+            unit_index=source_cursor,
+            source_text=source_chunk,
+            refined_text=persisted_refined_text,
+            status=persisted_refinement_status,
+            quality_status=(
+                refinement_quality
+                if persisted_refinement_status == "completed" else "review_required"
+            ),
+            metadata={
+                "editor_validation": refinement_validation,
+                "chapter_index": chunk_dict.get("chapter_index"),
+                "structure": "xhtml",
+            },
+        )
 
         # Update progress after each refinement chunk.
         if stats_callback:
@@ -2653,6 +2696,7 @@ async def _refine_epub_chunks(
                 # In-translation refine (Phase 2 of a two-phase workflow): drive
                 # the shared metrics so its to_dict() reflects refinement progress.
                 stats.refinement_chunks_completed = len(refined_chunks)
+                stats.failed_chunks = refinement_failures
                 stats_callback(stats.to_dict())
             else:
                 # Refine-only callers (e.g. DOCX) pass no metrics object. Emit a
@@ -2661,7 +2705,7 @@ async def _refine_epub_chunks(
                 stats_callback({
                     'total_chunks': total_chunks,
                     'completed_chunks': len(refined_chunks),
-                    'failed_chunks': 0,
+                    'failed_chunks': refinement_failures,
                 })
     if log_callback:
         successful_refinements = sum(1 for orig, ref in zip(translated_chunks, refined_chunks) if orig != ref)
