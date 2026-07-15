@@ -39,7 +39,14 @@ class _RetryCheckpoints:
                 "status": "completed",
                 "original_text": "Source",
                 "translated_text": "Draft",
-                "chunk_data": {},
+                "chunk_data": {
+                    "editor_validation": {
+                        "unresolved_issues": [{
+                            "issue_id": "keep-me",
+                            "repair_kind": "local_replace",
+                        }],
+                    },
+                },
             }],
         }
         self.marked_running = False
@@ -154,6 +161,9 @@ def test_retry_pauses_same_running_job_then_auto_resumes(
     assert started_config["is_resume"] is True
     assert started_config["resume_from_index"] == 1
     assert checkpoints.marked_running is True
+    assert checkpoints.checkpoint["chunks"][0]["chunk_data"][
+        "editor_validation"
+    ]["unresolved_issues"][0]["issue_id"] == "keep-me"
 
 
 def test_retry_still_rejects_when_another_job_is_active(tmp_path):

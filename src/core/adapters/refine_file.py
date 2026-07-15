@@ -6,6 +6,7 @@ pass is applied.
 """
 
 import os
+import uuid
 from typing import Optional, Callable, Dict, Any
 
 from .exceptions import UnsupportedFormatError
@@ -151,9 +152,46 @@ async def refine_file(
                      f"📄 File with extension '{ext}' detected as '{detected_type.upper()}' format")
     prompt_options["file_type"] = detected_type
 
+    refinement_pass_id = ""
+    if checkpoint_manager is not None and translation_id:
+        checkpoint = checkpoint_manager.load_checkpoint(translation_id) or {}
+        expected_units = len([
+            row for row in checkpoint.get("chunks", [])
+            if row.get("status") in {"completed", "partial"}
+            and row.get("translated_text") is not None
+        ])
+        source_mode = "checkpoint" if expected_units else "monolingual"
+        alignment_mode = "exact" if expected_units else "unmapped"
+        refinement_pass_id = f"ref_{uuid.uuid4().hex}"
+        if checkpoint_manager.db.create_refinement_pass(
+            refinement_pass_id,
+            translation_id,
+            context_revision=int((checkpoint.get("job") or {}).get("config", {}).get("context_revision", 0) or 0),
+            source_mode=source_mode,
+            alignment_mode=alignment_mode,
+            expected_units=expected_units,
+        ):
+            prompt_options["_refinement_pass_id"] = refinement_pass_id
+            prompt_options["_refinement_expected_units"] = expected_units
+
+    async def _managed_refinement(coroutine):
+        try:
+            result = await coroutine
+        except Exception as exc:
+            if refinement_pass_id:
+                checkpoint_manager.db.finish_refinement_pass(
+                    refinement_pass_id, successful=False, error=type(exc).__name__,
+                )
+            raise
+        if refinement_pass_id:
+            checkpoint_manager.db.finish_refinement_pass(
+                refinement_pass_id, successful=bool(result),
+            )
+        return result
+
     if detected_type == 'txt':
         from src.core.refine.txt_refiner import refine_txt_file
-        return await refine_txt_file(
+        return await _managed_refinement(refine_txt_file(
             input_filepath=input_filepath,
             output_filepath=output_filepath,
             target_language=target_language,
@@ -178,11 +216,11 @@ async def refine_file(
             checkpoint_manager=checkpoint_manager,
             translation_id=translation_id,
             refinement_original_path=refinement_original_path,
-        )
+        ))
 
     if detected_type == 'epub':
         from src.core.refine.epub_refiner import refine_epub_file
-        return await refine_epub_file(
+        return await _managed_refinement(refine_epub_file(
             input_filepath=input_filepath,
             output_filepath=output_filepath,
             target_language=target_language,
@@ -206,11 +244,11 @@ async def refine_file(
             checkpoint_manager=checkpoint_manager,
             translation_id=translation_id,
             refinement_original_path=refinement_original_path,
-        )
+        ))
 
     if detected_type == 'docx':
         from src.core.refine.docx_refiner import refine_docx_file
-        return await refine_docx_file(
+        return await _managed_refinement(refine_docx_file(
             input_filepath=input_filepath,
             output_filepath=output_filepath,
             target_language=target_language,
@@ -234,11 +272,11 @@ async def refine_file(
             checkpoint_manager=checkpoint_manager,
             translation_id=translation_id,
             refinement_original_path=refinement_original_path,
-        )
+        ))
 
     if detected_type == 'srt':
         from src.core.refine.srt_refiner import refine_srt_file
-        return await refine_srt_file(
+        return await _managed_refinement(refine_srt_file(
             input_filepath=input_filepath,
             output_filepath=output_filepath,
             target_language=target_language,
@@ -259,7 +297,7 @@ async def refine_file(
             checkpoint_manager=checkpoint_manager,
             translation_id=translation_id,
             refinement_original_path=refinement_original_path,
-        )
+        ))
 
     supported = ', '.join(['txt', 'epub', 'srt', 'docx'])
     raise UnsupportedFormatError(

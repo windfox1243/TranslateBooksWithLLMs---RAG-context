@@ -55,6 +55,14 @@ _INVALID_CONTEXT_KEYS = {
     "recommended target term",
     "source term",
     "target term",
+    "correction",
+    "corrections",
+    "identity link",
+    "identity links",
+    "new characters",
+    "new glossary",
+    "dynamic state",
+    "characters & genders",
 }
 _BARE_NARRATIVE_ROLE_NAMES = {
     "hero",
@@ -7343,9 +7351,26 @@ class NovelContextSession:
         ):
             self.dialogue_state = {}
         if normalized_scene_key is not None:
+            if (
+                self.dialogue_scene_key is not None
+                and normalized_scene_key != self.dialogue_scene_key
+            ):
+                self.source_memory = []
             self.dialogue_scene_key = normalized_scene_key
 
         source_context = _bounded_source_memory(self.source_memory)
+        if self.log_callback:
+            budget = _source_memory_budget_chars()
+            self.log_callback(
+                "novel_context_source_memory",
+                "Source-analysis memory prepared for the current scene.",
+                {
+                    "used_chars": len(source_context),
+                    "budget_chars": budget,
+                    "truncated": bool(budget and len(source_context) >= budget),
+                    "scope": "source_analysis",
+                },
+            )
         dialogue_turns = detect_dialogue_turns(source_chunk)
         dialogue_sink: Dict[str, Any] = {}
         relationship_sink: Dict[str, Any] = {}
@@ -7858,6 +7883,12 @@ async def consolidate_context_lore(
             for name, _ in original_character_entries
             if not _is_invalid_context_key(name)
         }
+        existing_alias_bounds = _find_lore_section(global_lore, ALIASES_SECTION)
+        existing_alias_map = _alias_entries_to_map(
+            _parse_alias_entries(
+                global_lore[existing_alias_bounds[1]:existing_alias_bounds[2]]
+            ) if existing_alias_bounds else []
+        )
 
         # Validate: must have at least one character line (with - or * or number or no prefix but contains ':')
         consolidated_entries = []
@@ -7939,6 +7970,7 @@ async def consolidate_context_lore(
                 or alias_key in consolidated_character_keys
                 or _character_names_match(alias, canonical_target)
                 or _is_unstable_identity_alias(alias, allow_physical=True)
+                or existing_alias_map.get(alias_key) != canonical_target
             ):
                 continue
             accepted_identity_lines.append(f"- {alias}: {canonical_target}")

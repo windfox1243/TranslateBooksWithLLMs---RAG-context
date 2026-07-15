@@ -111,6 +111,8 @@ class EditorRunRecorder:
                 "translation_id": translation_id,
                 "chunk_index": int(self.options.get("chunk_index", -1)),
                 "phase": self.options.get("editor_phase") or "translation",
+                "refinement_pass_id": self.options.get("_refinement_pass_id")
+                or self.options.get("refinement_pass_id"),
                 "provider": self.options.get("editor_provider_resolved")
                 or self.options.get("llm_provider"),
                 "model": self.options.get("editor_model_resolved")

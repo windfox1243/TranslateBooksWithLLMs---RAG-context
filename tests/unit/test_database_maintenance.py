@@ -130,3 +130,36 @@ def test_editor_token_columns_migrate_existing_database(tmp_path):
             )
         }
         assert {"thinking_tokens", "total_tokens"} <= columns
+
+
+def test_editor_repair_batch_persists_item_progress(tmp_path):
+    db = Database(str(tmp_path / "jobs.db"))
+    assert db.create_job("job", "txt", {})
+    assert db.create_editor_repair_batch(
+        "batch", "job", "review_required", "effective", [2, 4]
+    )
+    assert db.update_editor_repair_batch_item(
+        "batch", 2, "effective", status="succeeded", outcome="locally_repaired"
+    )
+    assert db.update_editor_repair_batch(
+        "batch", status="running", completed_items=1, succeeded_items=1
+    )
+    result = db.get_editor_repair_batch("batch")
+    assert result["completed_items"] == 1
+    assert result["items"][0]["status"] == "succeeded"
+
+
+def test_refinement_pass_promotes_only_complete_exact_results(tmp_path):
+    db = Database(str(tmp_path / "jobs.db"))
+    assert db.create_job("job", "txt", {})
+    assert db.create_refinement_pass("pass", "job", expected_units=2)
+    for index in range(2):
+        assert db.save_refinement_chunk_result(
+            "pass", "job", index, base_chunk_index=index,
+            source_text=f"source {index}", refined_text=f"refined {index}",
+            status="completed", quality_status="passed",
+        )
+    assert db.finish_refinement_pass("pass", successful=True)
+    assert [item["refined_text"] for item in db.get_active_refinement_results("job")] == [
+        "refined 0", "refined 1"
+    ]

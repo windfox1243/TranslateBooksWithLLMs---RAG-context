@@ -14,6 +14,11 @@ TERMINAL_RETRY_STATES = {
 }
 
 
+def _active_refinement_results(db: Any, translation_id: str) -> list[Dict[str, Any]]:
+    getter = getattr(db, "get_active_refinement_results", None)
+    return list(getter(translation_id) or []) if callable(getter) else []
+
+
 def editor_retry_state(chunk_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Return a public retry state, including legacy queued checkpoints."""
 
@@ -143,6 +148,28 @@ def _save_retry_state(
                 chunk_data["narrator_backfill"] = narrator_backfill
     else:
         chunk_data["editor_retry_pending"] = True
+    refinement_pass_id = str(chunk_data.get("refinement_pass_id") or "")
+    if (
+        chunk_data.get("effective_phase") == "refinement"
+        and refinement_pass_id
+    ):
+        return checkpoint_manager.db.save_refinement_chunk_result(
+            refinement_pass_id,
+            translation_id,
+            int(chunk["chunk_index"]),
+            base_chunk_index=int(chunk["chunk_index"]),
+            source_text=str(chunk.get("original_text") or ""),
+            refined_text=(
+                translated_text if translated_text is not None
+                else str(chunk.get("translated_text") or "")
+            ),
+            chunk_data=chunk_data,
+            status=(
+                "completed" if chunk_status in {None, "completed", "editor_retry"}
+                else str(chunk_status)
+            ),
+            quality_status=str(chunk_data.get("quality_status") or "not_checked"),
+        )
     return checkpoint_manager.save_checkpoint(
         translation_id=translation_id,
         chunk_index=int(chunk["chunk_index"]),
@@ -201,6 +228,7 @@ async def run_editor_retry(
     checkpoint_manager: Any,
     output_dir: Path,
     refresh_output: bool = True,
+    phase: str = "effective",
 ) -> Dict[str, Any]:
     """Run one Senior Editor pass without resuming the translation job."""
 
@@ -211,6 +239,27 @@ async def run_editor_retry(
         item for item in checkpoint.get("chunks", [])
         if int(item.get("chunk_index", -1)) == int(chunk_index)
     ), None)
+    active_refinement = {
+        int(item.get("base_chunk_index", -1)): item
+        for item in _active_refinement_results(checkpoint_manager.db, translation_id)
+        if item.get("base_chunk_index") is not None
+    }.get(int(chunk_index)) if str(phase).casefold() != "translation" else None
+    if str(phase).casefold() == "refinement" and not active_refinement:
+        raise ValueError(
+            "No mapped refinement draft is available; replay refinement first"
+        )
+    if chunk and active_refinement:
+        chunk = {
+            **chunk,
+            "translated_text": active_refinement.get("refined_text"),
+            "chunk_data": {
+                **(chunk.get("chunk_data") or {}),
+                **(active_refinement.get("chunk_data") or {}),
+                "effective_phase": "refinement",
+                "refinement_pass_id": active_refinement.get("pass_id"),
+                "quality_status": active_refinement.get("quality_status") or "not_checked",
+            },
+        }
     if not chunk or not str(chunk.get("translated_text") or "").strip():
         raise ValueError("No preserved draft is available")
 
@@ -271,7 +320,7 @@ async def run_editor_retry(
         "jobs_db_path": getattr(checkpoint_manager.db, "db_path", None),
         "chunk_index": int(chunk_index),
         "file_type": job.get("file_type") or config.get("file_type") or "",
-        "editor_phase": "manual_retry",
+        "editor_phase": "refinement" if active_refinement else "manual_retry",
         "source_language": config.get("source_language") or "",
         "target_language": config.get("target_language") or "",
         "active_character_names": _active_character_names(chunk_data),
@@ -281,6 +330,9 @@ async def run_editor_retry(
         "editor_retry_source_run_id": (
             (chunk_data.get("editor_retry") or {}).get("source_run_id")
             if isinstance(chunk_data.get("editor_retry"), dict) else None
+        ),
+        "_refinement_pass_id": (
+            active_refinement.get("pass_id") if active_refinement else None
         ),
     })
     from src.utils.narrator_voice import build_narrator_voice_context
@@ -295,6 +347,18 @@ async def run_editor_retry(
     )
     if narrative_voice_context:
         options["narrative_voice_context"] = narrative_voice_context
+    from src.core.context.unit_pipeline import prepare_unit_prompt_options
+    options = prepare_unit_prompt_options(
+        options,
+        unit_index=int(chunk_index),
+        phase=("refinement" if active_refinement else "manual_retry"),
+        file_type=str(job.get("file_type") or config.get("file_type") or ""),
+        source_text=source_text,
+        target_language=str(config.get("target_language") or ""),
+        dialogue_attribution=chunk_data.get("dialogue_attribution") or {},
+        chapter_index=chunk_data.get("chapter_index"),
+        scene_key=str(chunk_data.get("scene_key") or ""),
+    )
 
     from src.core.translator import (
         ReflectionValidationError,
@@ -409,15 +473,31 @@ def audit_completed_narrator_conformance(
     queued: list[int] = []
     blocked: list[int] = []
     audited = 0
+    refinement_overlays = {
+        int(item.get("base_chunk_index", -1)): item
+        for item in _active_refinement_results(checkpoint_manager.db, translation_id)
+        if item.get("base_chunk_index") is not None
+    }
     for chunk in checkpoint.get("chunks") or []:
         if chunk.get("status") not in {"completed", "partial"}:
             continue
         source_text = str(chunk.get("original_text") or "")
-        target_text = str(chunk.get("translated_text") or "")
+        index = int(chunk.get("chunk_index") or 0)
+        overlay = refinement_overlays.get(index)
+        target_text = str(
+            (overlay or {}).get("refined_text") or chunk.get("translated_text") or ""
+        )
         if not target_text.strip():
             continue
-        index = int(chunk.get("chunk_index") or 0)
-        chunk_data = dict(chunk.get("chunk_data") or {})
+        chunk_data = {
+            **(chunk.get("chunk_data") or {}),
+            **((overlay or {}).get("chunk_data") or {}),
+        }
+        if overlay:
+            chunk_data.update({
+                "effective_phase": "refinement",
+                "refinement_pass_id": overlay.get("pass_id"),
+            })
         audit = audit_narrator_conformance(
             source_text=source_text,
             target_text=target_text,
@@ -461,14 +541,23 @@ def audit_completed_narrator_conformance(
                 "status": "not_required", "fingerprint": fingerprint,
                 "attempts": int(previous.get("attempts") or 0),
             }
-        checkpoint_manager.save_checkpoint(
-            translation_id=translation_id,
-            chunk_index=index,
-            original_text=source_text,
-            translated_text=target_text,
-            chunk_data=chunk_data,
-            chunk_status=chunk.get("status") or "completed",
-        )
+        if overlay:
+            checkpoint_manager.db.save_refinement_chunk_result(
+                str(overlay.get("pass_id")), translation_id, index,
+                base_chunk_index=index, source_text=source_text,
+                refined_text=target_text, chunk_data=chunk_data,
+                status=str(overlay.get("status") or "completed"),
+                quality_status=str(overlay.get("quality_status") or "not_checked"),
+            )
+        else:
+            checkpoint_manager.save_checkpoint(
+                translation_id=translation_id,
+                chunk_index=index,
+                original_text=source_text,
+                translated_text=target_text,
+                chunk_data=chunk_data,
+                chunk_status=chunk.get("status") or "completed",
+            )
         audited += 1
     return {"audited": audited, "queued": queued, "blocked": blocked}
 
@@ -495,10 +584,11 @@ async def run_pending_narrator_backfill(
             "status"
         ) == "blocked"
     ]
+    queued_indices = {int(value) for value in audit_summary.get("queued") or []}
     stale = [
         item for item in checkpoint.get("chunks", [])
         if item.get("status") in {"completed", "partial"}
-        and (item.get("chunk_data") or {}).get("narrator_voice_stale")
+        and int(item.get("chunk_index", -1)) in queued_indices
         and ((item.get("chunk_data") or {}).get("narrator_backfill") or {}).get(
             "status"
         ) != "blocked"
@@ -527,35 +617,9 @@ async def run_pending_narrator_backfill(
                 output_dir=Path(output_dir),
                 refresh_output=False,
             )
-            if result.get("status") in {"succeeded", "review_required"}:
+            if result.get("status") == "succeeded":
                 completed.append(chunk_index)
             else:
-                latest_checkpoint = checkpoint_manager.load_checkpoint(
-                    translation_id
-                ) or {}
-                latest_chunk = next((
-                    row for row in latest_checkpoint.get("chunks") or []
-                    if int(row.get("chunk_index", -1)) == chunk_index
-                ), chunk)
-                latest_data = dict(latest_chunk.get("chunk_data") or {})
-                backfill_state = dict(latest_data.get("narrator_backfill") or {})
-                backfill_state.update({
-                    "status": "blocked",
-                    "attempts": int(backfill_state.get("attempts") or 0) + 1,
-                    "last_failure": result.get("outcome") or result.get("status"),
-                })
-                latest_data["narrator_backfill"] = backfill_state
-                latest_data["narrator_voice_stale"] = True
-                latest_data["quality_status"] = "review_required"
-                latest_data.pop("execution_failure_class", None)
-                checkpoint_manager.save_checkpoint(
-                    translation_id=translation_id,
-                    chunk_index=chunk_index,
-                    original_text=latest_chunk.get("original_text") or "",
-                    translated_text=latest_chunk.get("translated_text") or "",
-                    chunk_data=latest_data,
-                    chunk_status="completed",
-                )
                 failed.append({
                     "chunk_index": chunk_index,
                     "status": result.get("status") or "failed",

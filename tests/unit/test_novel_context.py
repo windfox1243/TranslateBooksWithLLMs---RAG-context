@@ -2430,6 +2430,39 @@ async def test_context_session_uses_remembered_skipped_source_memory(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_context_session_resets_source_memory_at_scene_boundary(tmp_path):
+    from src.utils.novel_context import NovelContextSession
+
+    response = MagicMock()
+    response.content = (
+        "[NEW_CHARACTERS]\n\n[IDENTITY_LINKS]\n\n[NEW_GLOSSARY]\n\n"
+        "[DYNAMIC_STATE]\n## CURRENT ADDRESSING FORMS\n\n"
+        "## RELATIONSHIP EVOLUTION\n\n[DIALOGUE_ATTRIBUTION]\n"
+        '{"turns":[],"state_after":{}}'
+    )
+    client = MagicMock()
+    client.generate = AsyncMock(return_value=response)
+    session = NovelContextSession(
+        path=tmp_path / "novel.txt", prompt_options={},
+        global_lore="# GLOBAL LORE\n\n## CHARACTERS & GENDERS\n\n## GLOSSARY & TERMINOLOGY\n",
+        dynamic_state="",
+    )
+
+    await session.analyze_source(
+        client, "model", "End of chapter one.", "English", "Vietnamese",
+        0, 2, scene_key="chapter-1",
+    )
+    await session.analyze_source(
+        client, "model", "Opening of chapter two.", "English", "Vietnamese",
+        1, 2, scene_key="chapter-2",
+    )
+
+    second_prompt = client.generate.call_args_list[-1].kwargs["prompt"]
+    assert "Opening of chapter two." in second_prompt
+    assert "End of chapter one." not in second_prompt
+
+
+@pytest.mark.asyncio
 async def test_context_session_preserves_dialogue_state_through_narration(tmp_path):
     from src.utils.novel_context import NovelContextSession
 
@@ -5096,7 +5129,7 @@ async def test_consolidation_prunes_first_pass_non_character_entries():
 
 
 @pytest.mark.asyncio
-async def test_consolidation_preserves_identity_link_for_merged_nonhuman_label():
+async def test_consolidation_does_not_invent_identity_link_from_duplicate_descriptions():
     global_lore = (
         "# GLOBAL LORE\n\n"
         "## CHARACTERS & GENDERS\n"
@@ -5135,7 +5168,35 @@ async def test_consolidation_preserves_identity_link_for_merged_nonhuman_label()
     assert logs
     assert "- Gelatinous Monster: Unspecified" not in result_lore
     assert "- Metamorph: Unspecified, transparent liquid-like created experimental subject" in result_lore
-    assert "- Gelatinous Monster: Metamorph" in result_lore
+    assert "- Gelatinous Monster: Metamorph" not in result_lore
+
+
+@pytest.mark.asyncio
+async def test_consolidation_rejects_correction_protocol_entity_and_alias():
+    global_lore = (
+        "# GLOBAL LORE\n\n## CHARACTERS & GENDERS\n"
+        "- CORRECTION: Male, rookie trainer and mentor figure.\n"
+        "- Tomio Momozawa: Male, rookie trainer and mentor figure.\n\n"
+        "## CHARACTER ALIASES\n- CORRECTION: Tomio Momozawa\n\n"
+        "## GLOSSARY & TERMINOLOGY\n"
+    )
+    response = MagicMock()
+    response.content = (
+        "[CHARACTERS]\n- Tomio Momozawa: Male, rookie trainer and mentor figure.\n"
+        "[IDENTITY_LINKS]\n- CORRECTION: Tomio Momozawa"
+    )
+    client = MagicMock()
+    client.generate = AsyncMock(return_value=response)
+
+    result_lore, _ = await consolidate_context_lore(
+        llm_client=client,
+        model_name="test-model",
+        global_lore=global_lore,
+        dynamic_state="",
+    )
+
+    assert "CORRECTION" not in result_lore
+    assert "- Tomio Momozawa: Male" in result_lore
 
 
 @pytest.mark.asyncio

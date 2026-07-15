@@ -1231,6 +1231,7 @@ window.NovelContextUI = {
     structuredRelationshipResult: null,
     narratorVoiceResult: null,
     editorDiagnosticsResult: null,
+    activeEditorRepairBatch: null,
     activeEditorRetryPolls: new Set(),
     localizedView: null,
     lastResyncState: null,
@@ -1428,6 +1429,16 @@ window.NovelContextUI = {
     _renderNarratorVoice: function(pane) {
         pane.textContent = '';
         this._appendContextGuide(pane, 'narrator-voice');
+        const activeBatch = this.activeEditorRepairBatch;
+        if (activeBatch && ['queued', 'pausing', 'running'].includes(activeBatch.status)) {
+            const batchStatus = document.createElement('p');
+            batchStatus.textContent = t('translation:editor_repair_batch_progress', {
+                completed: activeBatch.completed_items || 0,
+                total: activeBatch.total_items || 0,
+                failed: activeBatch.failed_items || 0
+            });
+            pane.appendChild(batchStatus);
+        }
         const add = document.createElement('button');
         add.type = 'button';
         add.className = 'btn btn-sm btn-primary';
@@ -1549,7 +1560,38 @@ window.NovelContextUI = {
             card.append(reason, accept, reject);
             pane.appendChild(card);
         });
-        (this.narratorVoiceResult?.stale_chunks || []).forEach(chunkIndex => {
+        const staleChunks = this.narratorVoiceResult?.stale_chunks || [];
+        if (staleChunks.length) {
+            const repairAll = document.createElement('button');
+            repairAll.type = 'button';
+            repairAll.className = 'btn btn-sm btn-primary';
+            repairAll.style.margin = '0.5rem 0.5rem 0 0';
+            repairAll.textContent = t('translation:editor_repair_narrator_all', {
+                count: staleChunks.length
+            });
+            repairAll.onclick = async () => {
+                repairAll.disabled = true;
+                try {
+                    const translationId = currentTranslationIdForContext();
+                    const batch = await ApiClient.createEditorRepairBatch(
+                        translationId, 'narrator_stale'
+                    );
+                    this.activeEditorRepairBatch = batch;
+                    MessageLogger.showMessage(
+                        t('translation:editor_repair_batch_started'), 'success'
+                    );
+                    await this._pollEditorRepairBatch(translationId, batch.batch_id);
+                } catch (error) {
+                    repairAll.disabled = false;
+                    MessageLogger.showMessage(
+                        t('translation:editor_retry_failed', { error: error.message }),
+                        'error'
+                    );
+                }
+            };
+            pane.appendChild(repairAll);
+        }
+        staleChunks.forEach(chunkIndex => {
             const retry = document.createElement('button');
             retry.type = 'button';
             retry.className = 'btn btn-sm btn-secondary';
@@ -1675,6 +1717,79 @@ window.NovelContextUI = {
             warnings: result.summary?.warnings || 0
         });
         pane.appendChild(summary);
+        const activeBatch = this.activeEditorRepairBatch;
+        if (activeBatch && ['queued', 'pausing', 'running'].includes(activeBatch.status)) {
+            const batchRow = document.createElement('div');
+            batchRow.style.margin = '0.5rem 0';
+            const progress = document.createElement('span');
+            progress.textContent = t('translation:editor_repair_batch_progress', {
+                completed: activeBatch.completed_items || 0,
+                total: activeBatch.total_items || 0,
+                failed: activeBatch.failed_items || 0
+            });
+            const cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = 'btn btn-sm btn-secondary';
+            cancel.style.marginLeft = '0.75rem';
+            cancel.textContent = t('translation:editor_repair_batch_cancel');
+            cancel.onclick = async () => {
+                cancel.disabled = true;
+                await ApiClient.cancelEditorRepairBatch(
+                    currentTranslationIdForContext(), activeBatch.batch_id
+                );
+            };
+            batchRow.append(progress, cancel);
+            pane.appendChild(batchRow);
+        }
+        const currentQueue = result.current_review_queue || [];
+        if (currentQueue.length) {
+            const queueTitle = document.createElement('h4');
+            queueTitle.textContent = t('translation:editor_review_queue', {
+                count: currentQueue.length
+            });
+            pane.appendChild(queueTitle);
+            currentQueue.forEach(item => {
+                const card = document.createElement('div');
+                card.style.padding = '0.5rem';
+                card.style.borderTop = '1px solid var(--border-color)';
+                const issue = item.issues?.[0] || {};
+                const reasonKey = `translation:editor_review_reason_${item.reason_key || 'review_required'}`;
+                card.textContent = t('translation:editor_review_item', {
+                    chunk: Number(item.chunk_index) + 1,
+                    phase: item.phase || 'translation',
+                    reason: t(reasonKey, {
+                        problem: issue.problem_text || '-',
+                        expected: issue.expected_text || '-'
+                    }),
+                    attempts: item.attempts_used || 0
+                });
+                pane.appendChild(card);
+            });
+            const repairAll = document.createElement('button');
+            repairAll.type = 'button';
+            repairAll.className = 'btn btn-sm btn-primary';
+            repairAll.textContent = t('translation:editor_repair_review_all', {
+                count: currentQueue.filter(item => item.retryable).length
+            });
+            repairAll.onclick = async () => {
+                repairAll.disabled = true;
+                try {
+                    const translationId = currentTranslationIdForContext();
+                    const batch = await ApiClient.createEditorRepairBatch(
+                        translationId, 'review_required'
+                    );
+                    this.activeEditorRepairBatch = batch;
+                    await this._pollEditorRepairBatch(translationId, batch.batch_id);
+                } catch (error) {
+                    repairAll.disabled = false;
+                    MessageLogger.showMessage(
+                        t('translation:editor_retry_failed', { error: error.message }),
+                        'error'
+                    );
+                }
+            };
+            pane.appendChild(repairAll);
+        }
         const allRuns = result.runs || [];
         const latestRunByChunk = new Map();
         allRuns.forEach(run => {
@@ -1900,6 +2015,27 @@ window.NovelContextUI = {
         } finally {
             this.activeEditorRetryPolls.delete(pollKey);
         }
+    },
+
+    _pollEditorRepairBatch: async function(translationId, batchId) {
+        for (let attempt = 0; attempt < 1200; attempt += 1) {
+            const batch = await ApiClient.getEditorRepairBatch(translationId, batchId);
+            this.activeEditorRepairBatch = batch;
+            MessageLogger.showMessage(t('translation:editor_repair_batch_progress', {
+                completed: batch.completed_items || 0,
+                total: batch.total_items || 0,
+                failed: batch.failed_items || 0
+            }), batch.failed_items ? 'warning' : 'info');
+            if (['completed', 'cancelled', 'failed', 'interrupted'].includes(batch.status)) {
+                await Promise.all([
+                    this.refreshEditorDiagnostics(),
+                    this.refreshNarratorVoice()
+                ]);
+                return batch;
+            }
+            await new Promise(resolve => window.setTimeout(resolve, 1000));
+        }
+        throw new Error(t('translation:editor_repair_batch_timeout'));
     },
 
     _renderStructuredPane: function(pane, kind) {

@@ -148,3 +148,47 @@ def build_unit_prompt_context(
         narrator=narrator,
         nearby_source="\n".join(str(item) for item in nearby_source if item),
     ).render()
+
+
+def prepare_unit_prompt_options(
+    base_options: Optional[Dict[str, Any]], *, unit_index: int, phase: str,
+    file_type: str, source_text: str, target_language: str,
+    dialogue_attribution: Optional[Dict[str, Any]] = None,
+    chapter_index: Any = None, scene_key: str = "",
+    nearby_source: Iterable[str] = (),
+) -> Dict[str, Any]:
+    """Build the common phase-aware options contract for one source unit."""
+    options = dict(base_options or {})
+    options.update({
+        "chunk_index": int(unit_index),
+        "editor_phase": str(phase),
+        "file_type": str(file_type or options.get("file_type") or ""),
+        "chapter_index": chapter_index,
+        "scene_key": str(scene_key or ""),
+        "dialogue_attribution": dict(dialogue_attribution or {}),
+    })
+    translation_id = str(options.get("translation_id") or "")
+    db = options.get("_checkpoint_db")
+    narrator = ""
+    if translation_id and db is not None:
+        from src.utils.narrator_voice import build_narrator_voice_context
+        narrator = build_narrator_voice_context(
+            translation_id, db, chunk_index=int(unit_index),
+            target_language=target_language,
+        )
+        if narrator:
+            options["narrative_voice_context"] = narrator
+    novel_context = str(options.get("novel_context") or "")
+    global_lore = novel_context
+    if novel_context:
+        from src.utils.novel_context import extract_global_lore
+        global_lore = extract_global_lore(novel_context)
+    options["prompt_context_bundle"] = build_unit_prompt_context(
+        global_lore=global_lore,
+        reference_text=source_text,
+        addressing=str(options.get("selected_addressing_context") or ""),
+        relationships=str(options.get("selected_relationship_context") or ""),
+        narrator=narrator,
+        nearby_source=nearby_source,
+    )
+    return options

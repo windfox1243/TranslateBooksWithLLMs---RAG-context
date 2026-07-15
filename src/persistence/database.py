@@ -22,6 +22,10 @@ def _evidence_fingerprint(*parts: Any) -> str:
 
 
 _TRANSLATION_CHILD_TABLES = (
+    "refinement_chunk_results",
+    "refinement_passes",
+    "editor_repair_batch_items",
+    "editor_repair_batches",
     "editor_runs",
     "context_narrator_bootstrap_attempts",
     "context_narrator_conflicts",
@@ -678,6 +682,7 @@ class Database:
                     translation_id TEXT NOT NULL,
                     chunk_index INTEGER NOT NULL,
                     phase TEXT NOT NULL DEFAULT 'translation',
+                    refinement_pass_id TEXT,
                     provider TEXT,
                     model TEXT,
                     source_language TEXT,
@@ -728,6 +733,73 @@ class Database:
                     excerpts JSON,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (run_id) REFERENCES editor_runs(id) ON DELETE CASCADE
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS editor_repair_batches (
+                    batch_id TEXT PRIMARY KEY,
+                    translation_id TEXT NOT NULL,
+                    scope TEXT NOT NULL,
+                    phase TEXT NOT NULL DEFAULT 'effective',
+                    status TEXT NOT NULL DEFAULT 'queued',
+                    stay_paused INTEGER NOT NULL DEFAULT 1,
+                    cancel_requested INTEGER NOT NULL DEFAULT 0,
+                    total_items INTEGER NOT NULL DEFAULT 0,
+                    completed_items INTEGER NOT NULL DEFAULT 0,
+                    succeeded_items INTEGER NOT NULL DEFAULT 0,
+                    failed_items INTEGER NOT NULL DEFAULT 0,
+                    error TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    started_at TIMESTAMP,
+                    completed_at TIMESTAMP
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS editor_repair_batch_items (
+                    batch_id TEXT NOT NULL,
+                    translation_id TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    phase TEXT NOT NULL DEFAULT 'effective',
+                    status TEXT NOT NULL DEFAULT 'queued',
+                    outcome TEXT,
+                    message TEXT,
+                    started_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    PRIMARY KEY (batch_id, chunk_index, phase),
+                    FOREIGN KEY (batch_id) REFERENCES editor_repair_batches(batch_id)
+                        ON DELETE CASCADE
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS refinement_passes (
+                    pass_id TEXT PRIMARY KEY,
+                    translation_id TEXT NOT NULL,
+                    context_revision INTEGER NOT NULL DEFAULT 0,
+                    source_mode TEXT NOT NULL DEFAULT 'checkpoint',
+                    alignment_mode TEXT NOT NULL DEFAULT 'exact',
+                    status TEXT NOT NULL DEFAULT 'running',
+                    expected_units INTEGER NOT NULL DEFAULT 0,
+                    promoted INTEGER NOT NULL DEFAULT 0,
+                    error TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TIMESTAMP
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS refinement_chunk_results (
+                    pass_id TEXT NOT NULL,
+                    translation_id TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    base_chunk_index INTEGER,
+                    source_text TEXT,
+                    refined_text TEXT,
+                    chunk_data JSON,
+                    status TEXT NOT NULL,
+                    quality_status TEXT NOT NULL DEFAULT 'not_checked',
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (pass_id, chunk_index),
+                    FOREIGN KEY (pass_id) REFERENCES refinement_passes(pass_id)
+                        ON DELETE CASCADE
                 )
             """)
 
@@ -858,6 +930,7 @@ class Database:
                 "unresolved_issue_count": "INTEGER NOT NULL DEFAULT 0",
                 "result_state": "TEXT NOT NULL DEFAULT 'unchanged_draft'",
                 "recovered_truncation": "INTEGER NOT NULL DEFAULT 0",
+                "refinement_pass_id": "TEXT",
             }
             for column, definition in editor_run_migrations.items():
                 if column not in editor_run_columns:
@@ -1673,7 +1746,7 @@ class Database:
     def create_editor_run(self, payload: Dict[str, Any]) -> Optional[int]:
         """Create one locally persisted Senior Editor run."""
         fields = (
-            "translation_id", "chunk_index", "phase", "provider", "model",
+            "translation_id", "chunk_index", "phase", "refinement_pass_id", "provider", "model",
             "source_language", "target_language", "file_type",
             "prompt_version", "contract_version", "outcome",
         )
@@ -1875,6 +1948,69 @@ class Database:
             review_count = outcomes.get("review_required", 0)
             degraded = outcomes.get("transport_failed", 0)
             hard_failed = outcomes.get("blocked", 0)
+            latest_by_unit: Dict[tuple, Dict[str, Any]] = {}
+            for row in rows:
+                effective_phase = str(row.get("phase") or "translation")
+                if effective_phase == "manual_retry":
+                    effective_phase = "translation"
+                latest_by_unit[(
+                    int(row.get("chunk_index", -1)),
+                    effective_phase,
+                )] = row
+            active_refinement_indices = {
+                int(item[0]) for item in conn.execute(
+                    "SELECT r.base_chunk_index FROM refinement_chunk_results r "
+                    "JOIN refinement_passes p ON p.pass_id=r.pass_id "
+                    "WHERE p.translation_id=? AND p.promoted=1 "
+                    "AND r.base_chunk_index IS NOT NULL",
+                    (translation_id,),
+                ).fetchall()
+            }
+            current_runs = [
+                row for (chunk_index, phase), row in latest_by_unit.items()
+                if not (
+                    phase == "translation"
+                    and chunk_index in active_refinement_indices
+                )
+            ]
+            current_review_queue = []
+            for row in current_runs:
+                if row.get("outcome") not in {
+                    "review_required", "transport_failed", "blocked",
+                }:
+                    continue
+                reason_codes = []
+                for attempt in row.get("attempts") or []:
+                    reason_codes.extend(attempt.get("reason_codes") or [])
+                reason_codes.extend(
+                    (row.get("diagnostics") or {}).get("reason_codes") or []
+                )
+                current_review_queue.append({
+                    "run_id": row.get("id"),
+                    "chunk_index": row.get("chunk_index"),
+                    "phase": row.get("phase") or "translation",
+                    "outcome": row.get("outcome"),
+                    "failure_class": row.get("failure_class"),
+                    "attempts_used": len(row.get("attempts") or []),
+                    "reason_codes": list(dict.fromkeys(
+                        str(code) for code in reason_codes if code
+                    ))[:12],
+                    "retryable": row.get("outcome") in {
+                        "review_required", "transport_failed",
+                    },
+                })
+            current_successful = sum(
+                1 for row in current_runs
+                if row.get("outcome") in {
+                    "no_issues", "warnings_only", "locally_repaired", "llm_repaired",
+                }
+            )
+            current_degraded = sum(
+                1 for row in current_runs if row.get("outcome") == "transport_failed"
+            )
+            current_blocked = sum(
+                1 for row in current_runs if row.get("outcome") == "blocked"
+            )
             return {
                 "translation_id": translation_id,
                 "classification": "classified",
@@ -1883,10 +2019,14 @@ class Database:
                     "outcomes": outcomes,
                     "failure_classes": failures,
                     "result_states": result_states,
-                    "successful": successful,
-                    "review_required": review_count,
-                    "degraded": degraded,
-                    "hard_failed": hard_failed,
+                    "successful": current_successful,
+                    "review_required": len(current_review_queue),
+                    "historical_successful": successful,
+                    "historical_review_required": review_count,
+                    "degraded": current_degraded,
+                    "hard_failed": current_blocked,
+                    "current_total": len(current_runs),
+                    "current_review_required": len(current_review_queue),
                     "warnings": sum(
                         int(row.get("warning_count", 0) or 0) for row in rows
                     ),
@@ -1894,8 +2034,230 @@ class Database:
                         int(bool(row.get("recovered_truncation"))) for row in rows
                     ),
                 },
+                "current_review_queue": current_review_queue,
                 "runs": rows,
             }
+
+    def create_editor_repair_batch(
+        self, batch_id: str, translation_id: str, scope: str, phase: str,
+        chunk_indices: List[int], *, stay_paused: bool = True,
+    ) -> bool:
+        """Persist a repair batch and its immutable initial work list."""
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                conn.execute(
+                    "INSERT INTO editor_repair_batches "
+                    "(batch_id, translation_id, scope, phase, stay_paused, total_items) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (batch_id, translation_id, scope, phase,
+                     int(bool(stay_paused)), len(chunk_indices)),
+                )
+                conn.executemany(
+                    "INSERT INTO editor_repair_batch_items "
+                    "(batch_id, translation_id, chunk_index, phase) VALUES (?, ?, ?, ?)",
+                    [(batch_id, translation_id, int(index), phase)
+                     for index in chunk_indices],
+                )
+                self._commit_connection(conn)
+                return True
+            except Exception as exc:
+                print(f"Error creating editor repair batch: {exc}")
+                return False
+
+    def reconcile_interrupted_operations(self) -> None:
+        """Mark work left active by a previous application process as interrupted."""
+        with self._lock:
+            conn = self._get_connection()
+            conn.execute(
+                "UPDATE editor_repair_batches SET status='interrupted', "
+                "error=COALESCE(error, 'application_restarted'), "
+                "completed_at=CURRENT_TIMESTAMP "
+                "WHERE status IN ('queued', 'pausing', 'running')"
+            )
+            conn.execute(
+                "UPDATE refinement_passes SET status='interrupted', "
+                "error=COALESCE(error, 'application_restarted'), "
+                "completed_at=CURRENT_TIMESTAMP WHERE status='running'"
+            )
+            self._commit_connection(conn)
+
+    def update_editor_repair_batch(
+        self, batch_id: str, **changes: Any,
+    ) -> bool:
+        allowed = {
+            "status", "cancel_requested", "completed_items",
+            "succeeded_items", "failed_items", "error", "started_at",
+            "completed_at",
+        }
+        payload = {key: value for key, value in changes.items() if key in allowed}
+        if not payload:
+            return True
+        with self._lock:
+            conn = self._get_connection()
+            assignments = ", ".join(f"{key} = ?" for key in payload)
+            values = list(payload.values()) + [batch_id]
+            cursor = conn.execute(
+                f"UPDATE editor_repair_batches SET {assignments} WHERE batch_id = ?",
+                values,
+            )
+            self._commit_connection(conn)
+            return cursor.rowcount > 0
+
+    def update_editor_repair_batch_item(
+        self, batch_id: str, chunk_index: int, phase: str, **changes: Any,
+    ) -> bool:
+        allowed = {"status", "outcome", "message", "started_at", "completed_at"}
+        payload = {key: value for key, value in changes.items() if key in allowed}
+        if not payload:
+            return True
+        with self._lock:
+            conn = self._get_connection()
+            assignments = ", ".join(f"{key} = ?" for key in payload)
+            values = list(payload.values()) + [batch_id, int(chunk_index), phase]
+            cursor = conn.execute(
+                f"UPDATE editor_repair_batch_items SET {assignments} "
+                "WHERE batch_id = ? AND chunk_index = ? AND phase = ?",
+                values,
+            )
+            self._commit_connection(conn)
+            return cursor.rowcount > 0
+
+    def get_editor_repair_batch(self, batch_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            conn = self._get_connection()
+            row = conn.execute(
+                "SELECT * FROM editor_repair_batches WHERE batch_id = ?",
+                (batch_id,),
+            ).fetchone()
+            if not row:
+                return None
+            result = dict(row)
+            result["stay_paused"] = bool(result.get("stay_paused"))
+            result["cancel_requested"] = bool(result.get("cancel_requested"))
+            result["items"] = [dict(item) for item in conn.execute(
+                "SELECT * FROM editor_repair_batch_items WHERE batch_id = ? "
+                "ORDER BY chunk_index",
+                (batch_id,),
+            ).fetchall()]
+            return result
+
+    def find_active_editor_repair_batch(
+        self, translation_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            conn = self._get_connection()
+            row = conn.execute(
+                "SELECT batch_id FROM editor_repair_batches "
+                "WHERE translation_id = ? AND status IN ('queued', 'pausing', 'running') "
+                "ORDER BY created_at DESC LIMIT 1",
+                (translation_id,),
+            ).fetchone()
+        return self.get_editor_repair_batch(row["batch_id"]) if row else None
+
+    def create_refinement_pass(
+        self, pass_id: str, translation_id: str, *, context_revision: int = 0,
+        source_mode: str = "checkpoint", alignment_mode: str = "exact",
+        expected_units: int = 0,
+    ) -> bool:
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                conn.execute(
+                    "INSERT INTO refinement_passes "
+                    "(pass_id, translation_id, context_revision, source_mode, "
+                    "alignment_mode, expected_units) VALUES (?, ?, ?, ?, ?, ?)",
+                    (pass_id, translation_id, int(context_revision), source_mode,
+                     alignment_mode, int(expected_units)),
+                )
+                self._commit_connection(conn)
+                return True
+            except Exception as exc:
+                print(f"Error creating refinement pass: {exc}")
+                return False
+
+    def save_refinement_chunk_result(
+        self, pass_id: str, translation_id: str, chunk_index: int,
+        *, base_chunk_index: Optional[int], source_text: str, refined_text: str,
+        chunk_data: Optional[Dict[str, Any]] = None, status: str = "completed",
+        quality_status: str = "passed",
+    ) -> bool:
+        with self._lock:
+            conn = self._get_connection()
+            conn.execute(
+                "INSERT INTO refinement_chunk_results "
+                "(pass_id, translation_id, chunk_index, base_chunk_index, source_text, "
+                "refined_text, chunk_data, status, quality_status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(pass_id, chunk_index) DO UPDATE SET "
+                "base_chunk_index=excluded.base_chunk_index, source_text=excluded.source_text, "
+                "refined_text=excluded.refined_text, chunk_data=excluded.chunk_data, "
+                "status=excluded.status, quality_status=excluded.quality_status, "
+                "updated_at=CURRENT_TIMESTAMP",
+                (pass_id, translation_id, int(chunk_index), base_chunk_index,
+                 source_text, refined_text,
+                 json.dumps(chunk_data or {}, ensure_ascii=False), status, quality_status),
+            )
+            self._commit_connection(conn)
+            return True
+
+    def finish_refinement_pass(
+        self, pass_id: str, *, successful: bool, error: str = "",
+    ) -> bool:
+        with self._lock:
+            conn = self._get_connection()
+            row = conn.execute(
+                "SELECT translation_id, expected_units, alignment_mode "
+                "FROM refinement_passes WHERE pass_id = ?", (pass_id,),
+            ).fetchone()
+            if not row:
+                return False
+            counts = conn.execute(
+                "SELECT COUNT(*) AS total, "
+                "SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS usable "
+                "FROM refinement_chunk_results WHERE pass_id = ?", (pass_id,),
+            ).fetchone()
+            exact = (
+                row["alignment_mode"] == "exact"
+                and int(counts["total"] or 0) == int(row["expected_units"] or 0)
+                and int(counts["usable"] or 0) == int(row["expected_units"] or 0)
+            )
+            promoted = bool(successful and exact)
+            status = "completed" if promoted else "failed"
+            failure = error or ("refinement_unit_alignment_mismatch" if successful else "refinement_failed")
+            conn.execute(
+                "UPDATE refinement_passes SET status=?, promoted=?, error=?, "
+                "completed_at=CURRENT_TIMESTAMP WHERE pass_id=?",
+                (status, int(promoted), None if promoted else failure, pass_id),
+            )
+            if promoted:
+                conn.execute(
+                    "UPDATE refinement_passes SET promoted=0 WHERE translation_id=? "
+                    "AND pass_id<>?", (row["translation_id"], pass_id),
+                )
+            self._commit_connection(conn)
+            return promoted
+
+    def get_active_refinement_results(self, translation_id: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            conn = self._get_connection()
+            row = conn.execute(
+                "SELECT pass_id FROM refinement_passes WHERE translation_id=? "
+                "AND promoted=1 ORDER BY completed_at DESC LIMIT 1",
+                (translation_id,),
+            ).fetchone()
+            if not row:
+                return []
+            results = [dict(item) for item in conn.execute(
+                "SELECT * FROM refinement_chunk_results WHERE pass_id=? "
+                "ORDER BY chunk_index", (row["pass_id"],),
+            ).fetchall()]
+            for item in results:
+                try:
+                    item["chunk_data"] = json.loads(item.get("chunk_data") or "{}")
+                except (TypeError, ValueError):
+                    item["chunk_data"] = {}
+            return results
 
     def upsert_addressing_rule(
         self,
