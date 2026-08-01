@@ -260,6 +260,20 @@ Browse models: [build.nvidia.com](https://build.nvidia.com/)
 
 ---
 
+## Endpoint Allowlist
+
+The web API lets a request choose the endpoint the server calls, so the server checks that endpoint against an allowlist before using it. Accepted out of the box: the known provider hosts (`api.openai.com`, `generativelanguage.googleapis.com`, `openrouter.ai`, `api.mistral.ai`, `api.deepseek.com`, `api.poe.com`, `integrate.api.nvidia.com`), every `*_API_ENDPOINT` configured in your `.env`, and any loopback, LAN or `host.docker.internal` address so self-hosted Ollama, LM Studio, llama.cpp and vLLM keep working. Anything else returns HTTP 400.
+
+To allow a self-hosted gateway on a public hostname, add it to `LLM_ENDPOINT_ALLOWLIST` in `.env` (comma-separated; subdomains of a listed host are covered):
+
+```bash
+LLM_ENDPOINT_ALLOWLIST=llm.internal.example.com,gateway.example.org
+```
+
+This variable is read at startup only and is deliberately not editable from the web UI. A second rule pairs with it: when a request supplies an endpoint that differs from the configured default, the server refuses to attach the API key stored in `.env` — that request must send its own key, or it is rejected. Together these guarantee a stored credential is never sent to a host the request chose.
+
+---
+
 ## API Key Rotation
 
 Every cloud provider above accepts a comma-separated list of keys (e.g. `key1,key2,key3`). The system automatically rotates keys on HTTP 429 — useful for chaining free-tier accounts. See [API_KEY_ROTATION.md](API_KEY_ROTATION.md) for details.

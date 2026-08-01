@@ -19,7 +19,7 @@ from src.common.provider_metadata import PROVIDER_ENV_VARS, provider_env_var
 # configured in .env. Resolved back to the real env value server-side.
 USE_ENV_SENTINEL = '__USE_ENV__'
 
-def resolve_api_key(value, env_var_name, config_default=''):
+def resolve_api_key(value, env_var_name, config_default='', allow_env_fallback=True):
     """Resolve a per-request API-key value to the key to actually use.
 
     A real key (anything truthy that isn't the ``__USE_ENV__`` sentinel) is
@@ -32,12 +32,18 @@ def resolve_api_key(value, env_var_name, config_default=''):
         env_var_name: Env var to fall back to. Empty/None skips the env lookup.
         config_default: Last-resort default (e.g. the value loaded into the
             config module at import time) when the env var is unset.
+        allow_env_fallback: When ``False``, an absent or sentinel value resolves
+            to ``''`` instead of consulting the environment. Callers use this
+            when the request chose the destination host: the server's stored
+            key must never travel to an endpoint the client picked.
 
     Returns:
         The resolved key string (possibly empty if nothing is configured).
     """
     if value and value != USE_ENV_SENTINEL:
         return value
+    if not allow_env_fallback:
+        return ''
     if not env_var_name:
         return config_default
     return os.getenv(env_var_name, config_default)

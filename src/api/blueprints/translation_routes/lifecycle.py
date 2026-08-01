@@ -24,12 +24,15 @@ from .helpers import (
     _clamp_chunk_tokens,
     _clamp_parallel_workers,
     _continued_output_filename,
+    _drop_env_keys_for_overridden_endpoints,
+    _editor_endpoint_target,
     _is_context_resync_active,
     _prompt_options_from_start_request,
     _refresh_inactive_context_resync_state,
     _strip_api_keys,
     _unfinished_context_resync_state,
     _update_context_resync_state,
+    _validate_endpoint_and_key_pairing,
 )
 
 
@@ -177,6 +180,26 @@ def register(bp, deps, shared):
         else:
             config['text'] = data['text']
             config['file_type'] = data.get('file_type', 'txt')
+
+        # A request-chosen endpoint must be allowlisted, and must carry its own
+        # key: the server's .env key never travels to a host the client picked.
+        # The Senior Editor's own endpoint is held to the same rule.
+        requested_endpoint = data.get('llm_api_endpoint')
+        provider = (config.get('llm_provider') or 'ollama').lower()
+        editor_provider, _ = _editor_endpoint_target(config)
+        request_key = data.get(f'{provider}_api_key')
+        editor_request_key = data.get(f'{editor_provider}_api_key')
+        pairing_error = _validate_endpoint_and_key_pairing(
+            config,
+            requested_endpoint,
+            request_key=request_key,
+            editor_request_key=editor_request_key,
+        )
+        if pairing_error is not None:
+            return pairing_error
+        _drop_env_keys_for_overridden_endpoints(
+            config, request_key=request_key, editor_request_key=editor_request_key
+        )
 
         # Create translation in state manager
         state_manager.create_translation(translation_id, config)
