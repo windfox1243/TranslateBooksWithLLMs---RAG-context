@@ -6,9 +6,10 @@ import mimetypes
 import os
 import re
 import secrets
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Iterable, Optional, Set, Union
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,120 @@ logger = logging.getLogger(__name__)
 class SecurityError(Exception):
     """Custom exception for security-related errors"""
     pass
+
+
+# === Archive path containment ===================================================
+#
+# Archive entry names and EPUB manifest hrefs are attacker-controlled: a crafted
+# entry such as '../../evil.txt' would otherwise let an extraction escape its
+# destination directory (zip slip).
+
+_DRIVE_PREFIX_RE = re.compile(r'^[A-Za-z]:')
+
+
+def is_safe_archive_member(entry_name: str) -> bool:
+    """
+    Return True if an archive entry name is safe to join to a destination.
+
+    Pure and OS-independent: no filesystem access. A trailing '/' (directory
+    entry) and a leading './' are allowed; '..' is only rejected when it is a
+    whole path component.
+    """
+    if not entry_name or not entry_name.strip():
+        return False
+
+    # Control characters (including NUL) never belong in a legitimate entry name
+    if any(ord(char) < 0x20 for char in entry_name):
+        return False
+
+    # The ZIP spec mandates '/' as the separator, so an entry containing '\' is
+    # either malicious or already broken: treating it as a separator is the safe
+    # reading on Windows.
+    normalized = entry_name.replace('\\', '/')
+
+    # POSIX absolute path or UNC path
+    if normalized.startswith('/'):
+        return False
+
+    # Windows drive-relative or drive-absolute path
+    if _DRIVE_PREFIX_RE.match(normalized):
+        return False
+
+    if any(component == '..' for component in normalized.split('/')):
+        return False
+
+    return True
+
+
+def find_unsafe_archive_member(entry_names: Iterable[str]) -> Optional[str]:
+    """Return the first unsafe entry name, or None if every name is safe."""
+    for entry_name in entry_names:
+        if not is_safe_archive_member(entry_name):
+            return entry_name
+    return None
+
+
+def _is_within(base: Union[str, Path], target: Union[str, Path]) -> bool:
+    """
+    Return True only if `target` resolves to a location inside `base`.
+
+    This mirrors PathValidator.is_within_directory (resolve both sides, then
+    compare with Path.relative_to — never str.startswith, which would treat
+    '/uploads-evil' as inside '/uploads'). It is reimplemented here on purpose:
+    src/utils must not import from src/api.
+    """
+    try:
+        base_resolved = Path(base).resolve()
+        target_resolved = Path(target).resolve()
+    except OSError:
+        return False
+    try:
+        target_resolved.relative_to(base_resolved)
+        return True
+    except ValueError:
+        return False
+
+
+def safe_extract_zip(zip_ref: zipfile.ZipFile, destination: Union[str, Path]) -> None:
+    """
+    Extract a ZIP archive into `destination`, refusing any escaping entry.
+
+    Every entry is validated before a single byte is written, so a rejected
+    archive leaves the destination untouched.
+
+    Raises:
+        SecurityError: if any entry name would escape `destination`.
+    """
+    entry_names = zip_ref.namelist()
+
+    bad = find_unsafe_archive_member(entry_names)
+    if bad is not None:
+        raise SecurityError(f"Unsafe archive entry path: {bad!r}")
+
+    # Belt and braces: also verify the resolved join stays inside the destination
+    for entry_name in entry_names:
+        if not _is_within(destination, Path(destination) / entry_name):
+            raise SecurityError(f"Unsafe archive entry path: {entry_name!r}")
+
+    zip_ref.extractall(destination)
+
+
+def resolve_within(base: Union[str, Path], relative: str) -> Path:
+    """
+    Resolve `relative` against `base`, refusing anything that escapes `base`.
+
+    Raises:
+        SecurityError: if `relative` is an unsafe archive member or resolves
+            outside `base`.
+    """
+    if not is_safe_archive_member(relative):
+        raise SecurityError(f"Unsafe relative path: {relative!r}")
+
+    resolved = (Path(base) / relative).resolve()
+    if not _is_within(base, resolved):
+        raise SecurityError(f"Unsafe relative path: {relative!r}")
+
+    return resolved
 
 
 @dataclass
@@ -395,6 +510,14 @@ class SecureFileHandler:
             with zipfile.ZipFile(file_path, 'r') as epub_zip:
                 file_list = epub_zip.namelist()
 
+                # Reject archives whose entries would escape the extraction dir
+                bad = find_unsafe_archive_member(file_list)
+                if bad is not None:
+                    return FileValidationResult(
+                        is_valid=False,
+                        error_message=f"EPUB contains an unsafe entry path: {bad}"
+                    )
+
                 # Check for required EPUB files
                 if 'mimetype' not in file_list:
                     warnings.append("Missing mimetype file")
@@ -516,6 +639,14 @@ class SecureFileHandler:
             # Basic DOCX structure validation
             with zipfile.ZipFile(file_path, 'r') as docx_zip:
                 file_list = docx_zip.namelist()
+
+                # Reject archives whose entries would escape the extraction dir
+                bad = find_unsafe_archive_member(file_list)
+                if bad is not None:
+                    return FileValidationResult(
+                        is_valid=False,
+                        error_message=f"DOCX contains an unsafe entry path: {bad}"
+                    )
 
                 # Check for required DOCX files
                 has_content_types = '[Content_Types].xml' in file_list

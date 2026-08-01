@@ -32,6 +32,7 @@ from src.config import (
     NAMESPACES,
     THINKING_MODELS,
 )
+from src.utils.security import safe_extract_zip
 
 from ..common.translation_orchestrator import GenericTranslationOrchestrator
 from ..context_optimizer import (
@@ -396,7 +397,7 @@ def _extract_epub(input_filepath: str, temp_dir: str, log_callback: Optional[Cal
         log_callback("epub_extract_start", "Extracting EPUB...")
 
     with zipfile.ZipFile(input_filepath, 'r') as zip_ref:
-        zip_ref.extractall(temp_dir)
+        safe_extract_zip(zip_ref, temp_dir)
 
 
 def _find_opf_file(temp_dir: str) -> Optional[str]:

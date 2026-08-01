@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.utils.security import SecurityError, resolve_within, safe_extract_zip
+
 from .database import Database
 
 
@@ -956,7 +958,7 @@ class CheckpointManager:
 
                     # Extract original EPUB
                     with zipfile.ZipFile(preserved_input_path, 'r') as zip_ref:
-                        zip_ref.extractall(temp_path)
+                        safe_extract_zip(zip_ref, temp_path)
 
                     # Restore translated files from checkpoint
                     restore_success = self.restore_epub_files(translation_id, temp_path)
@@ -1021,14 +1023,18 @@ class CheckpointManager:
         job_dir = self.uploads_dir / translation_id / "translated_files"
         job_dir.mkdir(parents=True, exist_ok=True)
 
-        # Preserve directory structure
-        file_path = job_dir / file_href
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-
         try:
+            # Preserve directory structure, but never outside the job directory:
+            # file_href comes from the EPUB manifest and is attacker-controlled
+            file_path = resolve_within(job_dir, file_href)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
             with open(file_path, 'wb') as f:
                 f.write(file_content)
             return True
+        except SecurityError:
+            print(f"Refusing unsafe EPUB file href: {file_href}")
+            return False
         except Exception as e:
             print(f"Error saving EPUB file {file_href}: {e}")
             return False
@@ -1056,7 +1062,13 @@ class CheckpointManager:
             for file_path in translated_files_dir.rglob('*'):
                 if file_path.is_file():
                     rel_path = file_path.relative_to(translated_files_dir)
-                    dest_path = work_dir / rel_path
+                    try:
+                        dest_path = resolve_within(
+                            work_dir, str(rel_path).replace('\\', '/')
+                        )
+                    except SecurityError:
+                        print(f"Skipping unsafe restored EPUB path: {rel_path}")
+                        continue
                     dest_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(file_path, dest_path)
             return True
