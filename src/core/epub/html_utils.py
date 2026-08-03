@@ -5,9 +5,67 @@ been processed with placeholder substitution. These utilities are used primarily
 in EPUB translation workflows.
 """
 
-from typing import Dict, Optional, Tuple
+import re
+from typing import Dict, Optional, Tuple, Union
 
 from src.common.placeholder_format import PlaceholderFormat
+
+# A Unicode letter: any word character that is neither a digit nor an
+# underscore. Everything else (digits, Latin and CJK punctuation, symbols,
+# whitespace) carries nothing an LLM could translate.
+_UNICODE_LETTER_RE = re.compile(r'[^\W\d_]', re.UNICODE)
+
+
+def _resolve_placeholder_format(
+    placeholder_format: Optional[Union[Tuple[str, str], PlaceholderFormat]]
+) -> PlaceholderFormat:
+    """Resolve the several shapes callers pass as a placeholder format.
+
+    The chunk loop passes a legacy (prefix, suffix) tuple; other callers pass
+    a PlaceholderFormat or nothing at all. Same convention as
+    reinsert_placeholders below.
+    """
+    if placeholder_format is None:
+        return PlaceholderFormat.from_config()
+    if hasattr(placeholder_format, 'remove_all'):
+        return placeholder_format
+    prefix, suffix = placeholder_format
+    # Legacy tuple format: the pattern is always the unified [idN] one
+    return PlaceholderFormat(prefix, suffix, r'\[id(\d+)\]')
+
+
+def is_text_free_chunk(
+    chunk_text: str,
+    placeholder_format: Optional[Union[Tuple[str, str], PlaceholderFormat]] = None
+) -> bool:
+    """True if the chunk carries no translatable characters.
+
+    Procedure:
+      1. Remove every placeholder occurrence.
+      2. Return True iff the remainder contains no Unicode letter.
+
+    Consequences that are INTENDED, not accidental:
+      - '[id0]'          -> True   (cover page: pure markup, an <svg> image)
+      - '[id0]==[id1]'   -> True   (separator paragraph, nothing to translate)
+      - '[id0]……[id1]'   -> True   (CJK ellipsis only)
+      - '[id0]第1章[id1]' -> False  (has letters)
+      - '[id0]2024[id1]' -> True   (digits are not letters; a bare number is
+                                    correct as-is in every target language)
+
+    Args:
+        chunk_text: Chunk text with placeholders
+        placeholder_format: Optional (prefix, suffix) tuple or PlaceholderFormat.
+                          If None, uses the unified format [idN]
+
+    Returns:
+        True when the chunk must pass through verbatim instead of being sent
+        to the LLM
+    """
+    if not chunk_text:
+        return True
+
+    fmt = _resolve_placeholder_format(placeholder_format)
+    return _UNICODE_LETTER_RE.search(fmt.remove_all(chunk_text)) is None
 
 
 def extract_text_and_positions(text_with_placeholders: str) -> Tuple[str, Dict[int, float]]:
@@ -68,15 +126,8 @@ def reinsert_placeholders(
     if not positions:
         return translated_text
 
-    # Use centralized PlaceholderFormat
-    if placeholder_format is None:
-        fmt = PlaceholderFormat.from_config()
-    else:
-        # Support legacy tuple format for backward compatibility
-        prefix, suffix = placeholder_format
-        # Create pattern from prefix/suffix (simplified - assumes [idN] format)
-        pattern = r'\[id(\d+)\]'
-        fmt = PlaceholderFormat(prefix, suffix, pattern)
+    # Use centralized PlaceholderFormat (supports the legacy tuple format)
+    fmt = _resolve_placeholder_format(placeholder_format)
 
     text_length = len(translated_text)
 

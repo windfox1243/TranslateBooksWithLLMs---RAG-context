@@ -92,6 +92,7 @@ from .exceptions import (
     XmlParsingError,
 )
 from .html_chunker import HtmlChunker
+from .html_utils import is_text_free_chunk
 from .placeholder_validator import PlaceholderValidator
 from .tag_preservation import TagPreserver
 from .translation_metrics import TranslationMetrics
@@ -1278,6 +1279,25 @@ async def _translate_all_chunks_with_checkpoint(
 
     async def _translate_one(i, analyze_context=True):
         chunk = chunks[i]
+
+        # A chunk with no translatable character (pure markup, a '==' separator,
+        # a bare number, CJK ellipsis) has nothing for the LLM to do. Sending it
+        # anyway invites an empty answer, and an empty answer used to wipe the
+        # body -- the cover page's <svg> image was destroyed this way. Pass it
+        # through verbatim instead, before any context analysis, since there is
+        # no text to learn from either.
+        if is_text_free_chunk(chunk['text'], placeholder_format):
+            if log_callback:
+                log_callback("chunk_text_free_skipped",
+                    f"⏭️ Chunk {i + 1}/{len(chunks)} has no translatable text - kept as-is")
+            # Same completed-chunk bookkeeping as a first-try success, minus the
+            # LLM-call, token and retry counters (no request was made).
+            stats.successful_first_try += 1
+            stats.record_processed()
+            return PlaceholderManager.restore_to_global(
+                chunk['text'], chunk['global_indices']
+            )
+
         global_chunk_idx = _global_chunk_index(i)
         if global_chunk_idx > 0 and checkpoint_manager and translation_id and (
             prompt_options.get("reflection_mode")

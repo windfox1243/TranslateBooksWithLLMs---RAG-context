@@ -154,7 +154,16 @@ def replace_body_content(body_element: etree._Element, new_html: str) -> None:
     Args:
         body_element: The <body> element to modify
         new_html: New translated HTML content
+
+    Raises:
+        BodyExtractionError: if new_html is empty while the body still holds
+            content. INVARIANT: a populated body is never emptied. Replacing an
+            already-empty body with empty content stays a no-op.
     """
+    # Checked before anything is mutated, so the element is left untouched.
+    if new_html.strip() == "" and (len(body_element) > 0 or (body_element.text or "").strip()):
+        raise BodyExtractionError("refusing to replace populated <body> with empty content")
+
     # Parse the new content FIRST before clearing the body
     # This prevents data loss if parsing fails
     # Wrap in a temp element to handle multiple root elements

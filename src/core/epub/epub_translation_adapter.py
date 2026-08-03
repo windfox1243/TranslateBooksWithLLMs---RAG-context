@@ -386,7 +386,10 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
             paragraphs_tag=paragraphs_tag,
             images_by_paragraph=images_by_paragraph,
             bilingual=bilingual_flag,
-            source_paragraphs=paragraphs_text if bilingual_flag else None,
+            # Always passed: outside bilingual mode the source text is what an
+            # empty translation falls back to, so the paragraph survives instead
+            # of being dropped. The bilingual flag only drives the interleaving.
+            source_paragraphs=paragraphs_text,
         )
 
         return True, stats

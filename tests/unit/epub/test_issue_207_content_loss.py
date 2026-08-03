@@ -8,6 +8,11 @@ B. Percent-encoded manifest hrefs ("Chapter%201.xhtml") must be unquoted
    and ships untranslated.
 C. Plain Text Mode must not silently delete table cell text or
    figure/picture-wrapped images.
+D. Plain Text Mode must not empty a body whose whole content sits inside a
+   DROP_TAGS subtree (the SVG cover page), and must not delete a paragraph
+   whose translation came back empty. Both are findings F2 and F6 of
+   plan/PLAN_CjkSourceRendering.md, which share the single root cause named in
+   its §5.1: `replace_body_with_paragraphs` rebuilding the body from scratch.
 """
 import os
 import tempfile
@@ -15,11 +20,17 @@ import tempfile
 import pytest
 from lxml import etree
 
+import src.core.epub.translator as translator_module
 from src.core.epub.plain_extractor import (
     extract_plain_paragraphs,
     replace_body_with_paragraphs,
 )
-from src.core.epub.translator import _precount_chunks, _update_epub_metadata
+from src.core.epub.translator import (
+    _precount_chunks,
+    _update_epub_metadata,
+    translate_epub_file,
+)
+from tests.unit.epub.conftest import _disable_attribution, _echo_llm_client, _read
 
 # === A. dc:language metadata ===
 
@@ -376,3 +387,155 @@ class TestWeakLlmSafety:
         assert strip_hallucinated_markup(
             "Le 1<sup>er</sup> chapitre<br/>", "The 1st chapter"
         ) == "Le 1er chapitre"
+
+
+# === D. Plain Text Mode: the rebuild must never lose content ===
+
+# The reported book's cover body, verbatim: everything it holds sits inside an
+# <svg>, which is in plain_extractor.DROP_TAGS, so extraction yields zero
+# paragraphs and the rebuild would have nothing to emit.
+SVG_COVER_BODY = (
+    '<div><svg xmlns="http://www.w3.org/2000/svg" '
+    'xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 1600">'
+    '<image width="1200" height="1600" xlink:href="../Images/cover.jpg"/>'
+    "</svg></div>"
+)
+
+XLINK_HREF = "{http://www.w3.org/1999/xlink}href"
+
+
+def _local_tags(element: etree._Element) -> list:
+    return [el.tag.split("}")[-1] for el in element.iter() if isinstance(el.tag, str)]
+
+
+def _count_p(element: etree._Element) -> int:
+    return sum(1 for tag in _local_tags(element) if tag == "p")
+
+
+def _stub_create_llm_client(**kwargs):
+    return _echo_llm_client()
+
+
+class TestPlainModeCoverPage:
+    """F2: a page whose whole content is dropped must be left verbatim."""
+
+    def test_svg_cover_body_survives_the_rebuild(self):
+        body = _parse_body(SVG_COVER_BODY)
+        before = etree.tostring(body, encoding="unicode")
+
+        paragraphs, tags, images = extract_plain_paragraphs(body)
+        assert paragraphs == [] and images == {}, (
+            "precondition: the SVG subtree yields no translatable paragraph"
+        )
+        replace_body_with_paragraphs(body, paragraphs, tags, images)
+
+        assert etree.tostring(body, encoding="unicode") == before
+        local = _local_tags(body)
+        assert local.count("div") == 1
+        assert local.count("svg") == 1
+        assert local.count("image") == 1
+        image = next(el for el in body.iter() if el.tag.split("}")[-1] == "image")
+        assert image.get(XLINK_HREF) == "../Images/cover.jpg"
+
+    def test_already_empty_body_stays_a_no_op(self):
+        body = _parse_body("")
+        paragraphs, tags, images = extract_plain_paragraphs(body)
+        replace_body_with_paragraphs(body, paragraphs, tags, images)
+
+        assert len(body) == 0
+        assert not (body.text or "").strip()
+
+    @pytest.mark.asyncio
+    async def test_cover_survives_a_full_plain_text_translation(
+        self, input_epub, tmp_path, monkeypatch
+    ):
+        """End to end through translate_epub_file with Plain Text Mode on.
+
+        This is the assertion that proves the reported bug is dead: before the
+        fix the output cover page was `<body/>`.
+        """
+        monkeypatch.setattr(translator_module, "_create_llm_client", _stub_create_llm_client)
+        _disable_attribution(monkeypatch)
+        output_epub = tmp_path / "output_plain.epub"
+
+        await translate_epub_file(
+            input_filepath=str(input_epub),
+            output_filepath=str(output_epub),
+            source_language="Chinese",
+            target_language="French",
+            prompt_options={"plain_text_mode": True},
+        )
+
+        cover = _read(output_epub, "OEBPS/Text/cover.xhtml")
+        root = etree.fromstring(cover.encode("utf-8"),
+                                etree.XMLParser(recover=True))
+        local = _local_tags(root)
+        assert local.count("svg") == 1, f"cover body was emptied: {cover}"
+        assert local.count("image") == 1
+        image = next(el for el in root.iter()
+                     if isinstance(el.tag, str) and el.tag.split("}")[-1] == "image")
+        assert image.get(XLINK_HREF) == "../Images/cover.jpg"
+
+
+class TestPlainModeEmptyTranslation:
+    """F6: an empty translation must never delete the block."""
+
+    def test_empty_translation_falls_back_to_the_source_text(self):
+        body = _parse_body("<p>A paragraph the model returned nothing for.</p>")
+        paragraphs, tags, images = extract_plain_paragraphs(body)
+        replace_body_with_paragraphs(
+            body, [""], tags, images, source_paragraphs=paragraphs
+        )
+
+        assert _count_p(body) == 1
+        assert body[0].text == "A paragraph the model returned nothing for."
+
+    def test_empty_source_spacer_survives(self):
+        # A spacer <p></p> is extracted as an empty block, never sent to the LLM
+        # and echoed back as "". The output <p> count must still match the input.
+        body = _parse_body("<p>First.</p><p></p><p>Second.</p>")
+        input_p_count = _count_p(body)
+
+        paragraphs, tags, images = extract_plain_paragraphs(body)
+        replace_body_with_paragraphs(
+            body, list(paragraphs), tags, images, source_paragraphs=paragraphs
+        )
+
+        assert _count_p(body) == input_p_count == 3
+
+    def test_bilingual_empty_translation_emits_the_source_once(self):
+        body = _parse_body("<p>Le texte source.</p>")
+        paragraphs, tags, images = extract_plain_paragraphs(body)
+        replace_body_with_paragraphs(
+            body, [""], tags, images, bilingual=True, source_paragraphs=paragraphs
+        )
+
+        blocks = [(child.get("class"), child.text) for child in body]
+        assert blocks == [("plain-text-source", "Le texte source.")], (
+            "bilingual mode must not print the source twice when the "
+            f"translation is empty, got {blocks}"
+        )
+
+    def test_legacy_caller_without_source_paragraphs_keeps_the_block(self):
+        # Callers predating the source-text fallback pass no source_paragraphs.
+        # An empty translation must still emit an (empty) block, not nothing.
+        body = _parse_body("<p>Original.</p>")
+        _, tags, images = extract_plain_paragraphs(body)
+        replace_body_with_paragraphs(body, [""], tags, images)
+
+        assert _count_p(body) == 1
+        assert not (body[0].text or "")
+
+    def test_image_only_paragraph_still_yields_a_single_block(self):
+        # Both texts empty but images anchored: the plain-text-images wrapper
+        # stands in for the block, so a source <p><img/></p> comes out as one
+        # <p>, not two.
+        body = _parse_body('<p><img src="x.jpg"/></p>')
+        paragraphs, tags, images = extract_plain_paragraphs(body)
+        replace_body_with_paragraphs(
+            body, list(paragraphs), tags, images, source_paragraphs=paragraphs
+        )
+
+        assert _count_p(body) == 1
+        assert body[0].get("class") == "plain-text-images"
+        assert [img.get("src") for img in _all_imgs(body)] == ["x.jpg"]

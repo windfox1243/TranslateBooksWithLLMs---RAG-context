@@ -10,7 +10,9 @@ its base: it is folded into base（reading） first (see ruby_annotations).
 At rebuild time, the body is wiped and reconstructed as a flat sequence of
 block elements (<p>, <h1..h6>, <li>, <blockquote>, <pre>) plus, after each
 block that originally contained images, an extra <p class="plain-text-images"> wrapper
-with the original <img> elements unchanged.
+with the original <img> elements unchanged. The one case where the body is left
+alone is a page that yielded no block at all (everything inside a DROP_TAGS
+subtree, e.g. an SVG-wrapped cover): its source markup is kept verbatim.
 """
 from typing import Dict, List, Tuple
 
@@ -253,34 +255,72 @@ def replace_body_with_paragraphs(
         images_by_paragraph: anchored images per paragraph index
         bilingual: when True, emit a <p class="src"> with the source text
                    right before each translated block.
-        source_paragraphs: required when bilingual is True
+        source_paragraphs: source text per paragraph. Required when bilingual
+                   is True; otherwise optional but strongly recommended — it is
+                   what an empty translation falls back to instead of the block
+                   being dropped. Legacy callers that omit it still get an
+                   empty block rather than a deletion.
     """
+    count = len(translated_paragraphs)
+
+    # Never replace a populated body with nothing. Every iteration below emits
+    # at least one element (the block itself, its bilingual source twin, or its
+    # anchored-images wrapper), so the rebuild can only come out empty when
+    # extraction genuinely found no block at all — which is what happens to a
+    # page whose whole content sits inside a DROP_TAGS subtree, the calibre-style
+    # <div><svg><image/></svg></div> cover being the canonical case. There is
+    # nothing to translate on such a page, so keeping its source markup verbatim
+    # is exactly right; deleting it never is. This is only a backstop: the
+    # empty-translation fallback below is what keeps individual blocks alive.
+    if count == 0 and (len(body_element) or (body_element.text or "").strip()):
+        return
+
     # Clear body
     body_element.text = None
     for child in list(body_element):
         body_element.remove(child)
 
-    count = len(translated_paragraphs)
     for i in range(count):
         text = (translated_paragraphs[i] or "").strip()
+        source_text = ""
+        if source_paragraphs and i < len(source_paragraphs):
+            source_text = (source_paragraphs[i] or "").strip()
         raw_tag = paragraphs_tag[i] if i < len(paragraphs_tag) else "p"
         # <li> outside <ul>/<ol> is not valid XHTML — flatten to <p> in Plain Text Mode.
         tag = "p" if raw_tag == "li" else raw_tag
 
         # Bilingual: emit source first when we have it
-        if bilingual and source_paragraphs and i < len(source_paragraphs):
-            source_text = (source_paragraphs[i] or "").strip()
-            if source_text:
-                src_block = etree.SubElement(body_element, tag)
-                src_block.set("class", "plain-text-source")
-                src_block.text = source_text
+        source_emitted = False
+        if bilingual and source_text:
+            src_block = etree.SubElement(body_element, tag)
+            src_block.set("class", "plain-text-source")
+            src_block.text = source_text
+            source_emitted = True
 
-        # Emit translated block when there is text
+        # An empty translation must never delete the block.
         if text:
+            emit_target = True
+        elif source_emitted:
+            # Bilingual: the plain-text-source block above already carries this
+            # text, so falling back to it here would print the source twice.
+            emit_target = False
+        elif source_text:
+            # Untranslated but not deleted: the paragraph survives carrying its
+            # source text, which keeps the failure visible instead of silent.
+            emit_target = True
+        else:
+            # Nothing to say at all. Keep an empty block so the source's spacer
+            # <p></p> survives and the output block count matches the input —
+            # unless images are anchored here, in which case the images wrapper
+            # below already stands in for the block (a source <p><img/></p> must
+            # come out as one <p>, not two).
+            emit_target = not images_by_paragraph.get(i)
+
+        if emit_target:
             block = etree.SubElement(body_element, tag)
             if bilingual:
                 block.set("class", "plain-text-target")
-            block.text = text
+            block.text = text or source_text
 
         # Emit anchored images right after
         if i in images_by_paragraph and images_by_paragraph[i]:
