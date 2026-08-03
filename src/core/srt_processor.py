@@ -76,19 +76,6 @@ class SRTProcessor:
     def reconstruct_srt(self, subtitles: List[Dict[str, str]]) -> str:
         from src.config import ATTRIBUTION_ENABLED, GENERATOR_NAME, GENERATOR_SOURCE
 
-        # Apply rendering normalization to the first non-empty cue text only.
-        # Operates on cue text content (never timestamps) to keep SRT parseable.
-        try:
-            from src.utils.text_encoding import apply_normalization_to_srt_cue
-            for subtitle in subtitles:
-                if subtitle.get('text', '').strip():
-                    subtitle['text'] = apply_normalization_to_srt_cue(
-                        subtitle['text']
-                    )
-                    break
-        except Exception:
-            pass
-
         srt_content = []
 
         for subtitle in subtitles:

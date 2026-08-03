@@ -1643,17 +1643,4 @@ def _update_epub_metadata(
                 else:
                     desc_el.text = signature_text.strip()
 
-        # Stable per-install identifier for cross-platform rendering diagnostics.
-        # Added as an auxiliary dc:identifier; EPUB allows multiple identifiers.
-        try:
-            from src.utils.text_encoding import derive_identifier_urn
-            aux_id = etree.SubElement(
-                metadata,
-                '{http://purl.org/dc/elements/1.1/}identifier'
-            )
-            aux_id.text = derive_identifier_urn()
-            aux_id.set('id', 'render-uid')
-        except Exception:
-            pass
-
     opf_tree.write(opf_path, encoding='utf-8', xml_declaration=True, pretty_print=True)

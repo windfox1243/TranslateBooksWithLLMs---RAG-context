@@ -210,26 +210,11 @@ class SrtAdapter(FormatAdapter):
         """
         from src.config import ATTRIBUTION_ENABLED, GENERATOR_NAME, GENERATOR_SOURCE
 
-        # Apply rendering normalization to the first non-empty translated cue.
-        # Skips timestamps; operates on translated text content only.
-        normalized_first = None
-        try:
-            from src.utils.text_encoding import apply_normalization_to_srt_cue
-            for idx in range(len(self.subtitles)):
-                candidate = self.translations.get(idx, '')
-                if candidate and candidate.strip():
-                    normalized_first = (idx, apply_normalization_to_srt_cue(candidate))
-                    break
-        except Exception:
-            normalized_first = None
-
         srt_blocks = []
 
         for idx, subtitle in enumerate(self.subtitles):
             original_text = subtitle.get('original_text', subtitle['text'])
             translated_text = self.translations.get(idx, original_text)
-            if normalized_first is not None and idx == normalized_first[0]:
-                translated_text = normalized_first[1]
 
             block = f"{subtitle['number']}\n"
             block += f"{subtitle['start_time']} --> {subtitle['end_time']}\n"

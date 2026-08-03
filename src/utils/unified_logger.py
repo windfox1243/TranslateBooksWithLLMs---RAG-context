@@ -9,8 +9,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
-from src.utils.telemetry import get_telemetry
-
 
 class LogLevel(Enum):
     """Log levels with priority values"""
@@ -342,11 +340,6 @@ class UnifiedLogger:
         # Check minimum level
         if level.value < self.min_level.value:
             return
-
-        # Add discrete watermark to DEBUG level logs
-        if level == LogLevel.DEBUG:
-            telemetry = get_telemetry()
-            message = telemetry.annotate_log(message, "DEBUG")
 
         # Update chunk counter for LLM requests
         if log_type in (LogType.LLM_REQUEST, LogType.REFINEMENT_REQUEST) and self.translation_state['in_progress']:

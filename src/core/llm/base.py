@@ -11,11 +11,11 @@ from typing import Any, Dict, Iterable, List, Optional, Union
 
 import httpx
 
+from src import __version__
 from src.config import REQUEST_TIMEOUT, TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT
 from src.core.llm.exceptions import ProviderRequestError
 from src.core.llm.key_pool import KeyPool
 from src.core.llm.utils.extraction import TranslationExtractor
-from src.utils.telemetry import get_telemetry_headers
 
 
 def normalize_api_keys(raw: Optional[Union[str, Iterable[str]]]) -> List[str]:
@@ -144,12 +144,10 @@ class LLMProvider(ABC):
                     self._client = None
 
         if self._client is None:
-            # Add client identification headers to all requests
-            telemetry_headers = get_telemetry_headers()
             self._client = httpx.AsyncClient(
                 limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
                 timeout=httpx.Timeout(REQUEST_TIMEOUT),
-                headers=telemetry_headers
+                headers={"User-Agent": f"TranslateBookWithLLM/{__version__}"}
             )
         return self._client
 
