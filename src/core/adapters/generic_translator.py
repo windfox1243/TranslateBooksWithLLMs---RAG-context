@@ -456,7 +456,7 @@ class GenericTranslator:
 
             # 6. Translate each unit (sequentially, or with continuous concurrency)
             from src.config import UNIT_VALIDATION_RETRIES, resolve_parallel_workers
-            from src.core.common.parallel import iter_ordered_concurrent
+            from src.core.common.parallel import aclosing, iter_ordered_concurrent
             from src.core.llm.exceptions import RateLimitError
 
             chapter_mode = bool(
@@ -1345,115 +1345,118 @@ class GenericTranslator:
             # results delivered strictly in index order so checkpoints stay
             # contiguous. should_interrupt stops launching new units; already
             # in-flight ones still complete and commit.
-            async for i, result in iter_ordered_concurrent(
+            # aclosing() closes the generator at block exit, so a break or a
+            # raise cancels every in-flight request instead of leaving it running.
+            async with aclosing(iter_ordered_concurrent(
                 pending, workers, _translate_unit, check_interruption_callback
-            ):
-                unit = units[i]
+            )) as _ordered_results:
+                async for i, result in _ordered_results:
+                    unit = units[i]
 
-                if isinstance(result, RateLimitError):
-                    # Stop before committing this unit so resume restarts at it.
-                    rate_limit_error = result
-                    break
+                    if isinstance(result, RateLimitError):
+                        # Stop before committing this unit so resume restarts at it.
+                        rate_limit_error = result
+                        break
 
-                remaining -= 1
+                    remaining -= 1
 
-                if isinstance(result, Exception):
-                    if log_callback:
-                        log_callback("unit_error",
-                            f"Error translating unit {i+1}/{total_units}: {str(result)}")
-                    _record_failure(i, unit, result)
-                    next_index = i + 1
-                    continue
-
-                if isinstance(result, _ValidationFailed):
-                    # Keep whatever parsed (e.g. the cues whose markers came
-                    # back) so the output stays best-effort, but record the
-                    # unit as failed: the job ends 'partial' and the unit is
-                    # fully retranslated on retry (issue #204 mechanics).
-                    await self.adapter.save_unit_translation(
-                        unit.unit_id, result.content
-                    )
-                    _record_failure(i, unit, result)
-                    next_index = i + 1
-                    continue
-
-                translated_content = result
-                outcome = (
-                    result if isinstance(result, UnitTranslationOutcome)
-                    else UnitTranslationOutcome.completed(
-                        str(result),
-                        quality_status=getattr(result, 'quality_status', 'passed'),
-                        diagnostics=getattr(result, 'editor_validation', None),
-                    ) if result else UnitTranslationOutcome.failed(
-                        failure_class='content'
-                    )
-                )
-                translated_content = outcome.text
-                if translated_content:
-                    save_success = await self.adapter.save_unit_translation(
-                        unit.unit_id, translated_content
-                    )
-                    if not save_success:
+                    if isinstance(result, Exception):
                         if log_callback:
-                            log_callback("save_failed",
-                                f"Failed to save translation for unit {unit.unit_id}")
+                            log_callback("unit_error",
+                                f"Error translating unit {i+1}/{total_units}: {str(result)}")
                         _record_failure(i, unit, result)
                         next_index = i + 1
                         continue
 
-                    completed_count += 1
-                    failed_indices.discard(i)
-                    failed_count = len(failed_indices)
-                    if outcome.quality_status == 'review_required':
-                        review_required_indices.add(i)
-                    else:
-                        review_required_indices.discard(i)
-                    if unit.metadata is None:
-                        unit.metadata = {}
-                    unit.metadata['quality_status'] = outcome.quality_status
-                    unit.metadata.pop('execution_failure_class', None)
-                    if outcome.diagnostics:
-                        unit.metadata['editor_validation'] = outcome.diagnostics
-                    await _sync_successful_translated_context(
-                        i,
-                        unit,
-                        translated_content,
-                    )
-                    _commit_context(i, unit)
-
-                    self.checkpoint_manager.save_checkpoint(
-                        translation_id=self.translation_id,
-                        chunk_index=i,
-                        original_text=unit.content,
-                        translated_text=translated_content,
-                        chunk_data=unit.metadata,
-                        total_chunks=total_units,
-                        completed_chunks=completed_count,
-                        failed_chunks=failed_count,
-                    )
-                    if stats_callback:
-                        stats_callback({
-                            'total_chunks': total_units,
-                            'completed_chunks': completed_count,
-                            'failed_chunks': failed_count,
-                            'review_required_chunks': len(review_required_indices),
-                        })
-
-                    if sequential:
-                        completed_translations_by_index[i] = translated_content
-                        last_context = (
-                            translated_content[-200:]
-                            if len(translated_content) > 200
-                            else translated_content
+                    if isinstance(result, _ValidationFailed):
+                        # Keep whatever parsed (e.g. the cues whose markers came
+                        # back) so the output stays best-effort, but record the
+                        # unit as failed: the job ends 'partial' and the unit is
+                        # fully retranslated on retry (issue #204 mechanics).
+                        await self.adapter.save_unit_translation(
+                            unit.unit_id, result.content
                         )
+                        _record_failure(i, unit, result)
+                        next_index = i + 1
+                        continue
 
-                    if log_callback:
-                        log_callback("unit_complete",
-                            f"Unit {i+1}/{total_units} translated successfully")
-                else:
-                    _record_failure(i, unit)
+                    translated_content = result
+                    outcome = (
+                        result if isinstance(result, UnitTranslationOutcome)
+                        else UnitTranslationOutcome.completed(
+                            str(result),
+                            quality_status=getattr(result, 'quality_status', 'passed'),
+                            diagnostics=getattr(result, 'editor_validation', None),
+                        ) if result else UnitTranslationOutcome.failed(
+                            failure_class='content'
+                        )
+                    )
+                    translated_content = outcome.text
+                    if translated_content:
+                        save_success = await self.adapter.save_unit_translation(
+                            unit.unit_id, translated_content
+                        )
+                        if not save_success:
+                            if log_callback:
+                                log_callback("save_failed",
+                                    f"Failed to save translation for unit {unit.unit_id}")
+                            _record_failure(i, unit, result)
+                            next_index = i + 1
+                            continue
 
-                next_index = i + 1
+                        completed_count += 1
+                        failed_indices.discard(i)
+                        failed_count = len(failed_indices)
+                        if outcome.quality_status == 'review_required':
+                            review_required_indices.add(i)
+                        else:
+                            review_required_indices.discard(i)
+                        if unit.metadata is None:
+                            unit.metadata = {}
+                        unit.metadata['quality_status'] = outcome.quality_status
+                        unit.metadata.pop('execution_failure_class', None)
+                        if outcome.diagnostics:
+                            unit.metadata['editor_validation'] = outcome.diagnostics
+                        await _sync_successful_translated_context(
+                            i,
+                            unit,
+                            translated_content,
+                        )
+                        _commit_context(i, unit)
+
+                        self.checkpoint_manager.save_checkpoint(
+                            translation_id=self.translation_id,
+                            chunk_index=i,
+                            original_text=unit.content,
+                            translated_text=translated_content,
+                            chunk_data=unit.metadata,
+                            total_chunks=total_units,
+                            completed_chunks=completed_count,
+                            failed_chunks=failed_count,
+                        )
+                        if stats_callback:
+                            stats_callback({
+                                'total_chunks': total_units,
+                                'completed_chunks': completed_count,
+                                'failed_chunks': failed_count,
+                                'review_required_chunks': len(review_required_indices),
+                            })
+
+                        if sequential:
+                            completed_translations_by_index[i] = translated_content
+                            last_context = (
+                                translated_content[-200:]
+                                if len(translated_content) > 200
+                                else translated_content
+                            )
+
+                        if log_callback:
+                            log_callback("unit_complete",
+                                f"Unit {i+1}/{total_units} translated successfully")
+                    else:
+                        _record_failure(i, unit)
+
+                    next_index = i + 1
 
             if rate_limit_error is not None:
                 # Re-raise to trigger auto-pause (handled by the caller).

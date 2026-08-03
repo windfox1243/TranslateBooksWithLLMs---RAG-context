@@ -19,6 +19,19 @@ identical to the legacy loops.
 import asyncio
 from typing import Any, Awaitable, Callable, List, Sequence
 
+try:  # Python >= 3.10
+    from contextlib import aclosing
+except ImportError:  # pragma: no cover - Python 3.8/3.9 fallback
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def aclosing(thing):
+        """Backport of `contextlib.aclosing` (added in Python 3.10)."""
+        try:
+            yield thing
+        finally:
+            await thing.aclose()
+
 
 async def gather_window(
     items: Sequence[Any],
@@ -85,10 +98,21 @@ async def iter_ordered_concurrent(items, workers, worker, should_interrupt=None)
             The caller is responsible for detecting the interruption itself and
             persisting partial state once iteration ends.
 
-    Breaking out of the ``async for`` (e.g. on a rate-limit result) cancels any
-    still-running tasks via the generator's ``finally`` block. Because results
-    are yielded in order, every item before the one that triggered the break has
-    already been yielded (and committed by the caller).
+    Callers that may ``break`` out of the ``async for`` (e.g. on a rate-limit
+    result) MUST wrap the iteration in :func:`aclosing`::
+
+        async with aclosing(iter_ordered_concurrent(...)) as stream:
+            async for item, result in stream:
+                ...
+
+    A bare ``break`` only suspends the generator: its ``finally`` block — and
+    therefore the cancellation of the still-running tasks — is deferred to
+    garbage collection, so the abandoned LLM requests keep running (and keep
+    being billed) for an unbounded time. ``aclosing`` closes the generator at
+    block exit, which cancels every in-flight task immediately.
+
+    Because results are yielded in order, every item before the one that
+    triggered the break has already been yielded (and committed by the caller).
     """
     limit = max(1, int(workers))
     n = len(items)
