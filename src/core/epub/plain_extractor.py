@@ -4,7 +4,8 @@ Plain-text extraction and rebuild for Plain Text Mode (EPUB).
 Walks an XHTML <body> in DOM order, collecting block-level paragraphs as plain
 strings and anchoring any <img> they contain to their parent paragraph index.
 The LLM never sees inline markup or images — only the textual content of each
-block.
+block. The one exception is <ruby>, whose reading would otherwise be glued to
+its base: it is folded into base（reading） first (see ruby_annotations).
 
 At rebuild time, the body is wiped and reconstructed as a flat sequence of
 block elements (<p>, <h1..h6>, <li>, <blockquote>, <pre>) plus, after each
@@ -14,6 +15,8 @@ with the original <img> elements unchanged.
 from typing import Dict, List, Tuple
 
 from lxml import etree
+
+from .ruby_annotations import fold_ruby_annotations
 
 # Block-level tags we preserve at rebuild time (li flattens to p later — see replace_body_with_paragraphs).
 BLOCK_TAGS = ("p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "pre")
@@ -223,6 +226,10 @@ def extract_plain_paragraphs(
 
     if body_element is None:
         return paragraphs_text, paragraphs_tag, images_by_paragraph
+
+    # Fold <ruby> annotations first, otherwise flattening would glue the base
+    # and its reading into a word that does not exist (issue #242).
+    fold_ruby_annotations(body_element)
 
     _collect_blocks(body_element, paragraphs_text, paragraphs_tag, images_by_paragraph)
     return paragraphs_text, paragraphs_tag, images_by_paragraph

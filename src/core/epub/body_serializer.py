@@ -13,6 +13,7 @@ from src.utils.unified_logger import LogType, info
 
 from .boilerplate_filter import strip_web_boilerplate
 from .exceptions import BodyExtractionError, XmlParsingError
+from .ruby_annotations import fold_ruby_annotations
 
 
 def normalize_whitespace(html: str) -> str:
@@ -109,8 +110,9 @@ def extract_body_html(
         Tuple (body_inner_html, body_element)
         Returns ("", None) if no body element found
 
-    Note: when strip_boilerplate is True the body element is mutated in place;
-    both translation paths replace the body content afterwards, so the removed
+    Note: the body element is mutated in place (boilerplate removal when
+    strip_boilerplate is True, and <ruby> folding unconditionally); both
+    translation paths replace the body content afterwards, so the removed
     elements simply never appear in the output.
     """
     # Try XHTML namespace first, then fallback to no namespace
@@ -123,6 +125,10 @@ def extract_body_html(
 
     if strip_boilerplate:
         strip_web_boilerplate(body, log_callback=log_callback)
+
+    # Fold <ruby> annotations before serialization, otherwise the placeholder
+    # pass would split each annotated word into two fragments (issue #242).
+    fold_ruby_annotations(body, log_callback=log_callback)
 
     # Serialize the inner content of body (without the <body> tag itself)
     inner_html = etree.tostring(body, encoding='unicode', method='html')
