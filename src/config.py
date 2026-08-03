@@ -639,6 +639,20 @@ MAX_PLACEHOLDER_CORRECTION_ATTEMPTS = 0
 EPUB_TOKEN_ALIGNMENT_ENABLED = os.getenv('EPUB_TOKEN_ALIGNMENT_ENABLED', 'true').lower() == 'true'
 """Enable token alignment fallback for EPUB translation (Phase 2)"""
 
+EPUB_SCRIPT_NORMALIZATION_ENABLED = os.getenv(
+    'EPUB_SCRIPT_NORMALIZATION_ENABLED', 'true').lower() == 'true'
+"""Enable source-script (CJK) typography normalization for translated EPUBs:
+rewrites CJK font stacks/indent/leading/writing-mode in stylesheets and inline
+styles, and drops reader-specific font-override OPF metas, when translating a
+CJK-authored EPUB to a non-CJK target (src/core/epub/cjk_typography.py)."""
+
+EPUB_TRANSLATE_METADATA_ENABLED = os.getenv(
+    'EPUB_TRANSLATE_METADATA_ENABLED', 'true').lower() == 'true'
+"""Enable packaging-metadata localization for translated EPUBs: one extra LLM
+call per book translates dc:title and dc:description, and the translated title
+is propagated to every NCX docTitle (src/core/epub/metadata_translator.py).
+dc:creator is never touched."""
+
 EPUB_TOKEN_ALIGNMENT_METHOD = os.getenv('EPUB_TOKEN_ALIGNMENT_METHOD', 'proportional')
 """
 Alignment method to use:

@@ -20,11 +20,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import src.core.epub.translator as translator_module
 from src.config import INPUT_TAG_IN, INPUT_TAG_OUT
 from src.core.llm.base import LLMResponse
-
-import src.core.epub.translator as translator_module
-
 
 REAL_CSS = Path(__file__).resolve().parents[2] / "fixtures" / "cjk_epub" / "main.css"
 
@@ -196,7 +194,8 @@ def _disable_attribution(monkeypatch):
     .env -- pinning them off keeps the test deterministic regardless of that.
     """
     monkeypatch.setattr(translator_module, "ATTRIBUTION_ENABLED", False)
-    monkeypatch.setattr("src.core.epub.attribution_page.ATTRIBUTION_ENABLED", False)
+    # This fork does not ship the attribution page module; only the signature
+    # flag on the translator needs pinning.
 
 
 @pytest.fixture
@@ -205,3 +204,43 @@ def input_epub(tmp_path: Path) -> Path:
     container_root = _build_cjk_epub_dir(
         tmp_path / "src_epub", REAL_CSS.read_text(encoding="utf-8"))
     return _zip_dir_as_epub(container_root, tmp_path / "input.epub")
+
+
+@pytest.fixture(autouse=True)
+def _route_runtime_clients_through_create_llm_client(monkeypatch):
+    """Let tests that stub `_create_llm_client` drive the whole EPUB pipeline.
+
+    In this fork translate_epub_file builds its draft and Senior Editor
+    clients through src.core.llm.runtime.build_draft_and_editor_clients rather
+    than through `_create_llm_client`. Route that call back through
+    `_create_llm_client` so a stubbed client is the one the pipeline uses, and
+    no test can fall through to a real provider on localhost.
+    """
+    from types import SimpleNamespace
+
+    def _build(**kwargs):
+        credentials = kwargs.get("credentials") or {}
+        client = translator_module._create_llm_client(
+            llm_provider=kwargs.get("draft_provider"),
+            model_name=kwargs.get("draft_model"),
+            gemini_api_key=credentials.get("gemini_api_key"),
+            openai_api_key=credentials.get("openai_api_key"),
+            openrouter_api_key=credentials.get("openrouter_api_key"),
+            mistral_api_key=credentials.get("mistral_api_key"),
+            deepseek_api_key=credentials.get("deepseek_api_key"),
+            poe_api_key=credentials.get("poe_api_key"),
+            nim_api_key=credentials.get("nim_api_key"),
+            cli_api_endpoint=kwargs.get("draft_endpoint"),
+            initial_context=kwargs.get("context_window"),
+            log_callback=kwargs.get("log_callback"),
+        )
+        spec = SimpleNamespace(
+            provider=str(kwargs.get("draft_provider") or ""),
+            model=str(kwargs.get("draft_model") or ""),
+            api_endpoint=kwargs.get("draft_endpoint"),
+        )
+        return client, client, spec, spec
+
+    monkeypatch.setattr(
+        "src.core.llm.runtime.build_draft_and_editor_clients", _build
+    )
