@@ -1220,13 +1220,18 @@ def test_review_threshold_and_phase_boundary_repairs_cover_both_phases():
     handlers = (
         project_root / "src" / "api" / "handlers.py"
     ).read_text(encoding="utf-8")
+    # The stats callbacks that fire the threshold check now live alongside the
+    # rest of the job's callback wiring.
+    callbacks = (
+        project_root / "src" / "api" / "job_callbacks.py"
+    ).read_text(encoding="utf-8")
     form = (
         project_root / "src" / "web" / "templates"
         / "translation_interface.html"
     ).read_text(encoding="utf-8")
 
-    assert "_threshold_review_repair('translation')" in handlers
-    assert "_threshold_review_repair('refinement')" in handlers
+    assert "_threshold_review_repair('translation')" in callbacks
+    assert "_threshold_review_repair('refinement')" in callbacks
     assert "await _phase_boundary_review_repair('translation')" in handlers
     assert "await _phase_boundary_review_repair('refinement')" in handlers
     assert 'id="autoReviewRepairThreshold"' in form
