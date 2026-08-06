@@ -321,15 +321,15 @@ def test_context_resync_route_accepts_numeric_context_revision(
 
     thread = MagicMock()
     monkeypatch.setattr(
-        "src.api.blueprints.translation_routes._claim_context_resync",
+        "src.api.blueprints.translation_routes.context._claim_context_resync",
         lambda _translation_id: True,
     )
     monkeypatch.setattr(
-        "src.api.blueprints.translation_routes._release_context_resync",
+        "src.api.blueprints.translation_routes.context._release_context_resync",
         lambda _translation_id: None,
     )
     monkeypatch.setattr(
-        "src.api.blueprints.translation_routes.threading.Thread",
+        "src.api.blueprints.translation_routes.context.threading.Thread",
         lambda **_kwargs: thread,
     )
 
@@ -394,15 +394,15 @@ def test_context_resync_route_accepts_failed_source_snapshot(
 
     thread = MagicMock()
     monkeypatch.setattr(
-        "src.api.blueprints.translation_routes._claim_context_resync",
+        "src.api.blueprints.translation_routes.context._claim_context_resync",
         lambda _translation_id: True,
     )
     monkeypatch.setattr(
-        "src.api.blueprints.translation_routes._release_context_resync",
+        "src.api.blueprints.translation_routes.context._release_context_resync",
         lambda _translation_id: None,
     )
     monkeypatch.setattr(
-        "src.api.blueprints.translation_routes.threading.Thread",
+        "src.api.blueprints.translation_routes.context.threading.Thread",
         lambda **_kwargs: thread,
     )
 
@@ -566,11 +566,11 @@ def test_context_resync_resume_restores_auto_resume_follow_up(
             self.target()
 
     monkeypatch.setattr(
-        "src.api.blueprints.translation_routes._claim_context_resync",
+        "src.api.blueprints.translation_routes.context._claim_context_resync",
         lambda _translation_id: True,
     )
     monkeypatch.setattr(
-        "src.api.blueprints.translation_routes._release_context_resync",
+        "src.api.blueprints.translation_routes.context._release_context_resync",
         lambda _translation_id: None,
     )
     monkeypatch.setattr(
@@ -578,7 +578,7 @@ def test_context_resync_resume_restores_auto_resume_follow_up(
         fake_resync,
     )
     monkeypatch.setattr(
-        "src.api.blueprints.translation_routes.threading.Thread",
+        "src.api.blueprints.translation_routes.context.threading.Thread",
         ImmediateThread,
     )
 
@@ -1253,7 +1253,7 @@ def test_chunk_context_snapshot_route_keeps_timeline_snapshot_isolated():
     project_root = Path(__file__).resolve().parents[2]
     routes = (
         project_root / "src" / "api" / "blueprints"
-        / "translation_routes.py"
+        / "translation_routes" / "context.py"
     ).read_text(encoding="utf-8")
 
     snapshot_block = routes.split(
@@ -1287,7 +1287,8 @@ def test_refinement_context_state_omits_large_ui_payloads():
 def test_running_refinement_can_be_restored_after_browser_refresh():
     project_root = Path(__file__).resolve().parents[2]
     routes = (
-        project_root / "src" / "api" / "blueprints" / "translation_routes.py"
+        project_root / "src" / "api" / "blueprints" / "translation_routes"
+        / "lifecycle.py"
     ).read_text(encoding="utf-8")
     tracker = (
         project_root / "src" / "web" / "static" / "js"
