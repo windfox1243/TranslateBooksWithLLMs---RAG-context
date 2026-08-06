@@ -38,6 +38,13 @@ from .progress_tracker import TokenProgressTracker
 from .chunking.token_chunker import TokenChunker
 from typing import List, Dict, Tuple, Optional, Any, Callable
 from src.utils.progress_logging import emit_progress_log
+# Re-exported: these moved to the editor package but callers and tests still
+# import them from this module.
+from src.core.editor.prompting import (
+    _build_focused_locator_retry_prompt,
+    _render_reflection_novel_context,
+    compose_reflection_prompts,
+)
 from src.core.editor.contracts import ReflectionValidationError
 
 
@@ -1382,76 +1389,6 @@ def _issue_requires_draft_replacement(issue: Dict[str, Any]) -> bool:
     return str(issue.get("repair_kind") or "").casefold() == "local_replace"
 
 
-def _build_focused_locator_retry_prompt(
-    draft_text: str,
-    issues: List[Dict[str, Any]],
-    invalid_ids: set[str],
-    locator_errors: List[str],
-) -> str:
-    """Build a compact locator-only request from candidate draft neighborhoods."""
-
-    from src.utils.translation_quality import build_editor_segments
-
-    segments = build_editor_segments(draft_text)
-    by_id = {str(item.get("segment_id") or "").upper(): index for index, item in enumerate(segments)}
-    payload = []
-    for issue in issues:
-        issue_id = str(issue.get("issue_id") or "")
-        if issue_id not in invalid_ids:
-            continue
-        replacement = issue.get("draft_replacement") or {}
-        needles = [
-            str(replacement.get("draft") or "").strip(),
-            str(issue.get("draft_quote") or "").strip(),
-        ]
-        candidate_indexes = set()
-        requested = str(issue.get("segment_id") or "").upper()
-        if requested in by_id:
-            candidate_indexes.add(by_id[requested])
-        for index, segment in enumerate(segments):
-            folded = str(segment.get("text") or "").casefold()
-            if any(needle and needle.casefold() in folded for needle in needles):
-                candidate_indexes.add(index)
-        if not candidate_indexes:
-            terms = {
-                token.casefold()
-                for needle in needles
-                for token in re.findall(r"\w{3,}", needle, re.UNICODE)
-            }
-            scored = []
-            for index, segment in enumerate(segments):
-                folded = str(segment.get("text") or "").casefold()
-                score = sum(1 for term in terms if term in folded)
-                if score:
-                    scored.append((score, index))
-            candidate_indexes.update(
-                index for _score, index in sorted(scored, reverse=True)[:3]
-            )
-        expanded = set()
-        for index in candidate_indexes:
-            expanded.update(
-                candidate for candidate in (index - 1, index, index + 1)
-                if 0 <= candidate < len(segments)
-            )
-        payload.append({
-            "issue": issue,
-            "candidate_segments": [segments[index] for index in sorted(expanded)],
-        })
-    return (
-        "Correct only the invalid exact-span locators below. Return the same "
-        "reflection JSON schema with status needs_repair, only the corrected "
-        "issues, and voice_observations as an empty list. Preserve issue IDs "
-        "and repair instructions. Each segment_id must name one candidate "
-        "segment; draft_quote must occur exactly once inside it and contain "
-        "draft_replacement.draft. If no candidate supports an issue, change "
-        "that issue to review_only with no draft_replacement.\n\n"
-        "LOCATOR ERRORS:\n"
-        + json.dumps(locator_errors, ensure_ascii=False, separators=(",", ":"))
-        + "\n\nINVALID ISSUES AND CANDIDATE SEGMENTS:\n"
-        + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    )
-
-
 def _reflection_contract_incomplete(result: ReflectionResult) -> bool:
     if result.status == "needs_repair" and not result.issues:
         return True
@@ -1665,77 +1602,6 @@ def extract_term_replacements_from_critique(critique: str) -> List[Tuple[str, st
     return deduped
 
 
-def _render_reflection_novel_context(
-    novel_context: str,
-    prompt_options: Optional[Dict[str, Any]],
-    source_chunk: str,
-    draft_translation: str,
-) -> str:
-    """Render the same selective novel-context view for reflection and repair."""
-    options = dict(prompt_options or {})
-    if novel_context and not options.get("novel_context"):
-        options["novel_context"] = novel_context
-
-    raw_context = str(options.get("novel_context") or novel_context or "")
-    active_speaker = None
-    attribution = options.get("dialogue_attribution") or {}
-    if isinstance(attribution, dict):
-        state_after = attribution.get("state_after") or {}
-        if isinstance(state_after, dict):
-            active_speaker = state_after.get("speaker")
-
-    active_context = ""
-    if raw_context.strip():
-        try:
-            from src.utils.novel_context import render_novel_context_for_prompt
-
-            rendered = render_novel_context_for_prompt(
-                raw_context,
-                reference_text="\n".join(
-                    part for part in (source_chunk, draft_translation) if part
-                ),
-                max_tokens=options.get("novel_context_prompt_max_tokens"),
-                selective=options.get("novel_context_selective_injection", True),
-                active_speaker=active_speaker,
-            )
-            active_context = rendered.strip() or raw_context.strip()
-        except Exception:
-            active_context = raw_context.strip()
-    directed_context = str(options.get("directed_addressing_context") or "").strip()
-    relationship_context = str(options.get("relationship_context") or "").strip()
-    prompt_context_bundle = str(options.get("prompt_context_bundle") or "").strip()
-    context_contract_version = int(
-        options.get("context_contract_version", 1) or 1
-    )
-    blocks = []
-    if prompt_context_bundle:
-        blocks.append(prompt_context_bundle)
-    elif directed_context:
-        blocks.append(
-            "# STRUCTURED DIRECTED ADDRESSING RULES\n"
-            f"{directed_context}"
-        )
-    if relationship_context and not prompt_context_bundle:
-        blocks.append(
-            "# STRUCTURED RELATIONSHIP CONTEXT\n"
-            f"{relationship_context}"
-        )
-    if active_context and not (
-        context_contract_version >= 5 and prompt_context_bundle
-    ):
-        blocks.append(
-            "# ACTIVE MARKDOWN NOVEL CONTEXT\n"
-            f"{active_context}"
-        )
-    neighbor_context = str(options.get("editor_neighbor_context") or "").strip()
-    if neighbor_context:
-        blocks.append(
-            "# ADJACENT WINDOW CONTEXT (READ-ONLY; DO NOT REWRITE)\n"
-            f"{neighbor_context}"
-        )
-    return "\n\n".join(blocks).strip()
-
-
 async def _generate_editor_response(
     llm_client: Any,
     prompt: str,
@@ -1858,7 +1724,11 @@ async def _run_chunk_reflection_pass_impl(
     if not draft_translation or not draft_translation.strip() or not llm_client:
         return draft_translation
 
-    from src.core.editor import review_required_translation
+    from src.core.editor import (
+        audit_narrator_conformance,
+        review_required_translation,
+    )
+    from src.core.editor.preflight import run_editor_preflight
 
     options = prompt_options or {}
     editor_client = options.get("_editor_llm_client") or llm_client
@@ -2213,140 +2083,33 @@ async def _run_chunk_reflection_pass_impl(
             except Exception:
                 pass
         return await retry_truncated(response, None)
-    source_available = bool(source_chunk and source_chunk.strip()) and str(
-        options.get("editor_source_mode") or "checkpoint"
-    ).casefold() != "monolingual"
-    contract_v2 = context_contract_version(options) >= 2
-    source_language = str(options.get("source_language") or "")
-    glossary_terms = (
-        options.get("glossary_terms")
-        if isinstance(options.get("glossary_terms"), dict)
-        else {}
+    preflight = run_editor_preflight(
+        source_chunk,
+        draft_translation,
+        target_language,
+        novel_context,
+        options,
+        log_callback,
     )
-    protected_terms = [
-        str(item) for item in options.get("active_character_names") or [] if item
-    ]
-    protected_terms.extend(
-        str(item) for item in options.get("preserved_terms") or [] if item
-    )
-    protected_terms.extend(
-        identity_preserving_proper_names(source_chunk, draft_translation)
-    )
-    try:
-        from src.utils.novel_context import (
-            GLOSSARY_SECTION,
-            _character_profile_map,
-            _find_lore_section,
-            _parse_bullet_entries,
-            character_alias_map,
-            extract_global_lore,
-        )
-
-        raw_lore = extract_global_lore(
-            str(options.get("novel_context") or novel_context or "")
-        )
-        protected_terms.extend(
-            str(profile.get("name") or key)
-            for key, profile in _character_profile_map(raw_lore).items()
-        )
-        aliases = character_alias_map(raw_lore)
-        protected_terms.extend(str(item) for item in aliases.keys())
-        protected_terms.extend(str(item) for item in aliases.values())
-        glossary_bounds = _find_lore_section(raw_lore, GLOSSARY_SECTION)
-        if glossary_bounds:
-            for source_term, target_term in _parse_bullet_entries(
-                raw_lore[glossary_bounds[1]:glossary_bounds[2]]
-            ):
-                if source_term and target_term:
-                    glossary_terms.setdefault(source_term, target_term)
-                    protected_terms.extend((source_term, target_term))
-    except Exception:
-        pass
-    residue_findings = []
-    if source_available and bool(options.get("source_residue_validation", contract_v2)):
-        residue_findings = find_source_residue(
-            source_chunk,
-            draft_translation,
-            source_language=source_language,
-            target_language=target_language,
-            protected_terms=protected_terms,
-            glossary_terms=glossary_terms,
-        )
-    from src.core.editor import (
-        apply_narrator_conformance_patches,
-        audit_narrator_conformance,
-    )
-
-    narrator_conformance = audit_narrator_conformance(
-        source_text=source_chunk,
-        target_text=draft_translation,
-        source_language=source_language,
-        target_language=target_language,
-        file_type=str(options.get("file_type") or "txt"),
-        dialogue_attribution=options.get("dialogue_attribution") or {},
-        db=options.get("_checkpoint_db"),
-        translation_id=str(options.get("translation_id") or ""),
-        chunk_index=int(options.get("chunk_index", 0) or 0),
-        explicit_override=str(
-            options.get("narrator_self_reference_override") or ""
-        ),
-    )
-    draft_translation, narrator_patches = apply_narrator_conformance_patches(
-        draft_translation, narrator_conformance,
-    )
+    # Unpacked into locals rather than read through `preflight` because the
+    # closures defined above (finish_run, record_attempt) already capture these
+    # names from this scope.
+    draft_translation = preflight.draft_translation
+    source_available = preflight.source_available
+    contract_v2 = preflight.contract_v2
+    source_language = preflight.source_language
+    glossary_terms = preflight.glossary_terms
+    protected_terms = preflight.protected_terms
+    residue_findings = preflight.residue_findings
+    narrator_conformance = preflight.narrator_conformance
+    narrator_patches = preflight.narrator_patches
+    remaining_narrator_blockers = preflight.remaining_narrator_blockers
+    initial_narrator_finding_count = preflight.initial_narrator_finding_count
+    deterministic_findings = preflight.deterministic_findings
+    narrative_voice_context = preflight.narrative_voice_context
     if narrator_patches:
         result_state = "locally_patched"
         resolved_issue_count += len(narrator_patches)
-        if log_callback:
-            emit_progress_log(
-                log_callback,
-                "narrator_conformance_locally_patched",
-                f"Applied {len(narrator_patches)} exact narrator-form patch(es).",
-                layer="narrator_voice",
-            )
-        narrator_conformance = audit_narrator_conformance(
-            source_text=source_chunk,
-            target_text=draft_translation,
-            source_language=source_language,
-            target_language=target_language,
-            file_type=str(options.get("file_type") or "txt"),
-            dialogue_attribution=options.get("dialogue_attribution") or {},
-            db=options.get("_checkpoint_db"),
-            translation_id=str(options.get("translation_id") or ""),
-            chunk_index=int(options.get("chunk_index", 0) or 0),
-            explicit_override=str(
-                options.get("narrator_self_reference_override") or ""
-            ),
-        )
-        if source_available and bool(
-            options.get("source_residue_validation", contract_v2)
-        ):
-            residue_findings = find_source_residue(
-                source_chunk,
-                draft_translation,
-                source_language=source_language,
-                target_language=target_language,
-                protected_terms=protected_terms,
-                glossary_terms=glossary_terms,
-            )
-    remaining_narrator_blockers = [
-        item for item in narrator_conformance.get("violating_segments") or []
-        if item.get("blocking")
-    ]
-    initial_narrator_finding_count = (
-        len(narrator_patches) + len(remaining_narrator_blockers)
-    )
-    deterministic_payloads = [
-        finding.to_dict() for finding in residue_findings
-    ] + remaining_narrator_blockers
-    deterministic_findings = json.dumps(
-        deterministic_payloads,
-        ensure_ascii=False,
-        indent=2,
-    ) if deterministic_payloads else ""
-    narrative_voice_context = str(
-        options.get("narrative_voice_context") or ""
-    ).strip()
 
     if log_callback:
         emit_progress_log(
@@ -2366,97 +2129,25 @@ async def _run_chunk_reflection_pass_impl(
             },
         )
 
-    active_novel_context = _render_reflection_novel_context(
-        novel_context=novel_context,
-        prompt_options=prompt_options,
-        source_chunk=source_chunk,
-        draft_translation=draft_translation,
+    prompts = compose_reflection_prompts(
+        source_chunk,
+        draft_translation,
+        target_language,
+        novel_context,
+        custom_instructions,
+        glossary_block,
+        deterministic_findings,
+        narrative_voice_context,
+        source_available,
+        options,
+        prompt_options,
     )
-
-    retry_seed_issues = []
-    for seed_index, item in enumerate(
-        list(options.get("editor_retry_unresolved_issues") or [])[:12], start=1
-    ):
-        if (
-            not isinstance(item, dict)
-            or str(item.get("repair_kind") or "").casefold() != "local_replace"
-        ):
-            continue
-        seed = dict(item)
-        seed.setdefault("issue_id", f"retry-{seed_index}")
-        retry_seed_issues.append(seed)
-    use_focused_manual_retry = bool(
-        retry_seed_issues
-        and not deterministic_findings
-    )
-    if use_focused_manual_retry:
-        from src.prompts.prompts import PromptPair
-
-        retry_ids = {str(item.get("issue_id")) for item in retry_seed_issues}
-        retry_reasons = [
-            str(item) for item in list(options.get("editor_retry_reason_codes") or [])
-            if item
-        ] or [f"local_patch_unresolved:{item}" for item in sorted(retry_ids)]
-        focused_prompt = _build_focused_locator_retry_prompt(
-            draft_translation,
-            retry_seed_issues,
-            retry_ids,
-            retry_reasons,
-        )
-        focused_system = (
-            "You are retrying previously unresolved local translation edits. "
-            "Use only the supplied issue evidence and candidate draft segments. "
-            "Return one canonical reflection JSON object; never rewrite the "
-            "complete chunk or introduce unrelated edits."
-        )
-        reflection_pair = PromptPair(focused_system, focused_prompt)
-        reflection_fallback_pair = reflection_pair
-    else:
-        reflection_pair = generate_chunk_reflection_prompt(
-            source_chunk=source_chunk,
-            draft_translation=draft_translation,
-            target_language=target_language,
-            novel_context=active_novel_context,
-            custom_instructions=custom_instructions,
-            glossary_block=glossary_block,
-            deterministic_findings=deterministic_findings,
-            narrative_voice_context=narrative_voice_context,
-            source_available=source_available,
-            native_schema=True,
-        )
-        reflection_fallback_pair = generate_chunk_reflection_prompt(
-            source_chunk=source_chunk,
-            draft_translation=draft_translation,
-            target_language=target_language,
-            novel_context=active_novel_context,
-            custom_instructions=custom_instructions,
-            glossary_block=glossary_block,
-            deterministic_findings=deterministic_findings,
-            narrative_voice_context=narrative_voice_context,
-            source_available=source_available,
-            native_schema=False,
-        )
-    reflection_components.update({
-        "source_chars": len(source_chunk),
-        "draft_chars": len(draft_translation),
-        "context_chars": len(active_novel_context),
-        "glossary_chars": len(glossary_block),
-        "custom_instruction_chars": len(custom_instructions),
-        "deterministic_finding_chars": len(deterministic_findings),
-        "narrator_context_chars": len(narrative_voice_context),
-        "fixed_system_chars": len(reflection_pair.system),
-        "source_sha256": hashlib.sha256(source_chunk.encode("utf-8")).hexdigest(),
-        "draft_sha256": hashlib.sha256(draft_translation.encode("utf-8")).hexdigest(),
-        "source_complete": source_chunk.strip() in reflection_pair.user,
-        "input_mode": (
-            "focused_manual_retry" if use_focused_manual_retry else "complete_audit"
-        ),
-        "retry_source_run_id": options.get("editor_retry_source_run_id") or 0,
-        "draft_segment_chars": sum(
-            len(str(item.get("text") or ""))
-            for item in build_editor_segments(draft_translation)
-        ),
-    })
+    active_novel_context = prompts.active_novel_context
+    retry_seed_issues = prompts.retry_seed_issues
+    use_focused_manual_retry = prompts.use_focused_manual_retry
+    reflection_pair = prompts.reflection_pair
+    reflection_fallback_pair = prompts.reflection_fallback_pair
+    reflection_components.update(prompts.components)
 
     try:
         response = await generate_editor(
