@@ -1,11 +1,15 @@
-flask
-flask-socketio
-python-socketio
-requests
-tqdm
-httpx
-lxml
-python-dotenv
+# Upper bounds are the next major (or, for 0.x, the next minor) of what the
+# Windows and macOS PyInstaller builds are currently verified against. They
+# exist so an upstream breaking release cannot silently break a tagged build;
+# raise them deliberately after running the suite, not by dropping them.
+flask>=3.0,<4.0
+flask-socketio>=5.3,<6.0
+python-socketio>=5.11,<6.0
+requests>=2.31,<3.0
+tqdm>=4.66,<5.0
+httpx>=0.27,<0.29
+lxml>=5.0,<7.0
+python-dotenv>=1.0,<2.0
 aiofiles>=22.0,<25.0
 tiktoken>=0.5.0
 edge-tts>=6.1.9

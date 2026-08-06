@@ -10,6 +10,31 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install pre-commit
+        run: pip install pre-commit
+
+      # Only the two hooks the tree currently satisfies. isort is configured in
+      # .pre-commit-config.yaml but 305 files predate it, so enforcing it here
+      # would mean a repo-wide reformat -- do that as its own change, then add
+      # the hook id below.
+      - name: Check Python syntax
+        run: pre-commit run --all-files check-ast
+
+      - name: Check YAML syntax
+        run: pre-commit run --all-files check-yaml
+
   pytest:
     runs-on: ubuntu-latest
     steps:
