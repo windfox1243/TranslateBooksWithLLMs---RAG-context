@@ -51,11 +51,21 @@ discarding useful translations while retaining an explicit review queue.
 - `src/core/common/`, `src/core/epub/`, `src/core/subtitle_translator.py`:
   orchestration and structural validation for each format.
 - `src/persistence/repositories/`: narrow job, editor, structured-context, and
-  narrator interfaces. `Database` remains the compatibility facade while SQL
-  ownership moves behind these boundaries incrementally.
+  narrator interfaces. `Database` remains the compatibility facade and still
+  owns the SQL; the repositories are cached, stateless views that expose an
+  agreed subset of it. Read this as a naming boundary, not a completed
+  migration -- no statement has moved behind it yet.
+- `src/persistence/schema.py`: every table, additive migration and index, and
+  the one function that applies them. The sweep runs on each `Database()`
+  construction because it also carries data-repair passes (the contract-v2
+  addressing quarantine among them) that must act on rows the current version
+  wrote, not only on inherited ones. Skipping it for an up-to-date file would
+  need those repairs separated from the DDL first.
 - `src/persistence/`: SQLite storage and checkpoint aggregation. Migrations are
   additive so an existing jobs database remains readable.
-- `src/api/`: request lifecycle and serialized job state.
+- `src/api/`: request lifecycle and serialized job state. `job_callbacks.py`
+  owns the seam between the engine's plain callbacks and the web layer's
+  socket, state manager and checkpoint store.
 - `src/web/static/js/translation/`: client orchestration plus focused view
   helpers such as `job-quality.js`.
 
