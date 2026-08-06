@@ -49,6 +49,15 @@ tests/.placeholder_tests/
 /tmp_*.py
 /test_*.py
 
+# Build outputs. These are published as GitHub release assets, so tracking
+# them only grew .git by ~35 MB per release. Untracked as of v1.16.0; the
+# existing history still contains them.
+/release/TranslateBook.exe
+/release/TranslateBook_Data/
+/TranslateBook-Windows.zip
+/TranslateBook-Source.zip
+/TranslateBook-macOS.zip
+
 # Common secret/credential file patterns
 *.pem
 *.key
