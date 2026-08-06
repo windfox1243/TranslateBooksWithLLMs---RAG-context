@@ -85,6 +85,12 @@ class Database:
         self.db_path = db_path
         self._local = threading.local()
         self._lock = threading.RLock()
+        # _local.connection is per-thread and unreachable from other threads;
+        # this list lets close_all() drop every connection on shutdown. Without
+        # it, every translation worker thread leaks a connection and its file
+        # handle for the lifetime of the process.
+        self._all_connections: List[sqlite3.Connection] = []
+        self._connections_lock = threading.RLock()
 
         # Ensure directory exists
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
@@ -129,6 +135,8 @@ class Database:
             conn.execute("PRAGMA busy_timeout=30000")
             conn.execute("PRAGMA foreign_keys=ON")
             self._local.connection = conn
+            with self._connections_lock:
+                self._all_connections.append(conn)
         return self._local.connection
 
     def _commit_connection(self, conn: sqlite3.Connection) -> None:
@@ -1484,18 +1492,24 @@ class Database:
                 print(f"Error getting resumable jobs: {e}")
                 return []
 
-    def cleanup_old_jobs(self, max_age_days: int = 30) -> int:
+    def delete_old_jobs(self, max_age_days: int = 30) -> List[str]:
         """
-        Delete old jobs that are no longer relevant.
+        Delete old jobs that are no longer relevant and report which ones went.
 
         Removes jobs older than max_age_days that are in resumable states
         (paused, interrupted, error) to prevent database bloat.
+
+        Callers that also need to clean up on-disk artifacts must drive that
+        cleanup from the returned IDs. Re-deriving the cutoff in Python is a
+        bug: created_at is stored in UTC by SQLite's CURRENT_TIMESTAMP, so a
+        cutoff built from datetime.now() disagrees with this query by the local
+        UTC offset and deletes files for jobs the database kept.
 
         Args:
             max_age_days: Maximum age in days for jobs to keep (default 30)
 
         Returns:
-            Number of jobs deleted
+            The translation IDs that were deleted
         """
         with self._lock:
             try:
@@ -1512,16 +1526,23 @@ class Database:
                 job_ids = [row['translation_id'] for row in cursor.fetchall()]
 
                 if not job_ids:
-                    return 0
+                    return []
 
                 for translation_id in job_ids:
                     self._delete_job_rows(conn, translation_id)
-                deleted_count = len(job_ids)
                 conn.commit()
-                return deleted_count
+                return job_ids
             except Exception as e:
                 print(f"Error cleaning up old jobs: {e}")
-                return 0
+                return []
+
+    def cleanup_old_jobs(self, max_age_days: int = 30) -> int:
+        """
+        Delete old jobs and return how many were removed.
+
+        Thin wrapper over delete_old_jobs for callers that only need the count.
+        """
+        return len(self.delete_old_jobs(max_age_days))
 
     def reset_running_jobs(self, current_session_id: str) -> int:
         """
@@ -4000,7 +4021,30 @@ class Database:
         return changed
 
     def close(self):
-        """Close database connection."""
-        if hasattr(self._local, 'connection') and self._local.connection:
-            self._local.connection.close()
+        """Close this thread's database connection."""
+        conn = getattr(self._local, 'connection', None)
+        if conn is not None:
+            conn.close()
             self._local.connection = None
+            with self._connections_lock:
+                try:
+                    self._all_connections.remove(conn)
+                except ValueError:
+                    pass
+
+    def close_all(self):
+        """Close every connection opened by any thread.
+
+        Worker threads die without a chance to call close(), so their
+        thread-local connections would otherwise stay open until the process
+        exits. Called from the shutdown hook in src.api.translation_state.
+        """
+        with self._connections_lock:
+            connections = list(self._all_connections)
+            self._all_connections.clear()
+        for conn in connections:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        self._local = threading.local()

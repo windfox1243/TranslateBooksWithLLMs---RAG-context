@@ -25,6 +25,10 @@ from src.tts.tts_config import TTSConfig
 from src.utils.notifier import notify, EVENT_SUCCESS, EVENT_FAILURE, EVENT_INTERRUPTION
 from .websocket import emit_update
 
+# Caps how many translation jobs execute concurrently; see _get_job_slots().
+_job_slots = None
+_job_slots_lock = threading.Lock()
+
 
 def _notification_context(config, translation_id, elapsed_time, error=None):
     """Build the context dict passed to webhook notifications."""
@@ -43,10 +47,27 @@ def _notification_context(config, translation_id, elapsed_time, error=None):
     return ctx
 
 
+def _get_job_slots():
+    """Return the process-wide semaphore capping concurrent translation jobs.
+
+    Built lazily so importing this module doesn't depend on config import order,
+    and so tests can observe the configured cap.
+    """
+    global _job_slots
+    if _job_slots is None:
+        with _job_slots_lock:
+            if _job_slots is None:
+                import src.config as cfg
+                _job_slots = threading.BoundedSemaphore(
+                    max(1, int(getattr(cfg, 'MAX_CONCURRENT_JOBS', 4)))
+                )
+    return _job_slots
+
+
 def run_translation_async_wrapper(translation_id, config, state_manager, output_dir, socketio):
     """
     Wrapper for running translation in async context
-    
+
     Args:
         translation_id (str): Translation job ID
         config (dict): Translation configuration
@@ -54,23 +75,29 @@ def run_translation_async_wrapper(translation_id, config, state_manager, output_
         output_dir (str): Output directory path
         socketio: SocketIO instance
     """
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    # Acquired here rather than in start_translation_job so a queued job never
+    # blocks the HTTP request thread that submitted it.
+    slots = _get_job_slots()
+    slots.acquire()
     try:
-        loop.run_until_complete(perform_actual_translation(translation_id, config, state_manager, output_dir, socketio))
-    except Exception as e:
-        error_msg = f"Uncaught major error in translation wrapper {translation_id}: {str(e)}"
-        if state_manager.exists(translation_id):
-            state_manager.set_translation_field(translation_id, 'status', 'error')
-            state_manager.set_translation_field(translation_id, 'error', error_msg)
-            logs = state_manager.get_translation_field(translation_id, 'logs')
-            if logs is None:
-                logs = []
-            logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] CRITICAL WRAPPER ERROR: {error_msg}")
-            state_manager.set_translation_field(translation_id, 'logs', logs)
-            emit_update(socketio, translation_id, {'error': error_msg, 'status': 'error', 'log': f"CRITICAL WRAPPER ERROR: {error_msg}"}, state_manager)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(perform_actual_translation(translation_id, config, state_manager, output_dir, socketio))
+        except Exception as e:
+            error_msg = f"Uncaught major error in translation wrapper {translation_id}: {str(e)}"
+            if state_manager.exists(translation_id):
+                state_manager.set_translation_field(translation_id, 'status', 'error')
+                state_manager.set_translation_field(translation_id, 'error', error_msg)
+                state_manager.append_log(
+                    translation_id,
+                    f"[{datetime.now().strftime('%H:%M:%S')}] CRITICAL WRAPPER ERROR: {error_msg}",
+                )
+                emit_update(socketio, translation_id, {'error': error_msg, 'status': 'error', 'log': f"CRITICAL WRAPPER ERROR: {error_msg}"}, state_manager)
+        finally:
+            loop.close()
     finally:
-        loop.close()
+        slots.release()
 
 
 async def perform_actual_translation(translation_id, config, state_manager, output_dir, socketio):
@@ -105,12 +132,12 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
         emit_update(socketio, translation_id, {'log': log_entry['message'], 'log_entry': log_entry}, state_manager)
     
     def storage_callback(log_entry):
-        """Callback for storing logs"""
-        logs = state_manager.get_translation_field(translation_id, 'logs')
-        if logs is None:
-            logs = []
-        logs.append(log_entry)
-        state_manager.set_translation_field(translation_id, 'logs', logs)
+        """Callback for storing logs.
+
+        Uses the atomic append so concurrent workers can't drop each other's
+        entries the way a get-mutate-set round trip does.
+        """
+        state_manager.append_log(translation_id, log_entry)
     
     logger = setup_web_logger(web_callback, storage_callback)
 

@@ -248,6 +248,10 @@ class TranslationStateManager:
         Returns:
             True if cleaned up successfully
         """
+        # Drop the in-memory entry too: it retains the job config, stats and up
+        # to 1000 log lines, and nothing else ever evicts it.
+        with self._lock:
+            self._translations.pop(translation_id, None)
         return self.checkpoint_manager.cleanup_completed_job(translation_id)
 
     def get_checkpoint_manager(self) -> CheckpointManager:
@@ -280,6 +284,20 @@ class TranslationStateManager:
             except Exception:
                 pass
 
+    def close_database(self) -> None:
+        """Close every SQLite connection opened by the checkpoint database.
+
+        Translation jobs run on daemon threads that never call close(), so
+        their thread-local connections survive the job. close_all() reclaims
+        them all.
+        """
+        db = getattr(self.checkpoint_manager, "db", None)
+        if db is not None:
+            try:
+                db.close_all()
+            except Exception:
+                pass
+
 
 # Global instance
 _state_manager = TranslationStateManager()
@@ -300,5 +318,14 @@ def _shutdown_glossary_store() -> None:
     """Close all GlossaryStore connections on interpreter shutdown."""
     try:
         _state_manager.close_glossary_store()
+    except Exception:
+        pass
+
+
+@atexit.register
+def _shutdown_database() -> None:
+    """Close all checkpoint Database connections on interpreter shutdown."""
+    try:
+        _state_manager.close_database()
     except Exception:
         pass

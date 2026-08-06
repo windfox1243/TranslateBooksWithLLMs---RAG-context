@@ -454,32 +454,16 @@ class CheckpointManager:
         Returns:
             Tuple of (jobs_deleted, files_cleaned)
         """
-        # Get list of old job IDs before deletion (for file cleanup)
-        old_jobs = []
-        try:
-            from datetime import datetime, timedelta
-            cutoff = datetime.now() - timedelta(days=max_age_days)
-
-            # Get jobs that will be deleted
-            all_jobs = self.db.get_resumable_jobs(max_age_days=9999)  # Get all
-            for job in all_jobs:
-                created_str = job.get('created_at', '')
-                if created_str:
-                    try:
-                        created = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
-                        if created.replace(tzinfo=None) < cutoff:
-                            old_jobs.append(job['translation_id'])
-                    except (ValueError, TypeError):
-                        pass
-        except Exception as e:
-            print(f"Warning: Error getting old job list: {e}")
-
-        # Delete from database
-        jobs_deleted = self.db.cleanup_old_jobs(max_age_days)
+        # Delete from database. The returned IDs are the single source of truth
+        # for which uploads may be removed: deriving a second cutoff in Python
+        # would compare local time against UTC created_at values and destroy
+        # uploads for jobs the database deliberately kept.
+        deleted_job_ids = self.db.delete_old_jobs(max_age_days)
+        jobs_deleted = len(deleted_job_ids)
 
         # Clean up upload directories for deleted jobs
         files_cleaned = 0
-        for job_id in old_jobs:
+        for job_id in deleted_job_ids:
             job_upload_dir = self.uploads_dir / job_id
             if job_upload_dir.exists():
                 try:
