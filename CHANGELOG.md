@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.16.0 - 2026-08-06
+
+### Added
+
+- Added `src/persistence/schema.py` as the single owner of every table, additive migration, and index, applied through one `apply_schema` entry point.
+- Added `src/api/job_callbacks.py`, which owns the seam between the engine's plain callbacks and the web layer's socket, state manager, and checkpoint store.
+- Added a `lint` job to the test workflow running the `check-ast` and `check-yaml` pre-commit hooks on every pull request.
+- Added upper version bounds for the eight previously unbounded runtime requirements so an upstream breaking release cannot silently break a tagged build.
+
+### Changed
+
+- Split `src/utils/novel_context.py` into a package of seventeen cohesive modules. All sixty-three previously importable names, including the private helpers that other packages depend on, are re-exported unchanged.
+- Split the 2,879-line translation blueprint factory into one registration module per route domain: lifecycle, context, addressing, relationships, narrator, editor, and maintenance. Every URL rule, method set, and endpoint name is unchanged.
+- Moved the editor pre-flight and reflection prompt composition out of the reflection pass and into `src/core/editor/preflight.py` and `src/core/editor/prompting.py`.
+- Repository facades are now built once per database instead of allocated on every property access.
+- Documented in `docs/ARCHITECTURE.md` that the repositories remain a naming boundary rather than a completed migration, and that the schema sweep cannot be skipped on an up-to-date file because it also carries data-repair passes.
+
+### Fixed
+
+- Fixed the README download buttons. The Windows link pointed at an asset name that has never been published and returned 404, and both macOS links pointed at the upstream repository rather than this fork.
+- Fixed job upload directories being deleted for jobs the database kept. The cleanup cutoff was computed in local time and compared against UTC timestamps, so at positive UTC offsets it destroyed uploads for retained jobs and made them unresumable. The directory removal is now driven by the identifiers the database reports as actually deleted.
+- Fixed a SQLite connection leak of one connection and file handle per translation job, each of which runs on its own thread. Connections are now tracked across threads and released together, matching the fix already present in the glossary store.
+- Fixed completed jobs never leaving process memory, where each retained its configuration, statistics, and up to one thousand log lines for the lifetime of the process.
+- Fixed a lost-update race on the job log list, which was read, mutated, and written back outside the state lock instead of using the existing atomic append.
+- Capped concurrent translation job threads through the new `MAX_CONCURRENT_JOBS` setting, which previously had no bound.
+- Stopped tracking the built executable and the two release archives, which are already published as release assets and were re-committed on every release. History is intentionally preserved, so existing clones stay valid.
+- Removed ten one-off scripts written against specific books, none of which had any inbound reference.
+
+### Tests
+
+- Added regression coverage for the cleanup timezone bug under a non-UTC local zone, cross-thread connection release, completed-job eviction, atomic log appends, and the concurrency cap.
+- Added structural gates that fail on drift: a snapshot of the `novel_context` public surface, a snapshot of the translation blueprint's URL map, and schema ownership, idempotence, and repository caching checks.
+- Passed the complete automated suite with 1,951 tests passing, one skipped, and ten intentionally deselected integration cases, with the characterization goldens byte-identical throughout the refactor.
+
+### Deferred
+
+- The straight-line body of `generic_translator.translate` and the paragraph loop in `translate_paragraphs_plain` were left in place. Their inner closures read enclosing locals that are rebound while the run proceeds, so extraction would be a rewrite rather than a move, and this release is limited to behavior-preserving moves.
+
 ## 1.15.1 - 2026-07-15
 
 ### Added
