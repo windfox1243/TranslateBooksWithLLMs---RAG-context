@@ -189,6 +189,13 @@ PORT = int(os.getenv('PORT', '5000'))
 REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', '300'))
 OLLAMA_NUM_CTX = int(os.getenv('OLLAMA_NUM_CTX', '4096'))
 
+# Maximum number of translation jobs allowed to run at the same time. The web UI
+# batches jobs sequentially, but two browser tabs or direct API calls can start
+# an unbounded number of worker threads. Jobs beyond this limit queue instead of
+# competing for the same CPU, LLM rate limit and SQLite writer.
+# Read once at import: the cap backs a BoundedSemaphore, which cannot be resized.
+MAX_CONCURRENT_JOBS = max(1, int(os.getenv('MAX_CONCURRENT_JOBS', '4')))
+
 # =============================================================================
 # PARALLEL TRANSLATION CONFIGURATION
 # =============================================================================
