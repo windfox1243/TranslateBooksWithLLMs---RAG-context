@@ -61,12 +61,19 @@ discarding useful translations while retaining an explicit review queue.
   The connection pool and the write lock stay on `Database`, since it is the
   object that opens the file and registers the atexit close; the repositories
   reach them through `self.database`.
-- `src/persistence/schema.py`: every table, additive migration and index, and
-  the one function that applies them. The sweep runs on each `Database()`
-  construction because it also carries data-repair passes (the contract-v2
-  addressing quarantine among them) that must act on rows the current version
-  wrote, not only on inherited ones. Skipping it for an up-to-date file would
-  need those repairs separated from the DDL first.
+- `src/persistence/schema.py`: every table, additive migration and index, split
+  into the two halves that have different rules.
+  `_create_tables_and_migrate_columns` is pure DDL and only has work to do on a
+  file older than the current build, so it runs behind a `PRAGMA user_version`
+  stamp and is skipped once the file is known current -- which matters because
+  `Database` is constructed independently by five or more modules.
+  `_repair_data` carries the passes that fix rows the *current* version can
+  still write (the contract-v2 addressing quarantine, the contract-v3
+  copied-vocative reclassification, the evidence-fingerprint backfills), so it
+  runs unconditionally on every construction.
+  Adding a DDL statement requires bumping `SCHEMA_VERSION` in the same commit,
+  or stamped databases skip it; `tests/unit/test_schema_version_stamp.py`
+  fails on a DDL change without the bump.
 - `src/persistence/`: SQLite storage and checkpoint aggregation. Migrations are
   additive so an existing jobs database remains readable.
 - `src/api/`: request lifecycle and serialized job state. `job_callbacks.py`
