@@ -13,6 +13,7 @@ from .document import (
     extract_dynamic_state_from_text,
     extract_global_lore,
 )
+from .gating import set_bypass_context_gating
 from .glossary import (
     _character_alias_map,
     _is_inverted_target_to_source_glossary_pair,
@@ -106,6 +107,7 @@ class RefinementContextTracker:
         from src.utils.dialogue_attribution import (
             canonicalize_dialogue_attribution,
             detect_dialogue_turns,
+            dialogue_attribution_or_carry,
             dialogue_attribution_stats,
             empty_dialogue_attribution,
         )
@@ -202,9 +204,8 @@ class RefinementContextTracker:
                 custom_instructions=str(self.prompt_options.get("custom_instructions") or ""),
                 glossary_block=str(self.prompt_options.get("glossary_block") or ""),
             )
-            self.current_dialogue_attribution = (
-                dialogue_sink
-                or empty_dialogue_attribution()
+            self.current_dialogue_attribution = dialogue_attribution_or_carry(
+                dialogue_sink, self.dialogue_state
             )
             self.dialogue_state = dict(
                 self.current_dialogue_attribution.get("state_after") or {}
@@ -368,8 +369,8 @@ class NovelContextSession:
         """Analyze source text before translating it and expose the new context."""
         from src.utils.dialogue_attribution import (
             detect_dialogue_turns,
+            dialogue_attribution_or_carry,
             dialogue_attribution_stats,
-            empty_dialogue_attribution,
         )
 
         normalized_scene_key = (
@@ -450,12 +451,9 @@ class NovelContextSession:
             addressing_sink.get("parse_status") or "absent"
         )
         self.remember_source(source_chunk)
-        dialogue_state_after = dialogue_sink.get("state_after") or {}
-        self.dialogue_attribution = (
-            dialogue_sink
-            if dialogue_turns or dialogue_state_after
-            else empty_dialogue_attribution(self.dialogue_state)
-        ) or empty_dialogue_attribution()
+        self.dialogue_attribution = dialogue_attribution_or_carry(
+            dialogue_sink, self.dialogue_state
+        )
         self.dialogue_state = dict(
             self.dialogue_attribution.get("state_after") or {}
         )
@@ -575,9 +573,13 @@ class NovelContextSession:
             self.addressing_parse_status = str(
                 addressing_sink.get("parse_status") or "absent"
             )
-            if dialogue_sink:
-                self.dialogue_attribution = dialogue_sink
-                self.dialogue_state = dict(dialogue_sink.get("state_after") or {})
+            from src.utils.dialogue_attribution import dialogue_attribution_or_carry
+            self.dialogue_attribution = dialogue_attribution_or_carry(
+                dialogue_sink, self.dialogue_state
+            )
+            self.dialogue_state = dict(
+                self.dialogue_attribution.get("state_after") or {}
+            )
             self.save()
             return True
         else:
@@ -607,13 +609,10 @@ def open_novel_context_session(
     log_callback: Optional[Callable] = None,
 ) -> Optional[NovelContextSession]:
     """Load/create context state, restore a snapshot, and inject it into prompts."""
-    # Override global bypass gating variable dynamically based on job parameters
+    # Scoped to this job's flow rather than assigned onto src.config, which is
+    # shared by every concurrent job in the process. See gating.py.
     if "bypass_context_gating" in prompt_options:
-        try:
-            from src import config as _config
-            _config.BYPASS_CONTEXT_GATING = bool(prompt_options["bypass_context_gating"])
-        except Exception:
-            pass
+        set_bypass_context_gating(bool(prompt_options["bypass_context_gating"]))
 
     novel_context_file = prompt_options.get("novel_context_file")
     auto_update_context = bool(prompt_options.get("auto_update_context", False))

@@ -36,6 +36,7 @@ from .constants import (
     _SPECIFIC_GENDER_LABELS,
     CHARACTERS_SECTION,
 )
+from .gating import bypass_context_gating
 
 
 def _display_role_title(role_key: str) -> str:
@@ -412,13 +413,7 @@ def _gate_unproven_character_gender(
     Existing specific genders remain authoritative unless the source proves a
     correction; this gate only rejects an incoming unsupported claim.
     """
-    try:
-        from src import config as _config
-        bypass = getattr(_config, "BYPASS_CONTEXT_GATING", True)
-    except Exception:
-        bypass = True
-
-    if bypass:
+    if bypass_context_gating():
         return value
 
     if not source_text:

@@ -33,6 +33,9 @@
 - Capped concurrent translation job threads through the new `MAX_CONCURRENT_JOBS` setting, which previously had no bound.
 - Stopped tracking the built executable and the two release archives, which are already published as release assets and were re-committed on every release. History is intentionally preserved, so existing clones stay valid.
 - Removed ten one-off scripts written against specific books, none of which had any inbound reference.
+- Fixed accumulated dialogue speaker state being discarded whenever a context update failed. Both failure paths fill the attribution sink with an empty result, and the session read that as "this chunk had no speakers" rather than "the update produced nothing", so it cleared the speaker map. The condition was also inverted with respect to the risk: a chunk with no dialogue kept its state, while a chunk dense with dialogue, which is the one whose update is most likely to fail, lost it.
+- Fixed the context gating switch leaking between concurrent jobs. Opening a context session applied the job's `bypass_context_gating` option by assigning to the process-wide setting, so a second job could switch off another job's protection against model-guessed character genders mid-run, and the last job's choice stayed behind for every job afterwards. The override is now scoped to the job's own flow.
+- Fixed two jobs sharing one context file being able to corrupt it. Saving staged through a fixed `.tmp` name with no lock, so simultaneous writers wrote into the same staging file and the surviving document could be a blend of both. Each writer now stages through its own file, and writers to the same path are serialized.
 - Fixed the background context resync running twice. The call that awaited the result shared a `try` with the event-loop acquisition, so an error raised by the resync itself was mistaken for a missing loop and the whole pass, database writes included, was replayed.
 - Reported five failures that were previously discarded in silence. An EPUB chapter that fails to parse during the refine pre-count shifts the chunk indices every later file is snapshotted under. A failed per-unit lore reload, in both translation loops, leaves drafting against the previous unit's context. A failed editor pre-flight leaves proper names out of the protected set, so the editor is free to rewrite them. And a relationship node overwrote stored aliases it could not parse with only the incoming set, which makes a character stop being recognized mid-book. All five still continue past the failure on purpose, but now say what was lost.
 
@@ -44,7 +47,8 @@
 - Added tests that the moved SQL is reached directly rather than through the forwarding fallback, and that context and narrator calls still forward.
 - Added a regression asserting the context resync coroutine runs exactly once, which fails against the previous code with a count of two.
 - Added coverage for resume-context precedence, including the case where the resume index is reported although no snapshot was found for it.
-- Passed the complete automated suite with 1,979 tests passing, one skipped, and ten intentionally deselected integration cases, with the characterization goldens byte-identical throughout the refactor.
+- Added coverage for the three novel-context state leaks: a failed update carrying the previous speaker state forward, the gating override staying on its own thread and never writing back to the shared configuration, and concurrent writers to one context file each staging through their own temporary.
+- Passed the complete automated suite with 1,993 tests passing, one skipped, and ten intentionally deselected integration cases, with the characterization goldens byte-identical throughout the refactor.
 
 ### Deferred
 

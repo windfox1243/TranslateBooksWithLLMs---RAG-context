@@ -231,6 +231,7 @@ from .dynamic_state import (
     _within_one_edit,
     infer_dynamic_address_identity_links,
 )
+from .gating import bypass_context_gating, set_bypass_context_gating
 from .glossary import (
     _build_name_translation_map_lines,
     _character_alias_keys_from_lore,

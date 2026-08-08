@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import unicodedata
+import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from .constants import (
     ADDRESSING_SECTION,
@@ -19,7 +21,24 @@ from .constants import (
 )
 from .merge import build_novel_context, normalize_novel_context_content
 
+_WRITER_LOCKS: Dict[str, threading.Lock] = {}
+_WRITER_LOCKS_GUARD = threading.Lock()
 
+
+def _writer_lock(file_path: Path) -> threading.Lock:
+    """Return the lock guarding writes to one context file.
+
+    Keyed by resolved path so two spellings of the same file share a lock. The
+    table is never pruned: there is one entry per context file the process has
+    written, which is bounded by how many novels the user is working on.
+    """
+    key = str(file_path.resolve())
+    with _WRITER_LOCKS_GUARD:
+        lock = _WRITER_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _WRITER_LOCKS[key] = lock
+        return lock
 def is_safe_filename(filename: str) -> bool:
     """Return whether a context filename is safe while preserving Unicode names."""
     if not filename or filename != filename.strip():
@@ -135,12 +154,27 @@ def save_novel_context(filename: str, novel_contexts_dir: Path, content: str) ->
         )
 
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = file_path.with_suffix(file_path.suffix + ".tmp")
-    temporary_path.write_text(
-        normalize_novel_context_content(content),
-        encoding="utf-8",
-    )
-    temporary_path.replace(file_path)
+    normalized = normalize_novel_context_content(content)
+
+    # Two things make this safe under concurrent jobs, and they cover different
+    # failures. The temporary name is unique per writer, so two jobs sharing one
+    # context file -- normal when translating several volumes of the same novel
+    # -- cannot write into each other's staging file and leave a blend of both
+    # behind. The lock then serializes writers to the same path within this
+    # process, so the last replace wins whole rather than racing.
+    #
+    # This makes each write atomic. It does not make a caller's read, edit and
+    # write-back atomic; two jobs interleaving there still lose one edit.
+    with _writer_lock(file_path):
+        temporary_path = file_path.with_name(
+            f"{file_path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+        )
+        try:
+            temporary_path.write_text(normalized, encoding="utf-8")
+            temporary_path.replace(file_path)
+        finally:
+            # replace() consumed it on success; on failure it is a stray file.
+            temporary_path.unlink(missing_ok=True)
 def resolve_novel_context_path(filename: str, novel_contexts_dir: Path) -> Path:
     """Resolve novel context file path. Checks directory first, then absolute/relative."""
     if is_safe_filename(filename):

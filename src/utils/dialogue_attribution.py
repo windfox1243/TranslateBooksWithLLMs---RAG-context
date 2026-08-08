@@ -420,3 +420,27 @@ def empty_dialogue_attribution(
         "turns": [],
         "state_after": dict(state_after or {}),
     }
+
+
+def dialogue_attribution_or_carry(
+    sink: Optional[Dict[str, Any]],
+    current_state: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """Return the sink's attribution, or carry `current_state` forward.
+
+    An attribution sink comes back shaped like `empty_dialogue_attribution()`
+    -- truthy, but carrying no turns and no state -- from both failure paths in
+    `update_novel_context_chunk`: an empty LLM response and a raised exception.
+    Both of those return the caller's lore unchanged, so the dialogue state has
+    to survive the same way. Reading the empty sink instead would clear the
+    speaker map mid-scene, and it would do so precisely on the chunks that
+    needed it most, since a chunk dense with dialogue is the one whose update
+    is most likely to fail.
+
+    So the decision is whether the update produced anything, not whether the
+    source had dialogue in it.
+    """
+    payload = sink or {}
+    if payload.get("turns") or payload.get("state_after"):
+        return payload
+    return empty_dialogue_attribution(current_state)
