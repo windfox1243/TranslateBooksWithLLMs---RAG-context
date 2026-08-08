@@ -166,6 +166,6 @@ def resolve_novel_context_path(filename: str, novel_contexts_dir: Path) -> Path:
 
     if os.path.isabs(filename):
         return Path(filename).resolve()
-    
+
     # Try relative to current working directory
     return Path(filename).resolve()

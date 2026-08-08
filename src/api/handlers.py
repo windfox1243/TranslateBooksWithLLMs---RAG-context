@@ -106,7 +106,7 @@ def run_translation_async_wrapper(translation_id, config, state_manager, output_
 async def perform_actual_translation(translation_id, config, state_manager, output_dir, socketio):
     """
     Perform the actual translation job
-    
+
     Args:
         translation_id (str): Translation job ID
         config (dict): Translation configuration

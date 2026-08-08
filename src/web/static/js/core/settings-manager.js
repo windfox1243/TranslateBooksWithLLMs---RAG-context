@@ -788,16 +788,16 @@ export const SettingsManager = {
         const inputId = endpointType === 'openai' ? 'openaiEndpoint' : 'apiEndpoint';
         // Update input field
         DomHelpers.setValue(inputId, serverValue);
-        
+
         // Update badge
         this.updateEndpointBadge(endpointType, false);
-        
+
         // Reload models with new endpoint
         const currentProvider = DomHelpers.getValue('llmProvider');
         if (currentProvider === endpointType || (endpointType === 'ollama' && currentProvider === 'ollama')) {
             window.dispatchEvent(new Event('endpointReset'));
         }
-        
+
         MessageLogger.addLog(`↺ ${t('common:endpoint_reset_log')}`);
     },
 
@@ -812,7 +812,7 @@ export const SettingsManager = {
         if (badge) {
             badge.style.display = isCustomized ? 'inline-block' : 'none';
         }
-        
+
         // Also show/hide the reset button
         const resetBtnId = endpointType === 'openai' ? 'resetOpenaiEndpointBtn' : 'resetApiEndpointBtn';
         const resetBtn = DomHelpers.getElement(resetBtnId);

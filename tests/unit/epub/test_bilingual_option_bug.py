@@ -45,7 +45,7 @@ class TestBilingualOptionBug:
 
             # Call translate_content with bilingual=True in prompt_options
             prompt_options = {'bilingual': True}
-            
+
             await adapter.translate_content(
                 raw_content=doc_root,
                 structure_map={},
@@ -57,7 +57,7 @@ class TestBilingualOptionBug:
                 max_tokens_per_chunk=1000,
                 prompt_options=prompt_options,
             )
-            
+
             # Verify translate_xhtml_simplified was called with bilingual=True
             assert mock_translate.called, "translate_xhtml_simplified should have been called"
 
@@ -77,17 +77,17 @@ class TestBilingualOptionBug:
         Test that bilingual defaults to False when absent from prompt_options.
         """
         adapter = EpubTranslationAdapter()
-        
+
         doc_root = etree.Element("html")
         body = etree.SubElement(doc_root, "body")
         p = etree.SubElement(body, "p")
         p.text = "Hello world"
-        
+
         mock_llm = MagicMock()
-        
+
         with patch('src.core.epub.xhtml_translator.translate_xhtml_simplified') as mock_translate:
             mock_translate.return_value = (True, MagicMock())
-            
+
             # Call without prompt_options
             await adapter.translate_content(
                 raw_content=doc_root,
@@ -100,10 +100,10 @@ class TestBilingualOptionBug:
                 max_tokens_per_chunk=1000,
                 prompt_options=None,
             )
-            
+
             assert mock_translate.called
             call_kwargs = mock_translate.call_args[1]
-            
+
             # By default, bilingual should be False
             assert 'bilingual' in call_kwargs
             assert call_kwargs['bilingual'] is False
@@ -114,19 +114,19 @@ class TestBilingualOptionBug:
         Test that bilingual=False works when explicitly set in prompt_options.
         """
         adapter = EpubTranslationAdapter()
-        
+
         doc_root = etree.Element("html")
         body = etree.SubElement(doc_root, "body")
         p = etree.SubElement(body, "p")
         p.text = "Hello world"
-        
+
         mock_llm = MagicMock()
-        
+
         with patch('src.core.epub.xhtml_translator.translate_xhtml_simplified') as mock_translate:
             mock_translate.return_value = (True, MagicMock())
-            
+
             prompt_options = {'bilingual': False}
-            
+
             await adapter.translate_content(
                 raw_content=doc_root,
                 structure_map={},
@@ -138,10 +138,10 @@ class TestBilingualOptionBug:
                 max_tokens_per_chunk=1000,
                 prompt_options=prompt_options,
             )
-            
+
             assert mock_translate.called
             call_kwargs = mock_translate.call_args[1]
-            
+
             assert 'bilingual' in call_kwargs
             assert call_kwargs['bilingual'] is False
 

@@ -37,6 +37,14 @@ jobs:
       - name: Check import order
         run: pre-commit run --all-files isort
 
+      # Both hooks were in .pre-commit-config.yaml but nothing ran them, so the
+      # tree had drifted. It was cleaned in one pass alongside this job.
+      - name: Check trailing whitespace
+        run: pre-commit run --all-files trailing-whitespace
+
+      - name: Check end of file
+        run: pre-commit run --all-files end-of-file-fixer
+
   pytest:
     runs-on: ubuntu-latest
     steps:

@@ -53,18 +53,18 @@ def test_is_safe_filename():
 def test_novel_context_operations():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
-        
+
         # Test load when missing (creates template)
         content = load_novel_context("test_novel.txt", tmp_path)
         assert "# CHARACTERS & GENDERS" in content
         assert "test_novel.txt" in [f["filename"] for f in list_novel_contexts(tmp_path)]
-        
+
         # Test save and load
         new_content = "Custom content here."
         save_novel_context("test_novel.txt", tmp_path, new_content)
         loaded = load_novel_context("test_novel.txt", tmp_path)
         assert loaded == new_content
-        
+
         # Test resolve path
         resolved = resolve_novel_context_path("test_novel.txt", tmp_path)
         assert resolved == tmp_path / "test_novel.txt"
@@ -95,7 +95,7 @@ def test_prompt_injection_translation():
         target_language="Vietnamese",
         prompt_options={"novel_context": novel_context}
     )
-    
+
     assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" not in prompt_pair.system
     assert novel_context not in prompt_pair.system
     assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair.user
@@ -669,7 +669,7 @@ def test_prompt_injection_refinement():
         target_language="French",
         prompt_options={"novel_context": novel_context}
     )
-    
+
     assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" not in prompt_pair.system
     assert novel_context not in prompt_pair.system
     assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair.user
@@ -809,7 +809,7 @@ def test_vietnamese_prompts_guard_first_person_pronoun_consistency():
 def test_prompt_injection_subtitles():
     novel_context = "Address: Anh / Em."
     subtitles = [(0, "Hello"), (1, "Yes")]
-    
+
     # Translation
     prompt_pair_trans = generate_subtitle_block_prompt(
         subtitle_blocks=subtitles,
@@ -825,7 +825,7 @@ def test_prompt_injection_subtitles():
     assert "RELATIONSHIP AND ADDRESSING GUARDRAILS" in prompt_pair_trans.system
     assert "# NOVEL CONTEXT (CHARACTERS, RELATIONSHIPS & GLOSSARY)" in prompt_pair_trans.user
     assert novel_context in prompt_pair_trans.user
-    
+
     # Refinement
     prompt_pair_refine = generate_subtitle_refinement_block_prompt(
         subtitle_blocks=subtitles,
@@ -898,9 +898,9 @@ async def test_resync_context_snapshots_logic():
     with patch('src.api.translation_state.get_state_manager', return_value=mock_state_mgr), \
          patch('src.core.llm_client.LLMClient') as mock_llm_class, \
          patch('src.utils.novel_context.update_novel_context_chunk', new_callable=AsyncMock) as mock_update:
-        
+
         mock_update.return_value = (mock_global_lore, mock_dynamic_state, mock_change_logs)
-        
+
         # Run resync for chunk_index > 0 (start_chunk_index=0, so index 1 is resynced)
         await _resync_context_snapshots_async(
             translation_id=translation_id,
@@ -911,17 +911,17 @@ async def test_resync_context_snapshots_logic():
 
         # Verify load_checkpoint was called
         mock_checkpoint_mgr.load_checkpoint.assert_called_with(translation_id)
-        
+
         # Verify update_novel_context_chunk was called for chunk 1
         mock_update.assert_called_once()
-        
+
         # Resync writes to persistent staging before atomic activation.
         mock_db.stage_context_resync_chunk.assert_called_once()
         args, kwargs = mock_db.stage_context_resync_chunk.call_args
         assert args[1] == translation_id
         assert args[2]['chunk_index'] == 1
         assert 'context_snapshot' in args[2]['chunk_data']
-        
+
         # Verify logging appends logs successfully
         assert mock_state_mgr.append_log.called
 
@@ -1034,9 +1034,9 @@ async def test_resync_context_snapshots_resets_dialogue_state_on_scene_key_fallb
     with patch('src.api.translation_state.get_state_manager', return_value=mock_state_mgr), \
          patch('src.core.llm_client.LLMClient'), \
          patch('src.utils.novel_context.update_novel_context_chunk', new_callable=AsyncMock) as mock_update:
-        
+
         mock_update.side_effect = update_side_effect
-        
+
         # Run resync starting from chunk 0. This will process chunk 1 and chunk 2.
         await _resync_context_snapshots_async(
             translation_id=translation_id,
@@ -1044,18 +1044,18 @@ async def test_resync_context_snapshots_resets_dialogue_state_on_scene_key_fallb
             initial_compressed_snapshot=initial_snapshot,
             socketio=None
         )
-        
+
         # Since we processed chunk 1 (scene_key='2') and chunk 2 (scene_key='2'):
         # For chunk 1: the initial state of chunk 0 (scene_key='1') was reset because scene_key transitioned ('1' != '2').
         # So current_dialogue_state passed to update_novel_context_chunk for chunk 1 must be {} (empty).
         # For chunk 2: scene_key didn't transition ('2' == '2'), so current_dialogue_state is carried from chunk 1's state_after, i.e. {'speaker': 'C', 'addressee': 'D'}.
-        
+
         assert mock_update.call_count == 2
-        
+
         # Check call arguments for chunk 1 (first call)
         first_call_kwargs = mock_update.call_args_list[0][1]
         assert first_call_kwargs['current_dialogue_state'] == {}
-        
+
         # Check call arguments for chunk 2 (second call)
         second_call_kwargs = mock_update.call_args_list[1][1]
         assert second_call_kwargs['current_dialogue_state'] == {'speaker': 'C', 'addressee': 'D'}
@@ -2761,7 +2761,7 @@ def test_explicit_identity_link_allows_physical_unstable_aliases():
     assert "mysterious child watch from the shadow" in updated
     assert "youth from the slums" in updated
     assert "boy in Korean" in updated
-    
+
     # Meta roles (like Protagonist) should still be rejected/ignored
     assert "- Protagonist:" not in updated
     assert "- Protagonist: Eric" not in updated
@@ -5303,11 +5303,11 @@ async def test_consolidation_triggered_on_last_chunk():
         "[NEW_GLOSSARY]\n"
         "[DYNAMIC_STATE]\n"
     )
-    
+
     # Second response is for the consolidation pass
     mock_consolidation = MagicMock()
     mock_consolidation.content = "- Eric: Male, protagonist, soldier."
-    
+
     llm_client.generate = AsyncMock()
     llm_client.generate.side_effect = [mock_response, mock_consolidation]
 
@@ -5326,7 +5326,7 @@ async def test_consolidation_triggered_on_last_chunk():
         chunk_index=3,
         total_chunks=3,
     )
-    
+
     # We verify that consolidation ran (which means generate was called twice)
     assert llm_client.generate.call_count == 2
     assert any("[Novel Context] Consolidation pass" in log for log in logs)

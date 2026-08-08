@@ -60,7 +60,7 @@ def build_job_callbacks(
         """Callback for WebSocket emission"""
         # Send full log entry for structured processing on client side
         emit_update(socketio, translation_id, {'log': log_entry['message'], 'log_entry': log_entry}, state_manager)
-    
+
     def storage_callback(log_entry):
         """Callback for storing logs.
 
@@ -68,7 +68,7 @@ def build_job_callbacks(
         entries the way a get-mutate-set round trip does.
         """
         state_manager.append_log(translation_id, log_entry)
-    
+
     logger = setup_web_logger(web_callback, storage_callback)
 
     def _ui_step_metadata(message_key):
@@ -116,13 +116,13 @@ def build_job_callbacks(
         else:
             phase = "translation"
         return {"ui_step": message_key, "phase": phase}
-    
+
     def _log_message_callback(message_key_from_translate_module, message_content="", data=None):
         """Legacy callback wrapper for backward compatibility"""
         # Skip debug messages for web interface
         if message_key_from_translate_module in ["llm_prompt_debug", "llm_raw_response_preview"]:
             return
-        
+
         step_metadata = _ui_step_metadata(message_key_from_translate_module)
         structured_data = dict(data) if isinstance(data, dict) else {}
         if step_metadata:

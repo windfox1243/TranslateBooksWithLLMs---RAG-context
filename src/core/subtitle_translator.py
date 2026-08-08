@@ -48,7 +48,7 @@ async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: 
                             prompt_options=None) -> Dict[int, str]:
     """
     Translate subtitle entries preserving structure
-    
+
     Args:
         subtitles (list): List of subtitle dictionaries from SRT parser
         source_language (str): Source language
@@ -57,7 +57,7 @@ async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: 
         api_endpoint (str): API endpoint        log_callback (callable): Logging callback
         stats_callback (callable): Statistics update callback
         check_interruption_callback (callable): Interruption check callback
-        
+
     Returns:
         dict: Mapping of subtitle index to translated text
     """
@@ -65,45 +65,45 @@ async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: 
     translations = {}
     completed_count = 0
     failed_count = 0
-    
+
     if log_callback:
         log_callback("srt_translation_start", f"Starting translation of {total_subtitles} subtitles...")
-    
+
     # Create LLM client based on provider or custom endpoint
     llm_client = create_llm_client(llm_provider, gemini_api_key, api_endpoint, model_name, openai_api_key, openrouter_api_key, log_callback=log_callback)
-    
+
     try:
-        iterator = tqdm(enumerate(subtitles), total=total_subtitles, 
-                       desc=f"Translating subtitles ({source_language} to {target_language})", 
+        iterator = tqdm(enumerate(subtitles), total=total_subtitles,
+                       desc=f"Translating subtitles ({source_language} to {target_language})",
                        unit="subtitle") if not log_callback else enumerate(subtitles)
-        
+
         for idx, subtitle in iterator:
             if check_interruption_callback and check_interruption_callback():
                 if log_callback:
-                    log_callback("srt_translation_interrupted", 
+                    log_callback("srt_translation_interrupted",
                                f"Translation interrupted at subtitle {idx+1}/{total_subtitles}")
                 else:
                     tqdm.write(f"\nTranslation interrupted at subtitle {idx+1}/{total_subtitles}")
                 break
 
             text_to_translate = subtitle['text'].strip()
-            
+
             if not text_to_translate:
                 translations[idx] = ""
                 completed_count += 1
                 continue
-            
+
             context_before = ""
             context_after = ""
-            
+
             if idx > 0 and idx-1 in translations:
                 context_before = translations[idx-1]
             elif idx > 0:
                 context_before = subtitles[idx-1].get('text', '')
-            
+
             if idx < len(subtitles) - 1:
                 context_after = subtitles[idx+1].get('text', '')
-            
+
             translated_text = await generate_translation_request(
                 text_to_translate,
                 context_before,
@@ -116,7 +116,7 @@ async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: 
                 log_callback=log_callback,
                 custom_instructions=custom_instructions
             )
-            
+
             if translated_text is not None:
                 # Single point of cleaning for subtitles
                 cleaned_translation = clean_translated_text(translated_text)
@@ -152,14 +152,14 @@ async def translate_subtitles(subtitles: List[Dict[str, str]], source_language: 
                     tqdm.write(f"\n{err_msg}")
                 translations[idx] = text_to_translate  # Keep original
                 failed_count += 1
-            
+
             if stats_callback and total_subtitles > 0:
                 stats_callback({
                     'completed_chunks': completed_count,
                     'failed_chunks': failed_count,
                     'total_chunks': total_subtitles,
                 })
-    
+
         if log_callback:
             log_callback("srt_translation_complete",
                         f"Completed translation: {completed_count} successful, {failed_count} failed")
@@ -364,7 +364,7 @@ async def refine_subtitle_translations(
 
         block_refined: Dict[int, str] = {}
         expected_local_indices = list(range(len(local_subtitle_tuples)))
-        
+
         context_content = await context_tracker.next_context(
             text=block_text_for_glossary,
             llm_client=llm_client,
@@ -595,9 +595,9 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
     from src.core.srt_processor import SRTProcessor
 
     from .llm_client import default_client
-    
+
     srt_processor = SRTProcessor()
-    
+
     total_blocks = len(subtitle_blocks)
     total_subtitles = sum(len(block) for block in subtitle_blocks)
     translations = {}
@@ -644,10 +644,10 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
     if log_callback:
         log_callback("srt_block_translation_start",
                     f"Starting block translation: {total_subtitles} subtitles in {total_blocks} blocks...")
-    
+
     # Create LLM client based on provider or custom endpoint
     llm_client = create_llm_client(llm_provider, gemini_api_key, api_endpoint, model_name, openai_api_key, openrouter_api_key, log_callback=log_callback)
-    
+
     try:
         for block_idx, block in enumerate(subtitle_blocks):
             # Skip already processed blocks when resuming
@@ -705,7 +705,7 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                 glossary_block=glossary_block,
                 prompt_options=prompt_options,
             )
-            
+
             # Make translation request using LLM client with retry mechanism
             max_retries = 3
             retry_count = 0
@@ -856,7 +856,7 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                             continue
                         else:
                             break
-                            
+
                 except Exception as e:
                     # Re-raise RateLimitError to trigger auto-pause
                     from src.core.llm.exceptions import RateLimitError
@@ -870,7 +870,7 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                         continue
                     else:
                         break
-            
+
             if translated_block_text:
                 # Extract individual translations from block with local->global index remapping
                 block_translations = srt_processor.extract_block_translations_with_remapping(
@@ -927,7 +927,7 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                         completed_chunks=completed_blocks_count,
                         failed_chunks=failed_blocks_count
                     )
-                
+
             else:
                 # Block translation failed - keep original text
                 err_msg = f"Failed to translate block {block_idx+1}"
@@ -969,7 +969,7 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                         completed_chunks=completed_blocks_count,
                         failed_chunks=failed_blocks_count
                     )
-            
+
             if stats_callback and total_subtitles > 0:
                 stats_callback({
                     'completed_chunks': completed_count,
@@ -978,7 +978,7 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                     'completed_blocks': block_idx + 1,
                     'total_blocks': total_blocks,
                 })
-        
+
         if log_callback:
             log_callback("srt_block_translation_complete",
                         f"Completed block translation: {completed_count} successful, {failed_count} failed")

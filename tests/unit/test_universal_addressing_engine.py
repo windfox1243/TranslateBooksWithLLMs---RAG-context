@@ -187,6 +187,3 @@ def test_incompatible_register_repair_toi_nguoi():
     )
     assert s == "ta"
     assert t == "ngươi"
-
-
-

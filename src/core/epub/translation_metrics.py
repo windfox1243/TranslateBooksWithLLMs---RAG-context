@@ -33,7 +33,7 @@ class TranslationMetrics:
     fallback_used: int = 0  # Phase 3: Chunks returned untranslated after all phases failed
     failed_chunks: int = 0
     review_required_chunks: int = 0
-    
+
     # === Progress tracking ===
     processed_chunks: int = 0  # Chunks fully processed (regardless of success/failure)
     # This is used for progress calculation to avoid fluctuations during retries
@@ -117,10 +117,10 @@ class TranslationMetrics:
         # Note: total_chunks is initialized in _translate_all_chunks, not incremented here
         self.failed_chunks += 1
         self._update_chunk_stats(chunk_size)
-    
+
     def record_processed(self) -> None:
         """Record that a chunk has been fully processed (success or failure).
-        
+
         This is used for progress tracking to ensure the progress bar only moves forward.
         """
         self.processed_chunks += 1
@@ -537,10 +537,10 @@ class TranslationMetrics:
         self.total_tokens_processed += other.total_tokens_processed
         self.total_tokens_generated += other.total_tokens_generated
         self.total_chunk_size += other.total_chunk_size
-        
+
         # Merge refinement tracking (needed for accurate progress across multiple files)
         self.refinement_chunks_completed += other.refinement_chunks_completed
-        
+
         # Merge progress tracking
         self.processed_chunks += other.processed_chunks
 

@@ -1810,4 +1810,3 @@ Output ONLY the final repaired translation text inside {translate_tag_in} and {t
     user_sections.append(f"Output your pristine repaired translation in {translate_tag_in}...{translate_tag_out} now:")
 
     return PromptPair(system=system_prompt.strip(), user="\n\n".join(user_sections))
-

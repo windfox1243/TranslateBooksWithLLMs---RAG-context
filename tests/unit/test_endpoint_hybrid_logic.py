@@ -18,7 +18,7 @@ import pytest
 class TestEndpointHybridLogic:
     """
     Tests for the hybrid endpoint configuration logic.
-    
+
     The logic is:
     - First load: use .env server default
     - User modifies endpoint: mark as customized, show badge
@@ -46,9 +46,9 @@ class TestEndpointHybridLogic:
         """
         settings_manager = js_files["settings_manager"]
         assert settings_manager.exists(), f"settings-manager.js not found"
-        
+
         content = settings_manager.read_text(encoding='utf-8')
-        
+
         # Check for the methods
         assert "markEndpointCustomized" in content, \
             "SettingsManager should have markEndpointCustomized() method"
@@ -65,11 +65,11 @@ class TestEndpointHybridLogic:
         """
         settings_manager = js_files["settings_manager"]
         content = settings_manager.read_text(encoding='utf-8')
-        
+
         # Should have updateEndpointBadge method
         assert "updateEndpointBadge" in content, \
             "SettingsManager should have updateEndpointBadge() method"
-        
+
         # Should reference badge IDs
         assert "apiEndpointBadge" in content or "EndpointBadge" in content, \
             "Should reference endpoint badge elements"
@@ -80,13 +80,13 @@ class TestEndpointHybridLogic:
         """
         form_manager = js_files["form_manager"]
         assert form_manager.exists(), f"form-manager.js not found"
-        
+
         content = form_manager.read_text(encoding='utf-8')
-        
+
         # Check for event listeners on endpoint changes
         assert "markEndpointCustomized" in content, \
             "FormManager should call markEndpointCustomized when endpoint changes"
-        
+
         # Check that it listens for apiEndpoint changes
         assert "apiEndpoint" in content and "addEventListener" in content, \
             "FormManager should listen for endpoint input changes"
@@ -97,7 +97,7 @@ class TestEndpointHybridLogic:
         """
         form_manager = js_files["form_manager"]
         content = form_manager.read_text(encoding='utf-8')
-        
+
         assert "prefs.apiEndpointCustomized" not in content
         assert "prefs.lastApiEndpoint" not in content
         assert "DomHelpers.setValue('apiEndpoint', ollamaEndpoint)" in content
@@ -110,30 +110,30 @@ class TestEndpointHybridLogic:
         Verify HTML template has badge and reset button for endpoints.
         """
         assert html_file.exists(), f"translation_interface.html not found"
-        
+
         content = html_file.read_text(encoding='utf-8')
-        
+
         # Check for Ollama endpoint badge
         assert "apiEndpointBadge" in content, \
             "HTML should have apiEndpointBadge element"
-        
+
         # Check for Ollama reset button
         assert "resetApiEndpointBtn" in content, \
             "HTML should have resetApiEndpointBtn element"
-        
+
         # Check for OpenAI endpoint badge
         assert "openaiEndpointBadge" in content, \
             "HTML should have openaiEndpointBadge element"
-        
+
         # Check for OpenAI reset button
         assert "resetOpenaiEndpointBtn" in content, \
             "HTML should have resetOpenaiEndpointBtn element"
-        
+
         # Check for badge styling (hidden by default)
         badge_pattern = r'apiEndpointBadge.*style.*display:\s*none'
         assert re.search(badge_pattern, content, re.DOTALL | re.IGNORECASE), \
             "Badge should be hidden by default (display: none)"
-        
+
         # Check for reset button styling (hidden by default)
         btn_pattern = r'resetApiEndpointBtn.*style.*display:\s*none'
         assert re.search(btn_pattern, content, re.DOTALL | re.IGNORECASE), \
@@ -144,11 +144,11 @@ class TestEndpointHybridLogic:
         Verify badge shows 'personnalisé' text (French) or appropriate label.
         """
         content = html_file.read_text(encoding='utf-8')
-        
+
         # Badge should have appropriate text
         # Could be "personnalisé" (French) or "customized" (English)
         has_personnalise = "personnalis" in content.lower() or "custom" in content.lower()
-        
+
         assert has_personnalise, \
             "Badge should indicate customized state with appropriate text"
 
@@ -157,7 +157,7 @@ class TestEndpointHybridLogic:
         Verify reset button has a restart/refresh icon.
         """
         content = html_file.read_text(encoding='utf-8')
-        
+
         # Should have material icons or similar
         assert "restart_alt" in content or "refresh" in content.lower() or "undo" in content.lower(), \
             "Reset button should have an appropriate icon"
@@ -183,7 +183,7 @@ class TestEndpointLogicFlow:
             "badgeVisible": False,
             "resetButtonVisible": False
         }
-        
+
         assert flow["badgeVisible"] == False
         assert flow["resetButtonVisible"] == False
         assert "server" in flow["endpointUsed"].lower() or ".env" in flow["endpointUsed"].lower()
@@ -204,7 +204,7 @@ class TestEndpointLogicFlow:
             "badgeVisible": True,
             "resetButtonVisible": True
         }
-        
+
         assert flow["badgeVisible"] == True
         assert flow["resetButtonVisible"] == True
 
@@ -227,7 +227,7 @@ class TestEndpointLogicFlow:
             "resetButtonVisible": False,
             "modelsReloaded": True
         }
-        
+
         assert flow["badgeVisible"] == False
         assert flow["resetButtonVisible"] == False
         assert flow["modelsReloaded"] == True

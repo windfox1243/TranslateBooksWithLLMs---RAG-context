@@ -149,10 +149,10 @@ if __name__ == "__main__":
         file_type = "SRT"
     else:
         file_type = "TEXT"
-    
+
     # Setup unified logger
     logger = setup_cli_logger(enable_colors=not args.no_color)
-    
+
     # Validate API keys for providers
     if args.provider == "gemini" and not args.gemini_api_key:
         parser.error("--gemini_api_key is required when using gemini provider")

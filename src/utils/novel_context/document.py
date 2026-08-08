@@ -39,7 +39,7 @@ def extract_global_lore(context_content: str) -> str:
     """Extracts the text before the DYNAMIC_STATE_START tag."""
     start_tag = DYNAMIC_STATE_START
     start_idx = context_content.find(start_tag)
-    
+
     if start_idx != -1:
         return context_content[:start_idx].strip()
     return context_content.strip()

@@ -708,13 +708,13 @@ DEFAULT_CONTEXT_FALLBACK = 2048
 @dataclass
 class TranslationConfig:
     """Unified configuration for both CLI and web interfaces"""
-    
+
     # Core settings
     source_language: str = DEFAULT_SOURCE_LANGUAGE
     target_language: str = DEFAULT_TARGET_LANGUAGE
     model: str = DEFAULT_MODEL
     api_endpoint: str = API_ENDPOINT
-    
+
     # LLM Provider settings
     llm_provider: str = LLM_PROVIDER
     gemini_api_key: str = GEMINI_API_KEY

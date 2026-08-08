@@ -229,7 +229,7 @@ async def consolidate_context_lore(
                 else:
                     current_output_section = "other"
                 continue
-            
+
             # Try to match a bullet/list marker: '-', '*', '1.', '2.', etc.
             match = re.match(r'^(?:[-*]|\d+\.)\s*(.*)$', line_str)
             if match:

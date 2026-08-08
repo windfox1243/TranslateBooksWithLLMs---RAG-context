@@ -351,11 +351,11 @@ def detect_file_type_safe(file_path: str) -> Tuple[Optional[FileType], Optional[
 def generate_output_filename(input_path: str, target_language: str) -> str:
     """
     Generate output filename based on input and target language
-    
+
     Args:
         input_path: Input file path
         target_language: Target language
-        
+
     Returns:
         Generated output filename
     """

@@ -200,7 +200,7 @@ Evaluate this translation. Respond with ONLY the JSON object:"""
     def _get_provider_config(self) -> tuple[str, str, Optional[str]]:
         """
         Get the provider configuration.
-        
+
         Returns:
             Tuple of (endpoint, api_key, model)
         """
@@ -220,10 +220,10 @@ Evaluate this translation. Respond with ONLY the JSON object:"""
     def _build_headers(self, api_key: str) -> dict:
         """
         Build request headers based on provider.
-        
+
         Args:
             api_key: The API key
-            
+
         Returns:
             Headers dict
         """
@@ -231,11 +231,11 @@ Evaluate this translation. Respond with ONLY the JSON object:"""
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
-        
+
         if self.provider == "openrouter":
             headers["HTTP-Referer"] = self.config.openrouter.site_url
             headers["X-Title"] = self.config.openrouter.site_name
-            
+
         return headers
 
     async def evaluate(
@@ -258,9 +258,9 @@ Evaluate this translation. Respond with ONLY the JSON object:"""
             Tuple of (EvaluationScores, evaluation_time_ms)
         """
         endpoint, api_key, model = self._get_provider_config()
-        
+
         provider_name = self.provider.capitalize()
-        
+
         if not api_key:
             return EvaluationScores.failed(f"{provider_name} API key not configured"), 0
 

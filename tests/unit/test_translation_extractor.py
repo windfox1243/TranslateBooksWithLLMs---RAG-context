@@ -69,4 +69,3 @@ class TestTranslationExtractor:
         extractor = TranslationExtractor("<TRANSLATION>", "</TRANSLATION>")
         result = extractor.extract("<TRANSLATION>Hello</TRANATION>")
         assert result == "Hello"
-

@@ -37,34 +37,34 @@ def register(bp, deps, shared):
         checkpoint_data = state_manager.checkpoint_manager.load_checkpoint(translation_id)
         if not checkpoint_data:
             return jsonify({"error": "Translation not found"}), 404
-            
+
         chunks = checkpoint_data.get('chunks', [])
-        
+
         # Find the specific chunk index (may not exist yet during active translation)
         target_chunk = None
         for chunk in chunks:
             if chunk.get('chunk_index') == chunk_index:
                 target_chunk = chunk
                 break
-        
+
         # Extract snapshot from chunk data if available
         snapshot = None
         if target_chunk:
             chunk_data = target_chunk.get('chunk_data') or {}
             snapshot = chunk_data.get('context_snapshot')
-            
+
         plain_text_context = ""
-        
+
         config = checkpoint_data.get('job', {}).get('config', {}) or {}
         novel_context_file = config.get('prompt_options', {}).get('novel_context_file')
         auto_update_context = config.get('prompt_options', {}).get('auto_update_context', False)
-        
+
         if not novel_context_file and auto_update_context:
             from src.utils.novel_context import make_novel_context_filename
             novel_context_file = make_novel_context_filename(
                 config.get('output_filename', 'translation')
             )
-            
+
             # Update config copy and save back to the DB to repair permanently
             new_config = dict(config)
             if 'prompt_options' not in new_config:
@@ -72,13 +72,13 @@ def register(bp, deps, shared):
             else:
                 new_config['prompt_options'] = dict(new_config['prompt_options'])
             new_config['prompt_options']['novel_context_file'] = novel_context_file
-            
+
             try:
                 state_manager.checkpoint_manager.update_job_config(translation_id, new_config)
             except Exception as persist_err:
                 from src.utils.unified_logger import get_logger
                 get_logger(__name__).warning(f"Could not persist repaired novel_context_file to database: {persist_err}")
-        
+
         if novel_context_file:
             from src.config import NOVEL_CONTEXTS_DIR
             from src.utils.novel_context import (
@@ -87,7 +87,7 @@ def register(bp, deps, shared):
                 normalize_novel_context_filename,
                 resolve_novel_context_path,
             )
-            
+
             full_context = ""
             try:
                 novel_context_file = normalize_novel_context_filename(novel_context_file)
@@ -99,7 +99,7 @@ def register(bp, deps, shared):
                     f"Failed to load or parse context snapshot for file "
                     f"{novel_context_file}: {e}"
                 )
-            
+
             if snapshot:
                 historical_context, _, _ = decode_context_snapshot(
                     snapshot,
@@ -121,7 +121,7 @@ def register(bp, deps, shared):
                     plain_text_context = historical_context
             else:
                 plain_text_context = full_context
-        
+
         return jsonify({
             "translation_id": translation_id,
             "chunk_index": chunk_index,
@@ -138,12 +138,12 @@ def register(bp, deps, shared):
         from src.utils.unified_logger import get_logger
         logger = get_logger(__name__)
         logger.info(f"Received context resync request for translation {translation_id} at chunk {chunk_index}")
-        
+
         data = request.json
         if not data or 'context_content' not in data:
             logger.error("Context resync failed: Missing context_content in request data")
             return jsonify({"error": "Missing context_content"}), 400
-            
+
         new_content = data['context_content']
         if not isinstance(new_content, str):
             return jsonify({"error": "context_content must be a string"}), 400
@@ -167,20 +167,20 @@ def register(bp, deps, shared):
             dynamic_state,
         )
         compressed_snapshot = compress_dynamic_state(new_content)
-        
+
         # 1. Update the DB for the target chunk
         checkpoint_data = state_manager.checkpoint_manager.load_checkpoint(translation_id)
         if not checkpoint_data:
             logger.error(f"Context resync failed: Translation {translation_id} not found")
             return jsonify({"error": "Translation not found"}), 404
-            
+
         chunks = checkpoint_data.get('chunks', [])
         target_chunk_idx = None
         for i, chunk in enumerate(chunks):
             if chunk.get('chunk_index') == chunk_index:
                 target_chunk_idx = i
                 break
-                
+
         if target_chunk_idx is None:
             logger.info(
                 f"Context snapshot {chunk_index} is no longer available for "
@@ -217,7 +217,7 @@ def register(bp, deps, shared):
         original_text = target_chunk.get('original_text')
         translated_text = target_chunk.get('translated_text')
         chunk_data = target_chunk.get('chunk_data')
-            
+
         try:
             state_manager.checkpoint_manager.db.save_chunk(
                 translation_id=translation_id,
@@ -230,7 +230,7 @@ def register(bp, deps, shared):
         except Exception:
             _release_context_resync(translation_id)
             raise
-        
+
         # Any refinement produced from the previous snapshots is now stale.
         context_revision = (
             state_manager.checkpoint_manager.mark_refinement_stale(
@@ -247,7 +247,7 @@ def register(bp, deps, shared):
         from src.core.adapters.generic_translator import (
             resync_context_snapshots_background,
         )
-        
+
         job_status = state_manager.get_translation(translation_id)
         was_active = False
         auto_resume_callback = None
@@ -371,7 +371,7 @@ def register(bp, deps, shared):
                     },
                     state_manager,
                 )
-        
+
         if job_status and job_status.get('status') == 'running':
             was_active = True
             logger.info(f"Translation {translation_id} is running. Interrupting for context resync...")
@@ -449,9 +449,9 @@ def register(bp, deps, shared):
         if persisted_state is None:
             _release_context_resync(translation_id)
             return jsonify({"error": "Failed to persist context resync state"}), 500
-            
+
         logger.info(f"Dispatching background context resync thread for translation {translation_id} starting at chunk {chunk_index}")
-        
+
         # Run in a background thread so we don't block the API
         def run_resync():
             try:
@@ -479,7 +479,7 @@ def register(bp, deps, shared):
         except Exception:
             _release_context_resync(translation_id)
             raise
-        
+
         return jsonify({
             "message": "Context resync started successfully",
             "translation_id": translation_id,

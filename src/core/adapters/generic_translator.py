@@ -1668,10 +1668,10 @@ async def _resync_context_snapshots_async(
         sync_markdown_relationships_to_db,
     )
     from src.utils.unified_logger import get_logger
-    
+
     state_manager = get_state_manager()
     logger = get_logger("context_resync")
-    
+
     def _load_resync_state():
         job = state_manager.checkpoint_manager.get_job(translation_id) or {}
         if not isinstance(job, dict):
@@ -1739,7 +1739,7 @@ async def _resync_context_snapshots_async(
         message = post_resync_message or "Auto-resuming active translation..."
         append_and_emit(f"▶️ {message}")
         callback()
-    
+
     if global_only_resync:
         msg = (
             f"Starting global context propagation for {translation_id} from "
@@ -1759,7 +1759,7 @@ async def _resync_context_snapshots_async(
             "last_processed_chunk": start_chunk_index,
         }),
     )
-    
+
     if was_active:
         msg_pause = "Waiting for active translation to pause before resyncing..."
         append_and_emit(
@@ -1769,7 +1769,7 @@ async def _resync_context_snapshots_async(
                 "last_processed_chunk": start_chunk_index,
             }),
         )
-        
+
         import asyncio
         paused = False
         live_job = state_manager.get_translation(translation_id) or {}
@@ -1800,15 +1800,15 @@ async def _resync_context_snapshots_async(
             logger.error(err_msg)
             append_and_emit(f"❌ {err_msg}")
             return False
-    
+
     checkpoint_data = state_manager.checkpoint_manager.load_checkpoint(translation_id)
     if not checkpoint_data:
         append_and_emit("❌ Translation checkpoint is no longer available.")
         return False
-        
+
     config = checkpoint_data.get('job', {}).get('config', {})
     chunks = checkpoint_data.get('chunks', [])
-    
+
     # Re-sync is source-derived, so it may walk failed/partial chunks too.
     # Their translated output remains retryable; only their source facts feed
     # later context snapshots.
@@ -1818,7 +1818,7 @@ async def _resync_context_snapshots_async(
         and c.get('chunk_index') is not None
     ]
     completed_chunks.sort(key=lambda x: x['chunk_index'])
-    
+
     chunks_to_process = [c for c in completed_chunks if c['chunk_index'] > start_chunk_index]
     _save_resync_state({
         "status": "running",
@@ -1841,7 +1841,7 @@ async def _resync_context_snapshots_async(
                 f"{chunks_to_process[0]['chunk_index'] + 1}-"
                 f"{chunks_to_process[-1]['chunk_index'] + 1}."
             )
-    
+
     novel_context_file = config.get('prompt_options', {}).get('novel_context_file')
     path = None
     fallback_context = ""
@@ -2195,7 +2195,7 @@ async def _resync_context_snapshots_async(
         logger.error(err_msg)
         append_and_emit(f"❌ {err_msg}")
         return False
-    
+
     source_memory_chunks = [
         c.get('original_text') or ''
         for c in completed_chunks
@@ -2232,7 +2232,7 @@ async def _resync_context_snapshots_async(
                 f"Skipped context state from failed chunk {idx + 1}; it will be reconsidered after a successful retry."
             )
             continue
-        
+
         try:
             msg_resync = f"Resyncing chunk {idx + 1} from the saved context timeline..."
             append_and_emit(f"🔄 {msg_resync}")
@@ -2322,21 +2322,21 @@ async def _resync_context_snapshots_async(
                     f"{dialogue_stats['assigned']} assigned, "
                     f"{dialogue_stats['uncertain']} uncertain."
                 )
-            
+
             new_full_context = build_novel_context(global_lore, current_dynamic_text)
             new_compressed = compress_dynamic_state(new_full_context)
-            
+
             if new_compressed:
                 # Log any changes
                 for change_log in change_logs:
                     append_and_emit(change_log)
-                
+
                 # Save to DB
                 latest_cp = state_manager.checkpoint_manager.load_checkpoint(translation_id)
                 if not latest_cp:
                     append_and_emit("❌ Translation checkpoint disappeared during resync.")
                     return False
-                
+
                 snapshot_saved = False
                 for c in latest_cp['chunks']:
                     if c.get('chunk_index') == idx:
@@ -2393,7 +2393,7 @@ async def _resync_context_snapshots_async(
                 if not snapshot_saved:
                     append_and_emit(f"❌ Chunk {idx} disappeared during resync.")
                     return False
-                
+
                 if _pause_requested():
                     paused_state = _save_resync_state({
                         "status": "paused",
@@ -2410,7 +2410,7 @@ async def _resync_context_snapshots_async(
                         final_context=new_full_context,
                     )
                     return False
-                        
+
         except Exception as e:
             err_msg = f"Resync failed at chunk {idx}: {e}"
             logger.error(err_msg)
@@ -2428,7 +2428,7 @@ async def _resync_context_snapshots_async(
                 error=str(e),
             )
             return False
-            
+
     msg_end = "Background context resync completed."
     activate_staged_timeline(new_full_context)
     if path:
@@ -2444,7 +2444,7 @@ async def _resync_context_snapshots_async(
         ),
     })
     append_and_emit(f"✅ {msg_end}", completed_state)
-    
+
     if post_resync_callback or auto_resume_callback:
         logger.info("Triggering follow-up callback after resync")
         run_follow_up()

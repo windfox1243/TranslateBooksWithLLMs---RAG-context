@@ -18,11 +18,11 @@ import pytest
 class TestFrontendInitializationSequence:
     """
     Tests to verify the frontend initialization sequence prevents the bug.
-    
+
     The bug occurred because:
     1. SettingsManager.initialize() triggered model loading with localStorage endpoint
     2. This happened BEFORE FormManager.loadDefaultConfig() received server config
-    
+
     The fix ensures:
     1. SettingsManager doesn't trigger model loading during initialization
     2. ProviderManager waits for 'defaultConfigLoaded' event before loading models
@@ -43,12 +43,12 @@ class TestFrontendInitializationSequence:
     def test_index_js_initialization_order(self, js_files):
         """
         Verify that index.js initializes modules in the correct order.
-        
+
         Expected order:
         1. SettingsManager.initialize()
         2. FormManager.initialize()
         3. ProviderManager.initialize()
-        
+
         This order is crucial because:
         - SettingsManager restores preferences (but shouldn't trigger model loading)
         - FormManager starts loading server config
@@ -56,23 +56,23 @@ class TestFrontendInitializationSequence:
         """
         index_js = js_files["index_js"]
         assert index_js.exists(), f"index.js not found at {index_js}"
-        
+
         content = index_js.read_text(encoding='utf-8')
-        
+
         # Find the initialization calls
         settings_match = re.search(r'SettingsManager\.initialize\(\)', content)
         form_match = re.search(r'FormManager\.initialize\(\)', content)
         provider_match = re.search(r'ProviderManager\.initialize\(\)', content)
-        
+
         assert settings_match, "SettingsManager.initialize() not found in index.js"
         assert form_match, "FormManager.initialize() not found in index.js"
         assert provider_match, "ProviderManager.initialize() not found in index.js"
-        
+
         # Verify order: SettingsManager → FormManager → ProviderManager
         settings_pos = settings_match.start()
         form_pos = form_match.start()
         provider_pos = provider_match.start()
-        
+
         assert settings_pos < form_pos < provider_pos, \
             f"Initialization order is wrong. Expected: SettingsManager → FormManager → ProviderManager. " \
             f"Positions: SettingsManager={settings_pos}, FormManager={form_pos}, ProviderManager={provider_pos}"
@@ -84,9 +84,9 @@ class TestFrontendInitializationSequence:
         """
         settings_manager = js_files["settings_manager"]
         assert settings_manager.exists(), f"settings-manager.js not found at {settings_manager}"
-        
+
         content = settings_manager.read_text(encoding='utf-8')
-        
+
         assert "prefs.lastProvider" not in content
         assert "providerSelect.value = prefs.lastProvider" not in content
 
@@ -98,32 +98,32 @@ class TestFrontendInitializationSequence:
         """
         Verify that ProviderManager.initialize() waits for the 'defaultConfigLoaded'
         event before loading models.
-        
+
         This ensures models are loaded with the correct endpoint from server config.
         """
         provider_manager = js_files["provider_manager"]
         assert provider_manager.exists(), f"provider-manager.js not found at {provider_manager}"
-        
+
         content = provider_manager.read_text(encoding='utf-8')
-        
+
         # Check that initialize() adds an event listener for 'defaultConfigLoaded'
         has_event_listener = "defaultConfigLoaded" in content
-        
+
         assert has_event_listener, \
             "BUG: ProviderManager does not listen for 'defaultConfigLoaded' event. " \
             "It should wait for server config before loading models."
-        
+
         # Check that toggleProviderSettings is called with false initially
         # (to show UI without loading models)
         has_initial_call = "toggleProviderSettings(false)" in content
-        
+
         assert has_initial_call, \
             "ProviderManager.initialize() should call toggleProviderSettings(false) initially " \
             "to show UI without loading models, then wait for defaultConfigLoaded event."
-        
+
         # Should have { once: true } to ensure the event listener only fires once
         has_once_option = "once: true" in content or '{once:true}' in content.replace(' ', '')
-        
+
         assert has_once_option, \
             "The 'defaultConfigLoaded' event listener should have { once: true } option " \
             "to ensure it only fires during initialization."
@@ -135,27 +135,27 @@ class TestFrontendInitializationSequence:
         """
         form_manager = js_files["form_manager"]
         assert form_manager.exists(), f"form-manager.js not found at {form_manager}"
-        
+
         content = form_manager.read_text(encoding='utf-8')
-        
+
         # Check that loadDefaultConfig dispatches the event
         has_dispatch = "defaultConfigLoaded" in content
-        
+
         assert has_dispatch, \
             "FormManager should dispatch 'defaultConfigLoaded' event after loading server config."
 
     def test_comments_reference_github_issue(self, js_files):
         """
         Verify that the fix includes comments referencing GitHub issue #108.
-        
+
         This serves as documentation for future developers.
         """
         provider_manager = js_files["provider_manager"]
         settings_manager = js_files["settings_manager"]
-        
+
         provider_content = provider_manager.read_text(encoding='utf-8')
         settings_content = settings_manager.read_text(encoding='utf-8')
-        
+
         # Check for GitHub issue reference in at least one of the files
         has_issue_reference = (
             "#108" in provider_content or
@@ -163,7 +163,7 @@ class TestFrontendInitializationSequence:
             "issue #108" in provider_content.lower() or
             "issue #108" in settings_content.lower()
         )
-        
+
         assert has_issue_reference, \
             "The fix should include comments referencing GitHub issue #108 for documentation."
 

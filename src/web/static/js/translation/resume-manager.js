@@ -117,7 +117,7 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
         : isResyncPaused
         ? t('translation:context_resume_resync_title')
         : t('translation:resume_btn_title');
-        
+
     let primaryButtonText = t('translation:job_card_resume_btn');
     let primaryButtonAttrs = `class="btn btn-primary" onclick="resumeJob('${job.translation_id}')"`;
     let primaryCanResume = canResume;
@@ -573,7 +573,7 @@ export const ResumeManager = {
                 ? jobData.stats.percent
                 : (jobData.progress || 0);
             ProgressManager.updateProgress(resumedPercent);
-            
+
             // Populate the context chunk selector and show context preview if applicable
             if (jobData.stats) {
                 StateManager.setState('translation.stats', jobData.stats);
@@ -581,7 +581,7 @@ export const ResumeManager = {
                     jobData.stats.context_chunk_indices || []
                 );
             }
-            
+
             // Show context preview section if job uses novel context, hide it otherwise
             const hasNovelContext = jobData.config?.prompt_options?.novel_context_file || jobData.config?.prompt_options?.auto_update_context;
             const contextSection = DomHelpers.getElement('novelContextPreviewSection');
