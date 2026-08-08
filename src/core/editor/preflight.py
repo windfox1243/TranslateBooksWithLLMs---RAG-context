@@ -100,8 +100,19 @@ def run_editor_preflight(
                 if source_term and target_term:
                     glossary_terms.setdefault(source_term, target_term)
                     protected_terms.extend((source_term, target_term))
-    except Exception:
-        pass
+    except Exception as exc:
+        # Whatever was collected before the failure is kept, but the rest of the
+        # character names, aliases and glossary pairs are now absent from
+        # protected_terms -- so the editor is free to rewrite them. That is a
+        # silent quality regression unless it is reported.
+        emit_progress_log(
+            log_callback,
+            "editor_protected_terms_incomplete",
+            f"Could not derive the full protected-term set from the novel "
+            f"context: {type(exc).__name__}: {exc}. Proper names and glossary "
+            f"pairs may not be protected for this unit.",
+            level="warning",
+        )
     residue_findings = []
     if source_available and bool(options.get("source_residue_validation", contract_v2)):
         residue_findings = find_source_residue(

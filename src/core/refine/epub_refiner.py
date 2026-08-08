@@ -287,8 +287,18 @@ async def refine_epub_file(
                             _globalize_chunk_text(chunk, placeholder_format)
                             for chunk in chunks
                         )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # A file that fails here contributes no units and no entry in
+                    # refine_chunk_counts, which shifts the global chunk indices
+                    # every later file is snapshotted under. Refinement still
+                    # proceeds, so this must be visible rather than silent.
+                    if log_callback:
+                        log_callback(
+                            "epub_refine_precount_failed",
+                            f"Could not pre-count refine chunks for '{href}': "
+                            f"{type(exc).__name__}: {exc}. This file will be "
+                            f"skipped by the refine pass.",
+                        )
 
             if refinement_original_path and not checkpoint_sources:
                 source_units: List[str] = []

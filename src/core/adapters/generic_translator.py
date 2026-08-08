@@ -803,8 +803,23 @@ class GenericTranslator:
                                 disk_global_lore,
                                 context_session.dynamic_state if context_session else (current_dynamic_state or ""),
                             )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # Falling through leaves prompt_options carrying the
+                        # previous unit's lore. The translation still runs, but
+                        # against stale context, which is a quality regression
+                        # no other signal would reveal.
+                        from src.utils.progress_logging import emit_progress_log
+
+                        emit_progress_log(
+                            log_callback,
+                            "novel_context_reload_failed",
+                            f"Could not reload global lore from "
+                            f"'{novel_context_path.name}': "
+                            f"{type(exc).__name__}: {exc}. Continuing with the "
+                            f"previously loaded context.",
+                            level="warning",
+                            chunk_index=i,
+                        )
 
                 for attempt in range(max_validation_attempts):
                     same_previous_chapter = (
@@ -1566,28 +1581,32 @@ def resync_context_snapshots_background(
     """Entry point for the background thread."""
     import asyncio
     
-    # Try to use existing loop if we are in one, otherwise run new
+    # Try to use existing loop if we are in one, otherwise run new.
+    # Only loop acquisition is guarded: a RuntimeError raised by the resync
+    # itself must not fall through to the asyncio.run() below, or the whole
+    # resync -- including its database writes -- would run a second time.
     try:
         loop = asyncio.get_event_loop()
-        if loop.is_running():
-            future = asyncio.run_coroutine_threadsafe(
-                _resync_context_snapshots_async(
-                    translation_id,
-                    start_chunk_index,
-                    initial_compressed_snapshot,
-                    socketio,
-                    was_active,
-                    auto_resume_callback,
-                    post_resync_callback,
-                    post_resync_message,
-                    global_only_resync,
-                ),
-                loop,
-            )
-            return future.result()
     except RuntimeError:
-        pass
-        
+        loop = None
+
+    if loop is not None and loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(
+            _resync_context_snapshots_async(
+                translation_id,
+                start_chunk_index,
+                initial_compressed_snapshot,
+                socketio,
+                was_active,
+                auto_resume_callback,
+                post_resync_callback,
+                post_resync_message,
+                global_only_resync,
+            ),
+            loop,
+        )
+        return future.result()
+
     return asyncio.run(
         _resync_context_snapshots_async(
             translation_id,

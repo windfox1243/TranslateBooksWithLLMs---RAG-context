@@ -1440,8 +1440,19 @@ async def _translate_all_chunks_with_checkpoint(
                             else current_dynamic_state or ""
                         ),
                     )
-            except Exception:
-                pass
+            except Exception as exc:
+                # See the matching handler in generic_translator: continuing
+                # here means drafting against the previous unit's lore, which
+                # nothing else would report.
+                emit_progress_log(
+                    log_callback,
+                    "novel_context_reload_failed",
+                    f"Could not reload global lore from "
+                    f"'{novel_context_path.name}': "
+                    f"{type(exc).__name__}: {exc}. Continuing with the "
+                    f"previously loaded context.",
+                    level="warning",
+                )
         chunk_prompt_options = dict(prompt_options or {})
         chunk_prompt_options.update({
             "translation_id": translation_id or "",
