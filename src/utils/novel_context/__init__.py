@@ -304,6 +304,7 @@ from .merge import (
     normalize_dynamic_state,
     normalize_novel_context_content,
 )
+from .reconcile import reconcile_context_documents, save_novel_context_merged
 from .refinement import (
     decode_context_snapshot,
     make_novel_context_filename,

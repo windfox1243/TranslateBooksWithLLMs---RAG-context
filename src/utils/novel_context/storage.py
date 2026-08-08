@@ -21,24 +21,31 @@ from .constants import (
 )
 from .merge import build_novel_context, normalize_novel_context_content
 
-_WRITER_LOCKS: Dict[str, threading.Lock] = {}
+_WRITER_LOCKS: Dict[str, "threading.RLock"] = {}
 _WRITER_LOCKS_GUARD = threading.Lock()
 
 
-def _writer_lock(file_path: Path) -> threading.Lock:
+def writer_lock(file_path: Path):
     """Return the lock guarding writes to one context file.
 
     Keyed by resolved path so two spellings of the same file share a lock. The
     table is never pruned: there is one entry per context file the process has
     written, which is bounded by how many novels the user is working on.
+
+    Re-entrant because a caller that needs its read and its write to be one step
+    -- see reconcile.py -- takes this lock and then calls `save_novel_context`,
+    which takes it again.
     """
     key = str(file_path.resolve())
     with _WRITER_LOCKS_GUARD:
         lock = _WRITER_LOCKS.get(key)
         if lock is None:
-            lock = threading.Lock()
+            lock = threading.RLock()
             _WRITER_LOCKS[key] = lock
         return lock
+
+
+_writer_lock = writer_lock
 def is_safe_filename(filename: str) -> bool:
     """Return whether a context filename is safe while preserving Unicode names."""
     if not filename or filename != filename.strip():
@@ -165,7 +172,7 @@ def save_novel_context(filename: str, novel_contexts_dir: Path, content: str) ->
     #
     # This makes each write atomic. It does not make a caller's read, edit and
     # write-back atomic; two jobs interleaving there still lose one edit.
-    with _writer_lock(file_path):
+    with writer_lock(file_path):
         temporary_path = file_path.with_name(
             f"{file_path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
         )

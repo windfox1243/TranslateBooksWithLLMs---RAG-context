@@ -273,6 +273,10 @@ class NovelContextSession:
     relationship_parse_status: str = "absent"
     addressing_candidates: List[Dict[str, Any]] = field(default_factory=list)
     addressing_parse_status: str = "absent"
+    # What the context file held the last time this session read or wrote it.
+    # Anything else on disk at save time was put there by another job, and has
+    # to be merged in rather than replaced. See reconcile.py.
+    disk_baseline: str = ""
 
     @property
     def content(self) -> str:
@@ -284,9 +288,39 @@ class NovelContextSession:
         return content
 
     def save(self) -> str:
+        from .reconcile import save_novel_context_merged
+
         content = self.sync_prompt()
-        _hook('save_novel_context')(self.path.name, self.path.parent, content)
-        return content
+        written, change_logs = save_novel_context_merged(
+            self.path.name,
+            self.path.parent,
+            content,
+            self.disk_baseline,
+            self._target_language(),
+        )
+        self.disk_baseline = written
+        if change_logs:
+            # The session adopts what it just wrote, so the prompt carries the
+            # other job's findings from the next chunk onward instead of
+            # re-proposing state the file already moved past.
+            self.global_lore = extract_global_lore(written)
+            self.dynamic_state = extract_dynamic_state_from_text(written) or ""
+            self.sync_prompt()
+            if self.log_callback:
+                self.log_callback(
+                    "novel_context_reconciled",
+                    "🔀 Context file changed while this job ran; merged "
+                    f"{len(change_logs)} update(s) from it.",
+                )
+        return written
+
+    def _target_language(self) -> str:
+        return str(
+            self.prompt_options.get("target_language")
+            or self.prompt_options.get("target_lang")
+            or self.prompt_options.get("language")
+            or ""
+        )
 
     def snapshot(self) -> str:
         """Return a compressed full-context snapshot."""
@@ -631,6 +665,7 @@ def open_novel_context_session(
 
     path = resolve_novel_context_path(novel_context_file, novel_contexts_dir)
     current_content = load_novel_context(path.name, path.parent)
+    disk_baseline = current_content
     file_global_lore = extract_global_lore(current_content)
     file_dynamic_state = extract_dynamic_state_from_text(current_content) or ""
     global_lore = file_global_lore
@@ -697,6 +732,7 @@ def open_novel_context_session(
         dynamic_state=dynamic_state,
         log_callback=log_callback,
         dialogue_state=dict(resume_dialogue_state or {}),
+        disk_baseline=disk_baseline,
         dialogue_scene_key=(
             str(resume_dialogue_scene_key)
             if resume_dialogue_scene_key is not None
