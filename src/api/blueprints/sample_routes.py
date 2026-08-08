@@ -20,28 +20,22 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from flask import Blueprint, jsonify, request
 
 import src.config as _config
+from src.api.api_keys import provider_env_var as _provider_env_var
+from src.api.api_keys import resolve_api_key as _resolve_api_key
 from src.api.services.path_validator import PathValidator
-from src.config import (
-    OLLAMA_NUM_CTX,
-    REQUEST_TIMEOUT, SRT_LINES_PER_BLOCK,
-)
+from src.config import OLLAMA_NUM_CTX, REQUEST_TIMEOUT, SRT_LINES_PER_BLOCK
 from src.core.glossary import build_glossary_block, filter_glossary
 from src.core.glossary.models import GlossaryConfig
-from src.core.llm.factory import create_llm_provider
 from src.core.llm import LLMGenerationOptions
+from src.core.llm.factory import create_llm_provider
 from src.core.llm.generation_controls import resolve_thinking_controls
 from src.core.pricing.pricing_data import get_default_pricing
 from src.core.sampling import cap_chunk_text, select_sample_indices
-from src.api.api_keys import provider_env_var as _provider_env_var
-from src.api.api_keys import resolve_api_key as _resolve_api_key
 from src.core.text_processor import split_text_into_chunks
-from src.prompts.prompts import (
-    generate_refinement_prompt, generate_translation_prompt,
-)
+from src.prompts.prompts import generate_refinement_prompt, generate_translation_prompt
 from src.utils.custom_instructions import is_safe_filename, load_custom_instructions
 from src.utils.file_detector import detect_file_type
 from src.utils.language_detector import LanguageDetector
-
 
 # Per-run concurrency cap. The product spec asks for `min(K * N, 8)` to avoid
 # hammering providers; this is enforced per sample run via an asyncio.Semaphore.
@@ -106,6 +100,7 @@ def _extract_epub_text(file_path: str) -> str:
     and corrupting the sampled extracts.)
     """
     import zipfile
+
     from lxml import etree
 
     from src.core.epub.plain_extractor import _local_name, extract_plain_paragraphs

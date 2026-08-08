@@ -2,6 +2,7 @@
 Unit tests for TranslationExtractor (issue #170 fixes)
 """
 import pytest
+
 from src.core.llm.utils.extraction import TranslationExtractor
 
 

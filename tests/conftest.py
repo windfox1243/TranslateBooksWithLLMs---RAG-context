@@ -5,10 +5,10 @@ This file is automatically loaded by pytest and provides common fixtures
 and configuration for all test modules.
 """
 
-import sys
-import os
-from pathlib import Path
 import importlib.util
+import os
+import sys
+from pathlib import Path
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent

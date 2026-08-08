@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Literal, Optional
 
-
 ExecutionStatus = Literal["completed", "failed"]
 QualityStatus = Literal["not_checked", "passed", "review_required"]
 

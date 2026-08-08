@@ -9,7 +9,7 @@ This adapter handles plain text files by:
 """
 
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from .format_adapter import FormatAdapter
 from .translation_unit import TranslationUnit

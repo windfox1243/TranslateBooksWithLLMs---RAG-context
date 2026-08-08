@@ -9,25 +9,26 @@ Flask web server for translation API with WebSocket support
 # for type="module" scripts. add_type() takes precedence over the registry.
 # (issue #155)
 import mimetypes
+
 mimetypes.add_type('text/javascript', '.js')
 mimetypes.add_type('text/javascript', '.mjs')
 mimetypes.add_type('text/css', '.css')
 mimetypes.add_type('application/json', '.json')
 mimetypes.add_type('image/svg+xml', '.svg')
 
+import logging
 import os
 import sys
-import logging
-import webbrowser
 import threading
+import webbrowser
 from datetime import datetime
 from urllib.parse import urlparse
-from flask import Flask
-from flask_socketio import SocketIO
 
 # Explicitly import the threading driver so PyInstaller bundles it.
 # This prevents "ValueError: Invalid async_mode specified" in the executable.
 import engineio.async_drivers.threading
+from flask import Flask
+from flask_socketio import SocketIO
 
 # Configure logging
 logging.basicConfig(
@@ -44,22 +45,16 @@ logging.getLogger('httpx').setLevel(logging.WARNING)
 
 # Force UTF-8 stdio so emoji log lines don't crash on Windows cp1252 consoles.
 from src.utils.console import ensure_utf8_stdio
+
 ensure_utf8_stdio()
 
-from src.config import (
-    API_ENDPOINT as DEFAULT_OLLAMA_API_ENDPOINT,
-    DEFAULT_MODEL,
-    PORT,
-    HOST,
-    OUTPUT_DIR,
-    warn_env_config_missing,
-)
-from src.api.routes import configure_routes
-from src.api.websocket import configure_websocket_handlers
-from src.api.handlers import start_translation_job
-from src.api.translation_state import get_state_manager
 from src.api.auth import register_auth
-
+from src.api.handlers import start_translation_job
+from src.api.routes import configure_routes
+from src.api.translation_state import get_state_manager
+from src.api.websocket import configure_websocket_handlers
+from src.config import API_ENDPOINT as DEFAULT_OLLAMA_API_ENDPOINT
+from src.config import DEFAULT_MODEL, HOST, OUTPUT_DIR, PORT, warn_env_config_missing
 
 # Initialize Flask app with static folder configuration
 # Handle PyInstaller bundle paths
@@ -197,8 +192,9 @@ logger.info(f"Output folder '{OUTPUT_DIR}' is ready")
 
 # Ensure Novel_Contexts directory exists.
 def _ensure_novel_contexts_dir_exists():
-    from src.config import NOVEL_CONTEXTS_DIR
     import shutil
+
+    from src.config import NOVEL_CONTEXTS_DIR
     try:
         # Seeding Novel_Contexts in dev mode from unbuilt folder if missing
         if not getattr(sys, 'frozen', False) and not NOVEL_CONTEXTS_DIR.exists():

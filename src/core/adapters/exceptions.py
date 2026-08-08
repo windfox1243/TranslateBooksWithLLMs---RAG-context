@@ -5,7 +5,7 @@ This module provides a comprehensive exception system for error handling
 across all translation adapters and operations.
 """
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 class TranslationError(Exception):

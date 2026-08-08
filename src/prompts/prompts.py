@@ -1,11 +1,20 @@
-from typing import Dict, List, NamedTuple, Tuple, Optional
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
-from src.prompts.examples import (build_placeholder_section,
-                              get_output_format_example, get_subtitle_example,
-                              TAG0)
-from src.config import (INPUT_TAG_IN, INPUT_TAG_OUT, TRANSLATE_TAG_IN,
-                        TRANSLATE_TAG_OUT, PLACEHOLDER_PREFIX, PLACEHOLDER_SUFFIX,
-                        create_placeholder)
+from src.config import (
+    INPUT_TAG_IN,
+    INPUT_TAG_OUT,
+    PLACEHOLDER_PREFIX,
+    PLACEHOLDER_SUFFIX,
+    TRANSLATE_TAG_IN,
+    TRANSLATE_TAG_OUT,
+    create_placeholder,
+)
+from src.prompts.examples import (
+    TAG0,
+    build_placeholder_section,
+    get_output_format_example,
+    get_subtitle_example,
+)
 
 # Tags for placeholder correction responses
 CORRECTED_TAG_IN = "<CORRECTED_TAG_IN>"

@@ -38,7 +38,6 @@ for _stream_name in ("stdout", "stderr"):
 from benchmark.aggregator import SubmissionAggregator  # noqa: E402
 from benchmark.config import BenchmarkConfig  # noqa: E402
 
-
 THRESHOLD_DEFAULT = 0.3
 RUBRIC_VERSION_RE = re.compile(r"-rubric-(v\d+)$")
 

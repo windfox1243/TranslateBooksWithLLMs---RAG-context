@@ -9,12 +9,12 @@ This module provides tools for:
 
 from benchmark.config import BenchmarkConfig
 from benchmark.models import (
+    BenchmarkRun,
+    EvaluationScores,
     Language,
     LanguageCategory,
     ReferenceText,
     TranslationResult,
-    EvaluationScores,
-    BenchmarkRun,
 )
 
 __version__ = "1.0.0"

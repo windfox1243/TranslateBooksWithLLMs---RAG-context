@@ -20,7 +20,6 @@ registry changes upstream.
 """
 from src.core.epub.lang_support import LANGUAGE_NAME_TO_CODE
 
-
 # Snapshot of all 185 non-deprecated ISO 639-1 (2-letter) primary language
 # subtags from the IANA Language Subtag Registry.
 ISO_639_1_SUBTAGS: frozenset[str] = frozenset({

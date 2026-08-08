@@ -12,10 +12,10 @@ translation quality or performance.
 """
 import hashlib
 import platform
-import uuid
 import time
-from typing import Dict, Any, Optional
+import uuid
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 
 class TelemetryCollector:

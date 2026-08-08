@@ -2,7 +2,8 @@
 Projection engine to render persistent database addressing state into prompt contexts.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
+
 from src.persistence.database import Database
 from src.utils.text_matching import active_label_matches_name
 

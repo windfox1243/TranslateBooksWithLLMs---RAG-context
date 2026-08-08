@@ -1,10 +1,10 @@
 import sqlite3
 
+from src.core.context.reconciliation import ContextReconciler
 from src.core.context.social_evidence import (
     apply_social_hierarchy_evidence,
     extract_social_hierarchy_evidence,
 )
-from src.core.context.reconciliation import ContextReconciler
 from src.core.context.unit_pipeline import (
     commit_source_social_evidence,
     relevant_character_names,

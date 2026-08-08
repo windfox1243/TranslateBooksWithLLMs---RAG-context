@@ -7,9 +7,9 @@ for fast and accurate language identification from text content.
 import re
 from pathlib import Path
 from typing import Optional, Tuple
-from langdetect import detect, detect_langs, LangDetectException
-from lxml import etree
 
+from langdetect import LangDetectException, detect, detect_langs
+from lxml import etree
 
 # Mapping from ISO 639-1 codes (langdetect output) to full language names
 LANGUAGE_CODE_MAP = {
@@ -73,8 +73,8 @@ class LanguageDetector:
         Returns:
             Extracted text content
         """
-        import zipfile
         import io
+        import zipfile
 
         try:
             with zipfile.ZipFile(io.BytesIO(file_data)) as epub_zip:

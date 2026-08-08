@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import re
+from dataclasses import asdict, dataclass
 from typing import Any, Dict, Optional
-
 
 GENERATION_MODES = (
     "auto", "off", "on", "minimal", "low", "medium", "high", "dynamic",

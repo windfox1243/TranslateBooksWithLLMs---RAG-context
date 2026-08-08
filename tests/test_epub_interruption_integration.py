@@ -5,18 +5,22 @@ Tests the full EPUB translation pipeline with interruption and resume,
 including multiple XHTML files.
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
-from pathlib import Path
-from lxml import etree
-import tempfile
-import shutil
 import os
-from datetime import datetime, UTC
+import shutil
+import tempfile
+from datetime import UTC, datetime
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-from src.core.epub.translator import _translate_single_xhtml_file, _process_all_content_files
-from src.persistence.checkpoint_manager import CheckpointManager
+import pytest
+from lxml import etree
+
+from src.core.epub.translator import (
+    _process_all_content_files,
+    _translate_single_xhtml_file,
+)
 from src.core.llm.base import LLMResponse
+from src.persistence.checkpoint_manager import CheckpointManager
 
 
 def create_mock_llm_response(content: str) -> LLMResponse:

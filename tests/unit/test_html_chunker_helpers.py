@@ -4,6 +4,7 @@ Tests the refactored helper methods extracted from _merge_segments_into_chunks.
 """
 
 import pytest
+
 from src.core.epub.html_chunker import HtmlChunker
 
 

@@ -7,23 +7,35 @@ but does not persist partial state (no resume support in v1).
 
 import os
 import tempfile
-from typing import Optional, Callable, Dict, Any, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
 from lxml import etree
 
 from src.config import (
-    DEFAULT_MODEL, API_ENDPOINT, MAX_TOKENS_PER_CHUNK, THINKING_MODELS,
     ADAPTIVE_CONTEXT_INITIAL_THINKING,
+    API_ENDPOINT,
+    DEFAULT_MODEL,
+    MAX_TOKENS_PER_CHUNK,
+    THINKING_MODELS,
 )
+from src.core.context_optimizer import INITIAL_CONTEXT_SIZE
+from src.core.epub.container import TranslationContainer
 from src.core.epub.translator import (
-    _extract_epub, _parse_epub_manifest, _create_llm_client,
-    _create_context_manager, _repackage_epub,
+    _create_context_manager,
+    _create_llm_client,
+    _extract_epub,
+    _parse_epub_manifest,
+    _repackage_epub,
 )
 from src.core.epub.xhtml_translator import (
-    _setup_translation, _preserve_tags, _create_chunks,
-    _replace_body, _escape_stray_angle_brackets, _refine_epub_chunks,
+    _create_chunks,
+    _escape_stray_angle_brackets,
+    _preserve_tags,
+    _refine_epub_chunks,
+    _replace_body,
+    _setup_translation,
 )
-from src.core.epub.container import TranslationContainer
-from src.core.context_optimizer import INITIAL_CONTEXT_SIZE
+
 from .client_setup import build_refine_client
 
 _REFINE_AFTER_SPINE_UNIT_TOKEN_BUDGET = 10_000_000
@@ -381,8 +393,8 @@ async def refine_epub_file(
 
             from src.utils.novel_context import (
                 RefinementContextTracker,
-                map_dialogue_attributions_for_refinement,
                 map_context_snapshots_for_refinement,
+                map_dialogue_attributions_for_refinement,
             )
             historical_contexts = map_context_snapshots_for_refinement(
                 total_refine_chunks,

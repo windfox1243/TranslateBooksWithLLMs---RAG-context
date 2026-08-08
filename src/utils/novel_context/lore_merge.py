@@ -1,14 +1,8 @@
 """Prompts and merge logic for folding an LLM context update into lore."""
 from __future__ import annotations
 
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .constants import (
-    ALIASES_SECTION,
-    CHARACTERS_SECTION,
-    GLOSSARY_SECTION,
-    logger,
-)
 from .characters import (
     _add_glossary_character_aliases,
     _alias_entries_to_map,
@@ -42,15 +36,16 @@ from .characters import (
     _strip_balanced_brackets,
     _strip_character_correction_marker,
 )
-from .identity_links import (
-    _candidate_named_characters,
-    _gate_unproven_character_gender,
-    _source_identity_link_proof_status,
-)
+from .constants import ALIASES_SECTION, CHARACTERS_SECTION, GLOSSARY_SECTION, logger
 from .glossary import (
     _is_inverted_target_to_source_glossary_pair,
     _normalize_glossary_entries,
     normalize_global_lore,
+)
+from .identity_links import (
+    _candidate_named_characters,
+    _gate_unproven_character_gender,
+    _source_identity_link_proof_status,
 )
 
 UPDATE_SYSTEM_PROMPT = """You are an expert novel translation context assistant.

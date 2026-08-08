@@ -7,14 +7,15 @@ Ensures:
 - No breaking changes to API or behavior
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from lxml import etree
 
+from src.core.epub.html_chunker import HtmlChunker
+from src.core.epub.placeholder_validator import PlaceholderValidator
 from src.core.epub.tag_preservation import TagPreserver
 from src.core.epub.xhtml_translator import translate_xhtml_simplified
-from src.core.epub.placeholder_validator import PlaceholderValidator
-from src.core.epub.html_chunker import HtmlChunker
 from src.core.llm.base import LLMProvider, LLMResponse
 
 

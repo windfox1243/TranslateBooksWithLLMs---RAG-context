@@ -12,10 +12,7 @@ import re
 from enum import Enum
 from typing import Optional
 
-from src.config import (
-    UNCONTROLLABLE_THINKING_MODELS,
-    CONTROLLABLE_THINKING_MODELS
-)
+from src.config import CONTROLLABLE_THINKING_MODELS, UNCONTROLLABLE_THINKING_MODELS
 
 
 class ThinkingBehavior(Enum):

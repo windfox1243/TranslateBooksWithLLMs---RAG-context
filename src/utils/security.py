@@ -1,14 +1,14 @@
 """
 Security utilities for file validation and protection
 """
+import logging
+import mimetypes
 import os
 import re
 import secrets
-import mimetypes
-import logging
-from pathlib import Path
-from typing import Set, Optional, Dict, Any
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -383,7 +383,7 @@ class SecureFileHandler:
         
         try:
             import zipfile
-            
+
             # Check if it's a valid ZIP file
             if not zipfile.is_zipfile(file_path):
                 return FileValidationResult(

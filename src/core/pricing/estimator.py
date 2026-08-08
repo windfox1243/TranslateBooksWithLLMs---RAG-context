@@ -8,7 +8,6 @@ from typing import Optional
 
 from src.core.chunking.token_chunker import TokenChunker
 
-
 SYSTEM_PROMPT_TOKENS = 500
 USER_TEMPLATE_TOKENS = 60
 PREV_TRANSLATION_CONTEXT_TOKENS = 50

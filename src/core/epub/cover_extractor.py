@@ -4,13 +4,14 @@ EPUB Cover Extraction Module
 This module extracts and processes cover images from EPUB files.
 Generates thumbnail images (48x64px) for display in the web interface.
 """
+import io
+import tempfile
+import zipfile
 from pathlib import Path
 from typing import Optional
-import zipfile
-import tempfile
+
 from lxml import etree
 from PIL import Image
-import io
 
 from src.config import NAMESPACES
 

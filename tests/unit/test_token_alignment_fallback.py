@@ -4,9 +4,10 @@ Unit tests for token alignment fallback system.
 Tests the Phase 2 fallback mechanism that reinserts HTML placeholders
 when the LLM fails to preserve them correctly.
 """
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add src directory to path
 src_path = Path(__file__).parent.parent.parent / 'src'

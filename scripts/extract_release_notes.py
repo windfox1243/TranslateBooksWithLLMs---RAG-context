@@ -6,7 +6,6 @@ import re
 import sys
 from pathlib import Path
 
-
 _ORDERED_LIST = re.compile(r"^\d+\.\s+")
 _UNORDERED_LIST = re.compile(r"^[-*+]\s+")
 _FENCE = re.compile(r"^(```|~~~)")

@@ -34,7 +34,6 @@ from src import config  # noqa: F401  (load_dotenv side effect)
 from src.core.adapters import translate_file
 from src.persistence.checkpoint_manager import CheckpointManager
 
-
 FIXTURE = _REPO_ROOT / "tests" / "fixtures" / "sample.txt"
 
 

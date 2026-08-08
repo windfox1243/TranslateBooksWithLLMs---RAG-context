@@ -2,13 +2,8 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .constants import (
-    ADDRESSING_SECTION,
-    RELATIONSHIP_SECTION,
-    _INCIDENTAL_CHARACTER_MARKERS,
-)
 from .characters import (
     _character_alias_keys,
     _clean_inline_text,
@@ -21,8 +16,14 @@ from .characters import (
     _plain_key,
     _strip_balanced_brackets,
 )
-from .identity_links import _candidate_named_characters
+from .constants import (
+    _INCIDENTAL_CHARACTER_MARKERS,
+    ADDRESSING_SECTION,
+    RELATIONSHIP_SECTION,
+)
 from .glossary import character_alias_map
+from .identity_links import _candidate_named_characters
+
 
 def _normalize_relationship_notation(text: str) -> str:
     """Convert model-produced LaTeX/ASCII arrows to portable Unicode text."""

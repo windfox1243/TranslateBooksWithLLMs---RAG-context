@@ -5,10 +5,11 @@ This module manages a JSON cache that stores information about which models
 use thinking tokens and how they behave, avoiding repeated detection.
 """
 
-import json
 import asyncio
+import json
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from .behavior import ThinkingBehavior
 
 

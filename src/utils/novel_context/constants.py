@@ -1,8 +1,8 @@
 """Shared constants, vocabularies and regexes for novel context handling."""
 from __future__ import annotations
 
-import re
 import logging
+import re
 
 logger = logging.getLogger("novel_context")
 WINDOWS_RESERVED_FILENAMES = {

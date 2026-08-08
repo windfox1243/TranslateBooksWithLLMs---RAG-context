@@ -11,7 +11,6 @@ from flask import Blueprint, jsonify, request
 from src.config import TRANSLATION_PROFILES_DIR
 from src.utils.novel_context import normalize_novel_context_filename
 
-
 bp = Blueprint("profiles", __name__)
 
 PROFILE_VERSION = 1

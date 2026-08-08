@@ -10,19 +10,24 @@ Features:
     - Efficient batch processing
 """
 
+import asyncio
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Union
+
 import httpx
-import asyncio
 
 from src.config import (
-    REQUEST_TIMEOUT,
-    MAX_TRANSLATION_ATTEMPTS,
-    TEMPERATURE,
     GEMINI_SAFETY_THRESHOLD,
+    MAX_TRANSLATION_ATTEMPTS,
+    REQUEST_TIMEOUT,
+    TEMPERATURE,
 )
+
 from ..base import (
-    LLMGenerationOptions, LLMProvider, LLMResponse, terminal_provider_failure,
+    LLMGenerationOptions,
+    LLMProvider,
+    LLMResponse,
+    terminal_provider_failure,
 )
 from ..exceptions import ContextOverflowError, StructuredOutputSchemaError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status

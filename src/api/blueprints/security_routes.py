@@ -2,10 +2,16 @@
 Security and file upload routes
 """
 from pathlib import Path
-from flask import Blueprint, request, jsonify, current_app
 
-from src.utils.security import SecureFileHandler, rate_limiter, get_client_ip, SecurityError
+from flask import Blueprint, current_app, jsonify, request
+
 from src.utils.language_detector import LanguageDetector
+from src.utils.security import (
+    SecureFileHandler,
+    SecurityError,
+    get_client_ip,
+    rate_limiter,
+)
 
 
 def create_security_blueprint(output_dir):
@@ -279,8 +285,8 @@ def create_security_blueprint(output_dir):
     def serve_thumbnail(filename):
         """Serve EPUB cover thumbnail with security validation"""
         try:
-            from werkzeug.utils import secure_filename
             from flask import send_file
+            from werkzeug.utils import secure_filename
 
             # Security: prevent path traversal
             safe_filename = secure_filename(filename)

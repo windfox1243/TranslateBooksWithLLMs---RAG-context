@@ -6,16 +6,16 @@ ensuring chunks are split at safe boundaries (between complete HTML blocks)
 and includes a proportional reinsertion fallback for placeholder recovery.
 """
 import re
-from typing import List, Dict, Tuple
+from typing import Dict, List, Tuple
 
-from src.core.chunking.token_chunker import TokenChunker
 from src.common.placeholder_format import PlaceholderFormat
-from .text_splitter import TextSplitter
-from .tag_classifier import TagClassifier
-from .placeholder_renumberer import PlaceholderRenumberer
 from src.core.chunking.chapter_detector import is_chapter_heading
 from src.core.chunking.decorative_separator import is_decorative_separator
+from src.core.chunking.token_chunker import TokenChunker
 
+from .placeholder_renumberer import PlaceholderRenumberer
+from .tag_classifier import TagClassifier
+from .text_splitter import TextSplitter
 
 _TAG_NAME_RE = re.compile(r"<\s*(/)?\s*(?:[A-Za-z0-9_.-]+:)?([A-Za-z][\w.-]*)\b")
 

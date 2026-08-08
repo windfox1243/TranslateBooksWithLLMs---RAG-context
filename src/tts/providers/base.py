@@ -5,8 +5,8 @@ Defines the interface that all TTS providers must implement.
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, List, Callable, AsyncIterator
 from pathlib import Path
+from typing import AsyncIterator, Callable, List, Optional
 
 
 @dataclass

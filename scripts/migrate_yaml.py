@@ -20,7 +20,6 @@ from pathlib import Path
 
 import yaml
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LEGACY_LANGUAGES = REPO_ROOT / "benchmark" / "languages.yaml"
 LEGACY_REFERENCE_TEXTS = REPO_ROOT / "benchmark" / "reference_texts.yaml"

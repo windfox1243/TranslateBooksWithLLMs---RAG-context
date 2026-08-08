@@ -19,17 +19,23 @@ translation, and source/translation alternate at the paragraph level.
 Optionally pass a real EPUB + chapter to exercise an actual file:
   python tests/standalone/repro_bilingual_199.py [book.epub] [chapter.htm]
 """
-import sys, os, re, zipfile
+import os
+import re
+import sys
+import zipfile
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from lxml import etree
-from src.core.epub.tag_preservation import TagPreserver
-from src.core.epub.html_chunker import HtmlChunker
-from src.core.epub.xhtml_translator import _reconstruct_html, PlaceholderManager
+
 from src.core.epub.body_serializer import (
-    extract_body_html, replace_body_content, normalize_whitespace,
+    extract_body_html,
+    normalize_whitespace,
+    replace_body_content,
 )
+from src.core.epub.html_chunker import HtmlChunker
+from src.core.epub.tag_preservation import TagPreserver
+from src.core.epub.xhtml_translator import PlaceholderManager, _reconstruct_html
 
 # A chapter wrapped in a single container div spanning the whole body — this
 # is the structure that caused the catastrophic data loss (#199).

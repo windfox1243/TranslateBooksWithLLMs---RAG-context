@@ -1,5 +1,5 @@
 """Routes for narrator voice profiles and their conflicts."""
-from flask import request, jsonify
+from flask import jsonify, request
 
 
 def register(bp, deps, shared):

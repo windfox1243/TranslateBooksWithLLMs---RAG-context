@@ -8,13 +8,14 @@ as well as common data structures like LLMResponse.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Union
+
 import httpx
 
-from src.config import TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT, REQUEST_TIMEOUT
-from src.utils.telemetry import get_telemetry_headers
-from src.core.llm.utils.extraction import TranslationExtractor
-from src.core.llm.key_pool import KeyPool
+from src.config import REQUEST_TIMEOUT, TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT
 from src.core.llm.exceptions import ProviderRequestError
+from src.core.llm.key_pool import KeyPool
+from src.core.llm.utils.extraction import TranslationExtractor
+from src.utils.telemetry import get_telemetry_headers
 
 
 def normalize_api_keys(raw: Optional[Union[str, Iterable[str]]]) -> List[str]:

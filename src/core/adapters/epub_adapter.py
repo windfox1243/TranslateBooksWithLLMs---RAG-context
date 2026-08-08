@@ -11,16 +11,18 @@ This adapter handles EPUB files by:
 """
 
 import os
-import zipfile
-import tempfile
 import shutil
+import tempfile
+import zipfile
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from lxml import etree
+
+from src.config import NAMESPACES
 
 from .format_adapter import FormatAdapter
 from .translation_unit import TranslationUnit
-from src.config import NAMESPACES
 
 
 class EpubAdapter(FormatAdapter):

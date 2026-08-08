@@ -124,8 +124,8 @@ async def test_context_overflow_is_raised(litellm_stub):
         "This model's maximum context length is 8192 tokens"
     )
 
-    from src.core.llm.providers.litellm import LiteLLMProvider
     from src.core.llm.exceptions import ContextOverflowError
+    from src.core.llm.providers.litellm import LiteLLMProvider
 
     provider = LiteLLMProvider(model="openai/gpt-4o", api_key="k")
     with pytest.raises(ContextOverflowError):

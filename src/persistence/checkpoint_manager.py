@@ -3,8 +3,9 @@ Checkpoint manager for translation job persistence and resume functionality.
 """
 
 import shutil
-from typing import Optional, Dict, List, Any, Tuple
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
 from .database import Database
 
 
@@ -493,8 +494,8 @@ class CheckpointManager:
 
         # Get all job IDs and preserved file paths from database
         try:
-            import sqlite3
             import json
+            import sqlite3
             conn = sqlite3.connect(self.db.db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -708,6 +709,7 @@ class CheckpointManager:
         """
         # Use the new adapter-based reconstruction
         import asyncio
+
         from src.core.adapters import build_translated_output as adapter_build_output
 
         try:
@@ -833,6 +835,7 @@ class CheckpointManager:
             try:
                 import tempfile
                 import zipfile
+
                 from lxml import etree
 
                 # Create temporary directory for reconstruction
@@ -969,8 +972,8 @@ class CheckpointManager:
         Returns:
             True if saved successfully
         """
-        from datetime import datetime
         import json
+        from datetime import datetime
 
         # Create states directory
         states_dir = self.uploads_dir / translation_id / "xhtml_states"
@@ -1048,6 +1051,7 @@ class CheckpointManager:
             XHTMLTranslationState instance or None if not found
         """
         import json
+
         from src.core.epub.xhtml_translation_state import XHTMLTranslationState
 
         states_dir = self.uploads_dir / translation_id / "xhtml_states"

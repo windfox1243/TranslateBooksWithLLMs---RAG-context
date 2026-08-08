@@ -5,7 +5,7 @@ This module provides text splitting functionality that tries different strategie
 in order of preference: sentences -> punctuation -> newlines -> force split.
 """
 import re
-from typing import List, Callable
+from typing import Callable, List
 
 from src.core.chunking.token_chunker import TokenChunker
 

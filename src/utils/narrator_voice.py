@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, replace
 import json
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from src.utils.language_profiles import get_language_profile
-
 
 VOICE_CONTRACT_VERSION = 2
 ACTIVATION_CONFIDENCE = 0.90

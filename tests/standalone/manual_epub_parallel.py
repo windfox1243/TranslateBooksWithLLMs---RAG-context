@@ -38,12 +38,11 @@ from src.persistence.checkpoint_manager import CheckpointManager
 # fixture identical across tests.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from manual_epub_baseline import (
+    CHAPTERS,
     _build_minimal_epub,
     _list_epub_xhtml,
     _read_epub_chapter_text,
-    CHAPTERS,
 )
-
 
 PARALLEL = 2
 

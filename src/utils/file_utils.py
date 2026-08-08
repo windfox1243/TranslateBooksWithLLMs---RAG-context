@@ -1,16 +1,16 @@
 """
 File utilities for translation operations
 """
-import os
 import asyncio
-import aiofiles
+import os
 import re
 import zipfile
 from pathlib import Path
-from typing import Optional, Callable, Tuple
+from typing import Callable, Optional, Tuple
+
+import aiofiles
 
 from src.core.srt_processor import SRTProcessor
-
 
 PARTIAL_PREFIX = "[partial] "
 # Accept both the current `[partial] ` form and the legacy `[partial NN%] ` form
@@ -212,8 +212,8 @@ async def generate_tts_for_translation(
     Returns:
         Tuple of (success: bool, message: str, audio_path: Optional[str])
     """
-    from src.tts.tts_config import TTSConfig
     from src.tts.audio_processor import generate_tts_for_text
+    from src.tts.tts_config import TTSConfig
 
     if log_callback:
         log_callback("tts_start", f"Starting TTS generation for: {translated_filepath}")

@@ -23,7 +23,8 @@ The fix has two halves:
 The token is regenerated on each server start; it is never persisted.
 """
 import secrets
-from flask import request, jsonify
+
+from flask import jsonify, request
 
 # Minted once per process. token_urlsafe(32) yields ~43 chars of 256-bit
 # entropy, infeasible to guess and safe to embed in a URL query string.

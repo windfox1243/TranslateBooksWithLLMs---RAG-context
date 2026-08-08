@@ -2,14 +2,15 @@
 Deterministic merge policy engine for directed addressing updates.
 """
 
-from dataclasses import replace
-from typing import Optional, Dict, Any, List, Callable, Iterable
 import re
 import unicodedata
-from src.utils.context_schema import AddressingUpdateDelta
-from src.persistence.database import Database
-from src.utils.progress_logging import emit_progress_log
+from dataclasses import replace
+from typing import Any, Callable, Dict, Iterable, List, Optional
+
 import src.config as config
+from src.persistence.database import Database
+from src.utils.context_schema import AddressingUpdateDelta
+from src.utils.progress_logging import emit_progress_log
 
 # Hierarchy of registers for stability comparison
 REGISTER_HIERARCHY = {

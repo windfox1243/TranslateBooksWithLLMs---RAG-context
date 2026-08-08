@@ -6,6 +6,7 @@ in EPUB translation workflows.
 """
 
 from typing import Dict, Optional, Tuple
+
 from src.common.placeholder_format import PlaceholderFormat
 
 

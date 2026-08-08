@@ -8,10 +8,11 @@ This test verifies that:
 Regression test for: https://github.com/hydropix/TranslateBooksWithLLMs/issues/108
 """
 
-import pytest
-import sys
 import os
+import sys
 from pathlib import Path
+
+import pytest
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent.parent
@@ -44,11 +45,13 @@ class TestDefaultTargetLanguageBug:
         
         # Import and reload config to pick up test values
         import importlib
+
         from src import config
         importlib.reload(config)
         
         # Now import and create Flask app (it will use the reloaded config)
         from flask import Flask
+
         from src.api.blueprints.config_routes import create_config_blueprint
         
         app = Flask(__name__)

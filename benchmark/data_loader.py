@@ -19,7 +19,6 @@ import yaml
 
 from .models import Language, LanguageCategory, ReferenceText
 
-
 _CATEGORY_MAP = {
     "european_major": LanguageCategory.EUROPEAN_MAJOR,
     "asian": LanguageCategory.ASIAN,

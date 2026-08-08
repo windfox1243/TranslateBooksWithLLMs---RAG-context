@@ -5,15 +5,16 @@ Verifies the prompt builder embeds the source/target languages, declares the
 required NER tags and category labels, and wraps the input text between the
 configured SOURCE_TEXT delimiters without truncation.
 """
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from src.prompts.prompts import generate_ner_extraction_prompt, PromptPair
 from src.config import INPUT_TAG_IN, INPUT_TAG_OUT
+from src.prompts.prompts import PromptPair, generate_ner_extraction_prompt
 
 
 class TestGenerateNerExtractionPrompt:

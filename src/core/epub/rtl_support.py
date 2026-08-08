@@ -8,10 +8,9 @@ This module ensures proper text direction and layout for RTL languages
 while protecting technical content (code, URLs) from direction reversal.
 """
 
-from pathlib import Path
-from typing import Set, Optional
 import os
-
+from pathlib import Path
+from typing import Optional, Set
 
 # RTL Languages supported with their ISO 639-1 codes
 RTL_LANGUAGES: Set[str] = {
@@ -401,8 +400,9 @@ def remove_rtl_from_html(html_content: str) -> str:
     Returns:
         Modified HTML with LTR layout
     """
-    from lxml import etree
     import re
+
+    from lxml import etree
     
     ltr_css = """/* LTR Reset - Auto-generated */
 html, body { direction: ltr !important; text-align: left !important; }

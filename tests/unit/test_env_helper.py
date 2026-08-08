@@ -1,6 +1,8 @@
 import tempfile
 from pathlib import Path
+
 from src.utils.env_helper import ensure_env_defaults, write_compact_env
+
 
 def test_ensure_env_defaults():
     with tempfile.TemporaryDirectory() as tmp_dir:

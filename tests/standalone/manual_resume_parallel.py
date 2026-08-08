@@ -38,7 +38,6 @@ from src.core.adapters import translate_file
 from src.core.llm.providers.poe import PoeProvider
 from src.persistence.checkpoint_manager import CheckpointManager
 
-
 FIXTURE = _REPO_ROOT / "tests" / "fixtures" / "sample.txt"
 PARALLEL = 3
 INTERRUPT_AFTER = 3  # chunks

@@ -12,14 +12,15 @@ File type detection supports:
 
 import os
 import tempfile
-from typing import Optional, Callable, Dict, Any
+from typing import Any, Callable, Dict, Optional
 
-from .generic_translator import GenericTranslator
-from .txt_adapter import TxtAdapter
-from .srt_adapter import SrtAdapter
+from src.utils.file_detector import detect_file_type, detect_file_type_by_content
+
 from .epub_adapter import EpubAdapter
 from .exceptions import UnsupportedFormatError
-from src.utils.file_detector import detect_file_type, detect_file_type_by_content
+from .generic_translator import GenericTranslator
+from .srt_adapter import SrtAdapter
+from .txt_adapter import TxtAdapter
 
 
 async def translate_file(
@@ -123,7 +124,7 @@ async def translate_file(
 
     # Resolve concurrent workers once here; local providers are forced to 1.
     # Every downstream pipeline re-resolves idempotently.
-    from src.config import resolve_parallel_workers, is_local_provider
+    from src.config import is_local_provider, resolve_parallel_workers
     requested_workers = parallel_workers
     parallel_workers = resolve_parallel_workers(llm_provider, parallel_workers)
     if log_callback:
@@ -161,8 +162,9 @@ async def translate_file(
     # that requires HTML chunking, tag preservation, technical content protection, etc.
     # TODO: Refactor EPUB translation to properly work with the adapter pattern
     if detected_type == 'epub':
-        from src.core.epub.translator import translate_epub_file
         import inspect
+
+        from src.core.epub.translator import translate_epub_file
         sig = inspect.signature(translate_epub_file)
         filtered_config = {
             k: v for k, v in additional_config.items()

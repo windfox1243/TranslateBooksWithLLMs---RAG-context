@@ -34,7 +34,6 @@ sys.path.insert(0, str(_REPO_ROOT))
 from src import config  # noqa: F401
 from src.core.llm.factory import create_llm_provider
 
-
 SOURCE_TEXT = "The quick brown fox jumps over the lazy dog."
 SYSTEM_PROMPT = (
     "You are a professional translator. Translate the user's text from English "

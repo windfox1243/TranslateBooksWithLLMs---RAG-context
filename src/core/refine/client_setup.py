@@ -7,12 +7,9 @@ provider arg or tweaking the context heuristic is a one-place change.
 
 from typing import Any, Optional, Tuple
 
-from src.config import (
-    THINKING_MODELS,
-    ADAPTIVE_CONTEXT_INITIAL_THINKING,
-)
+from src.config import ADAPTIVE_CONTEXT_INITIAL_THINKING, THINKING_MODELS
 from src.core.context_optimizer import INITIAL_CONTEXT_SIZE
-from src.core.epub.translator import _create_llm_client, _create_context_manager
+from src.core.epub.translator import _create_context_manager, _create_llm_client
 
 
 def build_refine_client(

@@ -218,9 +218,7 @@ def build_job_callbacks(
     auto_review_threshold = max(0, min(auto_review_threshold, 20))
     auto_review_coordinator = None
     if (config.get('prompt_options') or {}).get('reflection_mode'):
-        from src.core.editor.auto_review_repair import (
-            AutoReviewRepairCoordinator,
-        )
+        from src.core.editor.auto_review_repair import AutoReviewRepairCoordinator
 
         auto_review_coordinator = AutoReviewRepairCoordinator(
             translation_id=translation_id,

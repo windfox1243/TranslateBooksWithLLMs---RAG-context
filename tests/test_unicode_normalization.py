@@ -26,7 +26,6 @@ from src.utils.text_encoding import (
     extract_signature,
 )
 
-
 # Width-zero codepoints used by the module
 _ZWNJ = "‌"
 _ZWJ = "‍"
@@ -329,9 +328,7 @@ class TestDocxIntegration:
 
     def test_minimal_docx_carries_signature_in_core_xml(self):
         """plain_extractor.build_minimal_docx must stamp lastModifiedBy."""
-        from src.core.docx.plain_extractor import (
-            build_minimal_docx, DocxPlainContent,
-        )
+        from src.core.docx.plain_extractor import DocxPlainContent, build_minimal_docx
 
         with tempfile.TemporaryDirectory() as tmp:
             out_path = os.path.join(tmp, "out.docx")
@@ -404,6 +401,7 @@ class TestEpubMetadataIntegration:
 
     def test_urn_tbl_identifier_added(self):
         from lxml import etree
+
         from src.core.epub.translator import _update_epub_metadata
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -418,6 +416,7 @@ class TestEpubMetadataIntegration:
 
     def test_render_uid_attribute_set(self):
         from lxml import etree
+
         from src.core.epub.translator import _update_epub_metadata
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -430,6 +429,7 @@ class TestEpubMetadataIntegration:
 
     def test_original_identifier_preserved(self):
         from lxml import etree
+
         from src.core.epub.translator import _update_epub_metadata
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -443,6 +443,7 @@ class TestEpubMetadataIntegration:
 
     def test_language_updated(self):
         from lxml import etree
+
         from src.core.epub.translator import _update_epub_metadata
 
         with tempfile.TemporaryDirectory() as tmp:

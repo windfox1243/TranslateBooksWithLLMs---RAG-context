@@ -1,28 +1,30 @@
 """
 Translation job handlers and processing logic
 """
-import os
-import time
 import asyncio
 import copy
+import os
 import tempfile
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
-from src.utils.unified_logger import setup_web_logger, LogType
-from src.utils.file_utils import get_unique_output_path, find_partial_output_paths, generate_tts_for_translation
-from src.utils.custom_instructions import (
-    load_custom_instructions,
-    is_safe_filename,
-)
+from src.config import AUTO_PAUSE_ON_RATE_LIMIT, RATE_LIMIT_AUTO_RESUME_DELAY
+from src.core.adapters import refine_file, translate_file
 from src.core.llm import OpenRouterProvider
 from src.core.llm.exceptions import RateLimitError
-from src.config import AUTO_PAUSE_ON_RATE_LIMIT, RATE_LIMIT_AUTO_RESUME_DELAY
-from src.core.adapters import translate_file, refine_file
 from src.core.progress import snapshot_from_legacy_stats
 from src.tts.tts_config import TTSConfig
-from src.utils.notifier import notify, EVENT_SUCCESS, EVENT_FAILURE, EVENT_INTERRUPTION
+from src.utils.custom_instructions import is_safe_filename, load_custom_instructions
+from src.utils.file_utils import (
+    find_partial_output_paths,
+    generate_tts_for_translation,
+    get_unique_output_path,
+)
+from src.utils.notifier import EVENT_FAILURE, EVENT_INTERRUPTION, EVENT_SUCCESS, notify
+from src.utils.unified_logger import LogType, setup_web_logger
+
 from .job_callbacks import build_job_callbacks
 from .websocket import emit_update
 

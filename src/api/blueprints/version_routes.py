@@ -8,10 +8,10 @@ Endpoints:
 """
 import logging
 from pathlib import Path
+
 from flask import Blueprint, jsonify, request
 
-from src.utils import version_checker
-from src.utils import app_updater
+from src.utils import app_updater, version_checker
 
 logger = logging.getLogger(__name__)
 

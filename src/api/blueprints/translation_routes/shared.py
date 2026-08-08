@@ -3,20 +3,16 @@
 They capture the same dependencies the route handlers do, so they are
 built once per blueprint and handed to each register() call.
 """
+import copy
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
-import time
-import copy
-from flask import request, jsonify
+from flask import jsonify, request
 
 from src.api.websocket import emit_update
 
-from .helpers import (
-    _provider_credentials_error,
-    _rehydrate_resume_credentials,
-    logger,
-)
+from .helpers import _provider_credentials_error, _rehydrate_resume_credentials, logger
 
 
 @dataclass(frozen=True)
@@ -118,7 +114,6 @@ def build_shared(deps) -> SharedHelpers:
             return False
         from src.config import NOVEL_CONTEXTS_DIR
         from src.utils.db_addressing import apply_db_addressing_to_context
-        from src.utils.relationship_sync import apply_relationship_graph_to_context
         from src.utils.novel_context import (
             compress_dynamic_state,
             decode_context_snapshot,
@@ -127,6 +122,7 @@ def build_shared(deps) -> SharedHelpers:
             resolve_novel_context_path,
             save_novel_context,
         )
+        from src.utils.relationship_sync import apply_relationship_graph_to_context
 
         filename = normalize_novel_context_filename(filename)
         path = resolve_novel_context_path(filename, NOVEL_CONTEXTS_DIR)

@@ -2,12 +2,14 @@
 Unit tests for CheckpointManager XHTML partial state methods.
 """
 
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
-from src.persistence.checkpoint_manager import CheckpointManager
+
+import pytest
+
 from src.core.epub.xhtml_translation_state import XHTMLTranslationState
+from src.persistence.checkpoint_manager import CheckpointManager
 
 
 @pytest.fixture

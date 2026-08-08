@@ -5,6 +5,7 @@ Tests DOCX ↔ HTML conversion functionality.
 """
 
 import os
+
 import pytest
 from docx import Document
 from lxml import etree

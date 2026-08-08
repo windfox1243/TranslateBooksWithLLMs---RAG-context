@@ -3,6 +3,7 @@ Unit tests for 2D Formality + Seniority Hierarchy Matrix Addressing Engine.
 """
 
 import pytest
+
 from src.utils.universal_addressing_engine import UniversalAddressingEngine
 
 

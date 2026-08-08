@@ -11,13 +11,16 @@ Strategy:
 - Track last N successful chunks to potentially reduce context if all fit with smaller size
 """
 
-from typing import Optional, Tuple, Dict
-from dataclasses import dataclass
 from collections import deque
+from dataclasses import dataclass
+from typing import Dict, Optional, Tuple
 
 from src.config import (
-    MAX_TOKENS_PER_CHUNK, THINKING_MODELS,
-    ADAPTIVE_CONTEXT_INITIAL, ADAPTIVE_CONTEXT_STEP, ADAPTIVE_CONTEXT_STABILITY_WINDOW
+    ADAPTIVE_CONTEXT_INITIAL,
+    ADAPTIVE_CONTEXT_STABILITY_WINDOW,
+    ADAPTIVE_CONTEXT_STEP,
+    MAX_TOKENS_PER_CHUNK,
+    THINKING_MODELS,
 )
 
 # Try to import tiktoken, fallback to character-based estimation

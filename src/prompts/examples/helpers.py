@@ -8,9 +8,9 @@ This module provides unified access to technical examples:
 from typing import Any, Dict, Optional, Tuple
 
 from .constants import TAG0, TAG1, TAG2
+from .output_examples import OUTPUT_FORMAT_EXAMPLES
 from .placeholder_examples import get_example_for_pair
 from .subtitle_examples import SUBTITLE_EXAMPLES
-from .output_examples import OUTPUT_FORMAT_EXAMPLES
 
 
 def get_placeholder_example(

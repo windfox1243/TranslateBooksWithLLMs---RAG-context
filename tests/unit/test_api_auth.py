@@ -10,7 +10,7 @@ import pytest
 from flask import Flask, jsonify
 
 from src.api import auth
-from src.api.auth import register_auth, is_authorized, API_TOKEN
+from src.api.auth import API_TOKEN, is_authorized, register_auth
 
 
 @pytest.fixture

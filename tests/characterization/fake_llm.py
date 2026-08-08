@@ -15,12 +15,7 @@ too (the recorder strips them anyway).
 
 from typing import Optional
 
-from src.config import (
-    INPUT_TAG_IN,
-    INPUT_TAG_OUT,
-    TRANSLATE_TAG_IN,
-    TRANSLATE_TAG_OUT,
-)
+from src.config import INPUT_TAG_IN, INPUT_TAG_OUT, TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT
 from src.core.llm.base import LLMProvider, LLMResponse
 
 

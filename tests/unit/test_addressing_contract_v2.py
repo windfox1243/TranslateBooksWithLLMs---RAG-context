@@ -5,8 +5,14 @@ import json
 import pytest
 
 from src.persistence.database import Database
-from src.utils.addressing_schema import AddressingCandidateV2, parse_addressing_candidate_block
-from src.utils.context_merge_engine import ContextMergeEngine, _source_form_support_reason
+from src.utils.addressing_schema import (
+    AddressingCandidateV2,
+    parse_addressing_candidate_block,
+)
+from src.utils.context_merge_engine import (
+    ContextMergeEngine,
+    _source_form_support_reason,
+)
 from src.utils.db_addressing import export_db_addressing_to_markdown
 
 

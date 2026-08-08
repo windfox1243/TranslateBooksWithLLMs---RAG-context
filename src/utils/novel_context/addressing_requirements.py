@@ -3,13 +3,10 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .characters import _plain_key
-from .dynamic_state import (
-    _DYNAMIC_RELATION_PATTERN,
-    _split_dynamic_sections,
-)
+from .dynamic_state import _DYNAMIC_RELATION_PATTERN, _split_dynamic_sections
 
 _ADDRESSING_CANDIDATE_PROMPT_BLOCK = r'''[ADDRESSING_CANDIDATES]
 {"updates":[{"speaker":"canonical character","addressee":"canonical character","source_forms":[{"text":"exact source surface form","usage":"direct_address | second_person | self_reference | indirect_reference","evidence_quote":"exact quote from LATEST SOURCE TEXT"}],"target_form":{"self_reference":"target-language self-reference","second_person":"target-language second-person form","vocative":"target-language vocative or none"},"register":"neutral | formal | polite | casual | intimate | hostile | vulgar | archaic | familial","social_basis":["age | sibling | school-year | rank | teacher/student | intimacy | hostility | other concise basis"],"scope":"durable | situational","evidence_quote":"exact quote from LATEST SOURCE TEXT","dialogue_turn_id":"optional candidate id","confidence":0.0,"action":"upsert | delete"}]}

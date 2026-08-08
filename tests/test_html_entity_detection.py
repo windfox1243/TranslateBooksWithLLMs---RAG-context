@@ -6,7 +6,11 @@ are properly detected and protected from translation.
 """
 
 import pytest
-from src.core.epub.technical_content_detector import TechnicalContentDetector, PatternPriority
+
+from src.core.epub.technical_content_detector import (
+    PatternPriority,
+    TechnicalContentDetector,
+)
 
 
 class TestHTMLEntityDetection:

@@ -6,12 +6,13 @@ translation would, then runs refine_chunks() and writes the polished output.
 """
 
 import os
-import aiofiles
-from typing import Optional, Callable, Dict, Any
+from typing import Any, Callable, Dict, Optional
 
+import aiofiles
+
+from src.config import API_ENDPOINT, DEFAULT_MODEL
 from src.core.text_processor import split_text_into_chunks
 from src.core.translator import refine_chunks
-from src.config import DEFAULT_MODEL, API_ENDPOINT
 
 
 async def refine_txt_file(
@@ -228,8 +229,8 @@ async def refine_txt_file(
 
     from src.utils.novel_context import (
         RefinementContextTracker,
-        map_dialogue_attributions_for_refinement,
         map_context_snapshots_for_refinement,
+        map_dialogue_attributions_for_refinement,
     )
     historical_contexts = map_context_snapshots_for_refinement(
         total_chunks,

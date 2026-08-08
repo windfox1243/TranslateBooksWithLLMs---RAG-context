@@ -15,20 +15,21 @@ Used by the EPUB and DOCX adapters when prompt_options['plain_text_mode'] is Tru
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from src.core.chunking.token_chunker import TokenChunker
 from src.core.chunking.decorative_separator import is_decorative_separator
-from src.core.translator import generate_translation_request
-from src.core.post_processor import clean_translated_text
-from src.core.epub.translation_metrics import TranslationMetrics
+from src.core.chunking.token_chunker import TokenChunker
 from src.core.common.parallel import iter_ordered_concurrent
+from src.core.epub.translation_metrics import TranslationMetrics
 from src.core.llm.exceptions import RateLimitError
+from src.core.post_processor import clean_translated_text
+from src.core.translator import generate_translation_request
+from src.utils.addressing_schema import context_contract_version
 from src.utils.db_addressing import (
     apply_db_addressing_to_session,
     build_directed_addressing_prompt_context,
     sync_context_update_addressing_to_db,
     sync_markdown_addressing_to_db,
 )
-from src.utils.addressing_schema import context_contract_version
+from src.utils.progress_logging import emit_progress_log
 from src.utils.relationship_sync import (
     apply_relationship_graph_to_session,
     build_relationship_prompt_context,
@@ -37,8 +38,6 @@ from src.utils.relationship_sync import (
     sync_context_update_relationships_to_db,
     sync_markdown_relationships_to_db,
 )
-from src.utils.progress_logging import emit_progress_log
-
 
 PARAGRAPH_SEPARATOR = "\n\n"
 _RESPLIT_REGEX = re.compile(r"\n{2,}")
@@ -391,10 +390,7 @@ async def translate_paragraphs_plain(
             else []
         )
         if previous_chunks:
-            from src.core.continuation import (
-                latest_context_seed,
-                seed_matching_prefix,
-            )
+            from src.core.continuation import latest_context_seed, seed_matching_prefix
             prefix = seed_matching_prefix(
                 checkpoint_manager=checkpoint_manager,
                 translation_id=translation_id,

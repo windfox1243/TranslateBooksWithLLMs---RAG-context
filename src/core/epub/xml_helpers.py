@@ -5,7 +5,8 @@ This module provides safe wrappers around lxml element operations to handle
 edge cases and compatibility issues across different lxml versions.
 """
 import re
-from typing import Iterator, Dict, Any
+from typing import Any, Dict, Iterator
+
 from lxml import etree
 
 

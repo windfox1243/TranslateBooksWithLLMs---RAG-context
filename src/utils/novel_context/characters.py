@@ -8,13 +8,9 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .constants import (
-    ALIASES_SECTION,
-    CHARACTERS_SECTION,
-    GLOSSARY_SECTION,
-    NAME_MAP_SECTION,
     _ADDRESS_TERM_SUFFIXES,
     _AMBIGUOUS_SHORT_NAME_KEYS,
     _BARE_NARRATIVE_ROLE_NAMES,
@@ -22,8 +18,8 @@ from .constants import (
     _DIRECT_GENDER_WORDS,
     _ENGLISH_GENERIC_ROLE_NAMES,
     _EXPLICIT_NPC_MARKERS,
-    _GENDERED_ROMANTIC_RELATION_LABELS,
     _GENDER_LABELS,
+    _GENDERED_ROMANTIC_RELATION_LABELS,
     _GENERIC_ROLE_WORDS,
     _GROUP_ENTITY_WORDS,
     _INCIDENTAL_CHARACTER_MARKERS,
@@ -51,7 +47,12 @@ from .constants import (
     _UNIQUE_ROLE_TITLES,
     _WORK_ENTITY_NON_PERSON_ROLES,
     _WORK_ENTITY_WORDS,
+    ALIASES_SECTION,
+    CHARACTERS_SECTION,
+    GLOSSARY_SECTION,
+    NAME_MAP_SECTION,
 )
+
 
 def _clean_inline_text(value: str) -> str:
     """Collapse whitespace without changing the language of the content."""

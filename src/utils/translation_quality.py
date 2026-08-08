@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from difflib import SequenceMatcher
 import re
 import unicodedata
+from dataclasses import dataclass
+from difflib import SequenceMatcher
 from typing import Any, Dict, Iterable, List, Optional
 
 from src.utils.language_profiles import get_language_profile
-
 
 _WORD_RE = re.compile(r"[^\W\d_]+(?:['’-][^\W\d_]+)*", re.UNICODE)
 _PROTECTED_PATTERN = re.compile(

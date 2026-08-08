@@ -15,7 +15,6 @@ from typing import Dict, List, Tuple
 
 from lxml import etree
 
-
 # Block-level tags we preserve at rebuild time (li flattens to p later — see replace_body_with_paragraphs).
 BLOCK_TAGS = ("p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "pre")
 # Containers we descend into looking for blocks

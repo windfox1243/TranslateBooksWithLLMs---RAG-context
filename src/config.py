@@ -1,12 +1,13 @@
 """
 Centralized configuration class
 """
+import logging
 import os
 import sys
-import logging
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
+
 from dotenv import load_dotenv
 
 # Setup debug logger for configuration

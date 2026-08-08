@@ -1,8 +1,8 @@
 """Checkpoint deletion, orphan recovery, and explicit compaction."""
 
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
-import sqlite3
 
 from flask import Flask
 

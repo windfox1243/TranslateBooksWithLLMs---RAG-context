@@ -110,7 +110,7 @@ class AutoReviewRepairCoordinator:
         self._emit("auto_running", batch, boundary=boundary)
 
         completed = succeeded = failed = 0
-        from src.core.editor_retry import run_editor_retry, _refresh_output
+        from src.core.editor_retry import _refresh_output, run_editor_retry
 
         for position, chunk_index in enumerate(candidates, start=1):
             key = (phase, pass_id, chunk_index)

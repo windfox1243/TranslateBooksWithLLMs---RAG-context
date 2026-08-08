@@ -6,15 +6,17 @@ HTML entities) is hidden from the LLM in placeholders. Therefore, the system pro
 section instructing the LLM to "not translate code" is obsolete and should not be added.
 """
 
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.prompts.prompts import (
-    generate_translation_prompt,
     TECHNICAL_CONTENT_SECTION,
-    _build_optional_prompt_sections
+    _build_optional_prompt_sections,
+    generate_translation_prompt,
 )
 
 

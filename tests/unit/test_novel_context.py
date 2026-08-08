@@ -1,37 +1,40 @@
 import json
 import logging
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from src.prompts.prompts import (
+    generate_refinement_prompt,
+    generate_subtitle_block_prompt,
+    generate_subtitle_refinement_block_prompt,
+    generate_translation_prompt,
+)
 from src.utils.novel_context import (
     ADDRESSING_SECTION,
+    DYNAMIC_STATE_END,
+    DYNAMIC_STATE_START,
     build_novel_context,
     compress_dynamic_state,
     decode_context_snapshot,
-    DYNAMIC_STATE_END,
-    DYNAMIC_STATE_START,
     infer_dynamic_address_identity_links,
     is_safe_filename,
     list_novel_contexts,
     load_novel_context,
     make_novel_context_filename,
-    merge_new_lore,
     merge_dynamic_state,
+    merge_new_lore,
     normalize_novel_context_content,
-    render_novel_context_update_view,
-    render_novel_context_for_prompt,
     normalize_novel_context_filename,
-    save_novel_context,
+    render_novel_context_for_prompt,
+    render_novel_context_update_view,
     resolve_novel_context_path,
+    save_novel_context,
 )
-from src.prompts.prompts import (
-    generate_translation_prompt,
-    generate_refinement_prompt,
-    generate_subtitle_block_prompt,
-    generate_subtitle_refinement_block_prompt,
-)
+
 
 def test_is_safe_filename():
     assert is_safe_filename("novel.txt") is True
@@ -841,7 +844,8 @@ def test_prompt_injection_subtitles():
 
 @pytest.mark.asyncio
 async def test_resync_context_snapshots_logic():
-    from unittest.mock import MagicMock, AsyncMock, patch
+    from unittest.mock import AsyncMock, MagicMock, patch
+
     from src.core.adapters.generic_translator import _resync_context_snapshots_async
     from src.utils.novel_context import compress_dynamic_state
 
@@ -924,7 +928,8 @@ async def test_resync_context_snapshots_logic():
 
 @pytest.mark.asyncio
 async def test_resync_context_snapshots_resets_dialogue_state_on_scene_key_fallback():
-    from unittest.mock import MagicMock, AsyncMock, patch
+    from unittest.mock import AsyncMock, MagicMock, patch
+
     from src.core.adapters.generic_translator import _resync_context_snapshots_async
     from src.utils.novel_context import compress_dynamic_state
 
@@ -1059,8 +1064,9 @@ async def test_resync_context_snapshots_resets_dialogue_state_on_scene_key_fallb
 @pytest.mark.asyncio
 async def test_global_only_resync_propagates_lore_without_llm(monkeypatch, tmp_path):
     from unittest.mock import AsyncMock, MagicMock, patch
-    from src.core.adapters.generic_translator import _resync_context_snapshots_async
+
     import src.config
+    from src.core.adapters.generic_translator import _resync_context_snapshots_async
 
     old_global = (
         "# GLOBAL LORE\n\n"
@@ -1192,8 +1198,9 @@ async def test_resync_last_chunk_writes_edited_full_snapshot_without_nesting(
     tmp_path,
 ):
     from unittest.mock import MagicMock
-    from src.core.adapters.generic_translator import _resync_context_snapshots_async
+
     import src.config
+    from src.core.adapters.generic_translator import _resync_context_snapshots_async
 
     fallback = build_novel_context("FILE GLOBAL", "FILE DYNAMIC")
     edited = build_novel_context("EDITED GLOBAL", "EDITED DYNAMIC")
@@ -1247,8 +1254,9 @@ async def test_resync_last_chunk_writes_edited_full_snapshot_without_nesting(
 @pytest.mark.asyncio
 async def test_resync_failure_does_not_auto_resume(monkeypatch, tmp_path):
     from unittest.mock import AsyncMock, MagicMock, patch
-    from src.core.adapters.generic_translator import _resync_context_snapshots_async
+
     import src.config
+    from src.core.adapters.generic_translator import _resync_context_snapshots_async
 
     initial = build_novel_context("GLOBAL", "DYNAMIC")
     save_novel_context("resync.txt", tmp_path, initial)
@@ -1389,8 +1397,8 @@ def test_character_gender_does_not_flip_without_explicit_correction():
 
 
 def test_source_gate_downgrades_unproven_new_character_gender_guess():
-    from src.utils.novel_context import merge_new_lore
     from src import config
+    from src.utils.novel_context import merge_new_lore
 
     original_bypass = getattr(config, 'BYPASS_CONTEXT_GATING', True)
     config.BYPASS_CONTEXT_GATING = False
@@ -1490,8 +1498,8 @@ def test_source_gate_accepts_gender_backed_by_incoming_details():
 
 
 def test_source_gate_rejects_unproven_explicit_gender_correction():
-    from src.utils.novel_context import merge_new_lore
     from src import config
+    from src.utils.novel_context import merge_new_lore
 
     original_bypass = getattr(config, 'BYPASS_CONTEXT_GATING', True)
     config.BYPASS_CONTEXT_GATING = False
@@ -1519,8 +1527,8 @@ def test_source_gate_rejects_unproven_explicit_gender_correction():
 
 
 def test_bypass_context_gating_trusts_new_gender_guess():
-    from src.utils.novel_context import merge_new_lore
     from src import config
+    from src.utils.novel_context import merge_new_lore
 
     original_bypass = getattr(config, 'BYPASS_CONTEXT_GATING', True)
     config.BYPASS_CONTEXT_GATING = True
@@ -1557,8 +1565,8 @@ def test_bypass_context_gating_trusts_new_gender_guess():
 
 
 def test_bypass_context_gating_accepts_correction():
-    from src.utils.novel_context import merge_new_lore
     from src import config
+    from src.utils.novel_context import merge_new_lore
 
     original_bypass = getattr(config, 'BYPASS_CONTEXT_GATING', True)
     config.BYPASS_CONTEXT_GATING = True
@@ -3460,7 +3468,8 @@ def test_title_only_monarch_does_not_collapse_two_named_monarchs():
 
 @pytest.mark.asyncio
 async def test_update_novel_context_chunk_parsing():
-    from unittest.mock import MagicMock, AsyncMock
+    from unittest.mock import AsyncMock, MagicMock
+
     from src.utils.novel_context import update_novel_context_chunk
 
     mock_client = MagicMock()
@@ -4372,6 +4381,7 @@ async def test_update_chunk_repairs_model_missed_reincarnation_gender_and_title_
 @pytest.mark.asyncio
 async def test_context_llm_delta_cannot_forget_dormant_relationships():
     from unittest.mock import AsyncMock, MagicMock
+
     from src.utils.novel_context import update_novel_context_chunk
 
     mock_client = MagicMock()
@@ -4582,7 +4592,8 @@ def test_vietnamese_addressing_does_not_downgrade_royal_title_to_generic_co():
 
 @pytest.mark.asyncio
 async def test_update_novel_context_chunk_deduplicates_headers():
-    from unittest.mock import MagicMock, AsyncMock
+    from unittest.mock import AsyncMock, MagicMock
+
     from src.utils.novel_context import update_novel_context_chunk
 
     mock_client = MagicMock()
@@ -4732,6 +4743,7 @@ def test_make_novel_context_filename_is_safe_for_every_input_name(tmp_path):
 @pytest.mark.asyncio
 async def test_source_first_context_analysis_uses_no_translation():
     from unittest.mock import AsyncMock, MagicMock
+
     from src.utils.novel_context import update_novel_context_chunk
 
     response = MagicMock()
@@ -4767,8 +4779,9 @@ async def test_source_first_context_analysis_uses_no_translation():
 @pytest.mark.asyncio
 async def test_plain_text_context_is_prepared_before_translation(monkeypatch, tmp_path):
     from unittest.mock import MagicMock
-    from src.core.common import plain_text_pipeline
+
     import src.config
+    from src.core.common import plain_text_pipeline
 
     events = []
 
@@ -4827,8 +4840,9 @@ async def test_plain_text_context_update_interval_skips_between_updates(
     tmp_path,
 ):
     from unittest.mock import MagicMock
-    from src.core.common import plain_text_pipeline
+
     import src.config
+    from src.core.common import plain_text_pipeline
 
     analyzed = []
     translated = []
@@ -4891,8 +4905,9 @@ async def test_plain_text_retry_preserves_failed_chunk_context_snapshot(
     tmp_path,
 ):
     from unittest.mock import MagicMock
-    from src.core.common import plain_text_pipeline
+
     import src.config
+    from src.core.common import plain_text_pipeline
 
     attempts = {}
     context_updates = {}
@@ -4965,8 +4980,8 @@ async def test_plain_text_retry_preserves_failed_chunk_context_snapshot(
 
 @pytest.mark.asyncio
 async def test_xhtml_context_is_prepared_before_translation(monkeypatch, tmp_path):
-    from src.core.epub import xhtml_translator
     import src.config
+    from src.core.epub import xhtml_translator
 
     events = []
 
@@ -5017,7 +5032,9 @@ async def test_xhtml_context_is_prepared_before_translation(monkeypatch, tmp_pat
 @pytest.mark.asyncio
 async def test_epub_file_checkpoint_does_not_overwrite_chunk_snapshots(tmp_path):
     from unittest.mock import MagicMock
+
     from lxml import etree
+
     from src.core.epub.translator import _save_checkpoint
 
     manager = MagicMock()
@@ -5046,6 +5063,7 @@ async def test_epub_file_checkpoint_does_not_overwrite_chunk_snapshots(tmp_path)
 # ---------------------------------------------------------------------------
 
 import asyncio
+
 from src.utils.novel_context import consolidate_context_lore
 
 
@@ -5294,7 +5312,7 @@ async def test_consolidation_triggered_on_last_chunk():
     llm_client.generate.side_effect = [mock_response, mock_consolidation]
 
     from src.utils.novel_context import update_novel_context_chunk
-    
+
     # chunk_index = 3, total_chunks = 3. Since it is the last chunk, it must trigger consolidation.
     updated_lore, _, logs = await update_novel_context_chunk(
         llm_client=llm_client,
@@ -5386,6 +5404,7 @@ def test_vietnamese_addressing_flexible_field_parsing_and_eastern_cues():
         _vietnamese_addressing_field,
         merge_dynamic_state,
     )
+
     # Flexible field extraction (underscores / Vietnamese labels)
     details = "xưng: tôi; gọi: sư tỷ; danh xưng: sư tỷ | sư tỷ, kinship"
     assert _vietnamese_addressing_field(details, "self-reference") == "tôi"

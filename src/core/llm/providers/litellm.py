@@ -18,12 +18,17 @@ Example:
 """
 
 import asyncio
-from typing import Optional, Union, List
+from typing import List, Optional, Union
 
-from src.config import REQUEST_TIMEOUT, MAX_TRANSLATION_ATTEMPTS, TEMPERATURE
-from ..base import LLMGenerationOptions, LLMProvider, LLMResponse, terminal_provider_failure
+from src.config import MAX_TRANSLATION_ATTEMPTS, REQUEST_TIMEOUT, TEMPERATURE
+
+from ..base import (
+    LLMGenerationOptions,
+    LLMProvider,
+    LLMResponse,
+    terminal_provider_failure,
+)
 from ..exceptions import ContextOverflowError
-
 
 # Substrings that mark a provider-side context/length overflow, surfaced as
 # ContextOverflowError so the chunking layer can react (shrink and retry).

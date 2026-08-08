@@ -5,32 +5,40 @@ This module provides the OllamaProvider class for interacting with local
 Ollama servers with full thinking model detection and handling.
 """
 
-from typing import Optional, Callable
 import asyncio
 import json
 import re
-import httpx
+from typing import Callable, Optional
 
-from ..base import LLMGenerationOptions, LLMProvider, LLMResponse, terminal_provider_failure
-from ..exceptions import (
-    ContextOverflowError, RepetitionLoopError, StructuredOutputSchemaError,
-)
-from ..thinking.cache import get_thinking_cache
-from ..thinking.detection import detect_repetition_loop
-from ..thinking.behavior import ThinkingBehavior, _model_matches_pattern
-from ..utils.context_detection import ContextDetector
+import httpx
 
 from src.config import (
     API_ENDPOINT,
+    CONTROLLABLE_THINKING_MODELS,
     DEFAULT_MODEL,
-    REQUEST_TIMEOUT,
-    OLLAMA_NUM_CTX,
     MAX_TRANSLATION_ATTEMPTS,
+    OLLAMA_NUM_CTX,
+    REPETITION_MIN_COUNT_STREAMING,
+    REQUEST_TIMEOUT,
     TEMPERATURE,
     UNCONTROLLABLE_THINKING_MODELS,
-    CONTROLLABLE_THINKING_MODELS,
-    REPETITION_MIN_COUNT_STREAMING
 )
+
+from ..base import (
+    LLMGenerationOptions,
+    LLMProvider,
+    LLMResponse,
+    terminal_provider_failure,
+)
+from ..exceptions import (
+    ContextOverflowError,
+    RepetitionLoopError,
+    StructuredOutputSchemaError,
+)
+from ..thinking.behavior import ThinkingBehavior, _model_matches_pattern
+from ..thinking.cache import get_thinking_cache
+from ..thinking.detection import detect_repetition_loop
+from ..utils.context_detection import ContextDetector
 
 
 class OllamaProvider(LLMProvider):

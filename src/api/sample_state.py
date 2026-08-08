@@ -9,7 +9,6 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-
 # Sample entries older than this are pruned on every public access.
 SAMPLE_TTL_SECONDS = 3600
 

@@ -6,7 +6,7 @@ without exceptions.
 """
 
 from dataclasses import dataclass
-from typing import Generic, TypeVar, Union, Callable
+from typing import Callable, Generic, TypeVar, Union
 
 T = TypeVar('T')  # Success type
 E = TypeVar('E')  # Error type

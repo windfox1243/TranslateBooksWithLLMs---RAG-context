@@ -1,17 +1,18 @@
 """Unit tests for TranslationContainer and TranslationConfig."""
 
-import pytest
-import sys
 import os
+import sys
+
+import pytest
 
 # Add project root to path to avoid circular imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 
 # Import directly to avoid circular dependencies
-from src.core.epub.container import TranslationContainer, TranslationConfig
-from src.core.epub.tag_preservation import TagPreserver
+from src.core.epub.container import TranslationConfig, TranslationContainer
 from src.core.epub.html_chunker import HtmlChunker
 from src.core.epub.placeholder_validator import PlaceholderValidator
+from src.core.epub.tag_preservation import TagPreserver
 
 
 class TestTranslationConfig:

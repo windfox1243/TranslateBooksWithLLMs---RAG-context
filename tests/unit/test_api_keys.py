@@ -13,11 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.api.api_keys import (
-    USE_ENV_SENTINEL,
-    provider_env_var,
-    resolve_api_key,
-)
+from src.api.api_keys import USE_ENV_SENTINEL, provider_env_var, resolve_api_key
 
 
 class TestProviderEnvVar:

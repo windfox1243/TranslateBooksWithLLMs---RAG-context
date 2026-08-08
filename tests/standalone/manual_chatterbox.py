@@ -4,8 +4,9 @@ Script de test complet pour Chatterbox TTS
 Vérifie l'installation et teste la génération audio
 """
 
-import sys
 import os
+import sys
+
 
 def print_section(title):
     """Affiche un titre de section"""
@@ -105,6 +106,7 @@ def test_audio_generation(tts, device):
 
     try:
         import time
+
         import numpy as np
 
         test_text = "Hello! This is a test of Chatterbox text to speech synthesis."
@@ -157,9 +159,10 @@ def test_performance_comparison():
     print_section("Test de performance comparatif")
 
     try:
+        import time
+
         import torch
         from chatterbox import ChatterboxTTS
-        import time
 
         test_text = "Performance test for text to speech synthesis."
         results = {}

@@ -8,11 +8,11 @@ Defines dataclasses for:
 - Benchmark runs
 """
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Optional
-import json
 
 
 class LanguageCategory(Enum):

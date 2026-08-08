@@ -7,14 +7,15 @@ including unique constraints, cascade deletes, and bulk replacement.
 import os
 import sys
 import tempfile
-import pytest
 from pathlib import Path
+
+import pytest
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from src.core.glossary.store import GlossaryStore
 from src.core.glossary.models import BulkReplaceResult, GlossaryTerm
+from src.core.glossary.store import GlossaryStore
 
 
 @pytest.fixture

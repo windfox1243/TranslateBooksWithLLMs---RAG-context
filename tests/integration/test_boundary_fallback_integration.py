@@ -5,10 +5,11 @@ This test validates that the boundary restoration fix works correctly
 in the complete translation pipeline.
 """
 
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
+
+import pytest
 from lxml import etree
 
 

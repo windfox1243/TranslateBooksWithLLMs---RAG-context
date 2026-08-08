@@ -6,8 +6,9 @@ Issue: https://github.com/hydropix/TranslateBooksWithLLMs/issues/109
 The 'bilingual' parameter in prompt_options was not passed to translate_xhtml_simplified.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 from lxml import etree
 
 from src.core.epub.epub_translation_adapter import EpubTranslationAdapter

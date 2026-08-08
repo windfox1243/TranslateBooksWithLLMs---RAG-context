@@ -4,10 +4,11 @@ Unit tests for PathValidator class.
 Tests filename validation to prevent directory traversal attacks
 while allowing legitimate filenames with ellipsis and special characters.
 """
-import pytest
-import sys
 import importlib.util
+import sys
 from pathlib import Path
+
+import pytest
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent.parent

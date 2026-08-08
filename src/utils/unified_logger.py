@@ -2,12 +2,13 @@
 Unified logging system for TranslateBookWithLLM
 Provides consistent logging across CLI, Web, and all file types
 """
-import sys
-import os
 import json
+import os
+import sys
 from datetime import datetime
-from typing import Optional, Dict, Any, Callable
 from enum import Enum
+from typing import Any, Callable, Dict, Optional
+
 from src.utils.telemetry import get_telemetry
 
 

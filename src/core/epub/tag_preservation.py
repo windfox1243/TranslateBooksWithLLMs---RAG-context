@@ -12,8 +12,9 @@ Key features:
 import re
 from typing import Dict, List, Tuple
 
-from .placeholder_validator import PlaceholderValidator
 from src.common.placeholder_format import PlaceholderFormat
+
+from .placeholder_validator import PlaceholderValidator
 
 
 def is_non_translatable(text: str) -> bool:

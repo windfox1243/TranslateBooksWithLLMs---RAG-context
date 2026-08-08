@@ -6,20 +6,19 @@ Exposes:
 - POST /api/cost/estimate    : estimate USD cost for a translation job
 """
 import logging
-import zipfile
 import re
+import zipfile
 from pathlib import Path
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, jsonify, request
 
 import src.config as _config
 from src.core.pricing import (
     DEFAULT_PRICING,
     LAST_UPDATED,
-    get_default_pricing,
     CostEstimator,
+    get_default_pricing,
 )
-
 
 logger = logging.getLogger('cost_routes')
 

@@ -7,7 +7,7 @@ format-specific translation logic while maintaining a unified API.
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from .translation_unit import TranslationUnit
 

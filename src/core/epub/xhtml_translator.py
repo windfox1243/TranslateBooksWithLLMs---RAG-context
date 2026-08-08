@@ -35,47 +35,37 @@ LEVEL 3 - Translation (PlaceholderManager):
     LLM returns: "[id0]Bonjour[id1]"
     → Restored: "[id5]Bonjour[id6]" (global indices)
 """
-import re
 import copy as _copy
+import re
 from collections import Counter
 from html.entities import html5 as _HTML5_ENTITIES
-from typing import List, Dict, Any, Optional, Callable, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
 from lxml import etree
 
-from .body_serializer import extract_body_html, replace_body_content
-from .html_chunker import HtmlChunker
-from .translation_metrics import TranslationMetrics
-from .tag_preservation import TagPreserver
-from .exceptions import (
-    PlaceholderValidationError,
-    TagRestorationError,
-    XmlParsingError,
-    BodyExtractionError
-)
-from .placeholder_validator import PlaceholderValidator
-from .container import TranslationContainer
-from ..translator import generate_translation_request
-from ..context_optimizer import AdaptiveContextManager, INITIAL_CONTEXT_SIZE, CONTEXT_STEP, MAX_CONTEXT_SIZE
 from src.config import (
-    PLACEHOLDER_PATTERN,
-    MAX_PLACEHOLDER_CORRECTION_ATTEMPTS,
-    STRUCTURED_REFINEMENT_HIDE_PLACEHOLDERS,
-    create_placeholder,
-    detect_placeholder_format_in_text,
-    detect_format_from_placeholder,
-    THINKING_MODELS,
     ADAPTIVE_CONTEXT_INITIAL_THINKING,
+    MAX_PLACEHOLDER_CORRECTION_ATTEMPTS,
+    PLACEHOLDER_PATTERN,
+    STRUCTURED_REFINEMENT_HIDE_PLACEHOLDERS,
+    THINKING_MODELS,
+    create_placeholder,
+    detect_format_from_placeholder,
+    detect_placeholder_format_in_text,
 )
-from src.prompts.prompts import generate_placeholder_correction_prompt, CORRECTED_TAG_IN, CORRECTED_TAG_OUT
-from src.utils.unified_logger import LogLevel, LogType
-from src.utils.progress_logging import emit_progress_log
+from src.prompts.prompts import (
+    CORRECTED_TAG_IN,
+    CORRECTED_TAG_OUT,
+    generate_placeholder_correction_prompt,
+)
+from src.utils.addressing_schema import context_contract_version
 from src.utils.db_addressing import (
     apply_db_addressing_to_session,
     build_directed_addressing_prompt_context,
     sync_context_update_addressing_to_db,
     sync_markdown_addressing_to_db,
 )
-from src.utils.addressing_schema import context_contract_version
+from src.utils.progress_logging import emit_progress_log
 from src.utils.relationship_sync import (
     apply_relationship_graph_to_session,
     build_relationship_prompt_context,
@@ -84,6 +74,27 @@ from src.utils.relationship_sync import (
     sync_context_update_relationships_to_db,
     sync_markdown_relationships_to_db,
 )
+from src.utils.unified_logger import LogLevel, LogType
+
+from ..context_optimizer import (
+    CONTEXT_STEP,
+    INITIAL_CONTEXT_SIZE,
+    MAX_CONTEXT_SIZE,
+    AdaptiveContextManager,
+)
+from ..translator import generate_translation_request
+from .body_serializer import extract_body_html, replace_body_content
+from .container import TranslationContainer
+from .exceptions import (
+    BodyExtractionError,
+    PlaceholderValidationError,
+    TagRestorationError,
+    XmlParsingError,
+)
+from .html_chunker import HtmlChunker
+from .placeholder_validator import PlaceholderValidator
+from .tag_preservation import TagPreserver
+from .translation_metrics import TranslationMetrics
 
 
 def _log_error(log_callback: Optional[Callable], event_name: str, message: str):
@@ -431,7 +442,7 @@ async def attempt_placeholder_correction(
 
         except Exception as e:
             # Re-raise RateLimitError to trigger auto-pause
-            from ..llm import ContextOverflowError, RepetitionLoopError, RateLimitError
+            from ..llm import ContextOverflowError, RateLimitError, RepetitionLoopError
             if isinstance(e, RateLimitError):
                 raise
 
@@ -936,9 +947,10 @@ async def _translate_all_chunks_with_checkpoint(
     if stats_callback:
         stats_callback(stats.to_dict())
 
+    from pathlib import Path
+
     from src.core.common.parallel import iter_ordered_concurrent
     from src.core.llm.exceptions import RateLimitError
-    from pathlib import Path
 
     if prompt_options is None:
         prompt_options = {}
@@ -1108,9 +1120,7 @@ async def _translate_all_chunks_with_checkpoint(
                 current_dialogue_state = dict(
                     continuation_context_seed.get('dialogue_state') or {}
                 )
-                from src.utils.dialogue_attribution import (
-                    canonicalize_dialogue_state,
-                )
+                from src.utils.dialogue_attribution import canonicalize_dialogue_state
                 current_dialogue_state = canonicalize_dialogue_state(
                     current_dialogue_state,
                     character_alias_map(current_global_lore),
@@ -2344,6 +2354,7 @@ def _replace_body(
     """
     # Check for unreplaced placeholders in the HTML before attempting to replace body
     import re
+
     # Only check for the actual placeholder format used by the system
     # Use PlaceholderFormat to get the correct pattern
     from src.common.placeholder_format import PlaceholderFormat

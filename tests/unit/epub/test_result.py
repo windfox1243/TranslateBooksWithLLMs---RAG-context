@@ -1,13 +1,14 @@
 """Unit tests for Result type."""
 
 import pytest
+
 from src.core.epub.result import (
-    Ok,
     Err,
+    Ok,
     Result,
-    wrap_exception,
+    collect_results,
     wrap_async_exception,
-    collect_results
+    wrap_exception,
 )
 
 

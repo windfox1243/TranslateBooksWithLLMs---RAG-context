@@ -1,11 +1,11 @@
 import pytest
 
+from src.core.common.plain_text_pipeline import translate_paragraphs_plain
 from src.core.continuation import (
     latest_context_seed,
     matching_prefix_length,
     seed_matching_prefix,
 )
-from src.core.common.plain_text_pipeline import translate_paragraphs_plain
 from src.persistence.checkpoint_manager import CheckpointManager
 
 

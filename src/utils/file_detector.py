@@ -12,8 +12,8 @@ by analyzing their actual content.
 import os
 import re
 import zipfile
-from typing import Literal, Optional, Tuple
 from pathlib import Path
+from typing import Literal, Optional, Tuple
 
 FileType = Literal["txt", "epub", "srt", "docx"]
 

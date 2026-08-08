@@ -12,13 +12,13 @@ import asyncio
 
 import pytest
 
-from src.config import resolve_parallel_workers, MAX_PARALLEL_TRANSLATIONS
+import src.core.common.plain_text_pipeline as plain_pipeline
+from src.config import MAX_PARALLEL_TRANSLATIONS, resolve_parallel_workers
 from src.core.common.parallel import (
     gather_window,
-    iter_ordered_windows,
     iter_ordered_concurrent,
+    iter_ordered_windows,
 )
-import src.core.common.plain_text_pipeline as plain_pipeline
 
 
 # ---------------------------------------------------------------------------

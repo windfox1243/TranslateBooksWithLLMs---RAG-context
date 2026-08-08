@@ -7,11 +7,7 @@ eliminating duplication across the codebase.
 import re
 from typing import Optional, Tuple
 
-from src.config import (
-    PLACEHOLDER_PREFIX,
-    PLACEHOLDER_SUFFIX,
-    PLACEHOLDER_PATTERN,
-)
+from src.config import PLACEHOLDER_PATTERN, PLACEHOLDER_PREFIX, PLACEHOLDER_SUFFIX
 
 
 class PlaceholderFormat:

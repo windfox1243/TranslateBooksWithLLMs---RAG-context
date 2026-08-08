@@ -9,14 +9,15 @@ Tests cover:
 5. Server restart handling (reset_running_jobs_on_startup)
 """
 
-import pytest
-import threading
-import time
-import tempfile
 import os
 import sys
+import tempfile
+import threading
+import time
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 # Mock flask_socketio before importing modules that depend on it
 sys.modules['flask_socketio'] = MagicMock()
@@ -638,8 +639,9 @@ class TestHealthEndpointSessionId:
 
     def test_config_blueprint_uses_state_manager_session_id(self):
         """Config blueprint should use session ID from state manager."""
-        from src.api.blueprints.config_routes import create_config_blueprint
         from flask import Flask
+
+        from src.api.blueprints.config_routes import create_config_blueprint
 
         app = Flask(__name__)
         session_id = "1234567890"
@@ -656,8 +658,9 @@ class TestHealthEndpointSessionId:
 
     def test_config_blueprint_generates_session_id_if_not_provided(self):
         """Config blueprint should generate session ID if not provided."""
-        from src.api.blueprints.config_routes import create_config_blueprint
         from flask import Flask
+
+        from src.api.blueprints.config_routes import create_config_blueprint
 
         app = Flask(__name__)
 

@@ -25,12 +25,11 @@ from lxml import etree
 
 from src.core.epub.lang_support import (
     LANGUAGE_NAME_TO_CODE,
+    apply_target_language_to_xhtml_directory,
     get_language_code,
     set_xhtml_lang_attributes,
-    apply_target_language_to_xhtml_directory,
 )
 from src.core.epub.rtl_support import is_rtl_language
-
 
 XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"
 

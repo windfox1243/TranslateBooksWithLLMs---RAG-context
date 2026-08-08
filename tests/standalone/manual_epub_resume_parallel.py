@@ -44,7 +44,6 @@ from src.core.adapters import translate_file
 from src.core.llm.providers.poe import PoeProvider
 from src.persistence.checkpoint_manager import CheckpointManager
 
-
 PARALLEL = 3
 INTERRUPT_AFTER_CHUNKS = 3  # cumulative chunks
 

@@ -1,11 +1,11 @@
 """Filesystem layout for novel context files: naming, listing, load and save."""
 from __future__ import annotations
 
-import re
 import os
+import re
 import unicodedata
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .constants import (
     ADDRESSING_SECTION,
@@ -17,10 +17,8 @@ from .constants import (
     SAFE_FILENAME_PUNCTUATION,
     WINDOWS_RESERVED_FILENAMES,
 )
-from .merge import (
-    build_novel_context,
-    normalize_novel_context_content,
-)
+from .merge import build_novel_context, normalize_novel_context_content
+
 
 def is_safe_filename(filename: str) -> bool:
     """Return whether a context filename is safe while preserving Unicode names."""

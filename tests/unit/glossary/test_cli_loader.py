@@ -5,14 +5,15 @@ import json
 import os
 import sys
 import tempfile
-import pytest
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from src.core.glossary.cli_loader import (
-    load_glossary_terms_from_file,
     load_glossary_from_file,
+    load_glossary_terms_from_file,
 )
 
 

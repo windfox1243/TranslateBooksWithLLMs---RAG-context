@@ -25,15 +25,17 @@ jobs:
       - name: Install pre-commit
         run: pip install pre-commit
 
-      # Only the two hooks the tree currently satisfies. isort is configured in
-      # .pre-commit-config.yaml but 305 files predate it, so enforcing it here
-      # would mean a repo-wide reformat -- do that as its own change, then add
-      # the hook id below.
       - name: Check Python syntax
         run: pre-commit run --all-files check-ast
 
       - name: Check YAML syntax
         run: pre-commit run --all-files check-yaml
+
+      # The whole tree was sorted in one pass, so this is enforceable from here
+      # on. isort is pinned to 5.13.2 in .pre-commit-config.yaml; sorting with a
+      # different version locally can produce a diff this job rejects.
+      - name: Check import order
+        run: pre-commit run --all-files isort
 
   pytest:
     runs-on: ubuntu-latest

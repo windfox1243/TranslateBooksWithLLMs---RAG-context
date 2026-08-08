@@ -3,9 +3,10 @@ Launcher wrapper for PyInstaller executable
 Handles proper working directory setup and .env file management
 """
 import os
-import sys
 import shutil
+import sys
 from pathlib import Path
+
 
 def setup_working_directory():
     """Setup proper working directory for the executable"""
@@ -91,9 +92,9 @@ if __name__ == '__main__':
         setup_working_directory()
 
         # Import and start the server
-        from translation_api import start_server
         from src import config as app_config
         from src.core.llm.base import normalize_api_keys
+        from translation_api import start_server
 
         key_counts = {
             provider: len(normalize_api_keys(getattr(app_config, attr, '')))

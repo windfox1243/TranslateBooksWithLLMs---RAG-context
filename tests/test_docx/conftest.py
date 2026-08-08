@@ -3,10 +3,11 @@ Pytest fixtures for DOCX translation tests.
 """
 
 import os
-import pytest
 import tempfile
+
+import pytest
 from docx import Document
-from docx.shared import Pt, Inches
+from docx.shared import Inches, Pt
 
 
 @pytest.fixture

@@ -13,10 +13,11 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from .tts_config import TTSConfig
-from .providers.base import TTSProvider, TTSError, ProgressCallback
+from .providers.base import ProgressCallback, TTSError, TTSProvider
+from .providers.chatterbox_tts import MAX_TEXT_LENGTH as CHATTERBOX_MAX_LENGTH
+from .providers.chatterbox_tts import ChatterboxProvider, is_chatterbox_available
 from .providers.edge_tts import EdgeTTSProvider
-from .providers.chatterbox_tts import ChatterboxProvider, is_chatterbox_available, MAX_TEXT_LENGTH as CHATTERBOX_MAX_LENGTH
+from .tts_config import TTSConfig
 
 logger = logging.getLogger(__name__)
 

@@ -6,14 +6,11 @@ subtitle indices are preserved verbatim.
 """
 
 import os
-import aiofiles
-from typing import Optional, Callable, Dict, Any
+from typing import Any, Callable, Dict, Optional
 
-from src.config import (
-    DEFAULT_MODEL,
-    API_ENDPOINT,
-    SRT_LINES_PER_BLOCK,
-)
+import aiofiles
+
+from src.config import API_ENDPOINT, DEFAULT_MODEL, SRT_LINES_PER_BLOCK
 
 # Disable the char cap when grouping: block sizing is purely fixed-count
 # (every block holds exactly SRT_LINES_PER_BLOCK subtitles).
@@ -224,8 +221,8 @@ async def refine_srt_file(
         
     from src.utils.novel_context import (
         RefinementContextTracker,
-        map_dialogue_attributions_for_refinement,
         map_context_snapshots_for_refinement,
+        map_dialogue_attributions_for_refinement,
     )
     historical_contexts = map_context_snapshots_for_refinement(
         len(refine_blocks),

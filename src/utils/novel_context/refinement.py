@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .constants import DYNAMIC_STATE_START
 from .document import (
@@ -12,10 +12,8 @@ from .document import (
     extract_global_lore,
 )
 from .merge import build_novel_context
-from .storage import (
-    _safe_context_filename_stem,
-    is_safe_filename,
-)
+from .storage import _safe_context_filename_stem, is_safe_filename
+
 
 def make_novel_context_filename(input_filename: str, fallback: str = "translation") -> str:
     """Create a safe, deterministic context filename from an input filename."""

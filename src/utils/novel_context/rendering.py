@@ -2,18 +2,8 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .constants import (
-    ADDRESSING_SECTION,
-    ALIASES_SECTION,
-    CHARACTERS_SECTION,
-    DYNAMIC_STATE_END,
-    DYNAMIC_STATE_START,
-    GLOSSARY_SECTION,
-    RELATIONSHIP_SECTION,
-    _SPECIFIC_GENDER_LABELS,
-)
 from .characters import (
     _canonical_gender,
     _clean_inline_text,
@@ -28,18 +18,20 @@ from .characters import (
     _split_gender_and_details,
     _text_mentions,
 )
-from .dynamic_state import (
-    _DYNAMIC_RELATION_PATTERN,
-    _split_dynamic_sections,
+from .constants import (
+    _SPECIFIC_GENDER_LABELS,
+    ADDRESSING_SECTION,
+    ALIASES_SECTION,
+    CHARACTERS_SECTION,
+    DYNAMIC_STATE_END,
+    DYNAMIC_STATE_START,
+    GLOSSARY_SECTION,
+    RELATIONSHIP_SECTION,
 )
-from .document import (
-    extract_dynamic_state_from_text,
-    extract_global_lore,
-)
-from .merge import (
-    build_novel_context,
-    normalize_novel_context_content,
-)
+from .document import extract_dynamic_state_from_text, extract_global_lore
+from .dynamic_state import _DYNAMIC_RELATION_PATTERN, _split_dynamic_sections
+from .merge import build_novel_context, normalize_novel_context_content
+
 
 def _source_memory_budget_chars() -> int:
     try:

@@ -4,9 +4,10 @@ Unit tests for filter_glossary.
 Verifies per-chunk glossary filtering for Latin word boundaries, CJK substring
 matches, longest-first ordering, capping behavior, and case sensitivity.
 """
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))

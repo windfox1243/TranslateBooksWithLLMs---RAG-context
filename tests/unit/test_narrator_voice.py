@@ -5,7 +5,10 @@ from types import SimpleNamespace
 import pytest
 
 from src.persistence.database import Database
-from src.utils.language_profiles import supported_translation_languages, get_language_profile
+from src.utils.language_profiles import (
+    get_language_profile,
+    supported_translation_languages,
+)
 from src.utils.narrator_voice import (
     NarratorVoiceProfile,
     bootstrap_narrator_voice,

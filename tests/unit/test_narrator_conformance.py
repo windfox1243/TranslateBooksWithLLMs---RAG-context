@@ -2,7 +2,6 @@ import pytest
 
 from src.utils.narrator_conformance import audit_narrator_conformance
 
-
 FIRST_PERSON_SOURCE = (
     "I crossed the empty station alone.\n"
     "I remembered the race as rain reached the windows.\n"

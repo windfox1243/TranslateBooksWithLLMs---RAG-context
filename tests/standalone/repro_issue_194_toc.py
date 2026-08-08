@@ -32,10 +32,10 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-from src.config import INPUT_TAG_IN, INPUT_TAG_OUT, TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT
-from src.core.llm.base import LLMProvider, LLMResponse
 from scripts.build_test_epub import build_epub
+from src.config import INPUT_TAG_IN, INPUT_TAG_OUT, TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT
 from src.core.epub.translator import translate_epub_file
+from src.core.llm.base import LLMProvider, LLMResponse
 
 
 def _extract_source_block(prompt: str) -> str:
@@ -87,8 +87,8 @@ def _fake_factory(provider_type: str = "ollama", **kwargs) -> UpperCaseProvider:
 
 
 def _install_fake():
-    import src.core.llm.factory as factory_mod
     import src.core.llm as llm_pkg
+    import src.core.llm.factory as factory_mod
     import src.core.llm_client as client_mod
     for mod in (factory_mod, llm_pkg, client_mod):
         if hasattr(mod, "create_llm_provider"):

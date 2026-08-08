@@ -6,14 +6,15 @@ from types import SimpleNamespace
 import pytest
 from flask import Flask
 
-from src.persistence.database import Database
 from src.api.blueprints.translation_routes import (
     _prompt_options_from_start_request,
     create_translation_blueprint,
 )
+from src.persistence.database import Database
 from src.prompts.prompts import generate_translation_prompt
 from src.utils.context_merge_engine import ContextMergeEngine
 from src.utils.context_schema import AddressingUpdateDelta
+from src.utils.novel_context import update_novel_context_chunk
 from src.utils.relationship_projection import build_relationship_projection
 from src.utils.relationship_reasoning_engine import (
     RelationshipReasoningEngine,
@@ -28,13 +29,12 @@ from src.utils.relationship_sync import (
     apply_relationship_graph_to_context,
     build_relationship_prompt_context,
     export_relationship_graph_to_markdown,
+    judge_ambiguous_relationship_candidates,
     quarantine_incompatible_addressing_rules,
     resolve_relationship_reasoning_mode,
     sync_context_update_relationships_to_db,
-    judge_ambiguous_relationship_candidates,
     sync_markdown_relationships_to_db,
 )
-from src.utils.novel_context import update_novel_context_chunk
 
 
 @pytest.fixture

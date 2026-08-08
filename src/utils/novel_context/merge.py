@@ -2,14 +2,8 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .constants import (
-    CHARACTERS_SECTION,
-    DYNAMIC_STATE_END,
-    DYNAMIC_STATE_START,
-    _SPECIFIC_GENDER_LABELS,
-)
 from .characters import (
     _canonical_display_name,
     _character_names_match,
@@ -28,11 +22,13 @@ from .characters import (
     _replace_lore_section,
     _split_gender_and_details,
 )
-from .glossary import (
-    _discarded_incidental_character_aliases,
-    _normalized_character_alias_map,
-    normalize_global_lore,
+from .constants import (
+    _SPECIFIC_GENDER_LABELS,
+    CHARACTERS_SECTION,
+    DYNAMIC_STATE_END,
+    DYNAMIC_STATE_START,
 )
+from .document import extract_dynamic_state_from_text, extract_global_lore
 from .dynamic_state import (
     _format_dynamic_sections,
     _merge_dynamic_entries,
@@ -41,9 +37,10 @@ from .dynamic_state import (
     _parse_dynamic_relation,
     _split_dynamic_sections,
 )
-from .document import (
-    extract_dynamic_state_from_text,
-    extract_global_lore,
+from .glossary import (
+    _discarded_incidental_character_aliases,
+    _normalized_character_alias_map,
+    normalize_global_lore,
 )
 from .vietnamese import (
     _filter_vietnamese_addressing_delta,
@@ -54,6 +51,7 @@ from .vietnamese import (
     _seed_vietnamese_addressing_from_relationships,
     _vietnamese_addressing_field,
 )
+
 
 def _sanitize_vietnamese_dynamic_state(
     dynamic_state: str,

@@ -2,13 +2,14 @@
 Integration test for SRT resume functionality with GenericTranslator and CheckpointManager.
 """
 
-import pytest
-import tempfile
-from pathlib import Path
 import asyncio
 import sqlite3
+import tempfile
+from pathlib import Path
 
-from src.core.adapters import SrtAdapter, GenericTranslator
+import pytest
+
+from src.core.adapters import GenericTranslator, SrtAdapter
 from src.persistence.checkpoint_manager import CheckpointManager
 
 

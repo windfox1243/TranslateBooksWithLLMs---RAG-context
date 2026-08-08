@@ -5,8 +5,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_epub_translation_propagates_failure(monkeypatch, tmp_path):
-    from src.core.adapters.translate_file import translate_file
     import src.core.epub.translator as epub_translator
+    from src.core.adapters.translate_file import translate_file
 
     input_path = tmp_path / "book.epub"
     input_path.write_bytes(b"not-needed-by-mocked-translator")
