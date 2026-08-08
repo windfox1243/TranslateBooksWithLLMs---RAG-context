@@ -5,9 +5,11 @@ This module provides a unified translation workflow that works with any file for
 through the FormatAdapter interface.
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
+from src.core.common.resume_context import read_checkpoint_context
 from src.core.jobs import UnitTranslationOutcome
 from src.core.llm_client import LLMClient
 from src.utils.unified_logger import get_logger
@@ -15,6 +17,23 @@ from src.utils.unified_logger import get_logger
 from .format_adapter import FormatAdapter
 
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class CheckpointRestore:
+    """What a resume recovered, or the empty result of starting a fresh job."""
+
+    # Chunk indices already done, and those still outstanding. Both are derived
+    # from per-chunk statuses rather than the progress pointer, because the
+    # pointer advances past failed units (issue #204).
+    completed_indices: set
+    failed_indices: set
+    # Editor drafts kept from a failed run, so the editor can retry them
+    # instead of retranslating.
+    failed_editor_drafts_by_index: Dict[int, Any]
+    completed_translations_by_index: Dict[int, str]
+    checkpoint_data: Optional[Dict[str, Any]]
+    continuation_context_seed: Optional[Dict[str, Any]]
 
 
 class _ValidationFailed:
@@ -65,6 +84,201 @@ class GenericTranslator:
         self.adapter = adapter
         self.checkpoint_manager = checkpoint_manager
         self.translation_id = translation_id
+
+    async def _restore_or_start_job(
+        self,
+        *,
+        units,
+        total_units: int,
+        prompt_options: Dict[str, Any],
+        source_language: str,
+        target_language: str,
+        model_name: str,
+        llm_provider: str,
+        parallel_workers: int,
+        log_callback: Optional[Callable],
+        stats_callback: Optional[Callable],
+        llm_kwargs: Dict[str, Any],
+    ) -> "CheckpointRestore":
+        """Resume from a checkpoint if there is one, otherwise register a new job.
+
+        Both paths are here because they are the two halves of one decision and
+        share the checkpoint lookup that makes it. Resuming reads pending work
+        from the per-chunk statuses rather than the progress pointer, salvages
+        beta.45 editor drafts, and reports the restored position through the
+        callbacks; starting fresh seeds the prompt defaults and registers the
+        job. `prompt_options` is mutated in place on the fresh-start path, as it
+        was inline.
+        """
+        restored_completed = set()
+        restored_failed = set()
+        failed_editor_drafts_by_index = {}
+        completed_translations_by_index = {}
+        checkpoint_data = self.checkpoint_manager.load_checkpoint(self.translation_id)
+        continuation_base_id = self.adapter.config.get('continuation_base_id')
+        continuation_context_seed = None
+        if continuation_base_id and checkpoint_data:
+            previous_checkpoint = self.checkpoint_manager.load_checkpoint(
+                continuation_base_id
+            )
+            previous_chunks = (
+                previous_checkpoint.get('chunks', [])
+                if previous_checkpoint
+                else []
+            )
+            if previous_chunks:
+                from src.core.continuation import seed_matching_prefix
+                seed_matching_prefix(
+                    checkpoint_manager=self.checkpoint_manager,
+                    translation_id=self.translation_id,
+                    previous_chunks=previous_chunks,
+                    new_source_units=[unit.content for unit in units],
+                    total_units=total_units,
+                    log_callback=log_callback,
+                    label="unit",
+                )
+                checkpoint_data = self.checkpoint_manager.load_checkpoint(
+                    self.translation_id
+                )
+            from src.core.continuation import latest_context_seed
+            continuation_context_seed = latest_context_seed(previous_chunks)
+
+        if checkpoint_data:
+            await self.adapter.resume_from_checkpoint(checkpoint_data)
+            # Pending work is derived from per-chunk statuses, not from the
+            # progress pointer: the pointer advances past failed units, so
+            # resuming from it alone would skip them forever (issue #204).
+            restored_completed = {
+                c['chunk_index'] for c in checkpoint_data.get('chunks', [])
+                if c.get('status') == 'completed'
+                and not (c.get('chunk_data') or {}).get('editor_retry_pending')
+                and 0 <= c.get('chunk_index', -1) < total_units
+            }
+            failed_editor_drafts_by_index = {
+                c['chunk_index']: c.get('translated_text')
+                for c in checkpoint_data.get('chunks', [])
+                if c.get('status') in {'failed', 'editor_retry'}
+                and c.get('translated_text')
+                and (c.get('chunk_data') or {}).get('editor_validation')
+                and 0 <= c.get('chunk_index', -1) < total_units
+            }
+            # Beta.45 stored usable editor-review drafts as failed chunks.
+            # Reclassify them only on an explicit resume, and only after the
+            # format adapter confirms the preserved content is structurally
+            # valid. This avoids retranslating valid book content.
+            for chunk in checkpoint_data.get('chunks', []):
+                index = chunk.get('chunk_index', -1)
+                draft = chunk.get('translated_text') or ''
+                data = dict(chunk.get('chunk_data') or {})
+                if not (
+                    chunk.get('status') in {'failed', 'editor_retry'}
+                    and draft
+                    and data.get('editor_validation')
+                    and 0 <= index < total_units
+                    and self.adapter.validate_unit_translation(
+                        units[index].unit_id, draft
+                    ) is None
+                ):
+                    continue
+                if await self.adapter.save_unit_translation(
+                    units[index].unit_id, draft
+                ):
+                    data['quality_status'] = 'review_required'
+                    data.pop('execution_failure_class', None)
+                    self.checkpoint_manager.save_checkpoint(
+                        translation_id=self.translation_id,
+                        chunk_index=index,
+                        original_text=units[index].content,
+                        translated_text=draft,
+                        chunk_data=data,
+                        total_chunks=total_units,
+                        chunk_status='completed',
+                    )
+                    restored_completed.add(index)
+                    failed_editor_drafts_by_index.pop(index, None)
+            checkpoint_data = self.checkpoint_manager.load_checkpoint(
+                self.translation_id
+            )
+            restored_completed = {
+                c['chunk_index'] for c in checkpoint_data.get('chunks', [])
+                if c.get('status') == 'completed'
+                and not (c.get('chunk_data') or {}).get('editor_retry_pending')
+                and 0 <= c.get('chunk_index', -1) < total_units
+            }
+            remaining_failed = sum(
+                1 for c in checkpoint_data.get('chunks', [])
+                if c.get('status') != 'completed'
+                and 0 <= c.get('chunk_index', -1) < total_units
+            )
+            self.checkpoint_manager.db.update_job_progress(
+                self.translation_id,
+                completed_chunks=len(restored_completed),
+                failed_chunks=remaining_failed,
+            )
+            restored_failed = {
+                c['chunk_index'] for c in checkpoint_data.get('chunks', [])
+                if c.get('status') != 'completed'
+                and 0 <= c.get('chunk_index', -1) < total_units
+            }
+            completed_translations_by_index = {
+                c["chunk_index"]: c.get("translated_text") or ""
+                for c in checkpoint_data.get("chunks", [])
+                if c.get("status") in {"completed", "partial"}
+                and c.get("translated_text")
+                and 0 <= c.get("chunk_index", -1) < total_units
+            }
+            if log_callback:
+                log_callback("checkpoint_resumed",
+                    f"Resuming: {len(restored_completed)}/{total_units} units already translated")
+            # Update stats with resumed progress
+            if stats_callback:
+                stats_callback({
+                    'total_chunks': total_units,
+                    'completed_chunks': len(restored_completed),
+                    'failed_chunks': remaining_failed,
+                    'review_required_chunks': sum(
+                        1 for c in checkpoint_data.get('chunks', [])
+                        if (c.get('chunk_data') or {}).get('quality_status')
+                        == 'review_required'
+                    ),
+                })
+        else:
+            # 4. Create new translation job
+            prompt_options.setdefault("context_contract_version", 5)
+            prompt_options.setdefault("use_relationship_llm_judge", "selective")
+            prompt_options.setdefault("source_residue_validation", True)
+            self.checkpoint_manager.start_job(
+                translation_id=self.translation_id,
+                file_type=self.adapter.format_name,
+                config={
+                    'input_file_path': str(self.adapter.input_file_path),
+                    'output_file_path': str(self.adapter.output_file_path),
+                    'source_language': source_language,
+                    'target_language': target_language,
+                    'model': model_name,
+                    'model_name': model_name,
+                    'llm_provider': llm_provider,
+                    'llm_api_endpoint': (
+                        llm_kwargs.get('api_endpoint')
+                        or llm_kwargs.get('endpoint')
+                    ),
+                    'request_timeout': llm_kwargs.get('timeout', 120),
+                    'prompt_options': llm_kwargs.get('prompt_options', {}),
+                    'parallel_workers': parallel_workers,
+                    **self.adapter.config
+                },
+                input_file_path=str(self.adapter.input_file_path)
+            )
+
+        return CheckpointRestore(
+            completed_indices=restored_completed,
+            failed_indices=restored_failed,
+            failed_editor_drafts_by_index=failed_editor_drafts_by_index,
+            completed_translations_by_index=completed_translations_by_index,
+            checkpoint_data=checkpoint_data,
+            continuation_context_seed=continuation_context_seed,
+        )
+
 
     async def translate(
         self,
@@ -153,165 +367,27 @@ class GenericTranslator:
                 })
 
             # 3. Check for checkpoint and resume
-            restored_completed = set()
-            restored_failed = set()
-            failed_editor_drafts_by_index = {}
-            completed_translations_by_index = {}
-            checkpoint_data = self.checkpoint_manager.load_checkpoint(self.translation_id)
-            continuation_base_id = self.adapter.config.get('continuation_base_id')
-            continuation_context_seed = None
-            if continuation_base_id and checkpoint_data:
-                previous_checkpoint = self.checkpoint_manager.load_checkpoint(
-                    continuation_base_id
-                )
-                previous_chunks = (
-                    previous_checkpoint.get('chunks', [])
-                    if previous_checkpoint
-                    else []
-                )
-                if previous_chunks:
-                    from src.core.continuation import seed_matching_prefix
-                    seed_matching_prefix(
-                        checkpoint_manager=self.checkpoint_manager,
-                        translation_id=self.translation_id,
-                        previous_chunks=previous_chunks,
-                        new_source_units=[unit.content for unit in units],
-                        total_units=total_units,
-                        log_callback=log_callback,
-                        label="unit",
-                    )
-                    checkpoint_data = self.checkpoint_manager.load_checkpoint(
-                        self.translation_id
-                    )
-                from src.core.continuation import latest_context_seed
-                continuation_context_seed = latest_context_seed(previous_chunks)
-
-            if checkpoint_data:
-                await self.adapter.resume_from_checkpoint(checkpoint_data)
-                # Pending work is derived from per-chunk statuses, not from the
-                # progress pointer: the pointer advances past failed units, so
-                # resuming from it alone would skip them forever (issue #204).
-                restored_completed = {
-                    c['chunk_index'] for c in checkpoint_data.get('chunks', [])
-                    if c.get('status') == 'completed'
-                    and not (c.get('chunk_data') or {}).get('editor_retry_pending')
-                    and 0 <= c.get('chunk_index', -1) < total_units
-                }
-                failed_editor_drafts_by_index = {
-                    c['chunk_index']: c.get('translated_text')
-                    for c in checkpoint_data.get('chunks', [])
-                    if c.get('status') in {'failed', 'editor_retry'}
-                    and c.get('translated_text')
-                    and (c.get('chunk_data') or {}).get('editor_validation')
-                    and 0 <= c.get('chunk_index', -1) < total_units
-                }
-                # Beta.45 stored usable editor-review drafts as failed chunks.
-                # Reclassify them only on an explicit resume, and only after the
-                # format adapter confirms the preserved content is structurally
-                # valid. This avoids retranslating valid book content.
-                for chunk in checkpoint_data.get('chunks', []):
-                    index = chunk.get('chunk_index', -1)
-                    draft = chunk.get('translated_text') or ''
-                    data = dict(chunk.get('chunk_data') or {})
-                    if not (
-                        chunk.get('status') in {'failed', 'editor_retry'}
-                        and draft
-                        and data.get('editor_validation')
-                        and 0 <= index < total_units
-                        and self.adapter.validate_unit_translation(
-                            units[index].unit_id, draft
-                        ) is None
-                    ):
-                        continue
-                    if await self.adapter.save_unit_translation(
-                        units[index].unit_id, draft
-                    ):
-                        data['quality_status'] = 'review_required'
-                        data.pop('execution_failure_class', None)
-                        self.checkpoint_manager.save_checkpoint(
-                            translation_id=self.translation_id,
-                            chunk_index=index,
-                            original_text=units[index].content,
-                            translated_text=draft,
-                            chunk_data=data,
-                            total_chunks=total_units,
-                            chunk_status='completed',
-                        )
-                        restored_completed.add(index)
-                        failed_editor_drafts_by_index.pop(index, None)
-                checkpoint_data = self.checkpoint_manager.load_checkpoint(
-                    self.translation_id
-                )
-                restored_completed = {
-                    c['chunk_index'] for c in checkpoint_data.get('chunks', [])
-                    if c.get('status') == 'completed'
-                    and not (c.get('chunk_data') or {}).get('editor_retry_pending')
-                    and 0 <= c.get('chunk_index', -1) < total_units
-                }
-                remaining_failed = sum(
-                    1 for c in checkpoint_data.get('chunks', [])
-                    if c.get('status') != 'completed'
-                    and 0 <= c.get('chunk_index', -1) < total_units
-                )
-                self.checkpoint_manager.db.update_job_progress(
-                    self.translation_id,
-                    completed_chunks=len(restored_completed),
-                    failed_chunks=remaining_failed,
-                )
-                restored_failed = {
-                    c['chunk_index'] for c in checkpoint_data.get('chunks', [])
-                    if c.get('status') != 'completed'
-                    and 0 <= c.get('chunk_index', -1) < total_units
-                }
-                completed_translations_by_index = {
-                    c["chunk_index"]: c.get("translated_text") or ""
-                    for c in checkpoint_data.get("chunks", [])
-                    if c.get("status") in {"completed", "partial"}
-                    and c.get("translated_text")
-                    and 0 <= c.get("chunk_index", -1) < total_units
-                }
-                if log_callback:
-                    log_callback("checkpoint_resumed",
-                        f"Resuming: {len(restored_completed)}/{total_units} units already translated")
-                # Update stats with resumed progress
-                if stats_callback:
-                    stats_callback({
-                        'total_chunks': total_units,
-                        'completed_chunks': len(restored_completed),
-                        'failed_chunks': remaining_failed,
-                        'review_required_chunks': sum(
-                            1 for c in checkpoint_data.get('chunks', [])
-                            if (c.get('chunk_data') or {}).get('quality_status')
-                            == 'review_required'
-                        ),
-                    })
-            else:
-                # 4. Create new translation job
-                prompt_options.setdefault("context_contract_version", 5)
-                prompt_options.setdefault("use_relationship_llm_judge", "selective")
-                prompt_options.setdefault("source_residue_validation", True)
-                self.checkpoint_manager.start_job(
-                    translation_id=self.translation_id,
-                    file_type=self.adapter.format_name,
-                    config={
-                        'input_file_path': str(self.adapter.input_file_path),
-                        'output_file_path': str(self.adapter.output_file_path),
-                        'source_language': source_language,
-                        'target_language': target_language,
-                        'model': model_name,
-                        'model_name': model_name,
-                        'llm_provider': llm_provider,
-                        'llm_api_endpoint': (
-                            llm_kwargs.get('api_endpoint')
-                            or llm_kwargs.get('endpoint')
-                        ),
-                        'request_timeout': llm_kwargs.get('timeout', 120),
-                        'prompt_options': llm_kwargs.get('prompt_options', {}),
-                        'parallel_workers': parallel_workers,
-                        **self.adapter.config
-                    },
-                    input_file_path=str(self.adapter.input_file_path)
-                )
+            restore = await self._restore_or_start_job(
+                units=units,
+                total_units=total_units,
+                prompt_options=prompt_options,
+                source_language=source_language,
+                target_language=target_language,
+                model_name=model_name,
+                llm_provider=llm_provider,
+                parallel_workers=parallel_workers,
+                log_callback=log_callback,
+                stats_callback=stats_callback,
+                llm_kwargs=llm_kwargs,
+            )
+            restored_completed = restore.completed_indices
+            restored_failed = restore.failed_indices
+            failed_editor_drafts_by_index = restore.failed_editor_drafts_by_index
+            completed_translations_by_index = (
+                restore.completed_translations_by_index
+            )
+            checkpoint_data = restore.checkpoint_data
+            continuation_context_seed = restore.continuation_context_seed
 
             # 5. Create LLM client
             from src.core.llm.runtime import build_draft_and_editor_clients
@@ -382,97 +458,24 @@ class GenericTranslator:
                 data={"mode": relationship_mode, "contract_version": "1.0"},
             )
 
-            resume_snapshot = None
-            resume_snapshot_index = None
-            resume_dialogue_state = None
-            resume_dialogue_scene_key = None
-            used_continuation_context_seed = False
-            analyzed_context_indices = set()
-            checkpoint_context_data_by_index = {}
-            if checkpoint_data:
-                context_rows = []
-                for checkpoint_chunk in checkpoint_data.get('chunks', []):
-                    checkpoint_chunk_data = (
-                        checkpoint_chunk.get('chunk_data') or {}
-                    )
-                    chunk_index = checkpoint_chunk.get('chunk_index')
-                    if (
-                        isinstance(chunk_index, int)
-                        and checkpoint_chunk_data.get('context_snapshot')
-                        and checkpoint_chunk.get('status') in (
-                            'completed',
-                            'partial',
-                            'failed',
-                        )
-                    ):
-                        analyzed_context_indices.add(chunk_index)
-                        checkpoint_context_data_by_index[chunk_index] = (
-                            dict(checkpoint_chunk_data)
-                        )
-                        context_rows.append(checkpoint_chunk)
-
-                if context_rows:
-                    resume_chunk = max(
-                        context_rows,
-                        key=lambda chunk: chunk.get('chunk_index', -1),
-                    )
-                    resume_snapshot_index = resume_chunk.get('chunk_index')
-                    checkpoint_chunk_data = (
-                        resume_chunk.get('chunk_data') or {}
-                    )
-                    resume_snapshot = checkpoint_chunk_data.get(
-                        'context_snapshot'
-                    )
-                    resume_dialogue_state = (
-                        (
-                            checkpoint_chunk_data.get(
-                                'dialogue_attribution'
-                            ) or {}
-                        ).get('state_after')
-                    )
-                    resume_dialogue_scene_key = (
-                        checkpoint_chunk_data.get(
-                            'dialogue_attribution'
-                        ) or {}
-                    ).get('scene_key')
-                elif restored_completed:
-                    resume_snapshot_index = max(restored_completed)
-                    for checkpoint_chunk in checkpoint_data.get('chunks', []):
-                        if checkpoint_chunk.get('chunk_index') == resume_snapshot_index:
-                            checkpoint_chunk_data = (
-                                checkpoint_chunk.get('chunk_data') or {}
-                            )
-                            resume_snapshot = checkpoint_chunk_data.get(
-                                'context_snapshot'
-                            )
-                            resume_dialogue_state = (
-                                (
-                                    checkpoint_chunk_data.get(
-                                        'dialogue_attribution'
-                                    ) or {}
-                                ).get('state_after')
-                            )
-                            resume_dialogue_scene_key = (
-                                checkpoint_chunk_data.get(
-                                    'dialogue_attribution'
-                                ) or {}
-                            ).get('scene_key')
-                            break
-
-            if not resume_snapshot and continuation_context_seed:
-                resume_snapshot = continuation_context_seed.get(
-                    'context_snapshot'
-                )
-                resume_snapshot_index = continuation_context_seed.get(
-                    'chunk_index'
-                )
-                resume_dialogue_state = continuation_context_seed.get(
-                    'dialogue_state'
-                )
-                resume_dialogue_scene_key = continuation_context_seed.get(
-                    'dialogue_scene_key'
-                )
-                used_continuation_context_seed = True
+            checkpoint_context = read_checkpoint_context(
+                checkpoint_data,
+                restored_completed,
+                continuation_context_seed,
+            )
+            resume_snapshot = checkpoint_context.resume.snapshot
+            resume_snapshot_index = checkpoint_context.resume.snapshot_index
+            resume_dialogue_state = checkpoint_context.resume.dialogue_state
+            resume_dialogue_scene_key = (
+                checkpoint_context.resume.dialogue_scene_key
+            )
+            used_continuation_context_seed = (
+                checkpoint_context.resume.from_continuation_seed
+            )
+            analyzed_context_indices = checkpoint_context.analyzed_indices
+            checkpoint_context_data_by_index = (
+                checkpoint_context.context_data_by_index
+            )
 
             try:
                 context_session = open_novel_context_session(

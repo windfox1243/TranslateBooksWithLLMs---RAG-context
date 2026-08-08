@@ -18,6 +18,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from src.core.chunking.decorative_separator import is_decorative_separator
 from src.core.chunking.token_chunker import TokenChunker
 from src.core.common.parallel import iter_ordered_concurrent
+from src.core.common.resume_context import (
+    EMPTY_RESUME_CONTEXT,
+    newest_chunk,
+    resume_context_from_chunk_data,
+    resume_context_from_seed,
+)
 from src.core.epub.translation_metrics import TranslationMetrics
 from src.core.llm.exceptions import RateLimitError
 from src.core.post_processor import clean_translated_text
@@ -447,17 +453,14 @@ async def translate_paragraphs_plain(
             should_update_novel_context_for_index,
         )
         try:
-            resume_snapshot = None
-            resume_dialogue_state = None
-            resume_dialogue_scene_key = None
-            used_continuation_context_seed = False
+            resume = EMPTY_RESUME_CONTEXT
             if (
                 checkpoint_manager
                 and translation_id
                 and hasattr(checkpoint_manager, "db")
                 and global_chunk_offset > 0
             ):
-                previous_rows = [
+                previous_row = newest_chunk(
                     row
                     for row in (
                         checkpoint_manager.db.get_chunks(translation_id) or []
@@ -465,33 +468,17 @@ async def translate_paragraphs_plain(
                     if row.get("status") in ("completed", "partial", "failed")
                     and row.get("chunk_index", -1) < global_chunk_offset
                     and (row.get("chunk_data") or {}).get("context_snapshot")
-                ]
-                if previous_rows:
-                    previous_row = max(
-                        previous_rows,
-                        key=lambda row: row.get("chunk_index", -1),
+                )
+                if previous_row is not None:
+                    resume = resume_context_from_chunk_data(
+                        previous_row.get("chunk_data")
                     )
-                    previous_data = previous_row.get("chunk_data") or {}
-                    resume_snapshot = previous_data.get("context_snapshot")
-                    resume_dialogue_state = (
-                        (
-                            previous_data.get("dialogue_attribution") or {}
-                        ).get("state_after")
-                    )
-                    resume_dialogue_scene_key = (
-                        previous_data.get("dialogue_attribution") or {}
-                    ).get("scene_key")
-            if not resume_snapshot and continuation_context_seed:
-                resume_snapshot = continuation_context_seed.get(
-                    "context_snapshot"
-                )
-                resume_dialogue_state = continuation_context_seed.get(
-                    "dialogue_state"
-                )
-                resume_dialogue_scene_key = continuation_context_seed.get(
-                    "dialogue_scene_key"
-                )
-                used_continuation_context_seed = True
+            if not resume.snapshot and continuation_context_seed:
+                resume = resume_context_from_seed(continuation_context_seed)
+            resume_snapshot = resume.snapshot
+            resume_dialogue_state = resume.dialogue_state
+            resume_dialogue_scene_key = resume.dialogue_scene_key
+            used_continuation_context_seed = resume.from_continuation_seed
             context_session = open_novel_context_session(
                 prompt_options=prompt_options,
                 novel_contexts_dir=NOVEL_CONTEXTS_DIR,
