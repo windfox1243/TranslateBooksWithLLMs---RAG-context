@@ -33,7 +33,7 @@ sys.path.insert(0, str(project_root))
 class TestOllamaEndpointInitializationBug:
     """
     Tests for OLLAMA_API_ENDPOINT proper exposure and initialization sequence.
-    
+
     GitHub Issue #108 (Part 2): When OLLAMA_API_ENDPOINT is configured to a remote
     server, the UI was still trying to connect to localhost because the frontend
     loaded models before receiving the server configuration.
@@ -46,46 +46,46 @@ class TestOllamaEndpointInitializationBug:
         monkeypatch.delenv('TRANSLATEBOOK_CONFIG_DIR', raising=False)
         monkeypatch.setenv('OLLAMA_API_ENDPOINT', 'http://192.168.1.4:11434/api/generate')
         monkeypatch.setenv('API_ENDPOINT', 'http://192.168.1.4:11434/api/generate')
-        
+
         # Import and reload config to pick up test values
         import importlib
 
         from src import config
         importlib.reload(config)
-        
+
         # Now import and create Flask app (it will use the reloaded config)
         from flask import Flask
 
         from src.api.blueprints.config_routes import create_config_blueprint
-        
+
         app = Flask(__name__)
         bp = create_config_blueprint(server_session_id=12345)
         app.register_blueprint(bp)
-        
+
         yield app
-        
+
 
     def test_api_config_response_contains_ollama_endpoint(self, app):
         """
         Test that /api/config response includes ollama_api_endpoint field
         with the correct remote server value.
-        
+
         This verifies the backend correctly exposes the configured endpoint.
         """
         with app.test_client() as client:
             response = client.get('/api/config')
-            
+
             assert response.status_code == 200, \
                 f"Expected 200 but got {response.status_code}"
-            
+
             data = response.get_json()
             assert data is not None, "Response should be valid JSON"
-            
+
             # KEY ASSERTION: ollama_api_endpoint must be present
             assert 'ollama_api_endpoint' in data, \
                 "BUG: 'ollama_api_endpoint' missing from /api/config. " \
                 f"Got keys: {list(data.keys())}"
-            
+
             # It should have the remote server value, not localhost
             assert data['ollama_api_endpoint'] == 'http://192.168.1.4:11434/api/generate', \
                 f"Expected remote endpoint but got '{data.get('ollama_api_endpoint')}'"
@@ -98,10 +98,10 @@ class TestOllamaEndpointInitializationBug:
         with app.test_client() as client:
             response = client.get('/api/config')
             data = response.get_json()
-            
+
             assert 'api_endpoint' in data, \
                 "'api_endpoint' should be in /api/config response for backward compatibility"
-            
+
             assert data['api_endpoint'] == 'http://192.168.1.4:11434/api/generate', \
                 f"Expected remote endpoint but got '{data.get('api_endpoint')}'"
 
@@ -109,7 +109,7 @@ class TestOllamaEndpointInitializationBug:
 class TestFrontendInitializationSequence:
     """
     Tests to verify the frontend initialization sequence is correct.
-    
+
     These tests document the expected behavior and can be run as JavaScript
     unit tests in a browser environment.
     """
@@ -117,11 +117,11 @@ class TestFrontendInitializationSequence:
     def test_initialization_order_documentation(self):
         """
         Document the correct initialization order that prevents the bug.
-        
+
         The bug occurs when:
         1. SettingsManager.initialize() triggers model loading with localStorage endpoint
         2. This happens BEFORE FormManager.loadDefaultConfig() receives server config
-        
+
         The fix ensures:
         1. FormManager.loadDefaultConfig() fetches server config first
         2. THEN ProviderManager loads models with the correct endpoint
@@ -134,7 +134,7 @@ class TestFrontendInitializationSequence:
             "FormManager.loadDefaultConfig() completes - dispatch 'defaultConfigLoaded'",
             "ProviderManager receives 'defaultConfigLoaded' - NOW load models with correct endpoint"
         ]
-        
+
         # Verify the order makes sense
         assert len(expected_order) == 5
         assert "SettingsManager" in expected_order[0]
@@ -146,7 +146,7 @@ class TestFrontendInitializationSequence:
     def test_javascript_event_sequence(self):
         """
         Test that verifies the JavaScript event sequence for proper initialization.
-        
+
         This test describes what should happen in the browser:
         1. Page loads with HTML default: apiEndpoint="http://localhost:11434/api/generate"
         2. SettingsManager.initialize() restores preferences but DOESN'T trigger provider change
@@ -165,7 +165,7 @@ class TestFrontendInitializationSequence:
             "critical_moment": "ProviderManager must wait for defaultConfigLoaded before loading models",
             "expected_api_call": "http://192.168.1.4:11434/api/tags (NOT localhost)"
         }
-        
+
         assert "localhost" in event_flow["html_default"]
         assert "192.168.1.4" in event_flow["server_config"]
         assert "wait" in event_flow["critical_moment"].lower()

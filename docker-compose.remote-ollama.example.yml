@@ -1,7 +1,7 @@
 version: '3.8'
 
 # Example: Docker Compose with remote Ollama server
-# 
+#
 # If your Ollama server is on a different machine in your local network,
 # use 'extra_hosts' to resolve the server hostname from the container.
 #

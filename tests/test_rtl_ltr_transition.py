@@ -28,11 +28,11 @@ class TestRTLToLTRTransition:
         # Arabic (RTL) -> French (LTR) = transition
         assert is_rtl_language('Arabic') is True
         assert is_rtl_language('French') is False
-        
+
         # Hebrew (RTL) -> English (LTR) = transition
         assert is_rtl_language('Hebrew') is True
         assert is_rtl_language('English') is False
-        
+
         # French (LTR) -> Arabic (RTL) = NOT this case
         assert is_rtl_language('French') is False
         assert is_rtl_language('Arabic') is True
@@ -52,13 +52,13 @@ html, body { direction: rtl !important; text-align: right !important; }
     <p style="text-align: right;">Arabic text</p>
 </body>
 </html>"""
-        
+
         result = remove_rtl_from_html(html_with_rtl)
-        
+
         # Should change dir to ltr
         assert 'dir="ltr"' in result
         assert 'dir="rtl"' not in result
-        
+
         # Should have LTR reset CSS
         assert 'direction: ltr' in result
         assert 'text-align: left' in result
@@ -74,12 +74,12 @@ html, body { direction: rtl !important; text-align: right !important; }
 </head>
 <body><p>Text</p></body>
 </html>"""
-        
+
         result = remove_rtl_from_html(html_with_multiple_rtl)
-        
+
         # RTL styles should be removed
         assert result.count('direction: rtl') == 0
-        
+
         # LTR should be set
         assert 'dir="ltr"' in result
         assert 'direction: ltr' in result
@@ -91,7 +91,7 @@ html, body { direction: rtl !important; text-align: right !important; }
         epub_dir.mkdir()
         oebps_dir = epub_dir / "OEBPS"
         oebps_dir.mkdir()
-        
+
         # Create HTML file with RTL
         chapter = oebps_dir / "chapter.xhtml"
         chapter.write_text("""<?xml version="1.0"?>
@@ -104,7 +104,7 @@ html { direction: rtl !important; }
 </head>
 <body><p>Arabic text</p></body>
 </html>""", encoding='utf-8')
-        
+
         # Create OPF with RTL progression
         opf = oebps_dir / "content.opf"
         opf.write_text("""<?xml version="1.0"?>
@@ -113,21 +113,21 @@ html { direction: rtl !important; }
     <manifest></manifest>
     <spine page-progression-direction="rtl"></spine>
 </package>""", encoding='utf-8')
-        
+
         # Apply RTL->LTR transition (Arabic -> French)
         result = apply_rtl_to_epub_directory(str(epub_dir), 'French', 'Arabic')
-        
+
         assert result['was_transition'] is True
         assert result['css_removed'] == 1
         assert result['opf_updated'] is True
         assert result['is_rtl'] is False
-        
+
         # Check HTML was updated
         content = chapter.read_text(encoding='utf-8')
         assert 'dir="ltr"' in content
         assert 'direction: ltr' in content
         assert 'direction: rtl' not in content
-        
+
         # Check OPF was updated
         opf_content = opf.read_text(encoding='utf-8')
         assert 'page-progression-direction="ltr"' in opf_content
@@ -139,28 +139,28 @@ html { direction: rtl !important; }
         epub_dir.mkdir()
         oebps_dir = epub_dir / "OEBPS"
         oebps_dir.mkdir()
-        
+
         chapter = oebps_dir / "chapter.xhtml"
         chapter.write_text("""<?xml version="1.0"?>
 <html>
 <head><title>Test</title></head>
 <body><p>French text</p></body>
 </html>""", encoding='utf-8')
-        
+
         opf = oebps_dir / "content.opf"
         opf.write_text("""<?xml version="1.0"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
     <spine toc="ncx"></spine>
 </package>""", encoding='utf-8')
-        
+
         # Apply LTR->RTL transition (French -> Arabic)
         result = apply_rtl_to_epub_directory(str(epub_dir), 'Arabic', 'French')
-        
+
         assert result['was_transition'] is False  # Not RTL->LTR
         assert result['is_rtl'] is True
         assert result['css_injected'] == 1
         assert result['opf_updated'] is True
-        
+
         # Check RTL was applied
         content = chapter.read_text(encoding='utf-8')
         assert 'dir="rtl"' in content
@@ -172,13 +172,13 @@ html { direction: rtl !important; }
         epub_dir.mkdir()
         oebps_dir = epub_dir / "OEBPS"
         oebps_dir.mkdir()
-        
+
         chapter = oebps_dir / "chapter.xhtml"
         chapter.write_text("""<html><body><p>Text</p></body></html>""", encoding='utf-8')
-        
+
         # Apply LTR->LTR (French -> English)
         result = apply_rtl_to_epub_directory(str(epub_dir), 'English', 'French')
-        
+
         assert result['was_transition'] is False
         assert result['is_rtl'] is False
         assert result['css_injected'] == 0
@@ -190,19 +190,19 @@ html { direction: rtl !important; }
         epub_dir.mkdir()
         oebps_dir = epub_dir / "OEBPS"
         oebps_dir.mkdir()
-        
+
         chapter = oebps_dir / "chapter.xhtml"
         chapter.write_text("""<html dir="rtl"><body><p>Text</p></body></html>""", encoding='utf-8')
-        
+
         opf = oebps_dir / "content.opf"
         opf.write_text("""<?xml version="1.0"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
     <spine page-progression-direction="rtl"></spine>
 </package>""", encoding='utf-8')
-        
+
         # Apply RTL->RTL (Arabic -> Hebrew)
         result = apply_rtl_to_epub_directory(str(epub_dir), 'Hebrew', 'Arabic')
-        
+
         assert result['was_transition'] is False
         assert result['is_rtl'] is True
         # Should still inject/update CSS even if already RTL
@@ -217,14 +217,14 @@ html { direction: rtl !important; }
         <itemref idref="chapter1"/>
     </spine>
 </package>"""
-        
+
         opf_path = tmp_path / "content.opf"
         opf_path.write_text(opf_content, encoding='utf-8')
-        
+
         result = update_opf_for_ltr(str(opf_path))
-        
+
         assert result is True
-        
+
         updated = opf_path.read_text(encoding='utf-8')
         assert 'page-progression-direction="ltr"' in updated
         assert 'page-progression-direction="rtl"' not in updated
@@ -235,12 +235,12 @@ html { direction: rtl !important; }
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
     <spine toc="ncx"></spine>
 </package>"""
-        
+
         opf_path = tmp_path / "content.opf"
         opf_path.write_text(opf_content, encoding='utf-8')
-        
+
         result = update_opf_for_ltr(str(opf_path))
-        
+
         # Should return False as no change was needed
         assert result is False
 
@@ -260,7 +260,7 @@ class TestEdgeCasesTransition:
         """Should handle HTML without RTL"""
         normal_html = """<html><head><title>Test</title></head>
 <body><p>Normal text</p></body></html>"""
-        
+
         result = remove_rtl_from_html(normal_html)
         # Should add LTR CSS anyway
         assert 'direction: ltr' in result
@@ -269,9 +269,9 @@ class TestEdgeCasesTransition:
         """Should handle None source language (defaults to no transition)"""
         epub_dir = tmp_path / "epub"
         epub_dir.mkdir()
-        
+
         result = apply_rtl_to_epub_directory(str(epub_dir), 'Arabic', None)
-        
+
         # Should apply RTL (target is RTL, source is None/unknown)
         assert result['is_rtl'] is True
         assert result['was_transition'] is False

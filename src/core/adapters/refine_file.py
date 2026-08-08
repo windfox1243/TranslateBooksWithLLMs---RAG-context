@@ -112,14 +112,14 @@ async def refine_file(
             novel_context_path = resolve_novel_context_path(novel_context_file, NOVEL_CONTEXTS_DIR)
             current_context_content = load_novel_context(novel_context_path.name, novel_context_path.parent)
             global_lore_only = extract_global_lore(current_context_content)
-            
+
             prompt_options['novel_context'] = build_novel_context(
                 global_lore_only,
                 "",
             )
             if log_callback:
                 log_callback("novel_context_state", "Context loaded for refinement (global lore; historical state resolved per unit)", {
-                    "type": "novel_context_state", 
+                    "type": "novel_context_state",
                     "content_omitted": True,
                     "content_size": len(prompt_options['novel_context']),
                     "filename": novel_context_path.name,

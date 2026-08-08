@@ -535,14 +535,14 @@ export const TranslationTracker = {
             if (filenameSpan && data.log_entry.data.filename) {
                 filenameSpan.textContent = `(${data.log_entry.data.filename})`;
             }
-            
+
             const currentStats = StateManager.getState('translation.stats') || {};
             if (window.NovelContextUI) {
                 const hasContextContent = typeof data.log_entry.data.content === 'string';
                 if (hasContextContent) {
                     // Keep track of the latest content
                     window.NovelContextUI.latestContent = data.log_entry.data.content || '';
-                    
+
                     // In-memory context rebuilt during standalone refinement has
                     // no persisted snapshots, so do not advertise chunk options
                     // that the snapshot endpoint cannot load.
@@ -551,7 +551,7 @@ export const TranslationTracker = {
                             currentStats.context_chunk_indices || []
                         );
                     }
-                    
+
                     const selector = document.getElementById('contextChunkSelector');
                     // Only update the display if the user is NOT currently editing the context
                     if (!window.NovelContextUI.isEditing) {
@@ -614,7 +614,7 @@ export const TranslationTracker = {
             this.updateActiveTranslationsState();
         } else if (data.status === 'running') {
             MessageLogger.resetProgressTracking();
-            
+
             // Wake up the UI controls from idle/paused state if needed
             StateManager.setState('translation.isBatchActive', true);
             const translateBtn = DomHelpers.getElement('translateBtn');
@@ -2432,7 +2432,7 @@ window.NovelContextUI = {
         dialog.addEventListener('close', () => dialog.remove());
         dialog.showModal();
     },
-    
+
     renderContextTabs: function(content, isSnapshot = false, preserveLocalizedView = false) {
         if (!preserveLocalizedView) {
             this.localizedView = null;
@@ -2555,7 +2555,7 @@ window.NovelContextUI = {
             if (sec.titleKey) {
                 btn.setAttribute('data-i18n', sec.titleKey);
             }
-            
+
             const pane = document.createElement('div');
             pane.style.display = isActive ? 'block' : 'none';
             pane.textContent = sec.content;
@@ -2563,7 +2563,7 @@ window.NovelContextUI = {
             if (!['current-addressing', 'relationship-evolution', 'narrator-voice', 'editor-diagnostics'].includes(sec.key)) {
                 this._appendContextGuide(pane, sec.key);
             }
-            
+
             btn.onclick = () => {
                 this.activeTabKey = sec.key;
                 Array.from(header.children).forEach(c => {
@@ -2576,11 +2576,11 @@ window.NovelContextUI = {
                 btn.style.background = 'var(--primary-color)';
                 btn.style.color = '#fff';
                 btn.style.border = '1px solid var(--primary-color)';
-                
+
                 Array.from(body.children).forEach(p => { p.style.display = 'none'; });
                 pane.style.display = 'block';
             };
-            
+
             // Set initial style for active tab
             if (isActive) {
                 btn.style.background = 'var(--primary-color)';
@@ -2591,7 +2591,7 @@ window.NovelContextUI = {
                 btn.style.color = 'var(--text-dark)';
                 btn.style.border = '1px solid var(--border-color)';
             }
-            
+
             header.appendChild(btn);
             body.appendChild(pane);
             if (!isSnapshot && sec.key === 'current-addressing') {
@@ -2618,10 +2618,10 @@ window.NovelContextUI = {
     updateChunkSelector: function(chunkIndices) {
         const selector = document.getElementById('contextChunkSelector');
         if (!selector) return;
-        
+
         // Preserve current selection if possible
         const currentVal = selector.value;
-        
+
         const availableIndices = Array.isArray(chunkIndices)
             ? [...new Set(chunkIndices)]
                 .filter(index => Number.isInteger(index) && index >= 0)
@@ -2658,7 +2658,7 @@ window.NovelContextUI = {
             opt.setAttribute('data-i18n-params', JSON.stringify({ number: index + 1 }));
             selector.appendChild(opt);
         });
-        
+
         if (currentVal && Array.from(selector.options).some(o => String(o.value) === String(currentVal))) {
             selector.value = String(currentVal);
         }
@@ -2746,7 +2746,7 @@ function updateContextResyncControls(resyncState = null) {
     const btnResume = document.getElementById('btnResumeResync');
     const badge = document.getElementById('contextResyncStatusBadge');
     const btnEdit = document.getElementById('btnEditResync');
-    
+
     if (!resyncState && window.NovelContextUI?.lastResyncState) {
         resyncState = window.NovelContextUI.lastResyncState;
     }
@@ -2868,7 +2868,7 @@ window.loadContextSnapshot = async function(chunkValue) {
         );
         return;
     }
-    
+
     // Resolve translationId from multiple sources
     let translationId = null;
     const currentJob = StateManager.getState('translation.currentJob');
@@ -2878,7 +2878,7 @@ window.loadContextSnapshot = async function(chunkValue) {
     if (!translationId) {
         translationId = StateManager.getState('translation.lastJobId');
     }
-    
+
     if (!translationId) {
         console.warn('[Context] No translationId available for loading chunk snapshot');
         window.NovelContextUI.renderLocalizedView(
@@ -2887,7 +2887,7 @@ window.loadContextSnapshot = async function(chunkValue) {
         );
         return;
     }
-    
+
     try {
         console.log(`[Context] Loading snapshot for job=${translationId}, chunk=${resolvedChunkValue}`);
         const result = await ApiClient.getContextSnapshot(
@@ -2905,7 +2905,7 @@ window.loadContextSnapshot = async function(chunkValue) {
                 }
                 return;
             }
-            
+
             // Render context tabs or show empty snapshot if empty but configured
             if (result.context_content === "") {
                 window.NovelContextUI.renderLocalizedView(
@@ -3014,7 +3014,7 @@ window.enableContextEdit = function() {
     const header = document.getElementById('contextTabsHeader');
     const body = document.getElementById('contextTabsBody');
     if (!header || !body) return;
-    
+
     let content = window.NovelContextUI.latestContent;
     const selector = document.getElementById('contextChunkSelector');
     if (selector && selector.value !== 'latest') {
@@ -3024,16 +3024,16 @@ window.enableContextEdit = function() {
     } else {
         content = window.NovelContextUI.displayedContent || "";
     }
-    
+
     // Parse the content into exact chunks so we can reconstruct it losslessly
     const sections = [];
     const regex = /^(#{1,3})\s*(.+)$/gm;
     let match;
     let lastIndex = 0;
-    let currentHeaderFull = ""; 
+    let currentHeaderFull = "";
     let currentTitle = t('translation:context_general_tab');
     let currentTitleKey = 'translation:context_general_tab';
-    
+
     while ((match = regex.exec(content)) !== null) {
         const currentKey = window.NovelContextUI._sectionKey(
             currentTitle,
@@ -3066,7 +3066,7 @@ window.enableContextEdit = function() {
         fullHeader: currentHeaderFull,
         rawContent: content.substring(lastIndex)
     });
-    
+
     // Group empty structural headers with the following section to hide empty tabs
     const groupedSections = [];
     let pendingHeader = "";
@@ -3090,23 +3090,23 @@ window.enableContextEdit = function() {
             pendingHeader = "";
         }
     });
-    
+
     window.NovelContextUI.editSections = groupedSections;
     window.NovelContextUI.isEditing = true;
-    
+
     // Render the edit UI while keeping the tabs
     header.style.display = 'flex';
     header.style.flexWrap = 'wrap';
     header.style.gap = '0.5rem';
     header.innerHTML = '';
     body.innerHTML = '';
-    
+
     const activeIdx = Math.max(
         0,
         groupedSections.findIndex(sec => sec.key === window.NovelContextUI.activeTabKey)
     );
     window.NovelContextUI.activeTabKey = groupedSections[activeIdx]?.key || 'general';
-    
+
     function checkForChanges() {
         const isChanged = hasContextResyncEditorChanges();
         if (btnSave) {
@@ -3114,7 +3114,7 @@ window.enableContextEdit = function() {
             btnSave.setAttribute('aria-disabled', isChanged ? 'false' : 'true');
         }
     }
-    
+
     groupedSections.forEach((sec, idx) => {
         const btn = document.createElement('button');
         const isActive = idx === activeIdx;
@@ -3127,11 +3127,11 @@ window.enableContextEdit = function() {
         if (sec.titleKey) {
             btn.setAttribute('data-i18n', sec.titleKey);
         }
-        
+
         const pane = document.createElement('div');
         pane.style.display = isActive ? 'block' : 'none';
         pane.style.height = '100%';
-        
+
         const textarea = document.createElement('textarea');
         textarea.id = sec.id;
         textarea.className = 'form-control';
@@ -3148,9 +3148,9 @@ window.enableContextEdit = function() {
         textarea.style.backgroundColor = 'var(--bg-light)';
         textarea.value = sec.rawContent;
         textarea.addEventListener('input', checkForChanges);
-        
+
         pane.appendChild(textarea);
-        
+
         btn.onclick = () => {
             window.NovelContextUI.activeTabKey = sec.key;
             Array.from(header.children).forEach(c => {
@@ -3163,11 +3163,11 @@ window.enableContextEdit = function() {
             btn.style.background = 'var(--primary-color)';
             btn.style.color = '#fff';
             btn.style.border = '1px solid var(--primary-color)';
-            
+
             Array.from(body.children).forEach(p => { p.style.display = 'none'; });
             pane.style.display = 'block';
         };
-        
+
         if (isActive) {
             btn.style.background = 'var(--primary-color)';
             btn.style.color = '#fff';
@@ -3177,11 +3177,11 @@ window.enableContextEdit = function() {
             btn.style.color = 'var(--text-dark)';
             btn.style.border = '1px solid var(--border-color)';
         }
-        
+
         header.appendChild(btn);
         body.appendChild(pane);
     });
-    
+
     // Swap buttons
     if (btnEdit) btnEdit.style.display = 'none';
     if (btnSave) {
@@ -3198,11 +3198,11 @@ window.cancelContextEdit = function() {
     const btnEdit = document.getElementById('btnEditResync');
     const btnSave = document.getElementById('btnSaveResync');
     const btnCancel = document.getElementById('btnCancelResync');
-    
+
     if (btnEdit) btnEdit.style.display = 'inline-flex';
     if (btnSave) btnSave.style.display = 'none';
     if (btnCancel) btnCancel.style.display = 'none';
-    
+
     if (window.NovelContextUI.localizedView) {
         window.NovelContextUI._renderLocalizedView();
     } else if (window.NovelContextUI.displayedContent) {
@@ -3223,7 +3223,7 @@ window.saveContextResync = async function() {
         logContextResyncFailure('translation:context_no_job_body');
         return;
     }
-    
+
     let newContent = "";
     if (window.NovelContextUI.editSections) {
         window.NovelContextUI.editSections.forEach(sec => {
@@ -3242,7 +3242,7 @@ window.saveContextResync = async function() {
         }
         newContent = textarea.value;
     }
-    
+
     const isGlobal = selector.value === 'global';
     let chunkIndex = isGlobal
         ? window.NovelContextUI.globalAnchorChunkIndex
@@ -3330,7 +3330,7 @@ window.saveContextResync = async function() {
         updateContextResyncControls(resyncResult?.resync_state || {
             status: 'running'
         });
-        
+
         // Reload tabs
         window.NovelContextUI.isEditing = false;
         window.NovelContextUI.editSections = null;
@@ -3340,7 +3340,7 @@ window.saveContextResync = async function() {
             window.NovelContextUI.globalAnchorFullContent = submittedContent;
         }
         window.NovelContextUI.renderContextTabs(newContent, true);
-        
+
         const btnEdit = document.getElementById('btnEditResync');
         if (btnEdit) btnEdit.style.display = 'inline-flex';
         if (btnSave) {
@@ -3351,7 +3351,7 @@ window.saveContextResync = async function() {
             btnCancel.style.display = 'none';
             btnCancel.disabled = false;
         }
-        
+
     } catch (e) {
         console.error("Failed to start resync:", e);
         MessageLogger.addLog(t('translation:context_resync_failed_log', { error: e.message }));

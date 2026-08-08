@@ -1038,7 +1038,7 @@ async def _translate_all_chunks_with_checkpoint(
             current_context_content = load_novel_context(novel_context_path.name, novel_context_path.parent)
             current_global_lore = extract_global_lore(current_context_content)
             current_dynamic_state = extract_dynamic_state_from_text(current_context_content) or ""
-            
+
             # If resuming, restore source-derived context from the latest
             # already processed snapshot, including failed/partial chunks.
             # Their output stays retryable, but their source facts remain
@@ -1128,7 +1128,7 @@ async def _translate_all_chunks_with_checkpoint(
                 current_dialogue_scene_key = (
                     continuation_context_seed.get('dialogue_scene_key')
                 )
-            
+
             prompt_options['novel_context'] = build_novel_context(
                 current_global_lore,
                 current_dynamic_state,
@@ -1666,14 +1666,14 @@ async def _translate_all_chunks_with_checkpoint(
             chunk_data["execution_failure_class"] = "structure"
         chunks[i]['context_snapshot'] = ctx_snapshot
         chunks[i]['dialogue_attribution'] = dialogue_attribution
-        
+
         if checkpoint_manager and translation_id and hasattr(checkpoint_manager, 'db'):
             global_chunk_idx = _global_chunk_index(i)
             if chunk_data.get('context_snapshot'):
                 checkpoint_context_data_by_global_index[global_chunk_idx] = (
                     dict(chunk_data)
                 )
-            
+
             checkpoint_manager.db.save_chunk(
                 translation_id=translation_id,
                 chunk_index=global_chunk_idx,

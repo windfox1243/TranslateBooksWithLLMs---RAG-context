@@ -525,4 +525,3 @@ class TagPreserver:
             return coverage_ratio > 0.8
 
         return False
-

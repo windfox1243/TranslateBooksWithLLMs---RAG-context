@@ -218,7 +218,7 @@ async def refine_srt_file(
                     f"Could not align paired SRT source: {exc}",
                 )
             return False
-        
+
     from src.utils.novel_context import (
         RefinementContextTracker,
         map_context_snapshots_for_refinement,

@@ -128,30 +128,30 @@ def _is_disposable_unnamed_character(name: str, value: str) -> bool:
     """Reject explicit one-off unnamed roles that cannot anchor consistency."""
     if _is_cjk_generic_role_only_name(name):
         return True
-        
+
     # Proper named characters (e.g. Jenny, Kriha) must NEVER be discarded as unnamed roles
     role_key = _generic_role_base_key(name)
     if not role_key:
         return False
-        
+
     description = _plain_key(value)
-    
+
     # 1. If it has explicit NPC/machine markers, it's disposable (even if recurring is present)
     if any(marker in description for marker in _EXPLICIT_NPC_MARKERS):
         return True
-        
+
     # 2. If it is marked as recurring, it is NOT disposable (saves e.g. crucial recurring teacher)
     if _has_recurring_character_marker(name, value):
         return False
-        
+
     # 3. If it has generic incidental markers, it is disposable
     if any(marker in description for marker in _INCIDENTAL_CHARACTER_MARKERS):
         return True
-        
+
     # 4. Check generic English roles (discard if not recurring)
     if _is_english_generic_role_only_name(name):
         return True
-        
+
     if _is_numbered_generic_role_name(name):
         return True
     return False
@@ -708,7 +708,7 @@ def _kinship_identities_match(
     parsed_second = _parse_kinship_name(second_name)
     if not parsed_first and not parsed_second:
         return False
-        
+
     if parsed_first:
         kinship_name, kinship_val = first_name, first_value
         target_name, target_val = second_name, second_value
@@ -717,21 +717,21 @@ def _kinship_identities_match(
         kinship_name, kinship_val = second_name, second_value
         target_name, target_val = first_name, first_value
         prefix, kinship = parsed_second
-        
+
     prefix_key = _plain_key(prefix).rstrip("'s").rstrip("’s")
     target_name_key = _plain_key(target_name)
-    
+
     # 1. Target name must start with or contain the prefix/family name
     if not (target_name_key.startswith(prefix_key) or prefix_key in target_name_key.split()):
         return False
-        
+
     # 2. Gender compatibility
     kinship_gender = _KINSHIP_GENDERS.get(kinship)
     target_gender, target_details = _split_gender_and_details(_normalize_character_value(target_val))
     if kinship_gender and target_gender:
         if kinship_gender.casefold() != target_gender.casefold():
             return False
-            
+
     # 3. Kinship role check in details
     target_text = _clean_inline_text(target_details).casefold()
     if kinship in target_text:
@@ -741,7 +741,7 @@ def _kinship_identities_match(
         target_kinship = target_words[-1]
         if _KINSHIP_GENDERS.get(target_kinship) == kinship_gender:
             return True
-            
+
     return False
 def _character_identities_match(
     first_name: str,
@@ -1497,17 +1497,17 @@ def _is_character_meta_fact(fact: str, name: str) -> bool:
 def _infer_gender_from_kinship(name: str, details: str) -> str:
     # 1. Check name words
     name_words = {w.casefold() for w in re.findall(r"\w+", name)}
-    
+
     # Check direct gender words (e.g. "Female Student", "Shy Boy")
     for word, gender in _DIRECT_GENDER_WORDS.items():
         if word in name_words:
             return gender
-            
+
     # Check kinship words (e.g. "Shigure Father")
     for word, gender in _KINSHIP_GENDERS.items():
         if word in name_words:
             return gender
-            
+
     # 2. Check details clauses
     clauses = [c.strip() for c in re.split(r"[,;]", details)]
     allowed_prefixes = {"a", "an", "the", "young", "younger", "old", "older", "eldest", "elder", "former", "deceased", "late", "beloved", "original", "only", "biological"}

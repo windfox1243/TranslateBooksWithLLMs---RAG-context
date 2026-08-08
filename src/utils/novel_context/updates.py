@@ -51,7 +51,7 @@ async def update_novel_context_chunk(
     log_callback: Optional[Callable] = None,
 ) -> Tuple[str, str, List[str]]:
     """Calls the LLM to update global lore and dynamic state incrementally.
-    
+
     Returns:
         Tuple of (updated_global_lore, updated_dynamic_state, change_logs)
     """
@@ -117,13 +117,13 @@ async def update_novel_context_chunk(
         system_prompt = UPDATE_SYSTEM_PROMPT
     if context_contract_version >= 2:
         system_prompt = _inject_addressing_candidate_contract(system_prompt)
-    
+
     try:
         response = await llm_client.generate(
             prompt=user_prompt,
             system_prompt=system_prompt,
         )
-        
+
         if not response or not response.content:
             logger.warning("Empty response received from LLM during novel context chunk update. Keeping current state.")
             if relationship_candidate_sink is not None:
@@ -144,9 +144,9 @@ async def update_novel_context_chunk(
                     empty_dialogue_attribution()
                 )
             return current_global_lore, current_dynamic_state, []
-            
+
         content = response.content.strip()
-        
+
         # Parse blocks
         new_chars = ""
         new_aliases = ""
@@ -155,7 +155,7 @@ async def update_novel_context_chunk(
         dialogue_raw = ""
         relationship_candidate_raw = ""
         addressing_candidate_raw = ""
-        
+
         import re
         chars_match = re.search(
             r'\[NEW_CHARACTERS\]\s*(.*?)\s*'
@@ -414,10 +414,10 @@ async def update_novel_context_chunk(
                 if lines and lines[-1].startswith("```"):
                     lines = lines[:-1]
                 new_dynamic = "\n".join(lines).strip()
-            
+
             # Clean dynamic state boundaries if the model generated them by mistake
             new_dynamic = new_dynamic.replace("---DYNAMIC_STATE_START---", "").replace("---DYNAMIC_STATE_END---", "").strip()
-            
+
             # Clean up `# DYNAMIC RELATIONSHIP STATE` headers
             lines = new_dynamic.splitlines()
             cleaned_lines = []
@@ -425,11 +425,11 @@ async def update_novel_context_chunk(
                 if line.strip().upper().replace(" ", "") == "#DYNAMICRELATIONSHIPSTATE":
                     continue
                 cleaned_lines.append(line)
-            
+
             new_dynamic = "\n".join(cleaned_lines).strip()
         else:
             new_dynamic = current_dynamic_state
-            
+
         updated_global_lore, change_logs = merge_new_lore(
             current_global_lore,
             new_chars,
@@ -571,10 +571,10 @@ async def update_novel_context_chunk(
         if dialogue_attribution_sink is not None:
             dialogue_attribution_sink.clear()
             dialogue_attribution_sink.update(dialogue_attribution)
-            
+
         return updated_global_lore, new_dynamic, change_logs
 
-        
+
     except Exception as e:
         logger.error(f"Error in update_novel_context_chunk: {e}")
         if addressing_candidate_sink is not None:

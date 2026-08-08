@@ -206,7 +206,7 @@ def _ensure_novel_contexts_dir_exists():
                 for item in unbuilt_contexts.glob('*'):
                     if item.is_file():
                         shutil.copy2(item, NOVEL_CONTEXTS_DIR)
-        
+
         NOVEL_CONTEXTS_DIR.mkdir(parents=True, exist_ok=True)
     except Exception as e:
         logger.warning(f"Unable to create Novel_Contexts directory: {e}")

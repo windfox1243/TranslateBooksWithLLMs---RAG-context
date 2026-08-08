@@ -52,7 +52,7 @@ async def main():
 
     print("\n[3] Executing Senior Editor Reflection Pass on draft chunk...")
     print(f"    Draft: \"{draft_translation}\"")
-    
+
     try:
         res = await provider.generate(ref_prompt.user)
         if res and res.content:

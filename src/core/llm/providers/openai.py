@@ -51,32 +51,32 @@ class OpenAICompatibleProvider(LLMProvider):
     def _normalize_endpoint(endpoint: str) -> str:
         """
         Normalize API endpoint URL for OpenAI-compatible APIs.
-        
+
         Automatically adds '/chat/completions' if the URL ends with '/v1' or '/v1/'
         but not with the full path. This handles common user mistakes like:
         - http://localhost:11434/v1 -> http://localhost:11434/v1/chat/completions
         - https://api.example.com/v1/ -> https://api.example.com/v1/chat/completions
-        
+
         Args:
             endpoint: Raw endpoint URL provided by user
-            
+
         Returns:
             Normalized endpoint URL with complete path
         """
         if not endpoint:
             return endpoint
-        
+
         # Remove trailing slash for consistent processing
         endpoint = endpoint.rstrip('/')
-        
+
         # If already ends with /v1/chat/completions, keep as-is
         if endpoint.endswith('/v1/chat/completions'):
             return endpoint
-        
+
         # If ends with /v1, append /chat/completions
         if endpoint.endswith('/v1'):
             return endpoint + '/chat/completions'
-        
+
         # Otherwise return as-is (user provided custom path)
         return endpoint
 

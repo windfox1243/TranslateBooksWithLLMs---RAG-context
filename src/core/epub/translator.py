@@ -294,7 +294,7 @@ async def translate_epub_file(
                     log_callback("epub_rtl_start", f"🔄 Applying RTL layout for {target_language}...")
                 elif is_rtl_language(source_language):
                     log_callback("epub_rtl_start", f"🔄 Resetting to LTR layout (translating from {source_language})...")
-            
+
             rtl_result = apply_rtl_to_epub_directory(temp_dir, target_language, source_language)
 
             if log_callback:
@@ -364,10 +364,10 @@ async def translate_epub_file(
 
                 # Log layout status
                 if is_rtl_language(target_language):
-                    log_callback("epub_rtl_complete", 
+                    log_callback("epub_rtl_complete",
                                f"📖 EPUB ready for RTL reading: text direction is right-to-left")
                 elif is_rtl_language(source_language):
-                    log_callback("epub_ltr_complete", 
+                    log_callback("epub_ltr_complete",
                                f"📖 EPUB ready for LTR reading: text direction reset to left-to-right")
 
             return (

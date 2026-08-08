@@ -466,13 +466,13 @@ export const FormManager = {
                 DomHelpers.setValue('apiEndpoint', ollamaEndpoint);
                 SettingsManager.updateEndpointBadge('ollama', false);
             }
-            
+
             // OpenAI endpoint (for OpenAI-compatible providers like OpenAI, LM Studio)
             if (config.openai_api_endpoint) {
                 DomHelpers.setValue('openaiEndpoint', config.openai_api_endpoint);
                 SettingsManager.updateEndpointBadge('openai', false);
             }
-            
+
             // Output filename pattern (naming convention)
             if (config.output_filename_pattern) {
                 DomHelpers.setValue('outputFilenamePattern', config.output_filename_pattern);
@@ -986,14 +986,14 @@ window.loadSelectedProfile = async function() {
     const select = document.getElementById('profileSelect');
     const name = select.value;
     if (!name) return;
-    
+
     try {
         const data = await ApiClient.getProfile(name);
-        
+
         // Restore settings into form
         if (data.source_language) setDefaultLanguage('sourceLang', 'customSourceLang', data.source_language, true);
         if (data.target_language) setDefaultLanguage('targetLang', 'customTargetLang', data.target_language, true);
-        
+
         if (data.glossary !== undefined) {
             await GlossaryManager.refreshDropdown();
             const glossarySelect = document.getElementById('glossarySelect');
@@ -1103,7 +1103,7 @@ window.loadSelectedProfile = async function() {
 
         // Open the prompt options section if any of the prompt options are enabled
         FormManager.handlePromptOptionChange();
-        
+
         MessageLogger.addLog(t('translation:profile_loaded_log', { name }));
     } catch (e) {
         console.error("Failed to load profile:", e);
@@ -1114,10 +1114,10 @@ window.loadSelectedProfile = async function() {
 window.promptSaveProfile = async function() {
     const name = prompt(t('translation:profile_enter_name'));
     if (!name) return;
-    
+
     const formData = FormManager.getTranslationConfig();
     const glossarySelect = document.getElementById('glossarySelect');
-    
+
     const profileData = {
         source_language: formData.source_language,
         target_language: formData.target_language,
@@ -1153,12 +1153,12 @@ window.promptSaveProfile = async function() {
         tts_bitrate: formData.tts_bitrate,
         output_filename_pattern: DomHelpers.getValue('outputFilenamePattern') || ''
     };
-    
+
     try {
         await ApiClient.saveProfile(name, profileData);
         MessageLogger.addLog(t('translation:profile_saved_log', { name }));
         await FormManager.loadProfiles();
-        
+
         const select = document.getElementById('profileSelect');
         if (select) {
             select.value = name;

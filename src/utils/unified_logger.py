@@ -61,8 +61,8 @@ class UnifiedLogger:
     """
     Unified logger that provides consistent logging across all interfaces
     """
-    
-    def __init__(self, 
+
+    def __init__(self,
                  name: str = "TranslateBookWithLLM",
                  console_output: bool = True,
                  enable_colors: bool = True,
@@ -71,7 +71,7 @@ class UnifiedLogger:
                  storage_callback: Optional[Callable] = None):
         """
         Initialize the unified logger
-        
+
         Args:
             name: Logger name/identifier
             console_output: Whether to output to console
@@ -86,7 +86,7 @@ class UnifiedLogger:
         self.min_level = min_level
         self.web_callback = web_callback
         self.storage_callback = storage_callback
-        
+
         # Translation state
         self.translation_state = {
             'current_chunk': 0,
@@ -98,25 +98,25 @@ class UnifiedLogger:
             'start_time': None,
             'in_progress': False
         }
-        
+
         if not enable_colors:
             Colors.disable()
-    
+
     def _format_timestamp(self) -> str:
         """Format current timestamp"""
         return datetime.now().strftime("%H:%M:%S")
-    
+
     def _print_separator(self, char: str = '=', length: int = 80, color: str = Colors.GRAY):
         """Print a colored separator line"""
         if self.console_output:
             print(f"{color}{char * length}{Colors.ENDC}")
-    
-    def _format_console_message(self, level: LogLevel, message: str, 
+
+    def _format_console_message(self, level: LogLevel, message: str,
                                log_type: LogType = LogType.GENERAL,
                                data: Optional[Dict[str, Any]] = None) -> str:
         """Format message for console output"""
         timestamp = self._format_timestamp()
-        
+
         # Color mapping
         level_colors = {
             LogLevel.DEBUG: Colors.GRAY,
@@ -125,9 +125,9 @@ class UnifiedLogger:
             LogLevel.ERROR: Colors.RED,
             LogLevel.CRITICAL: Colors.RED
         }
-        
+
         color = level_colors.get(level, Colors.WHITE)
-        
+
         # Special formatting for different log types
         if log_type in (LogType.LLM_REQUEST, LogType.REFINEMENT_REQUEST):
             return self._format_llm_request(data or {})
@@ -149,27 +149,27 @@ class UnifiedLogger:
             # General message format
             level_str = f"[{level.name}]" if level != LogLevel.INFO else ""
             return f"{color}[{timestamp}] {level_str} {message}{Colors.ENDC}"
-    
+
     def _format_llm_request(self, data: Dict[str, Any]) -> str:
         """Format LLM request with full details"""
         output = []
-        
+
         # Une seule ligne de séparation avant le "SENDING TO LLM"
         output.append(f"{Colors.YELLOW}{'=' * 80}{Colors.ENDC}")
         timestamp = self._format_timestamp()
         output.append(f"{Colors.YELLOW}[{timestamp}] SENDING TO LLM{Colors.ENDC}")
-        
+
         # Chunk info
         if self.translation_state['in_progress']:
             current = self.translation_state['current_chunk']
             total = self.translation_state['total_chunks']
             percentage = (current / total * 100) if total > 0 else 0
             output.append(f"{Colors.YELLOW}Chunk: {current}/{total} ({percentage:.1f}% complete){Colors.ENDC}")
-        
+
         # Model info (en gris)
         if 'model' in data:
             output.append(f"{Colors.GRAY}Model: {data['model']}{Colors.ENDC}")
-        
+
         # Full prompt only in debug mode for console
         # (UI always receives the full data via web_callback)
         if self.min_level == LogLevel.DEBUG:
@@ -185,7 +185,7 @@ class UnifiedLogger:
                 output.append(f"{Colors.ORANGE}{data.get('prompt', '')}{Colors.ENDC}")
 
         return '\n'.join(output)
-    
+
     def _format_llm_response(self, data: Dict[str, Any]) -> str:
         """Format LLM response with full details"""
         # In non-debug mode, return empty string (no output)
@@ -214,31 +214,31 @@ class UnifiedLogger:
         if 'filename' in data:
             output.append(f"{Colors.GRAY}Context File: {data['filename']}{Colors.ENDC}")
         return '\n'.join(output)
-        
+
     def _format_progress(self, data: Dict[str, Any]) -> str:
         """Format progress summary"""
         output = []
-        
+
         percentage = data.get('percentage', 0)
         current = data.get('current', self.translation_state['current_chunk'])
         total = data.get('total', self.translation_state['total_chunks'])
-        
+
         output.append(f"\n{Colors.WHITE}PROGRESS: {current}/{total} chunks ({percentage:.1f}%){Colors.ENDC}")
-        
+
         # Progress bar simple
         bar_length = 30
         filled = int(bar_length * percentage / 100)
         bar = '█' * filled + '░' * (bar_length - filled)
         output.append(f"{Colors.WHITE}[{bar}] {percentage:.1f}%{Colors.ENDC}")
-        
+
         return '\n'.join(output)
-    
+
     def _format_translation_start(self, message: str, data: Dict[str, Any]) -> str:
         """Format translation start message"""
         output = []
-        
+
         output.append(f"{Colors.YELLOW}TRANSLATION STARTED{Colors.ENDC}")
-        
+
         # Update translation state
         self.translation_state.update({
             'source_lang': data.get('source_lang', 'Unknown'),
@@ -250,41 +250,41 @@ class UnifiedLogger:
             'start_time': datetime.now(),
             'in_progress': True
         })
-        
+
         output.append(f"{Colors.WHITE}File Type: {self.translation_state['file_type']}{Colors.ENDC}")
         output.append(f"{Colors.WHITE}Languages: {self.translation_state['source_lang']} → {self.translation_state['target_lang']}{Colors.ENDC}")
         output.append(f"{Colors.GRAY}Model: {self.translation_state['model']}{Colors.ENDC}")
         if self.translation_state['total_chunks'] > 0:
             output.append(f"{Colors.WHITE}Total Chunks: {self.translation_state['total_chunks']}{Colors.ENDC}")
-        
+
         return '\n'.join(output)
-    
+
     def _format_translation_end(self, message: str, data: Dict[str, Any]) -> str:
         """Format translation end message"""
         output = []
-        
+
         output.append(f"\n{Colors.WHITE}TRANSLATION COMPLETE{Colors.ENDC}")
-        
+
         # Calculate duration
         if self.translation_state['start_time']:
             duration = datetime.now() - self.translation_state['start_time']
             output.append(f"{Colors.GRAY}Duration: {duration}{Colors.ENDC}")
-        
+
         if 'output_file' in data:
             output.append(f"{Colors.WHITE}Output saved to: {data['output_file']}{Colors.ENDC}")
-        
+
         # Statistics
         if 'stats' in data:
             stats = data['stats']
             output.append(f"{Colors.WHITE}Completed chunks: {stats.get('completed', 0)}{Colors.ENDC}")
             if stats.get('failed', 0) > 0:
                 output.append(f"{Colors.YELLOW}Failed chunks: {stats['failed']}{Colors.ENDC}")
-        
+
         # Reset state
         self.translation_state['in_progress'] = False
-        
+
         return '\n'.join(output)
-    
+
     def _format_error_detail(self, message: str, data: Dict[str, Any]) -> str:
         """Format detailed error message"""
         output = []
@@ -347,11 +347,11 @@ class UnifiedLogger:
         if level == LogLevel.DEBUG:
             telemetry = get_telemetry()
             message = telemetry.annotate_log(message, "DEBUG")
-        
+
         # Update chunk counter for LLM requests
         if log_type in (LogType.LLM_REQUEST, LogType.REFINEMENT_REQUEST) and self.translation_state['in_progress']:
             self.translation_state['current_chunk'] += 1
-        
+
         # Format for console
         if self.console_output:
             try:
@@ -376,7 +376,7 @@ class UnifiedLogger:
                     print(f"[{timestamp}] {safe_message}", flush=True)
                 except Exception:
                     print(f"[LOG] Error displaying message", flush=True)
-        
+
         # Create structured log entry
         log_entry = {
             'timestamp': datetime.now().isoformat(),
@@ -385,31 +385,31 @@ class UnifiedLogger:
             'message': message,
             'data': data or {}
         }
-        
+
         # Web callback (for WebSocket)
         if self.web_callback:
             self.web_callback(log_entry)
-        
+
         # Storage callback (for in-memory storage)
         if self.storage_callback:
             self.storage_callback(log_entry)
-    
+
     # Convenience methods
     def debug(self, message: str, log_type: LogType = LogType.GENERAL, data: Optional[Dict[str, Any]] = None):
         self.log(LogLevel.DEBUG, message, log_type, data)
-    
+
     def info(self, message: str, log_type: LogType = LogType.GENERAL, data: Optional[Dict[str, Any]] = None):
         self.log(LogLevel.INFO, message, log_type, data)
-    
+
     def warning(self, message: str, log_type: LogType = LogType.GENERAL, data: Optional[Dict[str, Any]] = None):
         self.log(LogLevel.WARNING, message, log_type, data)
-    
+
     def error(self, message: str, log_type: LogType = LogType.GENERAL, data: Optional[Dict[str, Any]] = None):
         self.log(LogLevel.ERROR, message, log_type, data)
-    
+
     def critical(self, message: str, log_type: LogType = LogType.GENERAL, data: Optional[Dict[str, Any]] = None):
         self.log(LogLevel.CRITICAL, message, log_type, data)
-    
+
     def update_total_chunks(self, total: int):
         """Update total chunks count"""
         self.translation_state['total_chunks'] = total
@@ -420,7 +420,7 @@ class UnifiedLogger:
         self.translation_state['total_chunks'] = total
         if total > 0:
             self.translation_state['in_progress'] = True
-    
+
     def create_legacy_callback(self):
         """
         Create a legacy callback function for backward compatibility
@@ -480,7 +480,7 @@ class UnifiedLogger:
                     self.log(LogLevel.INFO, details, LogType.NOVEL_CONTEXT_STATE, {})
                 else:
                     self.info(details or message)
-        
+
         return legacy_callback
 
 

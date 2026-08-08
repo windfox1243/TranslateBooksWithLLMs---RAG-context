@@ -101,7 +101,7 @@ class TestRTLCSSGeneration:
     def test_css_contains_rtl_rules(self):
         """Generated CSS should contain RTL-specific rules"""
         css = generate_rtl_css('Arabic')
-        
+
         # Check for key RTL properties
         assert 'direction: rtl' in css
         assert 'unicode-bidi: isolate' in css
@@ -110,7 +110,7 @@ class TestRTLCSSGeneration:
     def test_css_contains_ltr_protection(self):
         """CSS should protect technical content with LTR"""
         css = generate_rtl_css('Arabic')
-        
+
         # Check for code protection
         assert 'direction: ltr' in css
         assert 'unicode-bidi: embed' in css
@@ -118,7 +118,7 @@ class TestRTLCSSGeneration:
     def test_css_contains_pre_styling(self):
         """CSS should style pre/code blocks"""
         css = generate_rtl_css('Arabic')
-        
+
         assert 'pre' in css
         assert 'code' in css
         assert 'font-family: monospace' in css
@@ -143,14 +143,14 @@ class TestHTMLInjection:
     <p>Hello</p>
 </body>
 </html>"""
-        
+
         result = inject_rtl_css_to_html(html, 'Arabic')
-        
+
         # Check CSS was injected
         assert '<style' in result
         assert 'direction: rtl' in result
         assert 'rtl !important' in result
-        
+
         # Check dir attribute added
         assert 'dir="rtl"' in result
 
@@ -162,9 +162,9 @@ class TestHTMLInjection:
     <p>Hello</p>
 </body>
 </html>"""
-        
+
         result = inject_rtl_css_to_html(html, 'Arabic')
-        
+
         # Check head was created
         assert '<head>' in result
         assert '<style' in result
@@ -182,9 +182,9 @@ class TestHTMLInjection:
     <p>This is a paragraph.</p>
 </body>
 </html>"""
-        
+
         result = inject_rtl_css_to_html(html, 'Arabic')
-        
+
         # Check original content preserved
         assert '<title>Test Book</title>' in result
         assert '<h1>Chapter 1</h1>' in result
@@ -210,14 +210,14 @@ class TestOPFUpdate:
         <itemref idref="chapter1"/>
     </spine>
 </package>"""
-        
+
         opf_path = tmp_path / "content.opf"
         opf_path.write_text(opf_content, encoding='utf-8')
-        
+
         result = update_opf_for_rtl(str(opf_path), 'Arabic')
-        
+
         assert result is True
-        
+
         # Check content was updated
         updated_content = opf_path.read_text(encoding='utf-8')
         assert 'page-progression-direction="rtl"' in updated_content
@@ -230,12 +230,12 @@ class TestOPFUpdate:
         <dc:title>Test Book</dc:title>
     </metadata>
 </package>"""
-        
+
         opf_path = tmp_path / "content.opf"
         opf_path.write_text(opf_content, encoding='utf-8')
-        
+
         result = update_opf_for_rtl(str(opf_path), 'Arabic')
-        
+
         assert result is False
 
 
@@ -246,18 +246,18 @@ class TestApplyRTLToEPUBDirectory:
         """Should apply RTL to all HTML files for Arabic"""
         # Create mock EPUB structure
         (tmp_path / "OEBPS").mkdir()
-        
+
         # Create HTML files
         html1 = tmp_path / "OEBPS" / "chapter1.xhtml"
         html1.write_text("""<?xml version="1.0"?>
 <html><head><title>Ch1</title></head>
 <body><p>Chapter 1</p></body></html>""", encoding='utf-8')
-        
+
         html2 = tmp_path / "OEBPS" / "chapter2.xhtml"
         html2.write_text("""<?xml version="1.0"?>
 <html><head><title>Ch2</title></head>
 <body><p>Chapter 2</p></body></html>""", encoding='utf-8')
-        
+
         # Create OPF
         opf = tmp_path / "OEBPS" / "content.opf"
         opf.write_text("""<?xml version="1.0"?>
@@ -266,13 +266,13 @@ class TestApplyRTLToEPUBDirectory:
     <manifest></manifest>
     <spine toc="ncx"></spine>
 </package>""", encoding='utf-8')
-        
+
         result = apply_rtl_to_epub_directory(str(tmp_path), 'Arabic')
-        
+
         assert result['is_rtl'] is True
         assert result['css_injected'] == 2
         assert result['opf_updated'] is True
-        
+
         # Check CSS was injected
         updated_html1 = html1.read_text(encoding='utf-8')
         assert 'direction: rtl' in updated_html1
@@ -281,7 +281,7 @@ class TestApplyRTLToEPUBDirectory:
     def test_apply_rtl_skips_non_rtl(self, tmp_path):
         """Should skip processing for non-RTL languages"""
         result = apply_rtl_to_epub_directory(str(tmp_path), 'English')
-        
+
         assert result['is_rtl'] is False
         assert result['css_injected'] == 0
         assert result['opf_updated'] is False
@@ -289,19 +289,19 @@ class TestApplyRTLToEPUBDirectory:
     def test_apply_rtl_to_hebrew(self, tmp_path):
         """Should apply RTL for Hebrew"""
         (tmp_path / "OEBPS").mkdir()
-        
+
         html = tmp_path / "OEBPS" / "page.xhtml"
         html.write_text("""<html><body><p>Text</p></body></html>""", encoding='utf-8')
-        
+
         opf = tmp_path / "OEBPS" / "content.opf"
         opf.write_text("""<?xml version="1.0"?>
 <package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0">
     <metadata><dc:title>Test</dc:title></metadata>
     <spine></spine>
 </package>""", encoding='utf-8')
-        
+
         result = apply_rtl_to_epub_directory(str(tmp_path), 'Hebrew')
-        
+
         assert result['is_rtl'] is True
         assert result['css_injected'] == 1
 
