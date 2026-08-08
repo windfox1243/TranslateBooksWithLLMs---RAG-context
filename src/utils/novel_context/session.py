@@ -17,6 +17,7 @@ from .gating import set_bypass_context_gating
 from .glossary import (
     _character_alias_map,
     _is_inverted_target_to_source_glossary_pair,
+    _is_valid_glossary_term,
     _normalized_character_alias_map,
 )
 from .lore_merge import merge_new_lore
@@ -66,6 +67,15 @@ class RefinementContextTracker:
     )
     log_callback: Optional[Callable] = None
     cursor: int = 0
+    # Derived in __post_init__ from prompt_options, but declared here so that
+    # repr, equality and type checking see the whole object. Assigning them in
+    # __post_init__ alone left half the tracker's state invisible.
+    global_lore: str = ""
+    dynamic_state: str = ""
+    auto_analyze: bool = False
+    dialogue_state: Dict[str, str] = field(default_factory=dict)
+    dialogue_scene_key: Optional[str] = None
+    current_dialogue_attribution: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         from src.utils.dialogue_attribution import empty_dialogue_attribution
@@ -78,8 +88,6 @@ class RefinementContextTracker:
             # seed that replay with the final end-of-book dynamic state.
             self.dynamic_state = ""
         self.auto_analyze = bool(self.prompt_options.get("auto_update_context"))
-        self.dialogue_state: Dict[str, str] = {}
-        self.dialogue_scene_key: Optional[str] = None
         self.current_dialogue_attribution = empty_dialogue_attribution()
 
     async def next_context(
@@ -344,7 +352,6 @@ class NovelContextSession:
         """Register term replacements ordered by Senior Editor critique into global lore & glossary."""
         if not term_pairs:
             return []
-        from src.core.translator import _is_valid_glossary_term
         valid_pairs = []
         for src, tgt in term_pairs:
             if src and tgt and _is_valid_glossary_term(src) and _is_valid_glossary_term(tgt):
@@ -497,7 +504,8 @@ class NovelContextSession:
             self.prompt_options["dialogue_attribution"] = self.dialogue_attribution
         else:
             self.prompt_options.pop("dialogue_attribution", None)
-        if dialogue_turns and self.log_callback:
+        if dialogue_turns:
+            # Same line either way; the branch is only about where it goes.
             stats = dialogue_attribution_stats(self.dialogue_attribution)
             message = (
                 "Dialogue context: "
@@ -505,19 +513,10 @@ class NovelContextSession:
                 f"{stats['assigned']} assigned, "
                 f"{stats['uncertain']} uncertain."
             )
-            self.log_callback(
-                "dialogue_attribution",
-                message,
-            )
-        elif dialogue_turns:
-            stats = dialogue_attribution_stats(self.dialogue_attribution)
-            message = (
-                "Dialogue context: "
-                f"{stats['identified']} turns identified, "
-                f"{stats['assigned']} assigned, "
-                f"{stats['uncertain']} uncertain."
-            )
-            logger.info(message)
+            if self.log_callback:
+                self.log_callback("dialogue_attribution", message)
+            else:
+                logger.info(message)
         self.save()
         return change_logs
 

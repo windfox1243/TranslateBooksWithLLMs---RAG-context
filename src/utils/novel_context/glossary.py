@@ -324,6 +324,27 @@ def normalize_global_lore(global_lore: str) -> str:
             _build_name_translation_map_lines(characters, aliases, glossary),
         )
     return lore.strip()
+def is_valid_glossary_term(term: str) -> bool:
+    """Check if an extracted string is a valid glossary term candidate and not a full sentence or dialogue quote."""
+    if not term:
+        return False
+    term_str = term.strip()
+    if not (1 <= len(term_str) <= 60):
+        return False
+    # Reject dialogue/sentence punctuation and control characters
+    if any(char in term_str for char in ['?', '!', '…', '\n', '\r', '\t', ';']):
+        return False
+    if '...' in term_str:
+        return False
+    words = term_str.split()
+    # Reject sentences ending with a period/comma if multi-word
+    if (term_str.endswith('.') or term_str.endswith(',')) and len(words) > 2:
+        return False
+    # Reject multi-word text containing sentence punctuation like period or comma
+    if len(words) > 3 and (term_str.count(',') > 0 or term_str.count('.') > 0):
+        return False
+    return True
+_is_valid_glossary_term = is_valid_glossary_term
 def character_alias_map(global_lore: str) -> Dict[str, str]:
     """Return every deterministic and explicit alias for canonical characters."""
     bounds = _find_lore_section(global_lore, CHARACTERS_SECTION)
