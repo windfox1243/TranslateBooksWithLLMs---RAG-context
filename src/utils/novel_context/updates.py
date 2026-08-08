@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .addressing_requirements import (
@@ -24,6 +25,68 @@ from .lore_merge import (
 )
 from .merge import merge_dynamic_state
 from .rendering import _compose_source_analysis_text, render_novel_context_update_view
+
+
+@dataclass(frozen=True)
+class ContextUpdateOutcome:
+    """Everything one context update produced, as one value.
+
+    The three candidate sinks used to be filled at twelve separate points spread
+    across this function's three exits: twelve chances to leave one stale, to
+    forget one, or -- as happened -- to fill one on a path where its emptiness
+    would be read as a finding rather than as a failure. Both failure exits fill
+    the dialogue sink with `empty_dialogue_attribution()`, which is truthy and
+    carries nothing, and a caller that read it as "this chunk had no speakers"
+    cleared speaker state that was still current.
+
+    One value built per exit and published in one place makes those twelve
+    points one, and makes `succeeded` something the code states outright instead
+    of something a caller has to infer from the shape of a dict.
+    """
+
+    global_lore: str
+    dynamic_state: str
+    change_logs: List[str] = field(default_factory=list)
+    dialogue_attribution: Dict[str, Any] = field(default_factory=dict)
+    relationship: Dict[str, Any] = field(default_factory=dict)
+    addressing: Dict[str, Any] = field(default_factory=dict)
+    succeeded: bool = True
+
+    def publish(
+        self,
+        dialogue_attribution_sink: Optional[Dict[str, Any]],
+        relationship_candidate_sink: Optional[Dict[str, Any]],
+        addressing_candidate_sink: Optional[Dict[str, Any]],
+    ) -> Tuple[str, str, List[str]]:
+        """Fill the caller's sinks and return the triple they unpack."""
+        for sink, payload in (
+            (dialogue_attribution_sink, self.dialogue_attribution),
+            (relationship_candidate_sink, self.relationship),
+            (addressing_candidate_sink, self.addressing),
+        ):
+            if sink is not None:
+                sink.clear()
+                sink.update(payload)
+        return self.global_lore, self.dynamic_state, self.change_logs
+
+
+def _update_failed(
+    global_lore: str,
+    dynamic_state: str,
+    parse_status: str,
+) -> ContextUpdateOutcome:
+    """The outcome of an update that produced nothing, keeping the caller's state."""
+    from src.utils.dialogue_attribution import empty_dialogue_attribution
+
+    empty = {"candidates": [], "parse_status": parse_status}
+    return ContextUpdateOutcome(
+        global_lore=global_lore,
+        dynamic_state=dynamic_state,
+        dialogue_attribution=empty_dialogue_attribution(),
+        relationship=dict(empty),
+        addressing=dict(empty),
+        succeeded=False,
+    )
 
 
 async def update_novel_context_chunk(
@@ -57,7 +120,6 @@ async def update_novel_context_chunk(
     """
     from src.utils.dialogue_attribution import (
         dialogue_candidates_prompt,
-        empty_dialogue_attribution,
         parse_dialogue_attribution,
     )
 
@@ -126,24 +188,13 @@ async def update_novel_context_chunk(
 
         if not response or not response.content:
             logger.warning("Empty response received from LLM during novel context chunk update. Keeping current state.")
-            if relationship_candidate_sink is not None:
-                relationship_candidate_sink.clear()
-                relationship_candidate_sink.update({
-                    "candidates": [],
-                    "parse_status": "empty_response",
-                })
-            if addressing_candidate_sink is not None:
-                addressing_candidate_sink.clear()
-                addressing_candidate_sink.update({
-                    "candidates": [],
-                    "parse_status": "empty_response",
-                })
-            if dialogue_attribution_sink is not None:
-                dialogue_attribution_sink.clear()
-                dialogue_attribution_sink.update(
-                    empty_dialogue_attribution()
-                )
-            return current_global_lore, current_dynamic_state, []
+            return _update_failed(
+                current_global_lore, current_dynamic_state, "empty_response"
+            ).publish(
+                dialogue_attribution_sink,
+                relationship_candidate_sink,
+                addressing_candidate_sink,
+            )
 
         content = response.content.strip()
 
@@ -269,14 +320,9 @@ async def update_novel_context_chunk(
                     "contract_version": 2,
                 },
             )
-        if addressing_candidate_sink is not None:
-            addressing_candidate_sink.clear()
-            addressing_candidate_sink.update({
-                "candidates": [
-                    candidate.to_dict() for candidate in addressing_candidates
-                ],
-                "parse_status": addressing_parse_status,
-            })
+        # The addressing payload used to be published here as well as at the end
+        # of the successful path. There is no return between the two, so this one
+        # was always overwritten before any caller could see it.
 
         relationship_candidates = []
         relationship_parse_status = "absent"
@@ -367,19 +413,6 @@ async def update_novel_context_chunk(
                         "parser_status": relationship_parse_status,
                     },
                 )
-        if relationship_candidate_sink is not None:
-            relationship_candidate_sink.clear()
-            relationship_candidate_sink.update({
-                "candidates": [
-                    {
-                        **candidate.to_dict(),
-                        "parser_status": relationship_parse_status,
-                    }
-                    for candidate in relationship_candidates
-                ],
-                "parse_status": relationship_parse_status,
-            })
-
         source_backstop_gender_updates = infer_source_gender_updates(
             source_analysis_text,
             current_global_lore,
@@ -557,41 +590,40 @@ async def update_novel_context_chunk(
                         },
                     )
 
-        if addressing_candidate_sink is not None:
-            addressing_candidate_sink.clear()
-            addressing_candidate_sink.update(
-                {
-                    "candidates": [
-                        candidate.to_dict() for candidate in addressing_candidates
-                    ],
-                    "parse_status": addressing_parse_status,
-                    "coverage_gaps": coverage_gaps,
-                }
-            )
-        if dialogue_attribution_sink is not None:
-            dialogue_attribution_sink.clear()
-            dialogue_attribution_sink.update(dialogue_attribution)
-
-        return updated_global_lore, new_dynamic, change_logs
-
+        return ContextUpdateOutcome(
+            global_lore=updated_global_lore,
+            dynamic_state=new_dynamic,
+            change_logs=change_logs,
+            dialogue_attribution=dialogue_attribution,
+            relationship={
+                "candidates": [
+                    {
+                        **candidate.to_dict(),
+                        "parser_status": relationship_parse_status,
+                    }
+                    for candidate in relationship_candidates
+                ],
+                "parse_status": relationship_parse_status,
+            },
+            addressing={
+                "candidates": [
+                    candidate.to_dict() for candidate in addressing_candidates
+                ],
+                "parse_status": addressing_parse_status,
+                "coverage_gaps": coverage_gaps,
+            },
+        ).publish(
+            dialogue_attribution_sink,
+            relationship_candidate_sink,
+            addressing_candidate_sink,
+        )
 
     except Exception as e:
         logger.error(f"Error in update_novel_context_chunk: {e}")
-        if addressing_candidate_sink is not None:
-            addressing_candidate_sink.clear()
-            addressing_candidate_sink.update({
-                "candidates": [],
-                "parse_status": "update_failed",
-            })
-        if relationship_candidate_sink is not None:
-            relationship_candidate_sink.clear()
-            relationship_candidate_sink.update({
-                "candidates": [],
-                "parse_status": "update_failed",
-            })
-        if dialogue_attribution_sink is not None:
-            dialogue_attribution_sink.clear()
-            dialogue_attribution_sink.update(
-                empty_dialogue_attribution()
-            )
-        return current_global_lore, current_dynamic_state, []
+        return _update_failed(
+            current_global_lore, current_dynamic_state, "update_failed"
+        ).publish(
+            dialogue_attribution_sink,
+            relationship_candidate_sink,
+            addressing_candidate_sink,
+        )
