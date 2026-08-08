@@ -1,12 +1,13 @@
 # Changelog
 
-## 1.16.0 - 2026-08-06
+## 1.16.0 - 2026-08-08
 
 ### Added
 
 - Added `src/persistence/schema.py` as the single owner of every table, additive migration, and index, applied through one `apply_schema` entry point.
 - Added `src/api/job_callbacks.py`, which owns the seam between the engine's plain callbacks and the web layer's socket, state manager, and checkpoint store.
-- Added a `lint` job to the test workflow running the `check-ast` and `check-yaml` pre-commit hooks on every pull request.
+- Added a `lint` job to the test workflow running the `check-ast`, `check-yaml`, `isort`, `trailing-whitespace`, and `end-of-file-fixer` pre-commit hooks on every pull request. The last three were already configured but had never been enforced, so the tree had drifted away from all of them.
+- Added `src/core/common/resume_context.py`, which reads the context state a resumed job starts from. Both the generic translator and the plain-text pipeline resume the same way and each had that logic written out inline.
 - Added upper version bounds for the eight previously unbounded runtime requirements so an upstream breaking release cannot silently break a tagged build.
 
 ### Changed
@@ -15,7 +16,12 @@
 - Split the 2,879-line translation blueprint factory into one registration module per route domain: lifecycle, context, addressing, relationships, narrator, editor, and maintenance. Every URL rule, method set, and endpoint name is unchanged.
 - Moved the editor pre-flight and reflection prompt composition out of the reflection pass and into `src/core/editor/preflight.py` and `src/core/editor/prompting.py`.
 - Repository facades are now built once per database instead of allocated on every property access.
-- Documented in `docs/ARCHITECTURE.md` that the repositories remain a naming boundary rather than a completed migration, and that the schema sweep cannot be skipped on an up-to-date file because it also carries data-repair passes.
+- Moved the job, chunk, checkpoint, and editor SQL off the database god class and into `JobRepository` and `EditorRepository`, which now own it. The database keeps a same-named delegating method for each, so every call site is unaffected. Context and narrator SQL stay on the facade for now.
+- Split the schema work into the table and column sweep and the data-repair passes that follow it. A file already stamped with the current `PRAGMA user_version` skips the sweep, which is the expensive half and is re-run by five modules that each construct their own database. First construction takes about 124 ms and later ones about 1 ms. The repairs always run, because they fix rows rather than shapes.
+- Extracted the checkpoint restore decision out of `generic_translator.translate` into `_restore_or_start_job`, bringing that function from 1,494 to 1,283 lines and `translate_paragraphs_plain` from 979 to 960.
+- Sorted imports across the tree in a single pass so the newly enforced `isort` check starts from a clean state.
+- Cleaned trailing whitespace in forty-two files and file endings in seventeen, for the same reason.
+- Documented in `docs/ARCHITECTURE.md` what the repositories now own and what they still forward, and how the schema stamp decides which half of the schema work runs.
 
 ### Fixed
 
@@ -27,16 +33,23 @@
 - Capped concurrent translation job threads through the new `MAX_CONCURRENT_JOBS` setting, which previously had no bound.
 - Stopped tracking the built executable and the two release archives, which are already published as release assets and were re-committed on every release. History is intentionally preserved, so existing clones stay valid.
 - Removed ten one-off scripts written against specific books, none of which had any inbound reference.
+- Fixed the background context resync running twice. The call that awaited the result shared a `try` with the event-loop acquisition, so an error raised by the resync itself was mistaken for a missing loop and the whole pass, database writes included, was replayed.
+- Reported five failures that were previously discarded in silence. An EPUB chapter that fails to parse during the refine pre-count shifts the chunk indices every later file is snapshotted under. A failed per-unit lore reload, in both translation loops, leaves drafting against the previous unit's context. A failed editor pre-flight leaves proper names out of the protected set, so the editor is free to rewrite them. And a relationship node overwrote stored aliases it could not parse with only the incoming set, which makes a character stop being recognized mid-book. All five still continue past the failure on purpose, but now say what was lost.
 
 ### Tests
 
 - Added regression coverage for the cleanup timezone bug under a non-UTC local zone, cross-thread connection release, completed-job eviction, atomic log appends, and the concurrency cap.
 - Added structural gates that fail on drift: a snapshot of the `novel_context` public surface, a snapshot of the translation blueprint's URL map, and schema ownership, idempotence, and repository caching checks.
-- Passed the complete automated suite with 1,951 tests passing, one skipped, and ten intentionally deselected integration cases, with the characterization goldens byte-identical throughout the refactor.
+- Added a digest of the schema DDL that fails unless `SCHEMA_VERSION` is bumped alongside it, so a new column cannot ship to a stamped database that will skip it.
+- Added tests that the moved SQL is reached directly rather than through the forwarding fallback, and that context and narrator calls still forward.
+- Added a regression asserting the context resync coroutine runs exactly once, which fails against the previous code with a count of two.
+- Added coverage for resume-context precedence, including the case where the resume index is reported although no snapshot was found for it.
+- Passed the complete automated suite with 1,979 tests passing, one skipped, and ten intentionally deselected integration cases, with the characterization goldens byte-identical throughout the refactor.
 
 ### Deferred
 
-- The straight-line body of `generic_translator.translate` and the paragraph loop in `translate_paragraphs_plain` were left in place. Their inner closures read enclosing locals that are rebound while the run proceeds, so extraction would be a rewrite rather than a move, and this release is limited to behavior-preserving moves.
+- `generic_translator.translate` is decomposed only in part. The checkpoint restore and the resume-context reading came out, but the remaining bulk is seven nested functions that read enclosing locals rebound while the run proceeds. Turning those into parameters is a rewrite of the control flow, and the characterization goldens can prove a move correct in a way they cannot prove a rewrite correct, so this release stops there.
+- Context and narrator SQL still lives on the database facade rather than in its repository.
 
 ## 1.15.1 - 2026-07-15
 
