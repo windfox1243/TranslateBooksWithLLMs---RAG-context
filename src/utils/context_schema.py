@@ -4,8 +4,8 @@ Structured data schema definitions for directed addressing context.
 
 import json
 import re
-from dataclasses import dataclass, asdict, field
-from typing import Optional, List, Dict, Any
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, List, Optional
 
 
 @dataclass

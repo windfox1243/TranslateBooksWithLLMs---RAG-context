@@ -4,7 +4,6 @@ from lxml import etree
 
 from src.core.epub.translator import _update_ncx_toc_labels_from_translated_docs
 
-
 NCX_NS = "http://www.daisy.org/z3986/2005/ncx/"
 
 

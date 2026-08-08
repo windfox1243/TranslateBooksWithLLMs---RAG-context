@@ -4,11 +4,17 @@ Test simple du benchmark - traduction Ollama uniquement (sans evaluation OpenRou
 
 import asyncio
 import sys
+
 sys.path.insert(0, '.')
 
 from benchmark.config import BenchmarkConfig
 from benchmark.runner import BenchmarkRunner
-from benchmark.translator import BenchmarkTranslator, TranslationRequest, get_available_ollama_models, test_ollama_connection
+from benchmark.translator import (
+    BenchmarkTranslator,
+    TranslationRequest,
+    get_available_ollama_models,
+    test_ollama_connection,
+)
 
 
 async def main():

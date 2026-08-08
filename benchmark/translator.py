@@ -8,13 +8,18 @@ using Ollama, OpenAI-compatible, or OpenRouter models for benchmark testing.
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Optional, Callable, Union
+from typing import Callable, Optional, Union
 
 from benchmark.config import BenchmarkConfig
 from benchmark.models import ReferenceText, TranslationResult
-from src.core.llm import OllamaProvider, OpenAICompatibleProvider, OpenRouterProvider, PoeProvider, LLMProvider
 from src.config import TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT
-
+from src.core.llm import (
+    LLMProvider,
+    OllamaProvider,
+    OpenAICompatibleProvider,
+    OpenRouterProvider,
+    PoeProvider,
+)
 
 # Map BCP-47 codes to display names used in the translation prompt.
 _LANG_NAME = {

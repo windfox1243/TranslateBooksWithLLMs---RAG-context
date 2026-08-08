@@ -1,10 +1,11 @@
 """Routes for editor retries, repair batches and editor diagnostics."""
 import asyncio
-import time
 import threading
+import time
 import uuid
 from pathlib import Path
-from flask import request, jsonify
+
+from flask import jsonify, request
 
 from src.api.websocket import emit_update
 
@@ -422,7 +423,7 @@ def register(bp, deps, shared):
                     db, translation_id, batch_id, "running",
                     f"Batch {batch_id} started editor repairs.",
                 )
-                from src.core.editor_retry import run_editor_retry, _refresh_output
+                from src.core.editor_retry import _refresh_output, run_editor_retry
                 for position, chunk_index in enumerate(chunk_indices, start=1):
                     current = db.get_editor_repair_batch(batch_id) or {}
                     if current.get("cancel_requested"):

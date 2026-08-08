@@ -7,10 +7,11 @@ pass is applied.
 
 import os
 import uuid
-from typing import Optional, Callable, Dict, Any
+from typing import Any, Callable, Dict, Optional
+
+from src.utils.file_detector import detect_file_type, detect_file_type_by_content
 
 from .exceptions import UnsupportedFormatError
-from src.utils.file_detector import detect_file_type, detect_file_type_by_content
 
 
 async def refine_file(

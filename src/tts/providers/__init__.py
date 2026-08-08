@@ -3,17 +3,17 @@ TTS Providers Package
 
 Factory functions for creating TTS provider instances.
 """
-from .base import TTSProvider, TTSResult, VoiceInfo, TTSError, ProgressCallback
-from .edge_tts import EdgeTTSProvider, create_edge_tts_provider
+from .base import ProgressCallback, TTSError, TTSProvider, TTSResult, VoiceInfo
+from .chatterbox_tts import CHATTERBOX_LANGUAGES
+from .chatterbox_tts import MAX_TEXT_LENGTH as CHATTERBOX_MAX_TEXT_LENGTH
 from .chatterbox_tts import (
     ChatterboxProvider,
     create_chatterbox_provider,
-    is_chatterbox_available,
     get_gpu_status,
-    CHATTERBOX_LANGUAGES,
-    MAX_TEXT_LENGTH as CHATTERBOX_MAX_TEXT_LENGTH,
+    is_chatterbox_available,
     sanitize_text_for_tts,
 )
+from .edge_tts import EdgeTTSProvider, create_edge_tts_provider
 
 __all__ = [
     # Base classes

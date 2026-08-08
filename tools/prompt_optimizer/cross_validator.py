@@ -5,7 +5,7 @@ Cross-validation with train/test split and k-fold rotation.
 from dataclasses import dataclass, field
 from typing import Generator
 
-from tools.prompt_optimizer.config import TextConfig, CrossValidationConfig
+from tools.prompt_optimizer.config import CrossValidationConfig, TextConfig
 
 
 @dataclass

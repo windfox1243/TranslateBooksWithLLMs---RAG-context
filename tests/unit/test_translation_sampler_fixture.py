@@ -10,7 +10,6 @@ import zipfile
 
 from lxml import etree
 
-
 OPF_NS = {"opf": "http://www.idpf.org/2007/opf"}
 
 EXPECTED_SPINE = [
@@ -56,8 +55,8 @@ def test_cover_and_illustration_are_real_pngs(sampler_epub_path):
 
 def test_chunks_in_target_range(sampler_epub_path):
     """The sampler is calibrated for ~10-13 chunks at the default max_tokens."""
-    from src.core.epub.tag_preservation import TagPreserver
     from src.core.epub.html_chunker import HtmlChunker
+    from src.core.epub.tag_preservation import TagPreserver
 
     chunker = HtmlChunker(max_tokens=450)
     total = 0

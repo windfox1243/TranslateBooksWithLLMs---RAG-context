@@ -1,29 +1,51 @@
 """
 Command-line interface for text translation
 """
-import os
 import argparse
 import asyncio
 import logging
+import os
 
 # Force UTF-8 stdio before anything prints, so emoji log lines (💬, ✅, ❌, ...)
 # don't crash on Windows cp1252 consoles. See issue #184.
 from src.utils.console import ensure_utf8_stdio
+
 ensure_utf8_stdio()
 
 # Reduce verbosity of httpx (avoid showing 400 errors during model detection)
 logging.getLogger('httpx').setLevel(logging.WARNING)
 
-from src.config import DEFAULT_MODEL, API_ENDPOINT, LLM_PROVIDER, GEMINI_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY, POE_API_KEY, NIM_API_KEY, DEFAULT_SOURCE_LANGUAGE, DEFAULT_TARGET_LANGUAGE, PARALLEL_TRANSLATIONS
-from src.utils.file_utils import get_unique_output_path, generate_tts_for_translation
-from src.utils.unified_logger import setup_cli_logger, LogType
-from src.tts.tts_config import TTSConfig, TTS_ENABLED, TTS_VOICE, TTS_RATE, TTS_BITRATE, TTS_OUTPUT_FORMAT
-from src.persistence.checkpoint_manager import CheckpointManager
-from src.core.adapters import translate_file, refine_file
-from src.utils.notifier import notify, EVENT_SUCCESS, EVENT_FAILURE
 import time
 import uuid
 
+from src.config import (
+    API_ENDPOINT,
+    DEEPSEEK_API_KEY,
+    DEFAULT_MODEL,
+    DEFAULT_SOURCE_LANGUAGE,
+    DEFAULT_TARGET_LANGUAGE,
+    GEMINI_API_KEY,
+    LLM_PROVIDER,
+    MISTRAL_API_KEY,
+    NIM_API_KEY,
+    OPENAI_API_KEY,
+    OPENROUTER_API_KEY,
+    PARALLEL_TRANSLATIONS,
+    POE_API_KEY,
+)
+from src.core.adapters import refine_file, translate_file
+from src.persistence.checkpoint_manager import CheckpointManager
+from src.tts.tts_config import (
+    TTS_BITRATE,
+    TTS_ENABLED,
+    TTS_OUTPUT_FORMAT,
+    TTS_RATE,
+    TTS_VOICE,
+    TTSConfig,
+)
+from src.utils.file_utils import generate_tts_for_translation, get_unique_output_path
+from src.utils.notifier import EVENT_FAILURE, EVENT_SUCCESS, notify
+from src.utils.unified_logger import LogType, setup_cli_logger
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -69,7 +91,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Auto-select default model based on provider if not explicitly set
-    from src.config import NIM_MODEL, MISTRAL_MODEL, DEEPSEEK_MODEL, POE_MODEL, OPENROUTER_MODEL, GEMINI_MODEL, LITELLM_MODEL
+    from src.config import (
+        DEEPSEEK_MODEL,
+        GEMINI_MODEL,
+        LITELLM_MODEL,
+        MISTRAL_MODEL,
+        NIM_MODEL,
+        OPENROUTER_MODEL,
+        POE_MODEL,
+    )
     if args.model == DEFAULT_MODEL:
         if args.provider == "nim" and NIM_MODEL:
             args.model = NIM_MODEL
@@ -89,7 +119,7 @@ if __name__ == "__main__":
     # If no .env was found, surface the *effective* settings now (after argparse)
     # so the warning box shows the real CLI arguments rather than the import-time
     # defaults (issue #187). No-op when a .env exists or running as executable.
-    from src.config import warn_env_config_missing, PORT
+    from src.config import PORT, warn_env_config_missing
     warn_env_config_missing(
         provider=args.provider,
         api_endpoint=args.api_endpoint,

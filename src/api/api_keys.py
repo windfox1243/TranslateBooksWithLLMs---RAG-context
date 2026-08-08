@@ -12,6 +12,7 @@ the glossary NER endpoint forwarded the literal ``__USE_ENV__`` to Gemini,
 which rejected it as an invalid key. Keep the single source of truth here.
 """
 import os
+
 from src.common.provider_metadata import PROVIDER_ENV_VARS, provider_env_var
 
 # Marker the frontend sends when the key field is empty but a key is

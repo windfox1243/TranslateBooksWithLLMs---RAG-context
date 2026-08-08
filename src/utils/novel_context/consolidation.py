@@ -2,14 +2,8 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .constants import (
-    ALIASES_SECTION,
-    CHARACTERS_SECTION,
-    _GENDER_LABELS,
-    logger,
-)
 from .characters import (
     _alias_entries_to_map,
     _canonical_display_name,
@@ -24,6 +18,7 @@ from .characters import (
     _replace_lore_section,
     _strip_balanced_brackets,
 )
+from .constants import _GENDER_LABELS, ALIASES_SECTION, CHARACTERS_SECTION, logger
 from .glossary import normalize_global_lore
 from .lore_merge import merge_new_lore
 

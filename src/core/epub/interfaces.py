@@ -5,7 +5,8 @@ Defines formal contracts for translation pipeline components,
 enabling better testability and alternative implementations.
 """
 
-from typing import Protocol, Dict, List, Tuple
+from typing import Dict, List, Protocol, Tuple
+
 from lxml import etree
 
 

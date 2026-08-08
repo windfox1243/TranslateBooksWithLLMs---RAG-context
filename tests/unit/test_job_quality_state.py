@@ -1,8 +1,8 @@
 import sqlite3
 
-from src.persistence.database import Database
 from src.core.jobs import UnitTranslationOutcome
 from src.persistence.checkpoint_manager import CheckpointManager
+from src.persistence.database import Database
 
 
 def test_unit_outcome_separates_execution_failure_from_review_state():

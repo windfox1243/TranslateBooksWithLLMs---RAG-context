@@ -3,28 +3,26 @@ Subtitle-specific translation module
 """
 import re
 import time
-from typing import Any, List, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 from tqdm.auto import tqdm
 
+from src.config import SRT_LINES_PER_BLOCK, TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT
 from src.prompts.prompts import (
     generate_subtitle_block_prompt,
     generate_subtitle_refinement_block_prompt,
-)
-from src.config import (
-    TRANSLATE_TAG_IN,
-    TRANSLATE_TAG_OUT,
-    SRT_LINES_PER_BLOCK,
 )
 
 # Sentinel large enough to disable the char cap when grouping subtitles:
 # block sizing is now purely fixed-count (SRT_LINES_PER_BLOCK) for both
 # translate and refine, so the legacy char cap is unused.
 _NO_CHAR_CAP = 10 ** 12
+from src.utils.progress_logging import emit_progress_log
+
+from .epub import TagPreserver
 from .llm_client import create_llm_client
 from .post_processor import clean_translated_text
-from .translator import generate_translation_request, _build_chunk_glossary_block
-from .epub import TagPreserver
-from src.utils.progress_logging import emit_progress_log
+from .translator import _build_chunk_glossary_block, generate_translation_request
 
 
 def _subtitle_markers_are_exact(text: str, expected_count: int) -> bool:
@@ -595,6 +593,7 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
         dict: Mapping of subtitle index to translated text
     """
     from src.core.srt_processor import SRTProcessor
+
     from .llm_client import default_client
     
     srt_processor = SRTProcessor()
@@ -797,7 +796,9 @@ async def translate_subtitles_in_blocks(subtitle_blocks: List[List[Dict[str, str
                             else:
                                 # All tags present, translation successful
                                 if (prompt_options or {}).get("reflection_mode"):
-                                    from src.core.translator import run_chunk_reflection_pass
+                                    from src.core.translator import (
+                                        run_chunk_reflection_pass,
+                                    )
                                     reflection_options = dict(prompt_options or {})
                                     reflection_options.setdefault("source_language", source_language)
                                     reflection_options.setdefault("target_language", target_language)

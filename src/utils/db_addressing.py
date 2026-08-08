@@ -7,10 +7,9 @@ import textwrap
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from src.persistence.database import Database
-from src.utils.context_schema import AddressingUpdateDelta
 from src.utils.context_merge_engine import ContextMergeEngine
+from src.utils.context_schema import AddressingUpdateDelta
 from src.utils.progress_logging import emit_progress_log
-
 
 _PAIR_RE = re.compile(r"^\s*-\s*(?P<speaker>.+?)\s*(?:→|->)\s*(?P<addressee>.+?)\s*:\s*(?P<details>.+?)\s*$")
 _QUOTED_RE = re.compile(r'"([^"\n]{1,160})"')
@@ -186,8 +185,8 @@ def parse_markdown_addressing_deletes(markdown_text: str) -> List[Tuple[str, str
 def _extract_addressing_markdown(context_or_dynamic_state: str) -> str:
     from src.utils.novel_context import (
         ADDRESSING_SECTION,
-        extract_dynamic_state_from_text,
         _split_dynamic_sections,
+        extract_dynamic_state_from_text,
     )
 
     text = textwrap.dedent(str(context_or_dynamic_state or ""))
@@ -543,11 +542,11 @@ def apply_db_addressing_to_context(
             return context_content
         exported = _extract_addressing_markdown(fallback_context)
     from src.utils.novel_context import (
+        _format_dynamic_sections,
+        _split_dynamic_sections,
         build_novel_context,
         extract_dynamic_state_from_text,
         extract_global_lore,
-        _format_dynamic_sections,
-        _split_dynamic_sections,
     )
 
     global_lore = extract_global_lore(context_content)

@@ -4,24 +4,25 @@ Tests for RTL (Right-to-Left) support module
 Tests RTL language detection, CSS generation, and OPF updates.
 """
 
-import pytest
-import sys
 import os
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
+
+import pytest
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.core.epub.rtl_support import (
-    is_rtl_language,
-    get_language_code,
-    generate_rtl_css,
-    inject_rtl_css_to_html,
-    update_opf_for_rtl,
-    apply_rtl_to_epub_directory,
     RTL_LANGUAGES,
+    apply_rtl_to_epub_directory,
+    generate_rtl_css,
+    get_language_code,
+    inject_rtl_css_to_html,
+    is_rtl_language,
+    update_opf_for_rtl,
 )
 
 

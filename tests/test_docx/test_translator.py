@@ -5,8 +5,9 @@ Tests the complete translate_docx_file function with mocked LLM.
 """
 
 import os
+from unittest.mock import AsyncMock, MagicMock, Mock
+
 import pytest
-from unittest.mock import Mock, AsyncMock, MagicMock
 from docx import Document
 
 from src.core.docx.translator import translate_docx_file

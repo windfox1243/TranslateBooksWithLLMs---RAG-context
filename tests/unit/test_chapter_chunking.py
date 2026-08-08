@@ -1,9 +1,6 @@
 """Tests for deterministic, chapter-aware translation boundaries."""
 
-from src.core.chunking.chapter_detector import (
-    find_chapter_ranges,
-    is_chapter_heading,
-)
+from src.core.chunking.chapter_detector import find_chapter_ranges, is_chapter_heading
 from src.core.chunking.decorative_separator import is_decorative_separator
 from src.core.common.plain_text_pipeline import build_plain_segments
 from src.core.text_processor import split_text_into_chunks
@@ -305,7 +302,10 @@ def test_plain_segments_use_epub_or_docx_heading_kinds():
 
 
 def test_llm_chapter_boundary_verification():
-    from src.core.chunking.chapter_detector import is_chapter_heading, find_chapter_ranges
+    from src.core.chunking.chapter_detector import (
+        find_chapter_ranges,
+        is_chapter_heading,
+    )
 
     class DummyLLMClient:
         def make_request(self, prompt: str):

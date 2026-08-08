@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, Iterable, Optional
 
-
 EDITOR_OUTCOMES = {
     "no_issues", "warnings_only", "locally_repaired", "llm_repaired",
     "review_required", "blocked", "transport_failed",

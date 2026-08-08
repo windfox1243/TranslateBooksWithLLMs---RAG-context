@@ -33,7 +33,6 @@ from .models import (
     TranslationsFile,
 )
 
-
 CLOUD_PROVIDERS = {"openai", "openrouter", "gemini", "mistral", "deepseek", "poe", "nim"}
 
 

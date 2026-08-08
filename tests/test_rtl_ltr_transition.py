@@ -5,17 +5,18 @@ This tests the removal of RTL styles when translating from an RTL language
 to an LTR language.
 """
 
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.core.epub.rtl_support import (
+    apply_rtl_to_epub_directory,
     is_rtl_language,
     remove_rtl_from_html,
     update_opf_for_ltr,
-    apply_rtl_to_epub_directory,
 )
 
 

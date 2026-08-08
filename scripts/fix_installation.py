@@ -3,10 +3,10 @@
 Fix common installation issues for TranslateBookWithLLM
 This script checks and fixes known issues that can occur on fresh installations.
 """
-import sys
 import os
-from pathlib import Path
 import re
+import sys
+from pathlib import Path
 
 
 def print_header(text):

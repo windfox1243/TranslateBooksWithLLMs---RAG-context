@@ -5,8 +5,9 @@ Tests the adapter implementation for the generic orchestrator.
 """
 
 import os
+from unittest.mock import MagicMock, Mock
+
 import pytest
-from unittest.mock import Mock, MagicMock
 
 from src.core.docx.docx_translation_adapter import DocxTranslationAdapter
 
@@ -190,8 +191,9 @@ class TestDocxTranslationAdapter:
         log_callback.assert_called()
 
         # Test that bytes are valid DOCX
-        from docx import Document
         import io
+
+        from docx import Document
         doc = Document(io.BytesIO(docx_bytes))
         assert doc is not None
 
@@ -203,8 +205,9 @@ class TestDocxTranslationAdapter:
         docx_bytes = adapter.finalize_output(html_content, formatted_docx_path, context, None)
 
         # Load as DOCX
-        from docx import Document
         import io
+
+        from docx import Document
         doc = Document(io.BytesIO(docx_bytes))
 
         # Check has content

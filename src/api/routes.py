@@ -15,15 +15,15 @@ from flask import jsonify
 
 from .blueprints import (
     create_config_blueprint,
-    create_translation_blueprint,
-    create_file_blueprint,
-    create_security_blueprint,
-    create_tts_blueprint,
-    create_glossary_blueprint,
     create_cost_blueprint,
-    create_version_blueprint,
-    create_sample_blueprint,
+    create_file_blueprint,
+    create_glossary_blueprint,
     create_profile_blueprint,
+    create_sample_blueprint,
+    create_security_blueprint,
+    create_translation_blueprint,
+    create_tts_blueprint,
+    create_version_blueprint,
 )
 from .sample_state import SampleStateManager
 

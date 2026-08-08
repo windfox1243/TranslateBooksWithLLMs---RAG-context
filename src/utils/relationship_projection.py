@@ -10,7 +10,10 @@ from src.utils.relationship_reasoning_engine import (
     migrate_relationship_reasoning_v2,
     relationship_support_for_addressing,
 )
-from src.utils.relationship_schema import RelationshipProjection, clean_relationship_text
+from src.utils.relationship_schema import (
+    RelationshipProjection,
+    clean_relationship_text,
+)
 from src.utils.text_matching import active_label_matches_name, reference_mentions_label
 
 

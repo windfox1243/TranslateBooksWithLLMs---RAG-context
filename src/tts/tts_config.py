@@ -6,7 +6,7 @@ provider selection, voice settings, and audio encoding options.
 """
 import os
 from dataclasses import dataclass
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 # Default voice mappings by language code
 # These are high-quality neural voices from Edge-TTS

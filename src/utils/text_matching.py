@@ -7,7 +7,6 @@ from typing import Any
 
 from src.utils.language_profiles import LanguageProfile, get_language_profile
 
-
 LATIN_BOUNDARY_CHARS = r"A-Za-z0-9À-ÖØ-öø-ÿ_'’-"
 RTL_BOUNDARY_CHARS = r"\u0590-\u05ff\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff"
 CJK_HANGUL_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7a3]")

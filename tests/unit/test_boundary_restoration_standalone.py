@@ -5,8 +5,9 @@ This test validates the boundary restoration logic without relying on
 external imports to avoid circular dependency issues.
 """
 
-import pytest
 import re
+
+import pytest
 
 
 def detect_placeholder_format_in_text(text: str) -> tuple:

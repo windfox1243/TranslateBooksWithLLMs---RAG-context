@@ -9,8 +9,8 @@ Covers 40+ languages based on global speaker populations.
 """
 
 from typing import Dict, Tuple
-from .constants import TAG0, TAG1
 
+from .constants import TAG0, TAG1
 
 # Single sentence translated into 40+ languages
 # Format: "This is [TAG0]important[TAG1] text." with and without placeholders

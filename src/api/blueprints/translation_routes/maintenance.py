@@ -1,11 +1,7 @@
 """Routes for database maintenance operations."""
-from flask import request, jsonify
+from flask import jsonify, request
 
-from .helpers import (
-    _ACTIVE_CONTEXT_RESYNCS,
-    _CONTEXT_RESYNC_LOCK,
-    logger,
-)
+from .helpers import _ACTIVE_CONTEXT_RESYNCS, _CONTEXT_RESYNC_LOCK, logger
 
 
 def register(bp, deps, shared):

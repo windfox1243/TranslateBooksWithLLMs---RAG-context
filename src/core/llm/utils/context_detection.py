@@ -6,7 +6,7 @@ LLM models through API queries and heuristics.
 """
 
 import re
-from typing import Optional, Callable, Any
+from typing import Any, Callable, Optional
 
 
 class ContextDetector:
@@ -259,7 +259,7 @@ class ContextDetector:
             - phi: 2048
             - other: 2048
         """
-        from src.config import MODEL_FAMILY_CONTEXT_DEFAULTS, DEFAULT_CONTEXT_FALLBACK
+        from src.config import DEFAULT_CONTEXT_FALLBACK, MODEL_FAMILY_CONTEXT_DEFAULTS
 
         model_lower = model.lower()
         for family, default_ctx in MODEL_FAMILY_CONTEXT_DEFAULTS.items():

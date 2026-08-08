@@ -3,46 +3,40 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from .characters import _character_gender_map, _character_profile_map
 from .constants import logger
-from .characters import (
-    _character_gender_map,
-    _character_profile_map,
-)
-from .glossary import (
-    _character_alias_map,
-    _is_inverted_target_to_source_glossary_pair,
-    _normalized_character_alias_map,
-)
 from .document import (
     _dynamic_state_has_entries,
     compress_dynamic_state,
     extract_dynamic_state_from_text,
     extract_global_lore,
 )
-from .vietnamese import _is_vietnamese_target_language
+from .glossary import (
+    _character_alias_map,
+    _is_inverted_target_to_source_glossary_pair,
+    _normalized_character_alias_map,
+)
+from .lore_merge import merge_new_lore
 from .merge import (
     _compose_novel_context_from_parts,
     _sanitize_vietnamese_dynamic_state,
     build_novel_context,
     merge_dynamic_state,
 )
-from .storage import (
-    load_novel_context,
-    resolve_novel_context_path,
+from .refinement import (
+    decode_context_snapshot,
+    make_novel_context_filename,
+    normalize_refinement_context,
 )
 from .rendering import (
     _bounded_source_memory,
     _clean_source_memory_chunk,
     _source_memory_budget_chars,
 )
-from .refinement import (
-    decode_context_snapshot,
-    make_novel_context_filename,
-    normalize_refinement_context,
-)
-from .lore_merge import merge_new_lore
+from .storage import load_novel_context, resolve_novel_context_path
+from .vietnamese import _is_vietnamese_target_language
 
 
 def _hook(name: str):

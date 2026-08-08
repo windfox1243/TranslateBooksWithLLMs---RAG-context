@@ -3,8 +3,8 @@ Configuration loader and validator for the prompt optimizer.
 """
 
 import os
-from pathlib import Path
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 import yaml

@@ -6,10 +6,11 @@ indicates the model has exceeded its effective context window or encountered an 
 """
 
 from typing import Optional
+
 from src.config import (
-    REPETITION_MIN_PHRASE_LENGTH,
     REPETITION_MIN_COUNT,
-    REPETITION_MIN_COUNT_THINKING
+    REPETITION_MIN_COUNT_THINKING,
+    REPETITION_MIN_PHRASE_LENGTH,
 )
 
 

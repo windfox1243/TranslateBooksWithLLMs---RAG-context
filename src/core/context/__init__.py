@@ -1,6 +1,11 @@
 """Typed context-analysis and prompt-retrieval services."""
 
-from .contracts import ContextAnalysisResult, PromptContextBundle, SocialHierarchyEvidence
+from .contracts import (
+    ContextAnalysisResult,
+    PromptContextBundle,
+    SocialHierarchyEvidence,
+)
+from .reconciliation import ContextReconciler
 from .social_evidence import (
     apply_social_hierarchy_evidence,
     extract_social_hierarchy_evidence,
@@ -11,7 +16,6 @@ from .unit_pipeline import (
     dialogue_participants,
     relevant_character_names,
 )
-from .reconciliation import ContextReconciler
 
 __all__ = [
     "ContextAnalysisResult",

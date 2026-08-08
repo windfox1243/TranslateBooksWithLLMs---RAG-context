@@ -22,7 +22,7 @@ _ISO_TS = re.compile(rb"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?")
 def _hash_member(data: bytes) -> str:
     return hashlib.sha256(_ISO_TS.sub(b"<TS>", data)).hexdigest()
 
-from src.core.adapters import translate_file, refine_file
+from src.core.adapters import refine_file, translate_file
 from src.persistence.checkpoint_manager import CheckpointManager
 
 # Only these stats fields are kept in the golden snapshot. Everything else

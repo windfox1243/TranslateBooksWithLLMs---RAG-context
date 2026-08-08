@@ -5,9 +5,10 @@ Verifies the glossary prompt block is rendered with the expected heading,
 mandatory phrasing, and one ``  - source -> target`` line per entry,
 preserving dict insertion order.
 """
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))

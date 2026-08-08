@@ -11,25 +11,39 @@ unified generic orchestrator approach:
 Refactored to use the same pattern as DOCX for consistency and maintainability.
 """
 import os
-import zipfile
 import tempfile
-import aiofiles
-from typing import Dict, Any, Optional, Callable, Tuple, List
+import zipfile
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import unquote
+
+import aiofiles
 from lxml import etree
 
 from src.config import (
-    NAMESPACES, DEFAULT_MODEL, API_ENDPOINT,
-    MAX_TOKENS_PER_CHUNK, THINKING_MODELS, ADAPTIVE_CONTEXT_INITIAL_THINKING,
-    MAX_TRANSLATION_ATTEMPTS, ATTRIBUTION_ENABLED, GENERATOR_NAME, GENERATOR_SOURCE
+    ADAPTIVE_CONTEXT_INITIAL_THINKING,
+    API_ENDPOINT,
+    ATTRIBUTION_ENABLED,
+    DEFAULT_MODEL,
+    GENERATOR_NAME,
+    GENERATOR_SOURCE,
+    MAX_TOKENS_PER_CHUNK,
+    MAX_TRANSLATION_ATTEMPTS,
+    NAMESPACES,
+    THINKING_MODELS,
 )
+
 from ..common.translation_orchestrator import GenericTranslationOrchestrator
-from .epub_translation_adapter import EpubTranslationAdapter
+from ..context_optimizer import (
+    CONTEXT_STEP,
+    INITIAL_CONTEXT_SIZE,
+    MAX_CONTEXT_SIZE,
+    AdaptiveContextManager,
+)
 from ..post_processor import clean_residual_tag_placeholders
-from ..context_optimizer import AdaptiveContextManager, INITIAL_CONTEXT_SIZE, CONTEXT_STEP, MAX_CONTEXT_SIZE
-from .rtl_support import apply_rtl_to_epub_directory, is_rtl_language
+from .epub_translation_adapter import EpubTranslationAdapter
 from .lang_support import apply_target_language_to_xhtml_directory, get_language_code
+from .rtl_support import apply_rtl_to_epub_directory, is_rtl_language
 
 
 async def translate_epub_file(
@@ -304,7 +318,10 @@ async def translate_epub_file(
 
             # 7. Repackage EPUB. If translation was paused, write to a `[partial] `
             # filename so users can tell partial outputs from completed ones at a glance.
-            from src.utils.file_utils import get_partial_output_path, find_partial_output_paths
+            from src.utils.file_utils import (
+                find_partial_output_paths,
+                get_partial_output_path,
+            )
             if results.get('was_interrupted'):
                 partial_path = get_partial_output_path(output_filepath)
                 if log_callback:
@@ -811,8 +828,9 @@ def _precount_chunks_plain_text(
     Returns 0 on any failure (matches the normal-path behavior).
     """
     try:
-        from .plain_extractor import extract_plain_paragraphs
         from src.core.common.plain_text_pipeline import build_plain_segments
+
+        from .plain_extractor import extract_plain_paragraphs
 
         body = doc_root.find('.//{http://www.w3.org/1999/xhtml}body')
         if body is None:

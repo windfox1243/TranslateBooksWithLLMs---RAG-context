@@ -2,11 +2,12 @@
 Thread-safe translation state management
 """
 import atexit
+import copy
 import threading
 import time
-import copy
 from datetime import datetime
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
 from src.persistence.checkpoint_manager import CheckpointManager
 
 if TYPE_CHECKING:

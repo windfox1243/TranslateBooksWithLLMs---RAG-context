@@ -2,8 +2,10 @@
 Unit tests for XHTMLTranslationState serialization and validation.
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
+
 from src.core.epub.xhtml_translation_state import XHTMLTranslationState
 
 

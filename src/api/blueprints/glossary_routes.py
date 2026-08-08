@@ -20,12 +20,17 @@ from urllib.parse import quote
 from flask import Blueprint, Response, jsonify, request
 from lxml import etree
 
-from src.core.glossary import Glossary, GlossaryStore, GlossaryTerm
-from src.core.glossary import build_glossary_block, filter_glossary
+from src.api.api_keys import provider_env_var, resolve_api_key
+from src.core.glossary import (
+    Glossary,
+    GlossaryStore,
+    GlossaryTerm,
+    build_glossary_block,
+    filter_glossary,
+)
 from src.core.glossary import suggest_terms as ner_suggest_terms
 from src.core.glossary.models import GlossaryConfig
 from src.core.llm.exceptions import RateLimitError
-from src.api.api_keys import provider_env_var, resolve_api_key
 
 _NER_UPLOAD_MAX_BYTES = 100 * 1024 * 1024
 _NER_TEXT_EXTS = {'.txt', '.srt'}
@@ -860,8 +865,8 @@ def create_glossary_blueprint(store: Optional[GlossaryStore] = None):
 
             existing_sources = {t.source_term for t in glossary.terms}
 
-            from src.core.llm.factory import create_llm_provider
             import src.config as _config
+            from src.core.llm.factory import create_llm_provider
 
             provider_type = (data.get('provider') or _config.LLM_PROVIDER or 'ollama').lower()
             model = data.get('model') or _config.DEFAULT_MODEL

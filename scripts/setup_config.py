@@ -12,8 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.utils.env_helper import (
     create_env_file,
+    interactive_env_setup,
     validate_env_config,
-    interactive_env_setup
 )
 
 

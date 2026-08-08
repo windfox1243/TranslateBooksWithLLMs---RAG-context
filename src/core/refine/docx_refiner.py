@@ -7,16 +7,17 @@ support in v1.
 
 import os
 import tempfile
-from typing import Optional, Callable, Dict, Any
+from typing import Any, Callable, Dict, Optional
 
-from src.config import DEFAULT_MODEL, API_ENDPOINT, MAX_TOKENS_PER_CHUNK
+from src.config import API_ENDPOINT, DEFAULT_MODEL, MAX_TOKENS_PER_CHUNK
+from src.core.docx.converter import DocxHtmlConverter
+from src.core.epub.container import TranslationContainer
 from src.core.epub.xhtml_translator import (
     _create_chunks,
     _escape_stray_angle_brackets,
     _refine_epub_chunks,
 )
-from src.core.epub.container import TranslationContainer
-from src.core.docx.converter import DocxHtmlConverter
+
 from .client_setup import build_refine_client
 from .epub_refiner import _globalize_chunk_text
 
@@ -184,8 +185,8 @@ async def refine_docx_file(
 
         from src.utils.novel_context import (
             RefinementContextTracker,
-            map_dialogue_attributions_for_refinement,
             map_context_snapshots_for_refinement,
+            map_dialogue_attributions_for_refinement,
         )
         historical_contexts = map_context_snapshots_for_refinement(
             len(chunks),

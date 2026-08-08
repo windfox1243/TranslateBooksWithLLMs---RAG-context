@@ -13,14 +13,15 @@ Usage:
 Configure OLLAMA_ENDPOINT below to match your server.
 """
 
-import httpx
 import asyncio
 import json
 import re
 import sys
 from dataclasses import dataclass
-from typing import Optional, List
 from enum import Enum
+from typing import List, Optional
+
+import httpx
 
 # Fix Windows console encoding
 if sys.platform == "win32":

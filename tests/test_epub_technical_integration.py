@@ -11,10 +11,10 @@ Tests verify:
 import pytest
 from lxml import etree
 
-from src.core.epub.tag_preservation import TagPreserver
+from src.core.epub.body_serializer import extract_body_html
 from src.core.epub.html_chunker import HtmlChunker
 from src.core.epub.placeholder_validator import PlaceholderValidator
-from src.core.epub.body_serializer import extract_body_html
+from src.core.epub.tag_preservation import TagPreserver
 
 
 class TestEPUBTechnicalIntegration:

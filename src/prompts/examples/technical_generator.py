@@ -8,10 +8,9 @@ For examples showing HOW to translate idiomatically (cultural adaptation,
 avoiding literal translation), see cultural_examples.py.
 """
 
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
 
 from .constants import TAG0, TAG1
-
 
 # Static English example for placeholder preservation
 STATIC_PLACEHOLDER_EXAMPLE = {

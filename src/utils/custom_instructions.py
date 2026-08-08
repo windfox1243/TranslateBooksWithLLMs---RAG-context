@@ -19,7 +19,6 @@ from typing import Optional, TypedDict
 
 import yaml
 
-
 SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9_\-\.]+\.(?:txt|ya?ml)$")
 SUPPORTED_EXTENSIONS = (".txt", ".yaml", ".yml")
 

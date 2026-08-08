@@ -2,15 +2,14 @@
 
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 from flask import Flask
 
 from src import config
 from src.api.blueprints.config_routes import create_config_blueprint
-
 
 ROOT = Path(__file__).resolve().parents[2]
 

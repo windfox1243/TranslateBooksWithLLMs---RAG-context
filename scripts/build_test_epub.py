@@ -38,7 +38,6 @@ import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
 # PNG generation (stdlib only — no Pillow)
 # ---------------------------------------------------------------------------

@@ -5,23 +5,23 @@ This module provides the OpenAICompatibleProvider class for interacting with
 OpenAI API and compatible endpoints (llama.cpp, LM Studio, vLLM, OpenAI, etc.).
 """
 
-from typing import List, Optional, Callable, Union
 import asyncio
 import json
+from typing import Callable, List, Optional, Union
+
 import httpx
 
+from src.config import MAX_TRANSLATION_ATTEMPTS, OLLAMA_NUM_CTX, REQUEST_TIMEOUT
+
 from ..base import (
-    LLMGenerationOptions, LLMProvider, LLMResponse, terminal_provider_failure,
+    LLMGenerationOptions,
+    LLMProvider,
+    LLMResponse,
+    terminal_provider_failure,
 )
 from ..exceptions import ContextOverflowError, StructuredOutputSchemaError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
 from ..utils.context_detection import ContextDetector
-
-from src.config import (
-    REQUEST_TIMEOUT,
-    OLLAMA_NUM_CTX,
-    MAX_TRANSLATION_ATTEMPTS
-)
 
 
 class OpenAICompatibleProvider(LLMProvider):

@@ -18,7 +18,9 @@ from src.utils.novel_context import (
 @pytest.mark.asyncio
 async def test_docx_plain_checkpoint_rebuild_uses_effective_chunk_text(tmp_path):
     from io import BytesIO
+
     from docx import Document
+
     from src.core.adapters import build_translated_output
 
     source_path = tmp_path / "source.docx"
@@ -197,11 +199,9 @@ def test_context_editor_scope_controls_lore_leakage(
     monkeypatch,
     tmp_path,
 ):
-    from src.api.blueprints.translation_routes import (
-        create_translation_blueprint,
-    )
-    from src.utils.novel_context import save_novel_context
     import src.config
+    from src.api.blueprints.translation_routes import create_translation_blueprint
+    from src.utils.novel_context import save_novel_context
 
     historical = build_novel_context(
         (
@@ -285,9 +285,7 @@ def test_context_resync_route_accepts_numeric_context_revision(
     monkeypatch,
     tmp_path,
 ):
-    from src.api.blueprints.translation_routes import (
-        create_translation_blueprint,
-    )
+    from src.api.blueprints.translation_routes import create_translation_blueprint
 
     edited = build_novel_context(
         "# GLOBAL LORE",
@@ -358,9 +356,7 @@ def test_context_resync_route_accepts_failed_source_snapshot(
     monkeypatch,
     tmp_path,
 ):
-    from src.api.blueprints.translation_routes import (
-        create_translation_blueprint,
-    )
+    from src.api.blueprints.translation_routes import create_translation_blueprint
 
     edited = build_novel_context(
         "# GLOBAL LORE",
@@ -431,9 +427,7 @@ def test_context_resync_route_accepts_failed_source_snapshot(
 
 
 def test_resume_translation_blocks_unfinished_context_resync(tmp_path):
-    from src.api.blueprints.translation_routes import (
-        create_translation_blueprint,
-    )
+    from src.api.blueprints.translation_routes import create_translation_blueprint
 
     checkpoint_manager = MagicMock()
     checkpoint_manager.load_checkpoint.return_value = {
@@ -472,9 +466,7 @@ def test_resume_translation_blocks_unfinished_context_resync(tmp_path):
 
 
 def test_resumable_jobs_expose_stale_context_resync_as_paused(tmp_path):
-    from src.api.blueprints.translation_routes import (
-        create_translation_blueprint,
-    )
+    from src.api.blueprints.translation_routes import create_translation_blueprint
 
     config = {
         "file_path": str(tmp_path / "book.txt"),
@@ -521,9 +513,7 @@ def test_context_resync_resume_restores_auto_resume_follow_up(
     monkeypatch,
     tmp_path,
 ):
-    from src.api.blueprints.translation_routes import (
-        create_translation_blueprint,
-    )
+    from src.api.blueprints.translation_routes import create_translation_blueprint
 
     checkpoint_manager = MagicMock()
     checkpoint_manager.load_checkpoint.return_value = {

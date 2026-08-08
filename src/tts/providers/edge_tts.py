@@ -6,8 +6,8 @@ Provides high-quality neural voices for free without API key.
 """
 import asyncio
 import logging
-from typing import Optional, List, AsyncIterator
 from pathlib import Path
+from typing import AsyncIterator, List, Optional
 
 try:
     import edge_tts
@@ -15,7 +15,7 @@ try:
 except ImportError:
     EDGE_TTS_AVAILABLE = False
 
-from .base import TTSProvider, TTSResult, VoiceInfo, TTSError
+from .base import TTSError, TTSProvider, TTSResult, VoiceInfo
 
 logger = logging.getLogger(__name__)
 

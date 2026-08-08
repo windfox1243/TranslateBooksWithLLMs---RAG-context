@@ -4,8 +4,9 @@ Centralized placeholder validation for EPUB translation.
 This module provides unified validation logic for placeholder integrity checks.
 """
 
-from typing import Dict, Tuple, List
 import re
+from typing import Dict, List, Tuple
+
 from .exceptions import PlaceholderValidationError
 
 

@@ -9,8 +9,8 @@ Provides rich visual feedback with colors to differentiate:
 """
 
 import sys
-from typing import Optional
 from enum import Enum
+from typing import Optional
 
 
 class Color(Enum):
@@ -58,6 +58,7 @@ def supports_color() -> bool:
     if sys.platform == "win32":
         try:
             import os
+
             # Enable ANSI escape sequences on Windows
             os.system("")
             return True

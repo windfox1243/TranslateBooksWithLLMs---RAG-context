@@ -1,14 +1,21 @@
 """Routes that start, observe and steer a translation job."""
-import time
 import copy
+import time
 from pathlib import Path
-from flask import request, jsonify
+
+from flask import jsonify, request
 
 import src.config as _config
+from src.api.api_keys import provider_env_var
+from src.api.api_keys import resolve_api_key as _resolve_api_key
 from src.api.services.path_validator import PathValidator
-from src.config import REQUEST_TIMEOUT, OLLAMA_NUM_CTX, AUTO_PAUSE_ON_RATE_LIMIT, MIN_CHUNK_SIZE
+from src.config import (
+    AUTO_PAUSE_ON_RATE_LIMIT,
+    MIN_CHUNK_SIZE,
+    OLLAMA_NUM_CTX,
+    REQUEST_TIMEOUT,
+)
 from src.tts.tts_config import TTSConfig
-from src.api.api_keys import provider_env_var, resolve_api_key as _resolve_api_key
 
 from .helpers import (
     _active_translation_conflict,

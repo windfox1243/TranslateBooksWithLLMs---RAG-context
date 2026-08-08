@@ -5,12 +5,13 @@ Migre le code existant de xhtml_translator.py vers le nouveau pattern.
 """
 
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
 from lxml import etree
 
 from ..common.translation_orchestrator import TranslationAdapter
 from .body_serializer import extract_body_html, replace_body_content
 from .container import TranslationContainer
-from .exceptions import XmlParsingError, BodyExtractionError
+from .exceptions import BodyExtractionError, XmlParsingError
 
 
 class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
@@ -329,9 +330,13 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
         structure (block tags preserved, images reattached after their parent
         paragraph, inline formatting dropped).
         """
-        from .plain_extractor import extract_plain_paragraphs, replace_body_with_paragraphs
-        from .translation_metrics import TranslationMetrics
         from src.core.common.plain_text_pipeline import translate_paragraphs_plain
+
+        from .plain_extractor import (
+            extract_plain_paragraphs,
+            replace_body_with_paragraphs,
+        )
+        from .translation_metrics import TranslationMetrics
 
         body = doc_root.find('.//{http://www.w3.org/1999/xhtml}body')
         if body is None:

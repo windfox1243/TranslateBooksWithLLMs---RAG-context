@@ -9,11 +9,13 @@ Ensures all components work together correctly:
 - Backward compatibility
 """
 
-import pytest
 import asyncio
-from src.core.epub.technical_content_detector import TechnicalContentDetector
-from src.core.epub.tag_preservation import TagPreserver
+
+import pytest
+
 from src.core.epub.placeholder_validator import PlaceholderValidator
+from src.core.epub.tag_preservation import TagPreserver
+from src.core.epub.technical_content_detector import TechnicalContentDetector
 
 
 class TestPhase4Integration:

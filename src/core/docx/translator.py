@@ -5,7 +5,8 @@ Phase 2 implementation: Uses the unified GenericTranslationOrchestrator
 with DocxTranslationAdapter for clean, reusable architecture.
 """
 
-from typing import Optional, Callable, Dict, Any
+from typing import Any, Callable, Dict, Optional
+
 from ..common.translation_orchestrator import GenericTranslationOrchestrator
 from .docx_translation_adapter import DocxTranslationAdapter
 

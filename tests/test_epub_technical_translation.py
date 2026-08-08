@@ -8,8 +8,10 @@ Tests verify:
 - Integration with chunking and placeholder renumbering
 """
 
-import pytest
 import time
+
+import pytest
+
 from src.core.epub.tag_preservation import TagPreserver
 
 

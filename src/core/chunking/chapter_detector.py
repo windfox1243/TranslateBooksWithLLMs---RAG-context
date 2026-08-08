@@ -13,7 +13,6 @@ from typing import Any, List, Optional, Sequence
 
 from src.core.chunking.decorative_separator import is_decorative_separator
 
-
 _STRUCTURAL_HEADING_RE = re.compile(r"^(?:h|heading)([1-6])$", re.IGNORECASE)
 _NUMBER = r"(?:\d+|[ivxlcdm]+|[a-z])"
 _LATIN_CHAPTER_RE = re.compile(

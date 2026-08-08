@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-
 TERMINAL_RETRY_STATES = {
     "succeeded", "review_required", "failed", "blocked",
 }
@@ -466,10 +465,7 @@ def audit_completed_narrator_conformance(
 ) -> Dict[str, Any]:
     """Queue only completed units that fail the current deterministic policy."""
 
-    from src.core.editor import (
-        audit_narrator_conformance,
-        conformance_fingerprint,
-    )
+    from src.core.editor import audit_narrator_conformance, conformance_fingerprint
 
     checkpoint = checkpoint_manager.load_checkpoint(translation_id)
     if not checkpoint:

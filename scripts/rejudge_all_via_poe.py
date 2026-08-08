@@ -71,12 +71,7 @@ load_dotenv()
 
 from benchmark.config import BenchmarkConfig
 from benchmark.data_loader import load_languages, load_reference_texts
-from benchmark.models import (
-    JudgmentScore,
-    JudgmentsFile,
-    TranslationsFile,
-)
-
+from benchmark.models import JudgmentScore, JudgmentsFile, TranslationsFile
 
 POE_ENDPOINT = "https://api.poe.com/v1/chat/completions"
 POE_MODEL = "Claude-Opus-4.7"

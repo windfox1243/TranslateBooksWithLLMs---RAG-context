@@ -15,12 +15,11 @@ import tempfile
 import pytest
 from lxml import etree
 
-from src.core.epub.translator import _update_epub_metadata, _precount_chunks
 from src.core.epub.plain_extractor import (
     extract_plain_paragraphs,
     replace_body_with_paragraphs,
 )
-
+from src.core.epub.translator import _precount_chunks, _update_epub_metadata
 
 # === A. dc:language metadata ===
 

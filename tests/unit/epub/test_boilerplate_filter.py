@@ -8,8 +8,8 @@ EPUB3 TOC navigation document is preserved.
 import pytest
 from lxml import etree
 
-from src.core.epub.boilerplate_filter import strip_web_boilerplate
 from src.core.epub.body_serializer import extract_body_html
+from src.core.epub.boilerplate_filter import strip_web_boilerplate
 
 XHTML_NS = "http://www.w3.org/1999/xhtml"
 

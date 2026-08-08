@@ -5,8 +5,8 @@ Implémente un pipeline unifié réutilisable pour EPUB, PDF, DOCX, ODT, etc.
 via le pattern adapter.
 """
 
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Generic
 from abc import ABC, abstractmethod
+from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, TypeVar
 
 SourceT = TypeVar('SourceT')  # etree._Element, Document, fitz.Page, etc.
 ResultT = TypeVar('ResultT')  # bool, bytes, List[Span], etc.

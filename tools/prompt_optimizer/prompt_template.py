@@ -7,8 +7,8 @@ based on evaluation feedback, while maintaining generalization and efficiency.
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional
 from enum import Enum
+from typing import Optional
 
 
 class MutationStrategy(Enum):

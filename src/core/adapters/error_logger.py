@@ -10,13 +10,13 @@ This module provides structured logging with:
 """
 
 import json
-import traceback
 import time
+import traceback
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import Optional, Dict, Any, List, Callable
-from dataclasses import dataclass, asdict
 from enum import Enum
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 from .exceptions import TranslationError
 

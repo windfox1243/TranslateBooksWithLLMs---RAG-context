@@ -30,7 +30,6 @@ from src import config  # noqa: F401
 from src.core.adapters import translate_file
 from src.persistence.checkpoint_manager import CheckpointManager
 
-
 PARALLEL = 4
 
 

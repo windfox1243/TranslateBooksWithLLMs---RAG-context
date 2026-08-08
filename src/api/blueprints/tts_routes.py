@@ -5,24 +5,25 @@ Supports multiple TTS providers:
 - edge-tts: Microsoft Edge neural voices (cloud-based)
 - chatterbox: ResembleAI's local GPU-accelerated TTS with voice cloning
 """
-import os
 import asyncio
 import logging
+import os
 import threading
 import time
 import uuid
-from flask import Blueprint, request, jsonify, current_app
+
+from flask import Blueprint, current_app, jsonify, request
 from werkzeug.utils import secure_filename
 
-from src.tts.tts_config import TTSConfig, DEFAULT_VOICES
-from src.tts.providers import (
-    is_chatterbox_available,
-    get_gpu_status,
-    CHATTERBOX_LANGUAGES,
-)
-from src.tts.audio_processor import get_ffmpeg_status, install_ffmpeg_windows
-from src.utils.file_utils import generate_tts_for_translation
 from src.api.services import FileService
+from src.tts.audio_processor import get_ffmpeg_status, install_ffmpeg_windows
+from src.tts.providers import (
+    CHATTERBOX_LANGUAGES,
+    get_gpu_status,
+    is_chatterbox_available,
+)
+from src.tts.tts_config import DEFAULT_VOICES, TTSConfig
+from src.utils.file_utils import generate_tts_for_translation
 
 logger = logging.getLogger(__name__)
 

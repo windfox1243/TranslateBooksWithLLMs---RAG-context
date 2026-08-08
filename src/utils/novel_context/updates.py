@@ -2,25 +2,19 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from .addressing_requirements import (
+    _inject_addressing_candidate_contract,
+    _missing_addressing_requirements,
+    _retry_missing_addressing_candidates,
+)
+from .characters import _character_gender_map, _character_profile_map, _plain_key
+from .consolidation import _consolidation_interval, consolidate_context_lore
 from .constants import logger
-from .characters import (
-    _character_gender_map,
-    _character_profile_map,
-    _plain_key,
-)
-from .identity_links import (
-    infer_source_gender_updates,
-    infer_source_identity_links,
-)
-from .glossary import _character_alias_map
 from .dynamic_state import infer_dynamic_address_identity_links
-from .merge import merge_dynamic_state
-from .rendering import (
-    _compose_source_analysis_text,
-    render_novel_context_update_view,
-)
+from .glossary import _character_alias_map
+from .identity_links import infer_source_gender_updates, infer_source_identity_links
 from .lore_merge import (
     SOURCE_ANALYSIS_SYSTEM_PROMPT,
     SOURCE_ANALYSIS_USER_PROMPT_TEMPLATE,
@@ -28,15 +22,9 @@ from .lore_merge import (
     UPDATE_USER_PROMPT_TEMPLATE,
     merge_new_lore,
 )
-from .consolidation import (
-    _consolidation_interval,
-    consolidate_context_lore,
-)
-from .addressing_requirements import (
-    _inject_addressing_candidate_contract,
-    _missing_addressing_requirements,
-    _retry_missing_addressing_candidates,
-)
+from .merge import merge_dynamic_state
+from .rendering import _compose_source_analysis_text, render_novel_context_update_view
+
 
 async def update_novel_context_chunk(
     llm_client: Any,
@@ -294,9 +282,7 @@ async def update_novel_context_chunk(
         relationship_parse_status = "absent"
         if relationship_candidate_raw:
             from src.utils.progress_logging import emit_progress_log
-            from src.utils.relationship_schema import (
-                parse_relationship_candidate_block,
-            )
+            from src.utils.relationship_schema import parse_relationship_candidate_block
 
             relationship_candidates, relationship_parse_status = (
                 parse_relationship_candidate_block(relationship_candidate_raw)

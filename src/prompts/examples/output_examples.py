@@ -6,6 +6,7 @@ Uses the same sentence: "In this quiet night, the moonlight bathed the entire va
 """
 
 from typing import Dict
+
 from .constants import TAG0, TAG1
 
 # Single sentence translated into all supported languages

@@ -68,7 +68,7 @@ def _chrf(reference: str, candidate: str, n: int = 4) -> float:
 
 def _check_language(text: str, expected_code: str) -> tuple[bool, str]:
     try:
-        from langdetect import detect, DetectorFactory  # type: ignore
+        from langdetect import DetectorFactory, detect  # type: ignore
         DetectorFactory.seed = 0
     except ImportError:
         return True, "langdetect-missing"

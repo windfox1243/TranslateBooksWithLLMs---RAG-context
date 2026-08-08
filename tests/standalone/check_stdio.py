@@ -12,9 +12,11 @@ the server.
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.utils.stdio_setup import configure_stdio_utf8
+
 configure_stdio_utf8()
 
 print(f"stdout.encoding = {sys.stdout.encoding!r}")

@@ -5,7 +5,8 @@ This module provides intelligent text chunking based on token counts
 using tiktoken, while respecting natural text boundaries (paragraphs and sentences).
 """
 import re
-from typing import List, Dict
+from typing import Dict, List
+
 import tiktoken
 
 from src.config import SENTENCE_TERMINATORS

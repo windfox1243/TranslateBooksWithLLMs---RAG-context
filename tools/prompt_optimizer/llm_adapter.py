@@ -6,12 +6,12 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 import httpx
 
 from tools.prompt_optimizer.config import OptimizerConfig
-from tools.prompt_optimizer.logger import get_logger, ConsoleLogger
+from tools.prompt_optimizer.logger import ConsoleLogger, get_logger
 
 
 @dataclass

@@ -5,12 +5,13 @@ Tests all cover extraction strategies, security validations,
 and error handling scenarios as outlined in the implementation plan.
 """
 
-import pytest
+import io
 import tempfile
 import zipfile
 from pathlib import Path
+
+import pytest
 from PIL import Image
-import io
 
 from src.core.epub.cover_extractor import EPUBCoverExtractor
 

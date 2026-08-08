@@ -24,7 +24,6 @@ from src.utils.relationship_schema import (
 )
 from src.utils.text_matching import active_label_matches_name, reference_mentions_label
 
-
 TRUSTED_RELATIONSHIP_PROVENANCE = frozenset({
     "db_addressing",
     "job_context_load",

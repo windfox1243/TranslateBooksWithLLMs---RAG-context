@@ -4,17 +4,19 @@ Unit tests for DB-backed directed addressing context engine, merge policies, and
 
 import os
 import tempfile
+
 import pytest
+
 from src.persistence.database import Database
-from src.utils.context_schema import (
-    AddressingUpdateDelta,
-    AddressingRuleState,
-    extract_addressing_deltas_from_text,
-)
 from src.utils.context_merge_engine import ContextMergeEngine
 from src.utils.context_projection import (
-    render_addressing_projection,
     render_addressing_markdown,
+    render_addressing_projection,
+)
+from src.utils.context_schema import (
+    AddressingRuleState,
+    AddressingUpdateDelta,
+    extract_addressing_deltas_from_text,
 )
 
 

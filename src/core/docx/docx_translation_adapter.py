@@ -12,13 +12,14 @@ Pipeline:
 
 import io
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
 from docx import Document
 
 from ..common.translation_orchestrator import TranslationAdapter
-from .converter import DocxHtmlConverter
-from ..epub.tag_preservation import TagPreserver
-from ..epub.html_chunker import HtmlChunker
 from ..epub.container import TranslationContainer
+from ..epub.html_chunker import HtmlChunker
+from ..epub.tag_preservation import TagPreserver
+from .converter import DocxHtmlConverter
 
 
 class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
@@ -191,8 +192,8 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
 
         # Create temporary file for conversion
         # (python-docx requires a file path or file object)
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.docx', delete=False, encoding='utf-8') as tmp:
             tmp_path = tmp.name
@@ -266,8 +267,8 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
         Returns:
             (docx_bytes, stats)
         """
-        from ..epub.xhtml_translator import _translate_all_chunks_with_checkpoint
         from ..epub.translation_metrics import TranslationMetrics
+        from ..epub.xhtml_translator import _translate_all_chunks_with_checkpoint
 
         source_path = raw_content  # DOCX file path
         parallel_workers = kwargs.get('parallel_workers', 1)
@@ -444,9 +445,10 @@ class DocxTranslationAdapter(TranslationAdapter[str, bytes]):
         import os
         import tempfile
 
-        from .plain_extractor import extract_plain_paragraphs, build_minimal_docx
         from src.core.common.plain_text_pipeline import translate_paragraphs_plain
+
         from ..epub.translation_metrics import TranslationMetrics
+        from .plain_extractor import build_minimal_docx, extract_plain_paragraphs
 
         bilingual_flag = bool(prompt_options.get('bilingual')) if prompt_options else False
 

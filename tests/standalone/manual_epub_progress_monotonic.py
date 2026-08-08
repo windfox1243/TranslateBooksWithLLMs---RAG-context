@@ -23,11 +23,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from manual_epub_resume_parallel import _build_chunky_epub
+
 from src import config  # noqa: F401
 from src.core.adapters import translate_file
 from src.persistence.checkpoint_manager import CheckpointManager
-from manual_epub_resume_parallel import _build_chunky_epub
-
 
 PARALLEL = 3
 

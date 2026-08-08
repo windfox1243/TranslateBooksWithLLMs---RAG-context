@@ -12,10 +12,11 @@ Usage:
     pytest tests/ --ignore=tests/integration/test_real_llm_translation.py
 """
 
-import pytest
 import asyncio
 import tempfile
 from pathlib import Path
+
+import pytest
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -24,8 +25,8 @@ pytestmark = pytest.mark.integration
 @pytest.fixture(scope="module")
 def ollama_provider():
     """Create a real Ollama provider using .env configuration."""
-    from src.core.llm import create_llm_provider
     from src.config import API_ENDPOINT, DEFAULT_MODEL
+    from src.core.llm import create_llm_provider
 
     provider = create_llm_provider(
         provider_type="ollama",
@@ -55,9 +56,9 @@ class TestOllamaConnection:
     @pytest.mark.asyncio
     async def test_ollama_is_reachable(self, ollama_provider):
         """Verify Ollama server is accessible."""
-        from src.config import API_ENDPOINT
-
         import httpx
+
+        from src.config import API_ENDPOINT
         async with httpx.AsyncClient(timeout=10) as client:
             # Extract base URL from API_ENDPOINT
             base_url = API_ENDPOINT.rsplit('/api/', 1)[0]
@@ -71,8 +72,8 @@ class TestBasicTranslation:
     @pytest.mark.asyncio
     async def test_simple_translation_en_to_fr(self, ollama_provider, sample_texts):
         """Test simple English to French translation."""
-        from src.prompts.prompts import generate_translation_prompt
         from src.config import TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT
+        from src.prompts.prompts import generate_translation_prompt
 
         prompt_pair = generate_translation_prompt(
             main_content=sample_texts["short"],
@@ -262,8 +263,8 @@ class TestOpenAICompatibility:
     @pytest.fixture
     def openai_provider(self):
         """Create an OpenAI-compatible provider pointing to Ollama."""
-        from src.core.llm import create_llm_provider
         from src.config import API_ENDPOINT, DEFAULT_MODEL
+        from src.core.llm import create_llm_provider
 
         # Extract base URL and build OpenAI-compatible endpoint
         # Ollama API: http://host:11434/api/generate
@@ -282,9 +283,9 @@ class TestOpenAICompatibility:
     @pytest.mark.asyncio
     async def test_openai_endpoint_is_reachable(self, openai_provider):
         """Verify Ollama's OpenAI-compatible endpoint is accessible."""
-        from src.config import API_ENDPOINT
-
         import httpx
+
+        from src.config import API_ENDPOINT
         base_url = API_ENDPOINT.rsplit('/api/', 1)[0]
         openai_models_url = f"{base_url}/v1/models"
 

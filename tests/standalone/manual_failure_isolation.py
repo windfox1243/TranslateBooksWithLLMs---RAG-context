@@ -31,11 +31,10 @@ for _stream in (sys.stdout, sys.stderr):
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT))
 
-from src import config  # noqa: F401
 import src.core.translator as translator_module
+from src import config  # noqa: F401
 from src.core.adapters import translate_file
 from src.persistence.checkpoint_manager import CheckpointManager
-
 
 FIXTURE = _REPO_ROOT / "tests" / "fixtures" / "sample.txt"
 PARALLEL = 3

@@ -1,8 +1,9 @@
 """Routes for reading and resynchronizing the novel-context snapshot."""
-import time
 import copy
 import threading
-from flask import request, jsonify
+import time
+
+from flask import jsonify, request
 
 from src.api.websocket import emit_update
 from src.utils.unified_logger import get_logger
@@ -79,13 +80,13 @@ def register(bp, deps, shared):
                 get_logger(__name__).warning(f"Could not persist repaired novel_context_file to database: {persist_err}")
         
         if novel_context_file:
+            from src.config import NOVEL_CONTEXTS_DIR
             from src.utils.novel_context import (
                 decode_context_snapshot,
                 load_novel_context,
                 normalize_novel_context_filename,
                 resolve_novel_context_path,
             )
-            from src.config import NOVEL_CONTEXTS_DIR
             
             full_context = ""
             try:
@@ -106,6 +107,7 @@ def register(bp, deps, shared):
                 )
                 if request.args.get('scope') == 'global_lore':
                     from src.utils.novel_context import normalize_refinement_context
+
                     # Explicit global edits should use the latest book-wide
                     # lore while borrowing this chunk's dynamic-state anchor.
                     plain_text_context = normalize_refinement_context(
@@ -242,7 +244,9 @@ def register(bp, deps, shared):
             )
 
         # 2. Trigger background resync task
-        from src.core.adapters.generic_translator import resync_context_snapshots_background
+        from src.core.adapters.generic_translator import (
+            resync_context_snapshots_background,
+        )
         
         job_status = state_manager.get_translation(translation_id)
         was_active = False
@@ -577,7 +581,9 @@ def register(bp, deps, shared):
         if not _claim_context_resync(translation_id):
             return jsonify({"error": "A context resync is already running for this translation"}), 409
 
-        from src.core.adapters.generic_translator import resync_context_snapshots_background
+        from src.core.adapters.generic_translator import (
+            resync_context_snapshots_background,
+        )
         auto_resume_callback = None
         if state.get("follow_up_kind") == "auto_resume_translation":
             auto_resume_callback = make_context_resync_auto_resume_callback(

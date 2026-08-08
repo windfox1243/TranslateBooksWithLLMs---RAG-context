@@ -16,7 +16,6 @@ idempotent — applying twice has the same effect as once.
 import re
 from typing import Optional
 
-
 # Width-zero Unicode codepoints relevant to text shaping
 _ZWNJ = '‌'   # Zero-width non-joiner
 _ZWJ = '‍'    # Zero-width joiner

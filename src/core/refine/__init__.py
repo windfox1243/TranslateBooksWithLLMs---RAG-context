@@ -7,10 +7,10 @@ extracts content, runs refine_chunks() (or its format-specific variant),
 and writes back the polished result.
 """
 
-from .txt_refiner import refine_txt_file
-from .epub_refiner import refine_epub_file
 from .docx_refiner import refine_docx_file
+from .epub_refiner import refine_epub_file
 from .srt_refiner import refine_srt_file
+from .txt_refiner import refine_txt_file
 
 __all__ = [
     'refine_txt_file',

@@ -14,7 +14,6 @@ import re
 import unicodedata
 from typing import Any, Dict, Iterable, List, Optional
 
-
 MIN_SPEAKER_CONFIDENCE = 0.65
 MAX_DIALOGUE_CANDIDATES = 80
 MAX_CUE_LENGTH = 240

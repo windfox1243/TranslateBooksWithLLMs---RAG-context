@@ -35,7 +35,6 @@ from benchmark.aggregator import SubmissionAggregator  # noqa: E402
 from benchmark.config import BenchmarkConfig  # noqa: E402
 from benchmark.data_loader import load_reference_texts  # noqa: E402
 
-
 THRESHOLD_DEFAULT = 0.3
 
 

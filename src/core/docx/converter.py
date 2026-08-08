@@ -12,13 +12,13 @@ import io
 import os
 import re
 import tempfile
+from typing import Any, Dict, Optional, Tuple
+
 import mammoth
 from docx import Document
-from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from typing import Tuple, Dict, Any, Optional
+from docx.shared import Inches, Pt, RGBColor
 from lxml import etree
-
 
 _W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 _M_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/math'

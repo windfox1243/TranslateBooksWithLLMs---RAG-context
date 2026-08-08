@@ -2,11 +2,12 @@
 Unit tests for translator fallback context isolation (issue #170 fix)
 """
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, Mock
 
-from src.core.translator import _make_llm_request_with_adaptive_context
+import pytest
+
 from src.core.llm.base import LLMResponse
+from src.core.translator import _make_llm_request_with_adaptive_context
 
 
 class TestTranslatorFallbackContext:

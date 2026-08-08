@@ -20,10 +20,16 @@ from typing import Optional
 # Force UTF-8 stdio so emoji prints (e.g. 💬, ❌, ⚠️) don't crash on Windows
 # cp1252 consoles. See issue #184.
 from src.utils.console import ensure_utf8_stdio
+
 ensure_utf8_stdio()
 
 from benchmark.aggregator import CLOUD_PROVIDERS, BenchmarkAggregator
-from benchmark.config import BenchmarkConfig, DEFAULT_EVALUATOR_MODEL, DEFAULT_EVALUATOR_PROVIDER, DEFAULT_POE_EVALUATOR_MODEL
+from benchmark.config import (
+    DEFAULT_EVALUATOR_MODEL,
+    DEFAULT_EVALUATOR_PROVIDER,
+    DEFAULT_POE_EVALUATOR_MODEL,
+    BenchmarkConfig,
+)
 from benchmark.models import (
     BenchmarkRun,
     EvaluationScores,
@@ -32,14 +38,14 @@ from benchmark.models import (
     TranslationEntry,
     TranslationsFile,
 )
-from benchmark.runner import BenchmarkRunner, quick_benchmark, full_benchmark
 from benchmark.results.storage import ResultsStorage
-from benchmark.wiki.generator import WikiGenerator
+from benchmark.runner import BenchmarkRunner, full_benchmark, quick_benchmark
 from benchmark.translator import (
     get_available_ollama_models,
-    get_available_openrouter_models,
     get_available_openai_models,
+    get_available_openrouter_models,
 )
+from benchmark.wiki.generator import WikiGenerator
 
 
 # ANSI color codes for terminal output

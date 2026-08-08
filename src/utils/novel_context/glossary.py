@@ -2,16 +2,8 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .constants import (
-    ALIASES_SECTION,
-    CHARACTERS_SECTION,
-    GLOSSARY_SECTION,
-    NAME_MAP_SECTION,
-    _CJK_NON_NAME_ADDRESS_LABELS,
-    _UNSET_NAME_TRANSLATION,
-)
 from .characters import (
     _alias_entries_to_map,
     _canonical_alias_entries,
@@ -39,6 +31,15 @@ from .characters import (
     _retain_renderable_aliases,
     _strip_balanced_brackets,
 )
+from .constants import (
+    _CJK_NON_NAME_ADDRESS_LABELS,
+    _UNSET_NAME_TRANSLATION,
+    ALIASES_SECTION,
+    CHARACTERS_SECTION,
+    GLOSSARY_SECTION,
+    NAME_MAP_SECTION,
+)
+
 
 def _has_non_ascii_target_script(term: str) -> bool:
     clean = _strip_balanced_brackets(term)

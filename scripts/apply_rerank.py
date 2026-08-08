@@ -37,7 +37,6 @@ for _stream_name in ("stdout", "stderr"):
 
 from benchmark.config import BenchmarkConfig  # noqa: E402
 
-
 THRESHOLD = 0.3
 
 

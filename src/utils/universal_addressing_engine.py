@@ -8,7 +8,8 @@ Enforces strict linguistic separation:
 """
 
 import re
-from typing import Dict, Tuple, Optional, Set, List, Any
+from typing import Any, Dict, List, Optional, Set, Tuple
+
 
 def _has_cue_word(text: str, cue: str) -> bool:
     """Check if the cue is present in the text, ensuring word boundaries for short/single words to avoid false positive substring matches."""

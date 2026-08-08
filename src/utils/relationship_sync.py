@@ -23,7 +23,6 @@ from src.utils.relationship_schema import (
     normalize_relationship_name,
 )
 
-
 _RELATION_LINE_RE = re.compile(
     r"^\s*-\s*(?P<source>.+?)\s*(?P<arrow>\u2194|\u2192|\u2190|<->|->|<-)\s*"
     r"(?P<target>.+?)\s*:\s*(?P<details>.*?)\s*$"
@@ -747,10 +746,7 @@ def apply_relationship_graph_to_context(
         line for line in unmanaged_lines
         if line.casefold().strip() not in existing_keys
     )
-    from src.utils.novel_context import (
-        _format_dynamic_sections,
-        build_novel_context,
-    )
+    from src.utils.novel_context import _format_dynamic_sections, build_novel_context
 
     return build_novel_context(
         global_lore,

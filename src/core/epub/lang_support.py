@@ -24,7 +24,6 @@ from lxml import etree
 
 from .rtl_support import LANGUAGE_NAME_TO_CODE as _RTL_NAME_TO_CODE
 
-
 # Comprehensive map: keys are lower-case language names, values are IANA
 # primary language subtags (BCP 47 / RFC 5646). Validated against
 # https://www.iana.org/assignments/language-subtag-registry — see

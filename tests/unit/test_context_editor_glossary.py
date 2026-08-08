@@ -3,14 +3,12 @@ Unit tests for Glossary and Custom Instructions integration across
 Dynamic Novel Context updates and Senior Editor Reflection passes.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.utils.novel_context import (
-    NovelContextSession,
-    update_novel_context_chunk,
-)
+import pytest
+
 from src.core.translator import run_chunk_reflection_pass
+from src.utils.novel_context import NovelContextSession, update_novel_context_chunk
 
 
 @pytest.mark.asyncio
@@ -222,7 +220,10 @@ async def test_run_chunk_reflection_pass_rejects_invalid_repair():
 @pytest.mark.asyncio
 async def test_xhtml_translator_reflection_mode():
     """Verify xhtml_translator invokes Senior Editor pass when reflection_mode is enabled."""
-    from src.core.epub.xhtml_translator import translate_chunk_with_fallback, TranslationMetrics
+    from src.core.epub.xhtml_translator import (
+        TranslationMetrics,
+        translate_chunk_with_fallback,
+    )
 
     mock_llm = MagicMock()
     mock_llm.generate = AsyncMock(

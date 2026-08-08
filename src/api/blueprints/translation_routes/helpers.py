@@ -4,31 +4,30 @@ These were module-level in translation_routes.py before it became a
 package; the process-wide claim registries below are the reason they
 must stay in exactly one module.
 """
-import os
 import asyncio
-import time
 import copy
-import threading
+import os
 import shutil
+import threading
+import time
 import uuid
 from pathlib import Path
-from flask import Blueprint, request, jsonify
+
+from flask import Blueprint, jsonify, request
 
 import src.config as _config
-from src.api.websocket import emit_update
+from src.api.api_keys import provider_env_var
+from src.api.api_keys import resolve_api_key as _resolve_api_key
 from src.api.services.path_validator import PathValidator
+from src.api.websocket import emit_update
 from src.config import (
-    REQUEST_TIMEOUT,
-    OLLAMA_NUM_CTX,
     AUTO_PAUSE_ON_RATE_LIMIT,
     MAX_PARALLEL_TRANSLATIONS,
     MIN_CHUNK_SIZE,
+    OLLAMA_NUM_CTX,
+    REQUEST_TIMEOUT,
 )
 from src.tts.tts_config import TTSConfig
-from src.api.api_keys import (
-    provider_env_var,
-    resolve_api_key as _resolve_api_key,
-)
 from src.utils.unified_logger import get_logger
 
 logger = get_logger(__name__)

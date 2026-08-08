@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 
-
 _SEPARATOR_CHARS = set("=-_*~#·•—–")
 _SPACED_SEPARATOR_RE = re.compile(r"^(?:[=\-_*~#·•—–]\s*){3,}$")
 

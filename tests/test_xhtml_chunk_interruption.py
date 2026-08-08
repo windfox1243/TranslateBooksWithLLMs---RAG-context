@@ -8,16 +8,20 @@ Tests the complete interruption/resume cycle:
 4. Complete translation
 """
 
-import pytest
+from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock, Mock
-from lxml import etree
-from typing import List, Dict, Any
 
-from src.core.epub.xhtml_translator import translate_xhtml_simplified, _translate_all_chunks_with_checkpoint
-from src.core.epub.xhtml_translation_state import XHTMLTranslationState
-from src.persistence.checkpoint_manager import CheckpointManager
+import pytest
+from lxml import etree
+
 from src.core.epub.translation_metrics import TranslationMetrics
+from src.core.epub.xhtml_translation_state import XHTMLTranslationState
+from src.core.epub.xhtml_translator import (
+    _translate_all_chunks_with_checkpoint,
+    translate_xhtml_simplified,
+)
 from src.core.llm.base import LLMResponse
+from src.persistence.checkpoint_manager import CheckpointManager
 
 
 def create_mock_llm_response(content: str) -> LLMResponse:

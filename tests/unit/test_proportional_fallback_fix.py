@@ -5,6 +5,7 @@ Tests the extraction and reinsertion of placeholders using the standard [idN] fo
 The fallback system returns untranslated text when placeholder validation fails.
 """
 import pytest
+
 from src.core.epub.html_utils import extract_text_and_positions, reinsert_placeholders
 
 

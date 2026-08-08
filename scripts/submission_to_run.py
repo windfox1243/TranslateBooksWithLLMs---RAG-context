@@ -29,10 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from benchmark.config import BenchmarkConfig  # noqa: E402
-from benchmark.models import (  # noqa: E402
-    BenchmarkRun,
-    TranslationResult,
-)
+from benchmark.models import BenchmarkRun, TranslationResult  # noqa: E402
 
 
 def _validate_submission(submission: dict) -> list[str]:

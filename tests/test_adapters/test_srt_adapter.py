@@ -2,10 +2,11 @@
 Tests for SrtAdapter.
 """
 
-import pytest
+import asyncio
 import tempfile
 from pathlib import Path
-import asyncio
+
+import pytest
 
 from src.core.adapters import SrtAdapter, TranslationUnit
 

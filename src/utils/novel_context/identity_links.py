@@ -2,14 +2,8 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .constants import (
-    CHARACTERS_SECTION,
-    _RELATIONSHIP_OBJECT_PRONOUN_VERBS,
-    _ROMANTIC_RELATION_PATTERN,
-    _SPECIFIC_GENDER_LABELS,
-)
 from .characters import (
     _SOURCE_IDENTITY_ROLE_KEYS,
     _canonical_display_name,
@@ -36,6 +30,13 @@ from .characters import (
     _split_gender_and_details,
     _strip_balanced_brackets,
 )
+from .constants import (
+    _RELATIONSHIP_OBJECT_PRONOUN_VERBS,
+    _ROMANTIC_RELATION_PATTERN,
+    _SPECIFIC_GENDER_LABELS,
+    CHARACTERS_SECTION,
+)
+
 
 def _display_role_title(role_key: str) -> str:
     return " ".join(part.capitalize() for part in role_key.split())

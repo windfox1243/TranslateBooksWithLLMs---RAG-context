@@ -13,7 +13,6 @@ from src.utils.relationship_reasoning_engine import RelationshipReasoningEngine
 from src.utils.relationship_schema import RelationshipCandidate
 from src.utils.text_matching import reference_mentions_label
 
-
 _SENIOR_FORMS = {
     "senpai", "sempai", "sensei", "sunbae", "sunbae-nim",
     "先輩", "前辈", "前輩", "学长", "學長", "学姐", "學姐",

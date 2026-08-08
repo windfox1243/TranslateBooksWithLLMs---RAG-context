@@ -3,23 +3,24 @@ Test script to analyze token estimation variations with qwen3:8b
 Compares behavior WITH and WITHOUT runtime thinking model detection
 """
 import asyncio
-import sys
 import os
+import sys
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
+from src.config import API_ENDPOINT, MAX_TOKENS_PER_CHUNK
 from src.core.chunking.token_chunker import TokenChunker
 from src.core.context_optimizer import (
-    estimate_tokens_with_margin,
+    STANDARD_CONTEXT_SIZES,
     adjust_parameters_for_context,
+    estimate_tokens_with_margin,
     round_to_standard_context_size,
-    STANDARD_CONTEXT_SIZES
 )
-from src.config import MAX_TOKENS_PER_CHUNK, API_ENDPOINT
 from src.core.llm_client import LLMClient
 from src.prompts.prompts import generate_translation_prompt
 

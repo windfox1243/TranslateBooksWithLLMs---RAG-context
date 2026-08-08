@@ -1,14 +1,15 @@
 """Unit tests for custom exceptions."""
 
 import pytest
+
 from src.core.epub.exceptions import (
+    BodyExtractionError,
+    ChunkSizeExceededError,
     EpubTranslationError,
     PlaceholderValidationError,
-    ChunkSizeExceededError,
-    XmlParsingError,
     TagRestorationError,
-    BodyExtractionError,
-    TranslationTimeoutError
+    TranslationTimeoutError,
+    XmlParsingError,
 )
 
 

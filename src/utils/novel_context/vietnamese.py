@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .characters import (
     _canonical_display_name,
@@ -17,6 +17,7 @@ from .dynamic_state import (
     _canonical_relationship_party,
     _parse_dynamic_relation,
 )
+
 
 def _is_vietnamese_target_language(target_language: Optional[str]) -> bool:
     target = str(target_language or "").strip().casefold()

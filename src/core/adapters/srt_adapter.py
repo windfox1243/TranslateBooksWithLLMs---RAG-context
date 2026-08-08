@@ -4,8 +4,8 @@ Handles SRT subtitle file format with local index renumbering.
 """
 
 import re
-from typing import List, Dict, Any, Optional
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from .format_adapter import FormatAdapter
 from .translation_unit import TranslationUnit
@@ -48,6 +48,7 @@ class SrtAdapter(FormatAdapter):
             # (shared with refine) is respected when no per-job override
             # is passed in.
             from src.config import SRT_LINES_PER_BLOCK
+
             # Fixed-count grouping (no char cap), matches refine semantics.
             lines_per_block = self.config.get('lines_per_block') or SRT_LINES_PER_BLOCK
             self.blocks = self.processor.group_subtitles_for_translation(

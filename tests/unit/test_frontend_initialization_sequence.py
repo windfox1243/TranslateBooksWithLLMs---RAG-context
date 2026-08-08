@@ -9,9 +9,10 @@ This test verifies the JavaScript initialization sequence is correct by:
 Regression test for: https://github.com/hydropix/TranslateBooksWithLLMs/issues/108
 """
 
-import pytest
 import re
 from pathlib import Path
+
+import pytest
 
 
 class TestFrontendInitializationSequence:

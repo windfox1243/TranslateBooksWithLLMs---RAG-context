@@ -12,16 +12,13 @@ Components:
 # Behavior
 from .behavior import (
     ThinkingBehavior,
+    get_model_warning_message,
     get_thinking_behavior_from_known_lists,
     get_thinking_behavior_sync,
-    get_model_warning_message
 )
 
 # Cache
-from .cache import (
-    ThinkingCache,
-    get_thinking_cache
-)
+from .cache import ThinkingCache, get_thinking_cache
 
 # Detection
 from .detection import detect_repetition_loop

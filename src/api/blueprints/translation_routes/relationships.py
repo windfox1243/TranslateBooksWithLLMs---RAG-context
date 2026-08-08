@@ -1,5 +1,5 @@
 """Routes for the character relationship graph."""
-from flask import request, jsonify
+from flask import jsonify, request
 
 
 def register(bp, deps, shared):

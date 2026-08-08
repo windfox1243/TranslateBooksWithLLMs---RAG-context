@@ -6,6 +6,7 @@ with Gemini API keys loaded from F:\\TranslateBook_Data\\.env.
 import asyncio
 import sys
 from pathlib import Path
+
 from dotenv import dotenv_values
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]

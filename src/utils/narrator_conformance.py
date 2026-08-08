@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import hashlib
 import json
 import re
 import unicodedata
+from dataclasses import asdict, dataclass
 from typing import Any, Dict, Iterable, List, Optional
 
 from src.utils.language_profiles import get_language_profile
 from src.utils.translation_quality import build_editor_segments
-
 
 NARRATOR_CONFORMANCE_VERSION = 2
 

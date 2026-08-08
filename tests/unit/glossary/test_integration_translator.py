@@ -4,15 +4,16 @@ Integration tests for the translator's _build_chunk_glossary_block helper.
 Verifies the wiring between prompt_options and the glossary filter/injector,
 including respect for a custom GlossaryConfig.
 """
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from src.core.translator import _build_chunk_glossary_block
 from src.core.glossary.models import GlossaryConfig
+from src.core.translator import _build_chunk_glossary_block
 
 
 class TestBuildChunkGlossaryBlock:

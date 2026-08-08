@@ -19,9 +19,8 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from docx import Document
-from docx.shared import Inches
 from docx.oxml.ns import qn
-
+from docx.shared import Inches
 
 # --- Extraction --------------------------------------------------------------
 

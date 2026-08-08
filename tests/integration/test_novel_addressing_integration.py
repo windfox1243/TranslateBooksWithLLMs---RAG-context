@@ -4,11 +4,19 @@ Integration test for directed addressing context engine on sample novel text fro
 
 import os
 import tempfile
+
 import pytest
+
 from src.persistence.database import Database
-from src.utils.context_schema import extract_addressing_deltas_from_text, AddressingUpdateDelta
 from src.utils.context_merge_engine import ContextMergeEngine
-from src.utils.context_projection import render_addressing_projection, render_addressing_markdown
+from src.utils.context_projection import (
+    render_addressing_markdown,
+    render_addressing_projection,
+)
+from src.utils.context_schema import (
+    AddressingUpdateDelta,
+    extract_addressing_deltas_from_text,
+)
 
 
 def test_novel_addressing_integration_with_drive_f():

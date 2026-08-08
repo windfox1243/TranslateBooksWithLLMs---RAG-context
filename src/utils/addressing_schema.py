@@ -7,7 +7,6 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-
 ADDRESSING_CONTRACT_VERSION = 5
 
 _REGISTER_VALUES = {

@@ -5,9 +5,10 @@ Verifies the permissive NER JSON parser: tag extraction, fence/array/object
 fallbacks, repair of trailing commas, deduplication, alias keys, and warning
 emission.
 """
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))

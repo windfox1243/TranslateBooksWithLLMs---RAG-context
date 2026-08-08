@@ -4,15 +4,15 @@ Persistence and history tracking for optimization results.
 
 import json
 import os
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 import yaml
 
-from tools.prompt_optimizer.prompt_template import PromptTemplate
 from tools.prompt_optimizer.fitness import FitnessScore
+from tools.prompt_optimizer.prompt_template import PromptTemplate
 
 
 @dataclass

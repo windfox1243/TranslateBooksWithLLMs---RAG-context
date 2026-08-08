@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .dynamic_state import _format_dynamic_sections
 

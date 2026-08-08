@@ -9,12 +9,14 @@ Tests cover:
 - Performance benchmarks
 """
 
-import pytest
 import time
+
+import pytest
+
 from src.core.epub.technical_content_detector import (
+    PatternPriority,
     TechnicalContentDetector,
     TechnicalPattern,
-    PatternPriority
 )
 
 

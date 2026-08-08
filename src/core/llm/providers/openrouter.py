@@ -11,14 +11,19 @@ Features:
     - Automatic context size detection
 """
 
-from typing import List, Optional, Dict, Any, Callable, Union
-import httpx
 import asyncio
 import json
+from typing import Any, Callable, Dict, List, Optional, Union
 
-from src.config import REQUEST_TIMEOUT, MAX_TRANSLATION_ATTEMPTS
+import httpx
+
+from src.config import MAX_TRANSLATION_ATTEMPTS, REQUEST_TIMEOUT
+
 from ..base import (
-    LLMGenerationOptions, LLMProvider, LLMResponse, terminal_provider_failure,
+    LLMGenerationOptions,
+    LLMProvider,
+    LLMResponse,
+    terminal_provider_failure,
 )
 from ..exceptions import ContextOverflowError, StructuredOutputSchemaError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status

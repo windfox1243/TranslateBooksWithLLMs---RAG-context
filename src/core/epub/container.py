@@ -7,10 +7,11 @@ Provides centralized creation and configuration of translation components.
 from dataclasses import dataclass
 from typing import Optional
 
-from .tag_preservation import TagPreserver
+from src.config import MAX_TOKENS_PER_CHUNK
+
 from .html_chunker import HtmlChunker
 from .placeholder_validator import PlaceholderValidator
-from src.config import MAX_TOKENS_PER_CHUNK
+from .tag_preservation import TagPreserver
 
 
 @dataclass

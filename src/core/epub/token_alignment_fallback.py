@@ -11,8 +11,8 @@ Phase 2 of the multi-phase fallback system:
 - Phase 3: Untranslated fallback (preserve original)
 """
 
-from typing import List, Tuple
 import re
+from typing import List, Tuple
 
 
 class TokenAlignmentFallback:
@@ -328,10 +328,7 @@ class TokenAlignmentFallback:
             Translated text with placeholders reinserted proportionally
         """
         try:
-            from .html_utils import (
-                extract_text_and_positions,
-                reinsert_placeholders
-            )
+            from .html_utils import extract_text_and_positions, reinsert_placeholders
 
             # Extract positions from original
             _, positions = extract_text_and_positions(original_with_placeholders)

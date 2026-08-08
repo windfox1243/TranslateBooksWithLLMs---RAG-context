@@ -4,13 +4,15 @@ Body serialization for simplified EPUB processing
 This module handles extracting and replacing the content of <body> elements
 in XHTML documents, enabling full-document translation instead of per-element processing.
 """
-from lxml import etree
-from typing import Tuple, Optional
 import re
+from typing import Optional, Tuple
 
-from src.utils.unified_logger import info, LogType
+from lxml import etree
+
+from src.utils.unified_logger import LogType, info
+
 from .boilerplate_filter import strip_web_boilerplate
-from .exceptions import XmlParsingError, BodyExtractionError
+from .exceptions import BodyExtractionError, XmlParsingError
 
 
 def normalize_whitespace(html: str) -> str:

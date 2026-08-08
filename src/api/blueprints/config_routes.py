@@ -1,16 +1,24 @@
 """
 Configuration and health check routes
 """
-import os
-import sys
 import asyncio
 import logging
-import requests
+import os
 import re
+import sys
 import time
-from urllib.parse import urlparse
-from flask import Blueprint, request, jsonify, send_from_directory, render_template, make_response
 from pathlib import Path
+from urllib.parse import urlparse
+
+import requests
+from flask import (
+    Blueprint,
+    jsonify,
+    make_response,
+    render_template,
+    request,
+    send_from_directory,
+)
 
 # UI locales served by /static/locales/<code>/*.json. Keep in sync with the
 # SUPPORTED_LOCALES constant in src/web/static/js/i18n/i18n.js. The list is
@@ -47,10 +55,10 @@ def get_config_path():
     return str(_config.CONFIG_DIR)
 
 import src.config as _config
-from src.config import reload_config
 from src import __version__
-from src.core.llm.base import normalize_api_keys
 from src.api.api_keys import resolve_api_key as _resolve_api_key
+from src.config import reload_config
+from src.core.llm.base import normalize_api_keys
 
 # Setup logger for this module
 logger = logging.getLogger('config_routes')
@@ -650,6 +658,7 @@ def create_config_blueprint(server_session_id=None):
     def _get_gemini_models(provided_api_key=None):
         """Get available models from Gemini API"""
         from src.core.llm import GeminiProvider
+
         # Gemini's model dicts use 'name', not 'id'; error bodies historically
         # omit model_names (preserved for response-shape compatibility).
         return _fetch_provider_models(
@@ -739,9 +748,9 @@ def create_config_blueprint(server_session_id=None):
 
         try:
             from src.core.llm import (
+                ThinkingBehavior,
                 get_model_warning_message,
                 get_thinking_behavior_sync,
-                ThinkingBehavior
             )
 
             warning = get_model_warning_message(model, endpoint)
@@ -799,8 +808,8 @@ def create_config_blueprint(server_session_id=None):
     @bp.route('/api/custom-instructions/open-folder', methods=['POST'])
     def open_custom_instructions_folder():
         """Open the Custom_Instructions folder in the system file explorer"""
-        import subprocess
         import platform
+        import subprocess
 
         try:
             from src.config import CUSTOM_INSTRUCTIONS_DIR
@@ -846,8 +855,8 @@ def create_config_blueprint(server_session_id=None):
     @bp.route('/api/novel-contexts/open-folder', methods=['POST'])
     def open_novel_contexts_folder():
         """Open the Novel_Contexts folder in the system file explorer"""
-        import subprocess
         import platform
+        import subprocess
 
         try:
             from src.config import NOVEL_CONTEXTS_DIR

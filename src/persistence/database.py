@@ -2,17 +2,17 @@
 SQLite database manager for translation job persistence.
 """
 
-import sqlite3
-import json
 import hashlib
+import json
 import logging
 import os
 import shutil
+import sqlite3
+import threading
 import time
 from contextlib import contextmanager
-from typing import Optional, Dict, List, Any
-import threading
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from src.persistence.schema import _evidence_fingerprint, apply_schema
 

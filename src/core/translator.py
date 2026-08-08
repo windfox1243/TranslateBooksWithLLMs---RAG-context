@@ -1,43 +1,26 @@
 """
 Translation module for LLM communication
 """
+import hashlib
 import inspect
 import json
-import hashlib
-import time
 import re
+import time
 from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
 from tqdm.auto import tqdm
 
 from src.config import (
-    DEFAULT_MODEL, TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT, SENTENCE_TERMINATORS,
-    THINKING_MODELS, ADAPTIVE_CONTEXT_INITIAL_THINKING
+    ADAPTIVE_CONTEXT_INITIAL_THINKING,
+    DEFAULT_MODEL,
+    SENTENCE_TERMINATORS,
+    THINKING_MODELS,
+    TRANSLATE_TAG_IN,
+    TRANSLATE_TAG_OUT,
 )
-from src.prompts.prompts import (
-    REFLECTION_CONTRACT_VERSION,
-    REFLECTION_JSON_TAG_IN,
-    REFLECTION_JSON_TAG_OUT,
-    REFLECTION_PROMPT_VERSION,
-    generate_translation_prompt,
-    generate_refinement_prompt,
-)
-from .llm_client import default_client, create_llm_client, LLMResponse
-from .llm import (
-    ContextOverflowError,
-    RateLimitError,
-    RepetitionLoopError,
-)
-from .llm.exceptions import StructuredOutputSchemaError
-from .post_processor import clean_translated_text
-from .context_optimizer import (
-    AdaptiveContextManager,
-    INITIAL_CONTEXT_SIZE,
-    CONTEXT_STEP
-)
-from .progress_tracker import TokenProgressTracker
-from .chunking.token_chunker import TokenChunker
-from typing import List, Dict, Tuple, Optional, Any, Callable
-from src.utils.progress_logging import emit_progress_log
+from src.core.editor.contracts import ReflectionValidationError
+
 # Re-exported: these moved to the editor package but callers and tests still
 # import them from this module.
 from src.core.editor.prompting import (
@@ -45,8 +28,27 @@ from src.core.editor.prompting import (
     _render_reflection_novel_context,
     compose_reflection_prompts,
 )
-from src.core.editor.contracts import ReflectionValidationError
+from src.prompts.prompts import (
+    REFLECTION_CONTRACT_VERSION,
+    REFLECTION_JSON_TAG_IN,
+    REFLECTION_JSON_TAG_OUT,
+    REFLECTION_PROMPT_VERSION,
+    generate_refinement_prompt,
+    generate_translation_prompt,
+)
+from src.utils.progress_logging import emit_progress_log
 
+from .chunking.token_chunker import TokenChunker
+from .context_optimizer import (
+    CONTEXT_STEP,
+    INITIAL_CONTEXT_SIZE,
+    AdaptiveContextManager,
+)
+from .llm import ContextOverflowError, RateLimitError, RepetitionLoopError
+from .llm.exceptions import StructuredOutputSchemaError
+from .llm_client import LLMResponse, create_llm_client, default_client
+from .post_processor import clean_translated_text
+from .progress_tracker import TokenProgressTracker
 
 # Configuration for context overflow recovery
 MAX_CHUNK_REDUCTION_ATTEMPTS = 3
@@ -118,7 +120,11 @@ def _build_chunk_glossary_block(
     if not terms:
         return ""
     try:
-        from src.core.glossary import filter_glossary, build_glossary_block, GlossaryConfig
+        from src.core.glossary import (
+            GlossaryConfig,
+            build_glossary_block,
+            filter_glossary,
+        )
     except ImportError:
         return ""
     config = prompt_options.get("glossary_config") or GlossaryConfig()
@@ -1692,18 +1698,23 @@ async def _run_chunk_reflection_pass_impl(
     repair_validator: Optional[Callable[[str], Optional[str]]] = None,
 ) -> str:
     """Run a 2-pass Senior Translation Editor reflection & repair evaluation on a draft chunk."""
-    from src.prompts.prompts import (
-        REFLECTION_RESPONSE_SCHEMA,
-        generate_chunk_reflection_prompt,
-        generate_chunk_repair_prompt,
-    )
     from src.core.llm import TranslationExtractor
     from src.core.llm.generation_controls import (
         adaptive_retry_output_tokens,
         resolve_editor_output_tokens,
         resolve_thinking_controls,
     )
+    from src.prompts.prompts import (
+        REFLECTION_RESPONSE_SCHEMA,
+        generate_chunk_reflection_prompt,
+        generate_chunk_repair_prompt,
+    )
     from src.utils.addressing_schema import context_contract_version
+    from src.utils.editor_diagnostics import (
+        EditorRunRecorder,
+        issue_excerpts,
+        response_hash,
+    )
     from src.utils.translation_quality import (
         apply_local_editor_patches,
         build_editor_segments,
@@ -1715,19 +1726,11 @@ async def _run_chunk_reflection_pass_impl(
         validate_editor_repair,
         validate_issue_locators,
     )
-    from src.utils.editor_diagnostics import (
-        EditorRunRecorder,
-        issue_excerpts,
-        response_hash,
-    )
 
     if not draft_translation or not draft_translation.strip() or not llm_client:
         return draft_translation
 
-    from src.core.editor import (
-        audit_narrator_conformance,
-        review_required_translation,
-    )
+    from src.core.editor import audit_narrator_conformance, review_required_translation
     from src.core.editor.preflight import run_editor_preflight
 
     options = prompt_options or {}
@@ -3066,7 +3069,7 @@ async def _run_chunk_reflection_pass_impl(
             },
         )
 
-    from src.utils.unified_logger import get_logger, LogType
+    from src.utils.unified_logger import LogType, get_logger
     critique_summary = format_critique_tldr(critique)
     get_logger().info(
         f"Senior Editor critique: {critique_summary}",

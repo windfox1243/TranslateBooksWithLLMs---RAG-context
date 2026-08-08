@@ -5,13 +5,14 @@ This module provides a unified translation workflow that works with any file for
 through the FormatAdapter interface.
 """
 
-from typing import Callable, Optional, Dict, Any
 from pathlib import Path
+from typing import Any, Callable, Dict, Optional
 
-from .format_adapter import FormatAdapter
+from src.core.jobs import UnitTranslationOutcome
 from src.core.llm_client import LLMClient
 from src.utils.unified_logger import get_logger
-from src.core.jobs import UnitTranslationOutcome
+
+from .format_adapter import FormatAdapter
 
 logger = get_logger(__name__)
 
@@ -313,8 +314,8 @@ class GenericTranslator:
                 )
 
             # 5. Create LLM client
-            from src.core.translator import generate_translation_request
             from src.core.llm.runtime import build_draft_and_editor_clients
+            from src.core.translator import generate_translation_request
 
             prompt_options = llm_kwargs.get('prompt_options', {})
             (
@@ -337,7 +338,7 @@ class GenericTranslator:
             editor_model = editor_spec.model
 
             # 6. Translate each unit (sequentially, or with continuous concurrency)
-            from src.config import resolve_parallel_workers, UNIT_VALIDATION_RETRIES
+            from src.config import UNIT_VALIDATION_RETRIES, resolve_parallel_workers
             from src.core.common.parallel import iter_ordered_concurrent
             from src.core.llm.exceptions import RateLimitError
 
@@ -350,17 +351,17 @@ class GenericTranslator:
             auto_update_context = prompt_options.get('auto_update_context', False)
 
             from src.config import NOVEL_CONTEXTS_DIR
-            from src.utils.novel_context import (
-                open_novel_context_session,
-                should_update_novel_context_for_index,
-            )
+            from src.utils.addressing_schema import context_contract_version
             from src.utils.db_addressing import (
                 apply_db_addressing_to_session,
                 build_directed_addressing_prompt_context,
                 sync_context_update_addressing_to_db,
                 sync_markdown_addressing_to_db,
             )
-            from src.utils.addressing_schema import context_contract_version
+            from src.utils.novel_context import (
+                open_novel_context_session,
+                should_update_novel_context_for_index,
+            )
             from src.utils.relationship_sync import (
                 apply_relationship_graph_to_session,
                 build_relationship_prompt_context,
@@ -1580,7 +1581,7 @@ def resync_context_snapshots_background(
 ):
     """Entry point for the background thread."""
     import asyncio
-    
+
     # Try to use existing loop if we are in one, otherwise run new.
     # Only loop acquisition is guarded: a RuntimeError raised by the resync
     # itself must not fall through to the asyncio.run() below, or the whole
@@ -1633,8 +1634,20 @@ async def _resync_context_snapshots_async(
     global_only_resync=False,
 ):
     """Forward-pass through chunks to re-evaluate the context using the LLM."""
+    import copy
+    import time
+    from datetime import datetime
+
     from src.api.translation_state import get_state_manager
+    from src.api.websocket import emit_update
+    from src.config import NOVEL_CONTEXTS_DIR
+    from src.core.llm_client import LLMClient
+    from src.utils.db_addressing import (
+        sync_context_update_addressing_to_db,
+        sync_markdown_addressing_to_db,
+    )
     from src.utils.novel_context import (
+        _bounded_source_memory,
         build_novel_context,
         character_alias_map,
         compress_dynamic_state,
@@ -1644,25 +1657,14 @@ async def _resync_context_snapshots_async(
         resolve_novel_context_path,
         save_novel_context,
         update_novel_context_chunk,
-        _bounded_source_memory,
     )
-    from src.core.llm_client import LLMClient
-    from src.config import NOVEL_CONTEXTS_DIR
-    from datetime import datetime
-    import copy
-    import time
-    from src.utils.unified_logger import get_logger
-    from src.api.websocket import emit_update
     from src.utils.relationship_sync import (
         judge_ambiguous_relationship_candidates,
         resolve_relationship_reasoning_mode,
         sync_context_update_relationships_to_db,
         sync_markdown_relationships_to_db,
     )
-    from src.utils.db_addressing import (
-        sync_context_update_addressing_to_db,
-        sync_markdown_addressing_to_db,
-    )
+    from src.utils.unified_logger import get_logger
     
     state_manager = get_state_manager()
     logger = get_logger("context_resync")
@@ -2160,6 +2162,7 @@ async def _resync_context_snapshots_async(
         provider_key = live_config.get(f'{llm_provider}_api_key')
     if not provider_key:
         import os
+
         import src.config as runtime_config
 
         env_var = f"{llm_provider.upper()}_API_KEY"

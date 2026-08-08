@@ -2,9 +2,9 @@
 File service for centralized file operations
 """
 import os
-from pathlib import Path
 from datetime import datetime
-from typing import Optional, List, Dict
+from pathlib import Path
+from typing import Dict, List, Optional
 
 
 class FileService:
@@ -190,8 +190,8 @@ class FileService:
         Returns:
             Tuple of (success, message, absolute_path)
         """
-        import subprocess
         import platform
+        import subprocess
 
         file_path = self.find_file(filename)
         if not file_path:
@@ -220,8 +220,8 @@ class FileService:
         Returns:
             Tuple of (success, message, absolute_path)
         """
-        import subprocess
         import platform
+        import subprocess
 
         folder = self.output_dir.resolve()
         try:
@@ -255,8 +255,8 @@ class FileService:
         Returns:
             Tuple of (success, message, absolute_path)
         """
-        import subprocess
         import platform
+        import subprocess
 
         folder = Path(folder_path).resolve()
         try:
@@ -290,8 +290,8 @@ class FileService:
         Returns:
             Tuple of (success, message, absolute_path)
         """
-        import subprocess
         import platform
+        import subprocess
 
         file_path = self.find_file(filename)
         if not file_path:

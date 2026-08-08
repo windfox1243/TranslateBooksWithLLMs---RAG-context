@@ -3,14 +3,11 @@ from __future__ import annotations
 
 import base64
 import zlib
-from typing import Optional, List, Dict, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .constants import (
-    DYNAMIC_STATE_END,
-    DYNAMIC_STATE_START,
-    logger,
-)
+from .constants import DYNAMIC_STATE_END, DYNAMIC_STATE_START, logger
 from .dynamic_state import _split_dynamic_sections
+
 
 def extract_dynamic_state_from_text(context_content: str) -> Optional[str]:
     start_tag = DYNAMIC_STATE_START

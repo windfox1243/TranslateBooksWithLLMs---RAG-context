@@ -5,6 +5,7 @@ Tests the placeholder renumbering logic that converts global placeholders
 to local indices within chunks.
 """
 import unittest
+
 from src.core.epub.placeholder_renumberer import PlaceholderRenumberer
 
 

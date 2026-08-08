@@ -13,25 +13,35 @@ import asyncio
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable, Generator
+from typing import Callable, Generator, Optional
 
 import yaml
 
 from benchmark.config import BenchmarkConfig
 from benchmark.data_loader import load_languages, load_reference_texts
+from benchmark.evaluator import (
+    TranslationEvaluator,
+    test_openrouter_connection,
+    test_poe_connection,
+)
 from benchmark.models import (
-    Language, LanguageCategory, ReferenceText, TranslationResult,
-    BenchmarkRun, EvaluationScores
+    BenchmarkRun,
+    EvaluationScores,
+    Language,
+    LanguageCategory,
+    ReferenceText,
+    TranslationResult,
 )
 from benchmark.translator import (
-    BenchmarkTranslator, TranslationRequest,
+    BenchmarkTranslator,
+    TranslationRequest,
     code_to_language_name,
-    test_ollama_connection, get_available_ollama_models,
-    test_openai_translation_connection, get_available_openai_models,
-    test_openrouter_translation_connection, get_available_openrouter_models
-)
-from benchmark.evaluator import (
-    TranslationEvaluator, test_openrouter_connection, test_poe_connection
+    get_available_ollama_models,
+    get_available_openai_models,
+    get_available_openrouter_models,
+    test_ollama_connection,
+    test_openai_translation_connection,
+    test_openrouter_translation_connection,
 )
 
 

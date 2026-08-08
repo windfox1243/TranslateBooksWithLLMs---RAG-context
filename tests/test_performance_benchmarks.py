@@ -8,8 +8,10 @@ Verifies:
 - Memory usage remains reasonable
 """
 
-import pytest
 import time
+
+import pytest
+
 from src.core.epub.tag_preservation import TagPreserver
 from src.core.epub.technical_content_detector import TechnicalContentDetector
 
