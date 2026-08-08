@@ -5,6 +5,7 @@ SQLite database manager for translation job persistence.
 import sqlite3
 import json
 import hashlib
+import logging
 import os
 import shutil
 import time
@@ -14,6 +15,8 @@ import threading
 from pathlib import Path
 
 from src.persistence.schema import _evidence_fingerprint, apply_schema
+
+logger = logging.getLogger("persistence.database")
 
 
 # _evidence_fingerprint now lives in schema.py, because the migration ALTERs
@@ -1890,7 +1893,18 @@ class Database:
                     try:
                         merged_aliases.extend(json.loads(existing["aliases"]) or [])
                     except (TypeError, ValueError, json.JSONDecodeError):
-                        pass
+                        # The stored aliases are unreadable, so this upsert is
+                        # about to overwrite them with only the incoming set.
+                        # Losing established aliases silently would make a
+                        # character stop being recognized mid-book.
+                        logger.warning(
+                            "Discarding unreadable stored aliases for "
+                            "relationship node '%s' in job %s; keeping only the "
+                            "%d incoming alias(es).",
+                            normalized_name,
+                            translation_id,
+                            len(aliases or []),
+                        )
                 merged_aliases.extend(aliases or [])
                 seen = set()
                 merged_aliases = [
