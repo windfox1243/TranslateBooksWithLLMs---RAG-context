@@ -10,9 +10,12 @@ its base: it is folded into base（reading） first (see ruby_annotations).
 At rebuild time, the body is wiped and reconstructed as a flat sequence of
 block elements (<p>, <h1..h6>, <li>, <blockquote>, <pre>) plus, after each
 block that originally contained images, an extra <p class="plain-text-images"> wrapper
-with the original <img> elements unchanged. The one case where the body is left
-alone is a page that yielded no block at all (everything inside a DROP_TAGS
-subtree, e.g. an SVG-wrapped cover): its source markup is kept verbatim.
+with the original <img> elements unchanged. Void blocks (<hr>) carry no text
+and no images: they keep their own slot in the paragraph list and are
+re-emitted as a bare element at the same position, without ever reaching the
+LLM. The one case where the body is left alone is a page that yielded no
+block at all (everything inside a DROP_TAGS subtree, e.g. an SVG-wrapped
+cover): its source markup is kept verbatim.
 """
 from typing import Dict, List, Tuple
 
@@ -22,6 +25,10 @@ from .ruby_annotations import fold_ruby_annotations
 
 # Block-level tags we preserve at rebuild time (li flattens to p later — see replace_body_with_paragraphs).
 BLOCK_TAGS = ("p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "pre")
+# Block-level tags with no text of their own. They are collected so they keep a
+# slot in the paragraph list and are re-emitted verbatim at rebuild time; their
+# empty text means build_plain_segments never sends them to the LLM.
+VOID_BLOCK_TAGS = ("hr",)
 # Containers we descend into looking for blocks
 CONTAINER_TAGS = ("div", "section", "article", "main", "header", "footer", "aside", "nav")
 # Subtrees never sent to the LLM in Plain Text Mode. Tables, figures and
@@ -157,6 +164,11 @@ def _collect_blocks(
         if name in DROP_TAGS:
             continue
 
+        if name in VOID_BLOCK_TAGS:
+            paragraphs_text.append("")
+            paragraphs_tag.append(name)
+            continue
+
         if name == "table":
             _collect_table_blocks(child, paragraphs_text, paragraphs_tag, images_by_paragraph)
             continue
@@ -288,6 +300,10 @@ def replace_body_with_paragraphs(
         raw_tag = paragraphs_tag[i] if i < len(paragraphs_tag) else "p"
         # <li> outside <ul>/<ol> is not valid XHTML — flatten to <p> in Plain Text Mode.
         tag = "p" if raw_tag == "li" else raw_tag
+
+        if raw_tag in VOID_BLOCK_TAGS:
+            etree.SubElement(body_element, raw_tag)
+            continue
 
         # Bilingual: emit source first when we have it
         source_emitted = False
