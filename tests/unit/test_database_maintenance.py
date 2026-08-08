@@ -122,6 +122,11 @@ def test_editor_token_columns_migrate_existing_database(tmp_path):
         for table in ("editor_runs", "editor_attempts"):
             conn.execute(f"ALTER TABLE {table} DROP COLUMN thinking_tokens")
             conn.execute(f"ALTER TABLE {table} DROP COLUMN total_tokens")
+        # A file written by a build that predates these columns also predates
+        # the version stamp, so it carries user_version 0. Dropping the columns
+        # without clearing the stamp would describe a state no release can
+        # produce -- and the DDL sweep would correctly skip it.
+        conn.execute("PRAGMA user_version = 0")
     migrated = Database(str(path))
     for table in ("editor_runs", "editor_attempts"):
         columns = {
