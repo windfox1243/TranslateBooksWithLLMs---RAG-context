@@ -185,6 +185,11 @@ class Database:
         """Create database tables if they don't exist."""
         apply_schema(self._lock, self._get_connection)
 
+    # The job and editor SQL now lives in JobRepository / EditorRepository.
+    # These methods stay as delegations because the call sites -- handlers,
+    # checkpoint manager, routes, tests -- all reach the database through this
+    # facade. Removing them would be a separate, much wider change.
+
     def create_job(
         self,
         translation_id: str,
@@ -192,58 +197,13 @@ class Database:
         config: Dict[str, Any],
         server_session_id: Optional[str] = None
     ) -> bool:
-        """
-        Create a new translation job record.
-
-        Args:
-            translation_id: Unique job identifier
-            file_type: Type of file (txt, srt, epub)
-            config: Full translation configuration
-            server_session_id: Unique identifier for the current server session
-
-        Returns:
-            True if created successfully
-        """
-        with self._lock:
-            try:
-                conn = self._get_connection()
-                cursor = conn.cursor()
-
-                progress = {
-                    'current_chunk_index': -1,
-                    'total_chunks': 0,
-                    'completed_chunks': 0,
-                    'failed_chunks': 0,
-                    'review_required_chunks': 0,
-                    'start_time': time.time(),  # Use timestamp for compatibility with existing code
-                    # Marks the uniform checkpoint convention: current_chunk_index
-                    # is the LAST COMPLETED unit for every format (resume = +1).
-                    # Absent on pre-migration checkpoints, which load_checkpoint
-                    # still handles via the legacy per-format branch.
-                    'resume_index_semantics': 'completed',
-                }
-
-                cursor.execute("""
-                    INSERT INTO translation_jobs
-                    (translation_id, status, file_type, config, progress, server_session_id)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    translation_id,
-                    'running',
-                    file_type,
-                    json.dumps(sanitize_config_secrets(config)),
-                    json.dumps(progress),
-                    server_session_id
-                ))
-
-                conn.commit()
-                return True
-            except sqlite3.IntegrityError:
-                # Job already exists
-                return False
-            except Exception as e:
-                print(f"Error creating job: {e}")
-                return False
+        """Create a new translation job record."""
+        return self.jobs.create_job(
+            translation_id,
+            file_type,
+            config,
+            server_session_id,
+        )
 
     def update_job_progress(
         self,
@@ -256,89 +216,17 @@ class Database:
         status: Optional[str] = None,
         epub_accumulated_stats: Optional[Dict[str, Any]] = None
     ) -> bool:
-        """
-        Update job progress information.
-
-        Args:
-            translation_id: Job identifier
-            current_chunk_index: Current chunk being processed
-            total_chunks: Total number of chunks
-            completed_chunks: Number of completed chunks
-            failed_chunks: Number of failed chunks
-            status: Job status (running, paused, completed, error)
-            epub_accumulated_stats: Snapshot of cross-file accumulated EPUB
-                fallback counters. Stored verbatim in the progress JSON so the
-                resume path can rehydrate counters that live above the
-                per-file checkpoint (token_alignment_used, fallback_used, ...).
-
-        Returns:
-            True if updated successfully
-        """
-        with self._lock:
-            try:
-                conn = self._get_connection()
-                cursor = conn.cursor()
-
-                # Get current progress
-                cursor.execute(
-                    "SELECT progress FROM translation_jobs WHERE translation_id = ?",
-                    (translation_id,)
-                )
-                row = cursor.fetchone()
-                if not row:
-                    return False
-
-                progress = json.loads(row['progress'])
-
-                # Update fields
-                if current_chunk_index is not None:
-                    progress['current_chunk_index'] = current_chunk_index
-                if total_chunks is not None:
-                    progress['total_chunks'] = total_chunks
-                if completed_chunks is not None:
-                    progress['completed_chunks'] = completed_chunks
-                if failed_chunks is not None:
-                    progress['failed_chunks'] = failed_chunks
-                if review_required_chunks is not None:
-                    progress['review_required_chunks'] = review_required_chunks
-                if epub_accumulated_stats is not None:
-                    progress['epub_accumulated_stats'] = epub_accumulated_stats
-
-                # Build update query
-                updates = ["progress = ?", "updated_at = CURRENT_TIMESTAMP"]
-                params = [json.dumps(progress)]
-
-                if status:
-                    updates.append("status = ?")
-                    params.append(status)
-
-                    if status == 'paused':
-                        updates.append("paused_at = CURRENT_TIMESTAMP")
-                    elif status == 'completed':
-                        updates.append("completed_at = CURRENT_TIMESTAMP")
-
-                quality_status = (
-                    'review_required'
-                    if int(progress.get('review_required_chunks') or 0) > 0
-                    else 'passed'
-                    if int(progress.get('completed_chunks') or 0) > 0
-                    else 'not_checked'
-                )
-                updates.append("quality_status = ?")
-                params.append(quality_status)
-
-                params.append(translation_id)
-
-                cursor.execute(
-                    f"UPDATE translation_jobs SET {', '.join(updates)} WHERE translation_id = ?",
-                    params
-                )
-
-                conn.commit()
-                return True
-            except Exception as e:
-                print(f"Error updating job progress: {e}")
-                return False
+        """Update job progress information."""
+        return self.jobs.update_job_progress(
+            translation_id,
+            current_chunk_index,
+            total_chunks,
+            completed_chunks,
+            failed_chunks,
+            review_required_chunks,
+            status,
+            epub_accumulated_stats,
+        )
 
     def save_chunk(
         self,
@@ -351,154 +239,25 @@ class Database:
         quality_status: Optional[str] = None,
         execution_failure_class: Optional[str] = None,
     ) -> bool:
-        """
-        Save a translated chunk to database.
-
-        Args:
-            translation_id: Job identifier
-            chunk_index: Index of the chunk
-            original_text: Original text
-            translated_text: Translated text (if completed)
-            chunk_data: Additional chunk metadata (context_before, context_after, etc.)
-            status: Chunk status (completed, failed)
-
-        Returns:
-            True if saved successfully
-        """
-        with self._lock:
-            try:
-                conn = self._get_connection()
-                cursor = conn.cursor()
-
-                data = dict(chunk_data or {})
-                resolved_quality_status = str(
-                    quality_status
-                    or data.get('quality_status')
-                    or ('passed' if status == 'completed' else 'not_checked')
-                )
-                resolved_failure_class = (
-                    execution_failure_class
-                    or data.get('execution_failure_class')
-                )
-                cursor.execute("""
-                    INSERT OR REPLACE INTO checkpoint_chunks
-                    (translation_id, chunk_index, original_text, translated_text,
-                     chunk_data, status, quality_status,
-                     execution_failure_class, completed_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                """, (
-                    translation_id,
-                    chunk_index,
-                    original_text,
-                    translated_text,
-                    json.dumps(data) if data else None,
-                    status,
-                    resolved_quality_status,
-                    resolved_failure_class,
-                ))
-
-                chunk_counts = cursor.execute("""
-                    SELECT
-                        SUM(CASE WHEN quality_status = 'review_required' THEN 1 ELSE 0 END),
-                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)
-                    FROM checkpoint_chunks
-                    WHERE translation_id = ?
-                """, (translation_id,)).fetchone()
-                quality_count = int(chunk_counts[0] or 0)
-                completed_count = int(chunk_counts[1] or 0)
-                job_row = cursor.execute(
-                    "SELECT progress FROM translation_jobs WHERE translation_id = ?",
-                    (translation_id,),
-                ).fetchone()
-                if job_row:
-                    progress = json.loads(job_row['progress'])
-                    progress['review_required_chunks'] = int(quality_count or 0)
-                    job_quality = (
-                        'review_required' if quality_count
-                        else 'passed' if completed_count
-                        else 'not_checked'
-                    )
-                    cursor.execute("""
-                        UPDATE translation_jobs
-                        SET progress = ?, quality_status = ?,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE translation_id = ?
-                    """, (
-                        json.dumps(progress), job_quality, translation_id,
-                    ))
-
-                conn.commit()
-                return True
-            except Exception as e:
-                print(f"Error saving chunk: {e}")
-                return False
+        """Save a translated chunk to database."""
+        return self.jobs.save_chunk(
+            translation_id,
+            chunk_index,
+            original_text,
+            translated_text,
+            chunk_data,
+            status,
+            quality_status,
+            execution_failure_class,
+        )
 
     def get_job(self, translation_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Retrieve job information.
-
-        Args:
-            translation_id: Job identifier
-
-        Returns:
-            Job data dictionary or None if not found
-        """
-        with self._lock:
-            try:
-                conn = self._get_connection()
-                cursor = conn.cursor()
-
-                cursor.execute(
-                    "SELECT * FROM translation_jobs WHERE translation_id = ?",
-                    (translation_id,)
-                )
-                row = cursor.fetchone()
-
-                if not row:
-                    return None
-
-                return {
-                    'translation_id': row['translation_id'],
-                    'status': row['status'],
-                    'quality_status': row['quality_status'],
-                    'file_type': row['file_type'],
-                    'config': json.loads(row['config']),
-                    'progress': json.loads(row['progress']),
-                    'translation_context': json.loads(row['translation_context']) if row['translation_context'] else None,
-                    'created_at': row['created_at'],
-                    'updated_at': row['updated_at'],
-                    'paused_at': row['paused_at'],
-                    'completed_at': row['completed_at']
-                }
-            except Exception as e:
-                print(f"Error getting job: {e}")
-                return None
+        """Retrieve job information."""
+        return self.jobs.get_job(translation_id)
 
     def update_job_config(self, translation_id: str, config: Dict[str, Any]) -> bool:
-        """
-        Update the configuration of an existing job.
-
-        Args:
-            translation_id: Job identifier
-            config: New configuration dictionary
-
-        Returns:
-            True if updated successfully
-        """
-        with self._lock:
-            try:
-                conn = self._get_connection()
-                cursor = conn.cursor()
-
-                cursor.execute(
-                    "UPDATE translation_jobs SET config = ?, updated_at = CURRENT_TIMESTAMP WHERE translation_id = ?",
-                    (json.dumps(sanitize_config_secrets(config)), translation_id)
-                )
-                conn.commit()
-                return cursor.rowcount > 0
-            except Exception as e:
-                print(f"Error updating job config: {e}")
-                return False
+        """Update the configuration of an existing job."""
+        return self.jobs.update_job_config(translation_id, config)
 
     def get_chunks(self, translation_id: str) -> List[Dict[str, Any]]:
         """
@@ -603,48 +362,8 @@ class Database:
                 return {}
 
     def get_resumable_jobs(self, max_age_days: int = 30) -> List[Dict[str, Any]]:
-        """
-        Get all jobs that can resume or seed an Add New Content job.
-
-        Args:
-            max_age_days: Maximum age in days for resumable jobs (default 30)
-
-        Returns:
-            List of job dictionaries
-        """
-        with self._lock:
-            try:
-                conn = self._get_connection()
-                cursor = conn.cursor()
-
-                # Only return jobs created within max_age_days
-                cursor.execute("""
-                    SELECT * FROM translation_jobs
-                    WHERE status IN (
-                        'paused', 'interrupted', 'error', 'partial', 'completed'
-                    )
-                    AND created_at > datetime('now', ? || ' days')
-                    ORDER BY updated_at DESC
-                """, (f'-{max_age_days}',))
-
-                jobs = []
-                for row in cursor.fetchall():
-                    jobs.append({
-                        'translation_id': row['translation_id'],
-                        'status': row['status'],
-                        'quality_status': row['quality_status'],
-                        'file_type': row['file_type'],
-                        'config': json.loads(row['config']),
-                        'progress': json.loads(row['progress']),
-                        'created_at': row['created_at'],
-                        'updated_at': row['updated_at'],
-                        'paused_at': row['paused_at']
-                    })
-
-                return jobs
-            except Exception as e:
-                print(f"Error getting resumable jobs: {e}")
-                return []
+        """Get all jobs that can resume or seed an Add New Content job."""
+        return self.jobs.get_resumable_jobs(max_age_days)
 
     def delete_old_jobs(self, max_age_days: int = 30) -> List[str]:
         """
@@ -770,24 +489,8 @@ class Database:
                 return False
 
     def delete_job(self, translation_id: str) -> bool:
-        """
-        Delete a job and all its chunks (CASCADE).
-
-        Args:
-            translation_id: Job identifier
-
-        Returns:
-            True if deleted successfully
-        """
-        with self._lock:
-            try:
-                conn = self._get_connection()
-                self._delete_job_rows(conn, translation_id)
-                conn.commit()
-                return True
-            except Exception as e:
-                print(f"Error deleting job: {e}")
-                return False
+        """Delete a job and all its chunks (CASCADE)."""
+        return self.jobs.delete_job(translation_id)
 
     @staticmethod
     def _delete_job_rows(conn: sqlite3.Connection, translation_id: str) -> None:
@@ -920,298 +623,19 @@ class Database:
 
     def create_editor_run(self, payload: Dict[str, Any]) -> Optional[int]:
         """Create one locally persisted Senior Editor run."""
-        fields = (
-            "translation_id", "chunk_index", "phase", "refinement_pass_id", "provider", "model",
-            "source_language", "target_language", "file_type",
-            "prompt_version", "contract_version", "outcome",
-        )
-        values = [payload.get(field) for field in fields]
-        with self._lock:
-            try:
-                cursor = self._get_connection().cursor()
-                cursor.execute(
-                    f"INSERT INTO editor_runs ({','.join(fields)}) VALUES "
-                    f"({','.join('?' for _ in fields)})",
-                    values,
-                )
-                self._commit_connection(self._get_connection())
-                return int(cursor.lastrowid)
-            except Exception as exc:
-                print(f"Error creating editor run: {exc}")
-                return None
+        return self.editor.create_editor_run(payload)
 
     def add_editor_attempt(self, run_id: int, payload: Dict[str, Any]) -> bool:
         """Append a bounded diagnostic record for one editor request."""
-        fields = (
-            "run_id", "attempt_index", "stage", "parse_status",
-            "failure_class", "reason_codes", "prompt_tokens",
-            "completion_tokens", "thinking_tokens", "total_tokens",
-            "was_truncated", "finish_reason",
-            "blocked_reason", "response_hash", "excerpts",
-        )
-        values = [
-            run_id,
-            int(payload.get("attempt_index", 0)),
-            payload.get("stage") or "unknown",
-            payload.get("parse_status"),
-            payload.get("failure_class"),
-            json.dumps(payload.get("reason_codes") or [], ensure_ascii=False),
-            int(payload.get("prompt_tokens", 0) or 0),
-            int(payload.get("completion_tokens", 0) or 0),
-            int(payload.get("thinking_tokens", 0) or 0),
-            int(payload.get("total_tokens", 0) or 0),
-            int(bool(payload.get("was_truncated"))),
-            payload.get("finish_reason"),
-            payload.get("blocked_reason"),
-            payload.get("response_hash"),
-            json.dumps(payload.get("excerpts") or [], ensure_ascii=False),
-        ]
-        with self._lock:
-            try:
-                conn = self._get_connection()
-                conn.execute(
-                    f"INSERT INTO editor_attempts ({','.join(fields)}) VALUES "
-                    f"({','.join('?' for _ in fields)})",
-                    values,
-                )
-                self._commit_connection(conn)
-                return True
-            except Exception as exc:
-                print(f"Error saving editor attempt: {exc}")
-                return False
+        return self.editor.add_editor_attempt(run_id, payload)
 
     def finish_editor_run(self, run_id: int, payload: Dict[str, Any]) -> bool:
         """Finalize one editor run with a classified outcome."""
-        with self._lock:
-            try:
-                conn = self._get_connection()
-                conn.execute(
-                    """
-                    UPDATE editor_runs SET parse_status = ?, outcome = ?,
-                        failure_class = ?, issue_count = ?,
-                        warning_count = ?,
-                        resolved_issue_count = ?, unresolved_issue_count = ?,
-                        result_state = ?, recovered_truncation = ?,
-                        deterministic_count = ?, prompt_tokens = ?,
-                        completion_tokens = ?, thinking_tokens = ?,
-                        total_tokens = ?, was_truncated = ?,
-                        finish_reason = ?, blocked_reason = ?, response_hash = ?,
-                        diagnostics = ?, completed_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """,
-                    (
-                        payload.get("parse_status"),
-                        payload.get("outcome") or "review_required",
-                        payload.get("failure_class"),
-                        int(payload.get("issue_count", 0) or 0),
-                        int(payload.get("warning_count", 0) or 0),
-                        int(payload.get("resolved_issue_count", 0) or 0),
-                        int(payload.get("unresolved_issue_count", 0) or 0),
-                        payload.get("result_state") or "unchanged_draft",
-                        int(bool(payload.get("recovered_truncation"))),
-                        int(payload.get("deterministic_count", 0) or 0),
-                        int(payload.get("prompt_tokens", 0) or 0),
-                        int(payload.get("completion_tokens", 0) or 0),
-                        int(payload.get("thinking_tokens", 0) or 0),
-                        int(payload.get("total_tokens", 0) or 0),
-                        int(bool(payload.get("was_truncated"))),
-                        payload.get("finish_reason"),
-                        payload.get("blocked_reason"),
-                        payload.get("response_hash"),
-                        json.dumps(payload.get("diagnostics") or {}, ensure_ascii=False),
-                        int(run_id),
-                    ),
-                )
-                self._commit_connection(conn)
-                return True
-            except Exception as exc:
-                print(f"Error finishing editor run: {exc}")
-                return False
+        return self.editor.finish_editor_run(run_id, payload)
 
     def get_editor_diagnostics(self, translation_id: str) -> Dict[str, Any]:
         """Return aggregate and per-run editor diagnostics for a job."""
-        with self._lock:
-            conn = self._get_connection()
-            rows = [dict(row) for row in conn.execute(
-                "SELECT * FROM editor_runs WHERE translation_id = ? ORDER BY id",
-                (translation_id,),
-            ).fetchall()]
-            if not rows:
-                return {
-                    "translation_id": translation_id,
-                    "classification": "legacy_unclassified",
-                    "summary": {"total": 0},
-                    "runs": [],
-                }
-            outcomes: Dict[str, int] = {}
-            failures: Dict[str, int] = {}
-            result_states: Dict[str, int] = {}
-            attempts_by_run: Dict[int, list] = {}
-            run_ids = [int(row["id"]) for row in rows]
-            if run_ids:
-                placeholders = ",".join("?" for _ in run_ids)
-                for attempt_row in conn.execute(
-                    f"SELECT * FROM editor_attempts WHERE run_id IN ({placeholders}) "
-                    "ORDER BY run_id, attempt_index",
-                    run_ids,
-                ).fetchall():
-                    attempt = dict(attempt_row)
-                    for field in ("reason_codes", "excerpts"):
-                        try:
-                            attempt[field] = json.loads(attempt.get(field) or "[]")
-                        except (TypeError, ValueError):
-                            attempt[field] = []
-                    # The API exposes classifications, not book excerpts.
-                    attempt.pop("excerpts", None)
-                    attempts_by_run.setdefault(int(attempt["run_id"]), []).append(
-                        attempt
-                    )
-            for row in rows:
-                stored_outcome = row.get("outcome") or "unknown"
-                normalized_outcome = {
-                    "repaired": "llm_repaired",
-                    "draft_kept_review": "review_required",
-                }.get(stored_outcome, stored_outcome)
-                if normalized_outcome != stored_outcome:
-                    row["legacy_outcome"] = stored_outcome
-                    row["outcome"] = normalized_outcome
-                outcomes[normalized_outcome] = outcomes.get(normalized_outcome, 0) + 1
-                result_state = row.get("result_state") or "unchanged_draft"
-                result_states[result_state] = result_states.get(result_state, 0) + 1
-                if row.get("failure_class"):
-                    failures[row["failure_class"]] = failures.get(
-                        row["failure_class"], 0
-                    ) + 1
-                try:
-                    row["diagnostics"] = json.loads(row.get("diagnostics") or "{}")
-                except (TypeError, ValueError):
-                    row["diagnostics"] = {}
-                row["diagnostics"].pop("issues", None)
-                row["attempts"] = attempts_by_run.get(int(row["id"]), [])
-                attempts = row["attempts"]
-                row["request_count"] = len([
-                    item for item in attempts
-                    if int(item.get("prompt_tokens", 0) or 0) > 0
-                ])
-                row["max_request_prompt_tokens"] = max(
-                    (int(item.get("prompt_tokens", 0) or 0) for item in attempts),
-                    default=0,
-                )
-                row["max_request_total_tokens"] = max(
-                    (int(item.get("total_tokens", 0) or 0) for item in attempts),
-                    default=0,
-                )
-                row["cumulative_prompt_tokens"] = int(
-                    row.get("prompt_tokens", 0) or 0
-                )
-                row["cumulative_completion_tokens"] = int(
-                    row.get("completion_tokens", 0) or 0
-                )
-                row["cumulative_thinking_tokens"] = int(
-                    row.get("thinking_tokens", 0) or 0
-                )
-                row["cumulative_total_tokens"] = int(
-                    row.get("total_tokens", 0) or 0
-                )
-            successful = sum(
-                outcomes.get(name, 0)
-                for name in (
-                    "no_issues", "warnings_only", "locally_repaired",
-                    "llm_repaired",
-                )
-            )
-            review_count = outcomes.get("review_required", 0)
-            degraded = outcomes.get("transport_failed", 0)
-            hard_failed = outcomes.get("blocked", 0)
-            latest_by_unit: Dict[tuple, Dict[str, Any]] = {}
-            for row in rows:
-                effective_phase = str(row.get("phase") or "translation")
-                if effective_phase == "manual_retry":
-                    effective_phase = "translation"
-                latest_by_unit[(
-                    int(row.get("chunk_index", -1)),
-                    effective_phase,
-                )] = row
-            active_refinement_indices = {
-                int(item[0]) for item in conn.execute(
-                    "SELECT r.base_chunk_index FROM refinement_chunk_results r "
-                    "JOIN refinement_passes p ON p.pass_id=r.pass_id "
-                    "WHERE p.translation_id=? AND p.promoted=1 "
-                    "AND r.base_chunk_index IS NOT NULL",
-                    (translation_id,),
-                ).fetchall()
-            }
-            current_runs = [
-                row for (chunk_index, phase), row in latest_by_unit.items()
-                if not (
-                    phase == "translation"
-                    and chunk_index in active_refinement_indices
-                )
-            ]
-            current_review_queue = []
-            for row in current_runs:
-                if row.get("outcome") not in {
-                    "review_required", "transport_failed", "blocked",
-                }:
-                    continue
-                reason_codes = []
-                for attempt in row.get("attempts") or []:
-                    reason_codes.extend(attempt.get("reason_codes") or [])
-                reason_codes.extend(
-                    (row.get("diagnostics") or {}).get("reason_codes") or []
-                )
-                current_review_queue.append({
-                    "run_id": row.get("id"),
-                    "chunk_index": row.get("chunk_index"),
-                    "phase": row.get("phase") or "translation",
-                    "outcome": row.get("outcome"),
-                    "failure_class": row.get("failure_class"),
-                    "attempts_used": len(row.get("attempts") or []),
-                    "reason_codes": list(dict.fromkeys(
-                        str(code) for code in reason_codes if code
-                    ))[:12],
-                    "retryable": row.get("outcome") in {
-                        "review_required", "transport_failed",
-                    },
-                })
-            current_successful = sum(
-                1 for row in current_runs
-                if row.get("outcome") in {
-                    "no_issues", "warnings_only", "locally_repaired", "llm_repaired",
-                }
-            )
-            current_degraded = sum(
-                1 for row in current_runs if row.get("outcome") == "transport_failed"
-            )
-            current_blocked = sum(
-                1 for row in current_runs if row.get("outcome") == "blocked"
-            )
-            return {
-                "translation_id": translation_id,
-                "classification": "classified",
-                "summary": {
-                    "total": len(rows),
-                    "outcomes": outcomes,
-                    "failure_classes": failures,
-                    "result_states": result_states,
-                    "successful": current_successful,
-                    "review_required": len(current_review_queue),
-                    "historical_successful": successful,
-                    "historical_review_required": review_count,
-                    "degraded": current_degraded,
-                    "hard_failed": current_blocked,
-                    "current_total": len(current_runs),
-                    "current_review_required": len(current_review_queue),
-                    "warnings": sum(
-                        int(row.get("warning_count", 0) or 0) for row in rows
-                    ),
-                    "recovered": sum(
-                        int(bool(row.get("recovered_truncation"))) for row in rows
-                    ),
-                },
-                "current_review_queue": current_review_queue,
-                "runs": rows,
-            }
+        return self.editor.get_editor_diagnostics(translation_id)
 
     def create_editor_repair_batch(
         self, batch_id: str, translation_id: str, scope: str, phase: str,

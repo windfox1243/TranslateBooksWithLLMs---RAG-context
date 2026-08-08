@@ -51,10 +51,16 @@ discarding useful translations while retaining an explicit review queue.
 - `src/core/common/`, `src/core/epub/`, `src/core/subtitle_translator.py`:
   orchestration and structural validation for each format.
 - `src/persistence/repositories/`: narrow job, editor, structured-context, and
-  narrator interfaces. `Database` remains the compatibility facade and still
-  owns the SQL; the repositories are cached, stateless views that expose an
-  agreed subset of it. Read this as a naming boundary, not a completed
-  migration -- no statement has moved behind it yet.
+  narrator interfaces, cached one per `Database` instance.
+  `JobRepository` and `EditorRepository` now own their SQL outright: the seven
+  job/chunk methods and the four editor-run methods have their bodies here, and
+  the same-named methods on `Database` are one-line delegations kept so the
+  existing call sites keep working. `ContextRepository` and `NarratorRepository`
+  are still pure naming boundaries -- they forward to `Database` through the
+  `__getattr__` in `repositories/base.py` and own no statement.
+  The connection pool and the write lock stay on `Database`, since it is the
+  object that opens the file and registers the atexit close; the repositories
+  reach them through `self.database`.
 - `src/persistence/schema.py`: every table, additive migration and index, and
   the one function that applies them. The sweep runs on each `Database()`
   construction because it also carries data-repair passes (the contract-v2
