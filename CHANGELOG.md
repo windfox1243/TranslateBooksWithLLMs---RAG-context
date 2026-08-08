@@ -25,6 +25,7 @@
 - Gave a context update one return value. `update_novel_context_chunk` filled its three caller-owned dictionaries at twelve points across three exits, and a filled-but-empty dictionary could not say whether the update found nothing or failed outright. The outcome is now built once as a value and published in one place. The public signature and the three-tuple it returns are unchanged.
 - Moved `_is_valid_glossary_term` from `src/core/translator.py` to `src/utils/novel_context/glossary.py`, where the rest of the glossary rules live. It is a pure string predicate with no engine dependency, and the context session needed it, which had `src/utils` importing from `src/core`. It is re-exported from its old home.
 - Declared the `RefinementContextTracker` attributes derived in `__post_init__` as real dataclass fields, so half the tracker's state is no longer invisible to `repr`, equality, and type checking.
+- Lifted two layers out of the 2,331-line `characters.py`, bringing it to 1,607: `name_keys.py` for naming, key derivation, and name comparison, and `character_facts.py` for the fact list a character value carries. Neither reaches back. The rest of the module is genuinely mutually recursive through `_normalize_character_value` and stays where it is. Every moved name is re-exported from its old home, so no call site changed.
 
 ### Fixed
 
@@ -54,7 +55,8 @@
 - Added coverage for resume-context precedence, including the case where the resume index is reported although no snapshot was found for it.
 - Added coverage for the three novel-context state leaks: a failed update carrying the previous speaker state forward, the gating override staying on its own thread and never writing back to the shared configuration, and concurrent writers to one context file each staging through their own temporary.
 - Added coverage for context-file reconciliation: two sessions opened against one file keeping both their findings, a session adopting what it merged so its next chunk does not re-propose superseded state, and an unreadable file still saving rather than turning a rare concurrency case into a common failure.
-- Passed the complete automated suite with 2,002 tests passing, one skipped, and ten intentionally deselected integration cases, with the characterization goldens byte-identical throughout the refactor.
+- Added a layering gate asserting that `name_keys` imports nothing but `constants`, that `character_facts` adds only `name_keys`, and that neither imports `characters` — a single import in the wrong direction would restore the cycle the split removed.
+- Passed the complete automated suite with 2,006 tests passing, one skipped, and ten intentionally deselected integration cases, with the characterization goldens byte-identical throughout the refactor.
 
 ### Deferred
 
