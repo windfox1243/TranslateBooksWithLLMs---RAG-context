@@ -16,9 +16,9 @@ from src.persistence.database import Database
 # Recomputed by hand when the DDL legitimately changes -- and the change must
 # come with a SCHEMA_VERSION bump in the same commit, or existing databases
 # silently skip the new statement.
-EXPECTED_SCHEMA_VERSION = 1
+EXPECTED_SCHEMA_VERSION = 2
 EXPECTED_DDL_DIGEST = (
-    "604b97af1148e13bc97479a5563e582612ece78dd7f920c20166d7dd49a13b27"
+    "abed48a016df9bb0a128d73f7b91cb100ec7eb56fc5ccc8cf9d7ac25baef5285"
 )
 
 

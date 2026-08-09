@@ -12,7 +12,7 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.persistence.schema import _evidence_fingerprint, apply_schema
 
@@ -40,6 +40,7 @@ _TRANSLATION_CHILD_TABLES = (
     "context_relationship_derivations",
     "context_relationship_conflicts",
     "context_relationship_evidence",
+    "context_relationship_edge_history",
     "context_relationship_edges",
     "context_relationship_nodes",
     "context_reasoning_migrations",
@@ -510,6 +511,177 @@ class Database:
             "DELETE FROM translation_jobs WHERE translation_id = ?",
             (translation_id,),
         )
+
+    def find_previous_job_for_context_file(
+        self,
+        novel_context_file: str,
+        exclude_translation_id: str = "",
+        scan_limit: int = 200,
+    ) -> Optional[str]:
+        """Return the newest other job that used the same novel context file.
+
+        Read from Python rather than json_extract so the query does not depend
+        on the JSON1 extension being compiled into whatever SQLite the packaged
+        build ships with.
+        """
+        wanted = str(novel_context_file or "").strip()
+        if not wanted:
+            return None
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                rows = conn.execute(
+                    "SELECT translation_id, config FROM translation_jobs "
+                    "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                    (int(scan_limit),),
+                ).fetchall()
+            except Exception as exc:
+                logger.warning("Could not scan jobs for %r: %s", wanted, exc)
+                return None
+        for row in rows:
+            translation_id = row["translation_id"]
+            if not translation_id or translation_id == exclude_translation_id:
+                continue
+            try:
+                config = json.loads(row["config"] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            options = (config or {}).get("prompt_options") or {}
+            if str(options.get("novel_context_file") or "").strip() == wanted:
+                return translation_id
+        return None
+
+    def _copy_context_rows(
+        self,
+        conn: sqlite3.Connection,
+        table: str,
+        source_translation_id: str,
+        target_translation_id: str,
+        overrides: Optional[Dict[str, Dict[Any, Any]]] = None,
+    ) -> List[Tuple[Any, Any]]:
+        """Copy one job's rows of `table` to another job, returning id pairs.
+
+        Columns are read from the row itself so a later schema migration is
+        carried over without having to be listed here twice.
+        """
+        rows = conn.execute(
+            f"SELECT * FROM {table} WHERE translation_id = ?",
+            (source_translation_id,),
+        ).fetchall()
+        copied: List[Tuple[Any, Any]] = []
+        for row in rows:
+            values = dict(row)
+            old_id = values.pop("id", None)
+            values["translation_id"] = target_translation_id
+            for column, mapping in (overrides or {}).items():
+                if column in values:
+                    remapped = mapping.get(values[column])
+                    if remapped is None:
+                        values = {}
+                        break
+                    values[column] = remapped
+            if not values:
+                # An edge whose node did not come across would dangle.
+                continue
+            columns = ", ".join(values)
+            placeholders = ", ".join("?" for _ in values)
+            cursor = conn.execute(
+                f"INSERT OR IGNORE INTO {table} ({columns}) VALUES ({placeholders})",
+                tuple(values.values()),
+            )
+            if cursor.rowcount:
+                copied.append((old_id, cursor.lastrowid))
+        return copied
+
+    def carry_over_structured_context(
+        self,
+        target_translation_id: str,
+        source_translation_id: str,
+    ) -> Dict[str, int]:
+        """Seed a job's structured context from an earlier job on the same book.
+
+        The markdown context file is per novel, but every structured table is
+        keyed by job, and exporting those tables to markdown keeps only the
+        rendered line: locks, confidence, provenance and evidence do not
+        survive the round trip. So volume 2 used to start with an addressing
+        rule the user had locked in volume 1 unlocked, at default confidence,
+        and free to be overwritten by the model's first guess.
+
+        Copying is skipped when the target already has structured state, so a
+        resumed or re-run job is never overwritten.
+        """
+        counts: Dict[str, int] = {}
+        if not target_translation_id or not source_translation_id:
+            return counts
+        if target_translation_id == source_translation_id:
+            return counts
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                existing = conn.execute(
+                    "SELECT (SELECT COUNT(*) FROM context_addressing_rules "
+                    "        WHERE translation_id = ?) "
+                    "     + (SELECT COUNT(*) FROM context_relationship_nodes "
+                    "        WHERE translation_id = ?)",
+                    (target_translation_id, target_translation_id),
+                ).fetchone()[0]
+                if existing:
+                    return counts
+
+                node_ids = dict(
+                    self._copy_context_rows(
+                        conn,
+                        "context_relationship_nodes",
+                        source_translation_id,
+                        target_translation_id,
+                    )
+                )
+                counts["relationship_nodes"] = len(node_ids)
+                edge_ids = dict(
+                    self._copy_context_rows(
+                        conn,
+                        "context_relationship_edges",
+                        source_translation_id,
+                        target_translation_id,
+                        overrides={
+                            "source_node_id": node_ids,
+                            "target_node_id": node_ids,
+                        },
+                    )
+                )
+                counts["relationship_edges"] = len(edge_ids)
+                counts["relationship_history"] = len(
+                    self._copy_context_rows(
+                        conn,
+                        "context_relationship_edge_history",
+                        source_translation_id,
+                        target_translation_id,
+                        overrides={"edge_id": edge_ids},
+                    )
+                )
+                for table, key in (
+                    ("context_addressing_rules", "addressing_rules"),
+                    ("context_addressing_evidence", "addressing_evidence"),
+                    ("context_entities", "entities"),
+                ):
+                    counts[key] = len(
+                        self._copy_context_rows(
+                            conn,
+                            table,
+                            source_translation_id,
+                            target_translation_id,
+                        )
+                    )
+                conn.commit()
+            except Exception as exc:
+                logger.warning(
+                    "Could not carry structured context from %s to %s: %s",
+                    source_translation_id,
+                    target_translation_id,
+                    exc,
+                )
+                return {}
+        return {key: value for key, value in counts.items() if value}
 
     def purge_orphan_rows(self) -> Dict[str, int]:
         """Remove rows whose translation job no longer exists.
@@ -1540,11 +1712,143 @@ class Database:
                     relationship_type, scope,
                 ))
                 row = cursor.fetchone()
+                edge_id = int(row["id"]) if row else None
+                if edge_id is not None:
+                    self._record_relationship_edge_state(
+                        conn, translation_id, edge_id, chunk_index
+                    )
                 self._commit_connection(conn)
-                return int(row["id"]) if row else None
+                return edge_id
             except Exception as e:
                 print(f"Error upserting relationship edge: {e}")
                 return None
+
+    _HISTORY_FIELDS = (
+        "relationship_type", "direction", "scope", "hierarchy",
+        "intimacy", "register", "status", "details",
+    )
+
+    def _record_relationship_edge_state(
+        self,
+        conn: sqlite3.Connection,
+        translation_id: str,
+        edge_id: int,
+        chunk_index: int,
+    ) -> None:
+        """Append this edge's state to its history when the state has changed.
+
+        Only a change is recorded: a relationship reasserted unchanged for two
+        hundred chunks is one row, so the history stays the shape of the story
+        rather than the shape of the run.
+        """
+        current = conn.execute(
+            "SELECT {} FROM context_relationship_edges WHERE id = ?".format(
+                ", ".join(self._HISTORY_FIELDS)
+            ),
+            (edge_id,),
+        ).fetchone()
+        if current is None:
+            return
+        state = {field: current[field] for field in self._HISTORY_FIELDS}
+        chunk = max(0, int(chunk_index or 0))
+        latest = conn.execute(
+            "SELECT {} FROM context_relationship_edge_history "
+            "WHERE translation_id = ? AND edge_id = ? AND from_chunk_index <= ? "
+            "ORDER BY from_chunk_index DESC LIMIT 1".format(
+                ", ".join(self._HISTORY_FIELDS)
+            ),
+            (translation_id, edge_id, chunk),
+        ).fetchone()
+        if latest is not None and all(
+            latest[field] == state[field] for field in self._HISTORY_FIELDS
+        ):
+            return
+        columns = ["translation_id", "edge_id", "from_chunk_index", *self._HISTORY_FIELDS]
+        conn.execute(
+            "INSERT OR REPLACE INTO context_relationship_edge_history ({}) "
+            "VALUES ({})".format(
+                ", ".join(columns), ", ".join("?" for _ in columns)
+            ),
+            (translation_id, edge_id, chunk, *state.values()),
+        )
+
+    def get_relationship_edge_history(
+        self,
+        translation_id: str,
+        edge_id: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return recorded edge states, oldest first."""
+
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                query = (
+                    "SELECT * FROM context_relationship_edge_history "
+                    "WHERE translation_id = ?"
+                )
+                params: List[Any] = [translation_id]
+                if edge_id is not None:
+                    query += " AND edge_id = ?"
+                    params.append(edge_id)
+                query += " ORDER BY edge_id, from_chunk_index"
+                return [
+                    dict(row) for row in conn.execute(query, tuple(params)).fetchall()
+                ]
+            except Exception as exc:
+                logger.warning("Could not read relationship history: %s", exc)
+                return []
+
+    def get_relationship_edges_as_of(
+        self,
+        translation_id: str,
+        chunk_index: int,
+        statuses: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return each edge as it stood at `chunk_index`, with node names.
+
+        An edge with no recorded state at or before that chunk did not exist
+        yet, so it is left out rather than back-dated.
+        """
+        edges = {
+            int(edge["id"]): edge
+            for edge in self.get_relationship_edges(translation_id)
+            if edge.get("id") is not None
+        }
+        if not edges:
+            return []
+        wanted = {status for status in statuses} if statuses else None
+        chunk = max(0, int(chunk_index or 0))
+        result: List[Dict[str, Any]] = []
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                rows = conn.execute(
+                    "SELECT h.* FROM context_relationship_edge_history h "
+                    "JOIN (SELECT edge_id, MAX(from_chunk_index) AS latest "
+                    "      FROM context_relationship_edge_history "
+                    "      WHERE translation_id = ? AND from_chunk_index <= ? "
+                    "      GROUP BY edge_id) newest "
+                    "  ON newest.edge_id = h.edge_id "
+                    " AND newest.latest = h.from_chunk_index "
+                    "WHERE h.translation_id = ?",
+                    (translation_id, chunk, translation_id),
+                ).fetchall()
+            except Exception as exc:
+                logger.warning("Could not read relationships as of a chunk: %s", exc)
+                return []
+        for row in rows:
+            edge = edges.get(int(row["edge_id"]))
+            if edge is None:
+                continue
+            historical = dict(edge)
+            for field in self._HISTORY_FIELDS:
+                historical[field] = row[field]
+            historical["as_of_chunk_index"] = int(row["from_chunk_index"])
+            if wanted is not None and historical.get("status") not in wanted:
+                continue
+            result.append(historical)
+        result.sort(key=lambda item: (item.get("source_name") or "", item.get("target_name") or ""))
+        return result
 
     def claim_reasoning_migration(
         self, translation_id: str, migration_key: str,
