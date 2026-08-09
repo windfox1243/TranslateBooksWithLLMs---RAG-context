@@ -44,9 +44,12 @@
 - Removed a dead write in `update_novel_context_chunk`, which published the addressing candidates once in the middle of the successful path and again at its end. There is no return between the two, so the first was always overwritten before any caller could observe it.
 - Fixed the background context resync running twice. The call that awaited the result shared a `try` with the event-loop acquisition, so an error raised by the resync itself was mistaken for a missing loop and the whole pass, database writes included, was replayed.
 - Reported five failures that were previously discarded in silence. An EPUB chapter that fails to parse during the refine pre-count shifts the chunk indices every later file is snapshotted under. A failed per-unit lore reload, in both translation loops, leaves drafting against the previous unit's context. A failed editor pre-flight leaves proper names out of the protected set, so the editor is free to rewrite them. And a relationship node overwrote stored aliases it could not parse with only the incoming set, which makes a character stop being recognized mid-book. All five still continue past the failure on purpose, but now say what was lost.
+- Fixed the requested context window never reaching the LLM client for TXT and SRT jobs. It was written into the adapter configuration, which only sizes chunks, and left out of the configuration the client is built from, so every job ran at whatever `OLLAMA_NUM_CTX` happened to be. On a small window this also skipped every novel-context update, because the update prompt is larger than a translation prompt: the context file stayed empty while the job log still reported the context as committed.
+- Fixed the re-sync Cancel button rendering the raw key `translation:context_cancel_btn`, which existed in no locale file. It now uses `common:cancel`, which is already translated in all seven.
 
 ### Tests
 
+- Added a regression asserting the caller's context window reaches the LLM client, which fails against the previous code because the key is absent entirely.
 - Added regression coverage for the cleanup timezone bug under a non-UTC local zone, cross-thread connection release, completed-job eviction, atomic log appends, and the concurrency cap.
 - Added structural gates that fail on drift: a snapshot of the `novel_context` public surface, a snapshot of the translation blueprint's URL map, and schema ownership, idempotence, and repository caching checks.
 - Added a digest of the schema DDL that fails unless `SCHEMA_VERSION` is bumped alongside it, so a new column cannot ship to a stamped database that will skip it.
@@ -56,7 +59,7 @@
 - Added coverage for the three novel-context state leaks: a failed update carrying the previous speaker state forward, the gating override staying on its own thread and never writing back to the shared configuration, and concurrent writers to one context file each staging through their own temporary.
 - Added coverage for context-file reconciliation: two sessions opened against one file keeping both their findings, a session adopting what it merged so its next chunk does not re-propose superseded state, and an unreadable file still saving rather than turning a rare concurrency case into a common failure.
 - Added a layering gate asserting that `name_keys` imports nothing but `constants`, that `character_facts` adds only `name_keys`, and that neither imports `characters` — a single import in the wrong direction would restore the cycle the split removed.
-- Passed the complete automated suite with 2,006 tests passing, one skipped, and ten intentionally deselected integration cases, with the characterization goldens byte-identical throughout the refactor.
+- Passed the complete automated suite with 2,007 tests passing, one skipped, and ten intentionally deselected integration cases, with the characterization goldens byte-identical throughout the refactor.
 
 ### Deferred
 
