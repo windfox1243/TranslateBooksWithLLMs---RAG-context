@@ -31,7 +31,7 @@ import hashlib
 from typing import Any, Callable
 
 # Bump whenever _create_tables_and_migrate_columns changes.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _evidence_fingerprint(*parts: Any) -> str:
@@ -337,6 +337,38 @@ def _create_tables_and_migrate_columns(cursor: Any) -> None:
                 f"ALTER TABLE context_relationship_edges ADD COLUMN "
                 f"{column} {definition}"
             )
+
+    # An edge holds one current state per pair, so "enemies until chunk 40,
+    # allies after" was not representable and the earlier half was simply
+    # overwritten. This append-only companion keeps each state and the chunk it
+    # started at, which is what a translation of chapter 5 needs -- chapter 5's
+    # relationships, not the last chapter's.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS context_relationship_edge_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            translation_id TEXT NOT NULL,
+            edge_id INTEGER NOT NULL,
+            from_chunk_index INTEGER NOT NULL DEFAULT 0,
+            relationship_type TEXT NOT NULL,
+            direction TEXT NOT NULL DEFAULT 'symmetric',
+            scope TEXT NOT NULL DEFAULT 'durable',
+            hierarchy TEXT NOT NULL DEFAULT 'unknown',
+            intimacy TEXT NOT NULL DEFAULT 'unknown',
+            register TEXT NOT NULL DEFAULT 'neutral',
+            status TEXT NOT NULL DEFAULT 'accepted',
+            details TEXT,
+            recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(translation_id, edge_id, from_chunk_index),
+            FOREIGN KEY (edge_id)
+                REFERENCES context_relationship_edges(id) ON DELETE CASCADE
+        )
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_relationship_edge_history_lookup
+        ON context_relationship_edge_history (
+            translation_id, edge_id, from_chunk_index
+        )
+    """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS context_relationship_evidence (

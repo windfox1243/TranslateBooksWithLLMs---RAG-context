@@ -19,6 +19,47 @@ from .format_adapter import FormatAdapter
 logger = get_logger(__name__)
 
 
+def _carry_over_previous_context_state(
+    db: Any,
+    translation_id: str,
+    novel_context_file: str,
+    log_callback: Optional[Callable[..., Any]] = None,
+) -> Dict[str, int]:
+    """Seed this job's structured context from the last job on the same book.
+
+    Best effort by design: a book with no earlier job, or a database without
+    the lookup, simply starts empty as it always did.
+    """
+    from src.utils.novel_context import normalize_novel_context_filename
+    from src.utils.progress_logging import emit_progress_log
+
+    try:
+        filename = normalize_novel_context_filename(novel_context_file)
+        previous = db.find_previous_job_for_context_file(
+            filename, exclude_translation_id=translation_id
+        )
+        if not previous:
+            return {}
+        counts = db.carry_over_structured_context(translation_id, previous)
+    except Exception as exc:
+        logger.warning("Could not carry over previous context state: %s", exc)
+        return {}
+    if not counts:
+        return {}
+    summary = ", ".join(
+        f"{value} {key.replace('_', ' ')}" for key, value in sorted(counts.items())
+    )
+    emit_progress_log(
+        log_callback,
+        "context_state_carried_over",
+        f"Carried structured context forward from the previous job on this "
+        f"book: {summary}.",
+        layer="novel_context",
+        data={"source_translation_id": previous, "counts": counts},
+    )
+    return counts
+
+
 @dataclass(frozen=True)
 class CheckpointRestore:
     """What a resume recovered, or the empty result of starting a fresh job."""
@@ -504,6 +545,23 @@ class GenericTranslator:
                         )
                     )
                     log_callback(event_type, message)
+                # Before either markdown sync: the structured tables are keyed
+                # by job, so a new volume on the same context file starts empty
+                # and the markdown round trip cannot restore what it dropped --
+                # locks above all. Carrying the rows over first also means the
+                # markdown sync below sees the locks and leaves them alone.
+                if (
+                    context_session
+                    and self.translation_id
+                    and getattr(self.checkpoint_manager, "db", None)
+                    and novel_context_file
+                ):
+                    _carry_over_previous_context_state(
+                        db=self.checkpoint_manager.db,
+                        translation_id=self.translation_id,
+                        novel_context_file=novel_context_file,
+                        log_callback=log_callback,
+                    )
                 if (
                     context_session
                     and self.translation_id

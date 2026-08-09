@@ -700,13 +700,27 @@ def attach_relationship_context_to_prompt_options(
 def export_relationship_graph_to_markdown(
     translation_id: str,
     db: Optional[Database],
+    *,
+    as_of_chunk: Optional[int] = None,
 ) -> str:
-    """Export accepted non-addressing graph edges as relationship markdown."""
+    """Export accepted non-addressing graph edges as relationship markdown.
+
+    With ``as_of_chunk`` the edges are taken as they stood at that point in the
+    book instead of as they stand now. Chapter 5 was translated by people who
+    were still enemies; rebuilding its context from the last chapter's graph
+    would hand the refine pass an alliance that had not happened yet.
+    """
 
     if not translation_id or db is None:
         return ""
+    if as_of_chunk is None:
+        edges = db.get_relationship_edges(translation_id, statuses=["accepted"])
+    else:
+        edges = db.get_relationship_edges_as_of(
+            translation_id, as_of_chunk, statuses=["accepted"]
+        )
     lines = []
-    for edge in db.get_relationship_edges(translation_id, statuses=["accepted"]):
+    for edge in edges:
         if edge.get("relationship_type") == "addressing":
             continue
         arrow = "\u2194" if edge.get("direction") == "symmetric" else "\u2192"
@@ -722,8 +736,14 @@ def apply_relationship_graph_to_context(
     translation_id: str,
     db: Optional[Database],
     fallback_context: str = "",
+    *,
+    as_of_chunk: Optional[int] = None,
 ) -> str:
-    """Return context content with accepted graph relationships exported."""
+    """Return context content with accepted graph relationships exported.
+
+    Pass ``as_of_chunk`` when rewriting a stored snapshot of an earlier chunk,
+    so it gets the relationships of its own moment in the book.
+    """
 
     global_lore, addressing, current_relationships = _context_parts(
         context_content
@@ -733,7 +753,9 @@ def apply_relationship_graph_to_context(
         for line in current_relationships.splitlines()
         if line.strip() and not _RELATION_LINE_RE.match(line)
     ]
-    exported = export_relationship_graph_to_markdown(translation_id, db)
+    exported = export_relationship_graph_to_markdown(
+        translation_id, db, as_of_chunk=as_of_chunk
+    )
     if not exported:
         if not fallback_context:
             return context_content
