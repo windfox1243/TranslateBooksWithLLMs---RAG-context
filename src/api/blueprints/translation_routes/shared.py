@@ -113,7 +113,10 @@ def build_shared(deps) -> SharedHelpers:
         if not filename:
             return False
         from src.config import NOVEL_CONTEXTS_DIR
-        from src.utils.db_addressing import apply_db_addressing_to_context
+        from src.utils.db_addressing import (
+            apply_db_addressing_to_context,
+            overlay_locked_addressing_on_context,
+        )
         from src.utils.novel_context import (
             compress_dynamic_state,
             decode_context_snapshot,
@@ -133,28 +136,61 @@ def build_shared(deps) -> SharedHelpers:
 
         chunks = db.get_chunks(translation_id)
         if chunks:
-            latest = max(chunks, key=lambda item: item.get("chunk_index", -1))
-            chunk_data = dict(latest.get("chunk_data") or {})
-            snapshot = chunk_data.get("context_snapshot")
-            if snapshot:
+            latest_index = max(
+                item.get("chunk_index", -1) for item in chunks
+            )
+            for chunk in chunks:
+                chunk_data = dict(chunk.get("chunk_data") or {})
+                snapshot = chunk_data.get("context_snapshot")
+                if not snapshot:
+                    continue
                 snapshot_context, _global, _dynamic = decode_context_snapshot(
                     snapshot,
                     updated,
                 )
-                snapshot_context = apply_db_addressing_to_context(
-                    snapshot_context, translation_id, db, fallback_context=updated
-                )
-                snapshot_context = apply_relationship_graph_to_context(
-                    snapshot_context, translation_id, db, fallback_context=updated
-                )
-                chunk_data["context_snapshot"] = compress_dynamic_state(snapshot_context)
+                if chunk.get("chunk_index", -1) == latest_index:
+                    # The latest snapshot is the present state, so it takes the
+                    # full current picture: every rule and every relationship.
+                    rewritten = apply_db_addressing_to_context(
+                        snapshot_context,
+                        translation_id,
+                        db,
+                        fallback_context=updated,
+                    )
+                    rewritten = apply_relationship_graph_to_context(
+                        rewritten, translation_id, db, fallback_context=updated
+                    )
+                else:
+                    # Earlier snapshots keep their own history and receive only
+                    # what the user locked. Refinement replays these and reads
+                    # nothing else, so without this a rule locked in the UI
+                    # never reaches a refine pass at all.
+                    rewritten = overlay_locked_addressing_on_context(
+                        snapshot_context, translation_id, db
+                    )
+                    # Relationships change over a book, so an earlier snapshot
+                    # gets the graph as of its own chunk, never the latest one.
+                    # With no recorded history the export is empty and the
+                    # snapshot's own relationships are left untouched.
+                    rewritten = apply_relationship_graph_to_context(
+                        rewritten,
+                        translation_id,
+                        db,
+                        as_of_chunk=chunk.get("chunk_index", 0),
+                    )
+                    if rewritten == snapshot_context:
+                        continue
+                compressed = compress_dynamic_state(rewritten)
+                if compressed == snapshot:
+                    continue
+                chunk_data["context_snapshot"] = compressed
                 db.save_chunk(
                     translation_id=translation_id,
-                    chunk_index=latest["chunk_index"],
-                    original_text=latest.get("original_text"),
-                    translated_text=latest.get("translated_text"),
+                    chunk_index=chunk["chunk_index"],
+                    original_text=chunk.get("original_text"),
+                    translated_text=chunk.get("translated_text"),
                     chunk_data=chunk_data,
-                    status=latest.get("status") or "completed",
+                    status=chunk.get("status") or "completed",
                 )
         return True
     def make_context_resync_auto_resume_callback(translation_id):
