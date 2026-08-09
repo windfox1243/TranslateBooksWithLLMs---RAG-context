@@ -149,6 +149,17 @@ _RELOADABLE_ENV_SETTINGS = (
     # LLM call rewrites the Characters section to remove duplicate / redundant
     # descriptions that the deterministic merge layer missed. 0 = disabled.
     ('NOVEL_CONTEXT_CONSOLIDATION_INTERVAL', 'NOVEL_CONTEXT_CONSOLIDATION_INTERVAL', '5'),
+    # The consolidation pass is allowed to prune non-character entries, so some
+    # shrinkage is the point. Losing a large share of the cast in one pass is
+    # not pruning, it is a truncated or malformed response: past this percentage
+    # the whole pass is rejected and the previous lore kept. Rejecting costs one
+    # skipped dedup; accepting costs a character, and with it the recorded
+    # gender every later chunk needs to pick pronouns. 0 = no ceiling.
+    (
+        'NOVEL_CONTEXT_CONSOLIDATION_MAX_DROP_PERCENT',
+        'NOVEL_CONTEXT_CONSOLIDATION_MAX_DROP_PERCENT',
+        '34',
+    ),
 )
 
 
@@ -164,6 +175,7 @@ _INT_ATTRS = {
     'NOVEL_CONTEXT_UPDATE_INTERVAL',
     'NOVEL_CONTEXT_SOURCE_MEMORY_CHARS',
     'NOVEL_CONTEXT_CONSOLIDATION_INTERVAL',
+    'NOVEL_CONTEXT_CONSOLIDATION_MAX_DROP_PERCENT',
 }
 
 
