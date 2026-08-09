@@ -310,6 +310,10 @@ async def translate_file(
         'poe_api_key': poe_api_key,
         'nim_api_key': nim_api_key,
         'prompt_options': prompt_options,
+        # The LLM client is built from this dict, so leaving context_window out
+        # of it silently discarded the caller's value and fell back to
+        # OLLAMA_NUM_CTX. The adapter copy above only sizes chunks.
+        'context_window': context_window,
     }
 
     # Execute translation
