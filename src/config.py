@@ -143,6 +143,18 @@ _RELOADABLE_ENV_SETTINGS = (
     # Bounded previous-source tail injected only into context-analysis prompts.
     # This lets the analyzer resolve facts that span nearby chunk boundaries.
     ('NOVEL_CONTEXT_SOURCE_MEMORY_CHARS', 'NOVEL_CONTEXT_SOURCE_MEMORY_CHARS', '6000'),
+    # The pinned gender roster names every character in the book, so it grows
+    # with the book rather than with the chunk. Ranked by relevance first, so
+    # the cap falls on the cast this chunk is least about. 0 = no cap.
+    ('NOVEL_CONTEXT_GENDER_ROSTER_MAX', 'NOVEL_CONTEXT_GENDER_ROSTER_MAX', '40'),
+    # Share of the prompt budget the dynamic state keeps back from the lore.
+    # A floor, not a quota: unspent lore budget rolls over. It only bites when
+    # a long cast would otherwise leave no room for the addressing rules.
+    (
+        'NOVEL_CONTEXT_DYNAMIC_BUDGET_PERCENT',
+        'NOVEL_CONTEXT_DYNAMIC_BUDGET_PERCENT',
+        '40',
+    ),
     # Bypasses the deterministic validation layer to trust LLM context updates directly.
     ('BYPASS_CONTEXT_GATING', 'BYPASS_CONTEXT_GATING', 'true'),
     # LLM consolidation pass interval: after every Nth context chunk update, an
@@ -174,6 +186,8 @@ _INT_ATTRS = {
     'NOVEL_CONTEXT_PROMPT_MAX_TOKENS',
     'NOVEL_CONTEXT_UPDATE_INTERVAL',
     'NOVEL_CONTEXT_SOURCE_MEMORY_CHARS',
+    'NOVEL_CONTEXT_GENDER_ROSTER_MAX',
+    'NOVEL_CONTEXT_DYNAMIC_BUDGET_PERCENT',
     'NOVEL_CONTEXT_CONSOLIDATION_INTERVAL',
     'NOVEL_CONTEXT_CONSOLIDATION_MAX_DROP_PERCENT',
 }
