@@ -41,19 +41,23 @@ from .storage import load_novel_context, resolve_novel_context_path
 from .vietnamese import _is_vietnamese_target_language
 
 
-def _hook(name: str):
-    """Resolve a name through the package namespace at call time.
+def _package_update_chunk(*args: Any, **kwargs: Any):
+    """Call update_novel_context_chunk as the package currently exposes it.
 
-    novel_context used to be a single module, so a session calling
-    update_novel_context_chunk or save_novel_context resolved it from the
-    module globals on every call — which is what lets callers and tests
-    intercept the work by patching src.utils.novel_context.<name>. Importing
-    those two names directly here would bind them once and silently defeat
-    that, so they stay late-bound.
+    novel_context used to be a single module, so a session resolved this from
+    the module globals on every call -- which is what lets a pipeline test
+    intercept the work by patching src.utils.novel_context.update_novel_context_chunk
+    without reaching the session the pipeline builds several layers down.
+    Importing the name directly here would bind it once and silently defeat
+    that, so the lookup stays late.
+
+    It is the default of an injectable field rather than a lookup written into
+    each call site: anyone holding the session can hand it a different updater
+    outright, and the one place that still needs late binding says why.
     """
     from src.utils import novel_context
 
-    return getattr(novel_context, name)
+    return novel_context.update_novel_context_chunk(*args, **kwargs)
 
 
 @dataclass
@@ -66,6 +70,9 @@ class RefinementContextTracker:
         default_factory=list
     )
     log_callback: Optional[Callable] = None
+    # A default_factory rather than a plain default: a function stored as a
+    # class attribute would be handed self as its first argument.
+    update_chunk: Callable = field(default_factory=lambda: _package_update_chunk)
     cursor: int = 0
     # Derived in __post_init__ from prompt_options, but declared here so that
     # repr, equality and type checking see the whole object. Assigning them in
@@ -188,7 +195,7 @@ class RefinementContextTracker:
                 )
             dialogue_sink: Dict[str, Any] = {}
             dialogue_turns = detect_dialogue_turns(text)
-            self.global_lore, self.dynamic_state, change_logs = await _hook('update_novel_context_chunk')(
+            self.global_lore, self.dynamic_state, change_logs = await self.update_chunk(
                 llm_client=llm_client,
                 model_name=model_name,
                 current_global_lore=self.global_lore,
@@ -211,6 +218,7 @@ class RefinementContextTracker:
                 ),
                 custom_instructions=str(self.prompt_options.get("custom_instructions") or ""),
                 glossary_block=str(self.prompt_options.get("glossary_block") or ""),
+                log_callback=self.log_callback,
             )
             self.current_dialogue_attribution = dialogue_attribution_or_carry(
                 dialogue_sink, self.dialogue_state
@@ -273,6 +281,8 @@ class NovelContextSession:
     global_lore: str
     dynamic_state: str
     log_callback: Optional[Callable] = None
+    # See RefinementContextTracker.update_chunk for why this is a factory.
+    update_chunk: Callable = field(default_factory=lambda: _package_update_chunk)
     dialogue_state: Dict[str, str] = field(default_factory=dict)
     dialogue_attribution: Dict[str, Any] = field(default_factory=dict)
     dialogue_scene_key: Optional[str] = None
@@ -448,7 +458,7 @@ class NovelContextSession:
         dialogue_sink: Dict[str, Any] = {}
         relationship_sink: Dict[str, Any] = {}
         addressing_sink: Dict[str, Any] = {}
-        self.global_lore, self.dynamic_state, change_logs = await _hook('update_novel_context_chunk')(
+        self.global_lore, self.dynamic_state, change_logs = await self.update_chunk(
             llm_client=llm_client,
             model_name=model_name,
             current_global_lore=self.global_lore,
@@ -569,7 +579,7 @@ class NovelContextSession:
             dialogue_sink: Dict[str, Any] = {}
             relationship_sink: Dict[str, Any] = {}
             addressing_sink: Dict[str, Any] = {}
-            self.global_lore, self.dynamic_state, change_logs = await _hook('update_novel_context_chunk')(
+            self.global_lore, self.dynamic_state, change_logs = await self.update_chunk(
                 llm_client=llm_client,
                 model_name=model_name,
                 current_global_lore=self.global_lore,

@@ -9,6 +9,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from src.utils.atomic_replace import replace_atomically
+
 from .constants import (
     ADDRESSING_SECTION,
     ALIASES_SECTION,
@@ -178,10 +180,12 @@ def save_novel_context(filename: str, novel_contexts_dir: Path, content: str) ->
         )
         try:
             temporary_path.write_text(normalized, encoding="utf-8")
-            temporary_path.replace(file_path)
+            replace_atomically(temporary_path, file_path)
         finally:
-            # replace() consumed it on success; on failure it is a stray file.
+            # The replace consumed it on success; on failure it is a stray file.
             temporary_path.unlink(missing_ok=True)
+
+
 def resolve_novel_context_path(filename: str, novel_contexts_dir: Path) -> Path:
     """Resolve novel context file path. Checks directory first, then absolute/relative."""
     if is_safe_filename(filename):
