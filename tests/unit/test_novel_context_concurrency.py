@@ -235,12 +235,14 @@ def test_no_temporary_files_survive_a_save(tmp_path):
 
 
 def test_a_failed_write_does_not_leave_a_temporary_file(tmp_path, monkeypatch):
-    from pathlib import Path
+    import src.utils.atomic_replace as atomic_replace
 
-    def explode(self, *args, **kwargs):
+    def explode(*args, **kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(Path, "replace", explode)
+    # Patched where the replace actually happens. A bare OSError carries no
+    # winerror, so the helper treats it as a real failure and does not retry.
+    monkeypatch.setattr(atomic_replace.os, "replace", explode)
     with pytest.raises(OSError):
         save_novel_context("novel.txt", tmp_path, "# GLOBAL LORE\n")
     assert list(tmp_path.glob("*.tmp")) == []

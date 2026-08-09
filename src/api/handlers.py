@@ -16,6 +16,7 @@ from src.core.llm import OpenRouterProvider
 from src.core.llm.exceptions import RateLimitError
 from src.core.progress import snapshot_from_legacy_stats
 from src.tts.tts_config import TTSConfig
+from src.utils.atomic_replace import replace_atomically
 from src.utils.custom_instructions import is_safe_filename, load_custom_instructions
 from src.utils.file_utils import (
     find_partial_output_paths,
@@ -664,7 +665,7 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                     and refinement_failed_chunks == 0
                 )
                 if refine_completed_cleanly:
-                    os.replace(refinement_output_path, final_output_path)
+                    replace_atomically(refinement_output_path, final_output_path)
                     checkpoint_manager.mark_refinement_current(translation_id)
                     await _phase_boundary_review_repair('refinement')
                     _log_message_callback(

@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.17.0 - 2026-08-09
+
+The three items 1.16.0 deferred, all of them about a failure the user could not see.
+
+### Added
+
+- Added `src/utils/atomic_replace.py`, one replace that allows for a destination another program is holding open.
+
+### Changed
+
+- Every atomic file replace now goes through `replace_atomically`: the novel-context save, the editor-retry rebuild, and the refinement output promotion. `os.replace` is atomic on both platforms, but on Windows it fails outright whenever anything else has the destination open — a context file left open in an editor, an antivirus scanner, the search indexer, a preview pane. POSIX has no equivalent, so the failure was invisible on the platform the code was written on and routine on the platform it ships to. These holds are short, so a bounded retry turns a lost save into a pause of a few hundred milliseconds; a destination held for the whole window still raises, now naming the cause instead of surfacing as a bare `WinError`.
+- A context session takes its update function as a constructor argument. The three call sites resolved it by name through the package on every call, so the dependency was a string and the only way to substitute it was to patch the package. Anyone holding a session can now hand it a different updater outright, and the single remaining late lookup — the default, kept so the existing pipeline tests still reach a session built several layers down — is in one place and says why it is there.
+
+### Fixed
+
+- A novel-context update that produces nothing now reports it where the user is looking. Both failure exits — an empty model response and a raised exception — went to the server log and stopped, while the job log went on reporting the context as committed. A context file that stayed empty therefore had no stated cause, which is how a context window too small for the update prompt hid for an entire release. The report names the parse status and carries the raised cause.
+- The sequential-refinement context update now passes its log callback through, so its failures reach the job log rather than only the terminal. The other two call sites already did.
+
+### Tests
+
+- Added coverage for the replace: a clear destination replaced on the first attempt, a hold of two attempts waited out under both sharing-violation error numbers, a destination held for the whole window raising with the cause named, and a full disk raised on the first attempt rather than retried six times.
+- Added coverage for the failure report on both exits, for the raised cause reaching the report, for a session accepting an injected updater, and for the default updater not arriving bound as a method — a plain dataclass default would have eaten its first argument.
+- 2,017 passing, one skipped, ten intentionally deselected. Characterization goldens byte-identical.
+
 ## 1.16.0 - 2026-08-08
 
 ### Added

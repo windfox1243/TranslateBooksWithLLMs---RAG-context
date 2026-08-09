@@ -70,13 +70,52 @@ class ContextUpdateOutcome:
         return self.global_lore, self.dynamic_state, self.change_logs
 
 
+_UPDATE_FAILURE_MESSAGES = {
+    "empty_response": (
+        "The model returned nothing for this context update, so the novel "
+        "context is unchanged for this chunk."
+    ),
+    "update_failed": (
+        "This context update failed, so the novel context is unchanged for "
+        "this chunk."
+    ),
+}
+
+
 def _update_failed(
     global_lore: str,
     dynamic_state: str,
     parse_status: str,
+    *,
+    log_callback: Optional[Callable] = None,
+    chunk_index: Optional[int] = None,
+    detail: str = "",
 ) -> ContextUpdateOutcome:
-    """The outcome of an update that produced nothing, keeping the caller's state."""
+    """The outcome of an update that produced nothing, keeping the caller's state.
+
+    A failure here used to reach the server log and stop. The job log went on
+    reporting the context as committed, so the only visible symptom was a
+    context file that stayed empty for no stated reason -- which is how a
+    context window too small for the update prompt hid for an entire release.
+    Whoever is watching the run is told instead.
+    """
     from src.utils.dialogue_attribution import empty_dialogue_attribution
+    from src.utils.progress_logging import emit_progress_log
+
+    message = _UPDATE_FAILURE_MESSAGES.get(
+        parse_status, "This context update produced nothing."
+    )
+    emit_progress_log(
+        log_callback,
+        "novel_context_update_failed",
+        f"⚠️ {message}",
+        level="warning",
+        layer="novel_context",
+        chunk_index=chunk_index,
+        data={"parse_status": parse_status, "detail": detail} if detail else {
+            "parse_status": parse_status
+        },
+    )
 
     empty = {"candidates": [], "parse_status": parse_status}
     return ContextUpdateOutcome(
@@ -189,7 +228,11 @@ async def update_novel_context_chunk(
         if not response or not response.content:
             logger.warning("Empty response received from LLM during novel context chunk update. Keeping current state.")
             return _update_failed(
-                current_global_lore, current_dynamic_state, "empty_response"
+                current_global_lore,
+                current_dynamic_state,
+                "empty_response",
+                log_callback=log_callback,
+                chunk_index=chunk_index,
             ).publish(
                 dialogue_attribution_sink,
                 relationship_candidate_sink,
@@ -621,7 +664,12 @@ async def update_novel_context_chunk(
     except Exception as e:
         logger.error(f"Error in update_novel_context_chunk: {e}")
         return _update_failed(
-            current_global_lore, current_dynamic_state, "update_failed"
+            current_global_lore,
+            current_dynamic_state,
+            "update_failed",
+            log_callback=log_callback,
+            chunk_index=chunk_index,
+            detail=str(e),
         ).publish(
             dialogue_attribution_sink,
             relationship_candidate_sink,

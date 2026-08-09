@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import os
 import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+from src.utils.atomic_replace import replace_atomically
 
 TERMINAL_RETRY_STATES = {
     "succeeded", "review_required", "failed", "blocked",
@@ -213,7 +214,7 @@ async def _refresh_output(
         ) as handle:
             handle.write(output_bytes)
             temporary_path = Path(handle.name)
-        os.replace(temporary_path, output_path)
+        replace_atomically(temporary_path, output_path)
     finally:
         if temporary_path and temporary_path.exists():
             temporary_path.unlink(missing_ok=True)
