@@ -27,10 +27,12 @@ from .constants import (
     DYNAMIC_STATE_START,
     GLOSSARY_SECTION,
     RELATIONSHIP_SECTION,
+    logger,
 )
 from .document import extract_dynamic_state_from_text, extract_global_lore
 from .dynamic_state import _DYNAMIC_RELATION_PATTERN, _split_dynamic_sections
 from .merge import build_novel_context, normalize_novel_context_content
+from .retrieval import cap_roster, rank, score_entry, split_budget
 
 
 def _source_memory_budget_chars() -> int:
@@ -127,15 +129,36 @@ def _append_section_with_budget(
     entries: List[str],
     max_chars: int,
     reserved_chars: int,
-) -> None:
+) -> int:
+    """Append what fits, returning how many entries had to be left out."""
     if not entries:
-        return
+        return 0
     if not _append_line_with_budget(lines, "", max_chars, reserved_chars):
-        return
+        return len(entries)
     if not _append_line_with_budget(lines, section_name, max_chars, reserved_chars):
-        return
+        return len(entries)
+    dropped = 0
     for entry in entries:
-        _append_line_with_budget(lines, entry, max_chars, reserved_chars)
+        if not _append_line_with_budget(lines, entry, max_chars, reserved_chars):
+            dropped += 1
+    return dropped
+def _dynamic_line_name_keys(lines: List[str]) -> set:
+    """Names on both sides of the dynamic lines this chunk already selected.
+
+    A character can be central to a scene without the chunk writing their name
+    -- dialogue does this constantly. If an addressing or relationship line for
+    them was selected, they are on stage, and their recorded gender is exactly
+    what the model needs to pick pronouns for the next "she said".
+    """
+    keys = set()
+    for line in lines:
+        relation = _DYNAMIC_RELATION_PATTERN.match(line.strip())
+        if not relation:
+            continue
+        keys.add(_plain_key(relation.group("left").strip()))
+        keys.add(_plain_key(relation.group("right").strip()))
+    keys.discard("")
+    return keys
 def _compact_character_gender_line(name: str, value: str) -> str:
     gender, _ = _split_gender_and_details(value)
     gender = _canonical_gender(gender)
@@ -315,6 +338,33 @@ def render_novel_context_for_prompt(
         relationships
     )
 
+    # Everything below competes for one budget, so order it by how hard this
+    # chunk points at it. Without this the cast discovered first wins whatever
+    # the chapter is actually about.
+    on_stage_keys = _dynamic_line_name_keys(
+        selected_addressing + selected_relationships
+    )
+
+    def character_score(entry: Tuple[str, str]) -> int:
+        name, value = entry
+        return score_entry(
+            name,
+            value,
+            reference_text,
+            on_stage_keys=on_stage_keys,
+            is_pov=bool(has_first_person and _plain_key(name) == pov_speaker_key),
+        )
+
+    selected_characters = rank(selected_characters, character_score)
+    selected_aliases = rank(
+        selected_aliases,
+        lambda entry: score_entry(entry[0], entry[1], reference_text, on_stage_keys=on_stage_keys),
+    )
+    selected_glossary = rank(
+        selected_glossary,
+        lambda entry: score_entry(entry[0], entry[1], reference_text),
+    )
+
     selected_character_lines = [
         _format_character_line(name, value)
         for name, value in selected_characters
@@ -324,14 +374,25 @@ def render_novel_context_for_prompt(
         for name, _ in selected_characters
     }
     pinned_gender_lines: List[str] = []
+    roster_cut = 0
     if include_gender_roster:
-        pinned_gender_lines = [
-            line
-            for name, value in character_entries
-            if _plain_key(name) not in selected_character_keys
-            for line in [_compact_character_gender_line(name, value)]
-            if line
-        ]
+        # The roster names every character in the book, so it is the one part
+        # of the prompt that grows with the book rather than with the chunk.
+        roster_entries = rank(
+            [
+                (name, value)
+                for name, value in character_entries
+                if _plain_key(name) not in selected_character_keys
+                and _compact_character_gender_line(name, value)
+            ],
+            character_score,
+        )
+        pinned_gender_lines, roster_cut = cap_roster(
+            [
+                _compact_character_gender_line(name, value)
+                for name, value in roster_entries
+            ]
+        )
     remaining_character_lines = [
         _format_character_line(name, value)
         for name, value in remaining_characters
@@ -368,38 +429,44 @@ def render_novel_context_for_prompt(
         f"\n\n{DYNAMIC_STATE_START}\n# DYNAMIC RELATIONSHIP STATE\n"
         f"{DYNAMIC_STATE_END}"
     )
+    # The lore is rendered first and the dynamic state last, so without a floor
+    # a long cast simply eats the budget and the addressing rules -- the reason
+    # this whole system exists for a language with gendered address -- never
+    # reach the prompt at all. Whatever the lore leaves rolls over.
+    lore_budget, _dynamic_reserve = split_budget(max_chars)
+    dropped: Dict[str, int] = {"gender roster": roster_cut}
     rendered_lines: List[str] = ["# GLOBAL LORE"]
-    _append_section_with_budget(
+    dropped["characters"] = _append_section_with_budget(
         rendered_lines,
         CHARACTERS_SECTION,
         selected_character_lines + pinned_gender_lines,
-        max_chars,
+        lore_budget,
         reserved,
     )
-    _append_section_with_budget(
+    dropped["aliases"] = _append_section_with_budget(
         rendered_lines,
         ALIASES_SECTION,
         selected_alias_lines,
-        max_chars,
+        lore_budget,
         reserved,
     )
-    _append_section_with_budget(
+    dropped["glossary"] = _append_section_with_budget(
         rendered_lines,
         GLOSSARY_SECTION,
         selected_glossary_lines,
-        max_chars,
+        lore_budget,
         reserved,
     )
 
     rendered_lines.extend(["", DYNAMIC_STATE_START, "# DYNAMIC RELATIONSHIP STATE"])
-    _append_section_with_budget(
+    dropped["addressing"] = _append_section_with_budget(
         rendered_lines,
         ADDRESSING_SECTION,
         selected_addressing,
         max_chars,
         len(DYNAMIC_STATE_END),
     )
-    _append_section_with_budget(
+    dropped["relationships"] = _append_section_with_budget(
         rendered_lines,
         RELATIONSHIP_SECTION,
         selected_relationships,
@@ -407,7 +474,16 @@ def render_novel_context_for_prompt(
         len(DYNAMIC_STATE_END),
     )
     rendered_lines.append(DYNAMIC_STATE_END)
+    _report_dropped(dropped)
     return "\n".join(rendered_lines).strip()
+def _report_dropped(dropped: Dict[str, int]) -> None:
+    """Say what the budget cut. Silent truncation reads as a complete prompt."""
+    cut = {name: count for name, count in dropped.items() if count > 0}
+    if cut:
+        logger.info(
+            "Novel context prompt budget left out: %s.",
+            ", ".join(f"{count} {name}" for name, count in sorted(cut.items())),
+        )
 def render_novel_context_update_view(
     current_global_lore: str,
     current_dynamic_state: str,
