@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from .characters import (
     _alias_entries_to_map,
     _canonical_display_name,
+    _canonical_gender,
     _character_alias_keys,
     _character_names_match,
     _find_lore_section,
@@ -16,9 +17,16 @@ from .characters import (
     _parse_bullet_entries,
     _plain_key,
     _replace_lore_section,
+    _split_gender_and_details,
     _strip_balanced_brackets,
 )
-from .constants import _GENDER_LABELS, ALIASES_SECTION, CHARACTERS_SECTION, logger
+from .constants import (
+    _GENDER_LABELS,
+    _SPECIFIC_GENDER_LABELS,
+    ALIASES_SECTION,
+    CHARACTERS_SECTION,
+    logger,
+)
 from .glossary import normalize_global_lore
 from .lore_merge import merge_new_lore
 
@@ -139,6 +147,72 @@ def _consolidation_identity_evidence(
             break
 
     return "\n".join(evidence_lines) if evidence_lines else "(none)"
+def _restore_recorded_genders(
+    consolidated_entries: List[str],
+    original_character_entries: List[Tuple[str, str]],
+) -> Tuple[List[str], List[str]]:
+    """Put back any gender the consolidation pass changed on its own say-so.
+
+    merge_new_lore treats a recorded specific gender as authoritative: changing
+    it needs an explicit ``CORRECTION:`` marker and proof from the source text.
+    Consolidation is only meant to reword descriptions, so a gender that comes
+    back different here has no evidence behind it at all -- and in a language
+    with gendered address, one flipped label misgenders that character for the
+    rest of the book.
+    """
+    recorded: Dict[str, Tuple[str, str]] = {}
+    for name, value in original_character_entries:
+        if _is_invalid_context_key(name):
+            continue
+        gender = _canonical_gender(_split_gender_and_details(value)[0])
+        if gender.casefold() in _SPECIFIC_GENDER_LABELS:
+            recorded[_plain_key(name)] = (name, gender)
+
+    restored: List[str] = []
+    logs: List[str] = []
+    for line in consolidated_entries:
+        content = line[2:] if line.startswith("- ") else line
+        name_part, _, value_part = content.partition(":")
+        entry = recorded.get(_plain_key(name_part.strip()))
+        if not entry:
+            restored.append(line)
+            continue
+        display_name, recorded_gender = entry
+        found_gender, details = _split_gender_and_details(value_part.strip())
+        if _canonical_gender(found_gender) == recorded_gender:
+            restored.append(line)
+            continue
+        rebuilt = f"{recorded_gender}, {details}".rstrip(" ,")
+        restored.append(f"- {name_part.strip()}: {rebuilt}")
+        logs.append(
+            f"[Novel Context] Consolidation tried to change {display_name}'s "
+            f"gender to '{found_gender or 'none'}' without evidence; kept "
+            f"'{recorded_gender}'."
+        )
+    return restored, logs
+def _exceeds_drop_ceiling(dropped: int, original: int) -> bool:
+    """Is this pass shrinking the cast by more than pruning could explain?"""
+    if dropped <= 0 or original <= 0:
+        return False
+    ceiling = _consolidation_max_drop_percent()
+    if ceiling <= 0:
+        return False
+    # A single removal is always allowed: on a short cast one legitimate prune
+    # already clears any percentage, and folding one entry into another is the
+    # ordinary outcome of a two-name list.
+    return dropped > 1 and dropped * 100 > original * ceiling
+def _consolidation_max_drop_percent() -> int:
+    """Return the configured drop ceiling as a percentage (0 = no ceiling)."""
+    try:
+        from src import config as _config
+        return max(
+            0,
+            int(
+                getattr(_config, "NOVEL_CONTEXT_CONSOLIDATION_MAX_DROP_PERCENT", 34)
+            ),
+        )
+    except Exception:
+        return 34
 async def consolidate_context_lore(
     llm_client: Any,
     model_name: str,
@@ -260,6 +334,12 @@ async def consolidate_context_lore(
             )
             return global_lore, change_logs
 
+        consolidated_entries, gender_logs = _restore_recorded_genders(
+            consolidated_entries,
+            original_character_entries,
+        )
+        change_logs.extend(gender_logs)
+
         consolidated_body = "\n".join(consolidated_entries)
         updated_lore = _replace_lore_section(
             global_lore,
@@ -294,6 +374,42 @@ async def consolidate_context_lore(
             ):
                 continue
             accepted_identity_lines.append(f"- {alias}: {canonical_target}")
+
+        # A character folded into another under an accepted identity link is not
+        # lost, so it does not count as a drop.
+        merged_away_keys = {
+            _plain_key(alias.split(":", 1)[0].lstrip("- ").strip())
+            for alias in accepted_identity_lines
+        }
+        dropped_names = [
+            name
+            for name, _ in original_character_entries
+            if not _is_invalid_context_key(name)
+            and _plain_key(name) not in consolidated_character_keys
+            and _plain_key(name) not in merged_away_keys
+        ]
+        if _exceeds_drop_ceiling(len(dropped_names), len(original_character_keys)):
+            logger.warning(
+                "Consolidation dropped %d of %d characters (%s); keeping the "
+                "previous lore.",
+                len(dropped_names),
+                len(original_character_keys),
+                ", ".join(dropped_names),
+            )
+            change_logs.append(
+                "[Novel Context] Consolidation pass rejected: it dropped "
+                f"{len(dropped_names)} of {len(original_character_keys)} "
+                f"characters ({', '.join(dropped_names)}). The character list "
+                "is unchanged for this chunk."
+            )
+            return global_lore, change_logs
+        if dropped_names:
+            change_logs.append(
+                "[Novel Context] Consolidation pass removed "
+                f"{len(dropped_names)} entries from Characters & Genders: "
+                f"{', '.join(dropped_names)}."
+            )
+
         if accepted_identity_lines:
             updated_lore, alias_logs = merge_new_lore(
                 updated_lore,
