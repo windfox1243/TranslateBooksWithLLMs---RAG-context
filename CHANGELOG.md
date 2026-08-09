@@ -9,6 +9,7 @@ Four faults in the novel-context architecture, all of them reaching the translat
 - Added `context_relationship_edge_history`, an append-only record of each state an edge has held and the chunk it started at, with `get_relationship_edges_as_of` to read the graph as it stood at a point in the book. An edge held exactly one current state per pair, with only a `last_chunk_index` to say when it was last seen, so "enemies until chapter 40, allies after" was not representable.
 - Added `Database.carry_over_structured_context`, which seeds a new job's structured tables from the newest earlier job on the same context file, remapping node ids so copied edges point at the new job's own rows.
 - Added `NOVEL_CONTEXT_CONSOLIDATION_MAX_DROP_PERCENT`, the share of the cast a single consolidation pass may remove before the pass is rejected outright. Default 34; 0 disables the ceiling.
+- Added `src/utils/novel_context/retrieval.py`, which ranks context entries by how hard the current chunk points at them and splits the prompt budget between the lore and the dynamic state. Added `NOVEL_CONTEXT_GENDER_ROSTER_MAX` (default 40; 0 disables) and `NOVEL_CONTEXT_DYNAMIC_BUDGET_PERCENT` (default 40).
 
 ### Fixed
 
@@ -17,12 +18,16 @@ Four faults in the novel-context architecture, all of them reaching the translat
 - A rule locked in the UI now reaches every chunk a refine pass replays. Refinement reads stored context snapshots and nothing else, and the structured export only ever rewrote the newest snapshot, so a locked rule reached the last chunk and no other. Model-learned rules still stay where they were observed — address shifts as a story progresses, and back-dating chapter 200's forms onto chapter 5 would be a lie about chapter 5 — but a lock is a decision about the whole book, so it alone is forced onto every snapshot.
 - A new volume on the same book no longer starts from a lossy markdown round trip. The context file is per novel while every structured table is keyed by job, and the export keeps only the rendered line: locks, confidence, provenance, evidence and conflicts were all dropped. A rule locked in volume 1 arrived in volume 2 unlocked, at default confidence, and free for the model's first guess to overwrite. Carrying is skipped when the target already has structured state, so a resumed or re-run job is never overwritten.
 - Snapshots of earlier chunks are rebuilt with the relationship graph of their own moment rather than the latest one.
+- The prompt no longer carries the whole cast into every chunk. The pinned gender roster named every character in the book with a recorded gender, so it grew with the book rather than with the chunk; it is now ranked by relevance and capped.
+- Under a prompt budget, context entries were kept in file order and sections filled in render order, so the cast discovered first won regardless of who the chapter was about, and the addressing section — rendered last — was starved by characters who were not in the scene. Entries are now ordered by how hard the chunk points at them, ranking is stable so equally relevant entries keep file order, and the dynamic state holds a budget floor the lore cannot spend.
+- Whatever a prompt budget leaves out is now logged instead of being cut silently.
 
 ### Tests
 
 - Added coverage for the consolidation guards: half the cast rejected, an in-ceiling prune kept and named, a flipped gender and a gender dropped to Unspecified both reverted, a reworded description accepted, an identity-link merge not counted as a drop, and the ceiling table itself.
 - Added coverage for the locked-rule overlay and for the export reaching every snapshot rather than the newest, for structured state arriving in the next volume still locked and with its confidence and provenance intact, and for relationship history recording only actual changes, answering with the state in force at a chunk, and not back-dating an edge that did not exist yet.
-- 2,050 passing, one skipped, ten intentionally deselected. Characterization goldens byte-identical.
+- Added coverage for the retrieval ranking: a named character outranking a merely described one, an on-stage character outranking one the chunk ignores, stable order within one score, the roster cap and its off switch, the character a chunk is about surviving a tight budget from the bottom of the file, addressing surviving a sixty-name cast, and the drop report firing.
+- 2,065 passing, one skipped, ten intentionally deselected. Characterization goldens byte-identical.
 
 ## 1.17.0 - 2026-08-09
 
