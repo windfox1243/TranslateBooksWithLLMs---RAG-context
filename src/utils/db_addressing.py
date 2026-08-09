@@ -485,12 +485,16 @@ def build_directed_addressing_prompt_context(
 def export_db_addressing_to_markdown(
     translation_id: str,
     db: Optional[Database],
+    *,
+    locked_only: bool = False,
 ) -> str:
     """Export DB addressing rules into markdown CURRENT ADDRESSING FORMS lines."""
 
     if not translation_id or db is None:
         return ""
     rules = db.get_addressing_rules(translation_id)
+    if locked_only:
+        rules = [rule for rule in rules if rule.get("is_locked")]
     lines = []
     for rule in rules:
         speaker = _clean(rule.get("speaker_name"))
@@ -553,6 +557,76 @@ def apply_db_addressing_to_context(
     dynamic_state = extract_dynamic_state_from_text(context_content) or ""
     _old_addressing, relationships, _has_sections = _split_dynamic_sections(dynamic_state)
     return build_novel_context(global_lore, _format_dynamic_sections(exported, relationships))
+
+
+def _addressing_pair_key(line: str) -> Optional[Tuple[str, str]]:
+    match = _PAIR_RE.match(line)
+    if not match:
+        return None
+    speaker = _clean(match.group("speaker")).casefold()
+    addressee = _clean(match.group("addressee")).casefold()
+    return (speaker, addressee) if speaker and addressee else None
+
+
+def overlay_locked_addressing_on_context(
+    context_content: str,
+    translation_id: str,
+    db: Optional[Database],
+) -> str:
+    """Force user-locked addressing rules onto one stored context snapshot.
+
+    A snapshot records how a chunk was actually translated, so model-learned
+    rules stay where they were observed: address shifts as a story progresses,
+    and back-dating chapter 200's forms onto chapter 5 would be a lie about
+    chapter 5. A rule the user locked is not an observation, it is a decision
+    about the whole book -- and it has to reach the refine pass, which reads
+    these snapshots and nothing else.
+
+    Returns the content unchanged when there is nothing locked to apply.
+    """
+    exported = export_db_addressing_to_markdown(
+        translation_id, db, locked_only=True
+    )
+    if not exported:
+        return context_content
+
+    from src.utils.novel_context import (
+        _format_dynamic_sections,
+        _split_dynamic_sections,
+        build_novel_context,
+        extract_dynamic_state_from_text,
+        extract_global_lore,
+    )
+
+    global_lore = extract_global_lore(context_content)
+    dynamic_state = extract_dynamic_state_from_text(context_content) or ""
+    addressing, relationships, _has_sections = _split_dynamic_sections(dynamic_state)
+
+    locked_by_pair: Dict[Tuple[str, str], str] = {}
+    for line in exported.splitlines():
+        key = _addressing_pair_key(line)
+        if key:
+            locked_by_pair[key] = line.rstrip()
+
+    merged: List[str] = []
+    replaced: set = set()
+    for line in addressing.splitlines():
+        if not line.strip():
+            continue
+        key = _addressing_pair_key(line)
+        if key in locked_by_pair:
+            merged.append(locked_by_pair[key])
+            replaced.add(key)
+        else:
+            merged.append(line.rstrip())
+    merged.extend(
+        line for key, line in locked_by_pair.items() if key not in replaced
+    )
+
+    return build_novel_context(
+        global_lore,
+        _format_dynamic_sections("\n".join(merged), relationships),
+    )
 
 
 def apply_db_addressing_to_session(
