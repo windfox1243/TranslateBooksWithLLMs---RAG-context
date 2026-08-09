@@ -71,13 +71,28 @@ def _compose_source_analysis_text(source_context: str, source_chunk: str) -> str
         _clean_source_memory_chunk(source_chunk),
     ]
     return "\n\n".join(part for part in parts if part)
+def _default_prompt_max_tokens() -> int:
+    try:
+        from src import config as _config
+
+        return max(0, int(getattr(_config, "NOVEL_CONTEXT_PROMPT_MAX_TOKENS", 3000)))
+    except Exception:
+        return 3000
 def _context_prompt_budget_chars(max_tokens: Optional[int]) -> int:
+    """Characters the rendered context may occupy (0 = no ceiling).
+
+    A caller that says nothing gets the configured default rather than an
+    unlimited prompt. Ranking and the dynamic-state reserve only bite once
+    there is a ceiling, and a context with no ceiling grows with the book --
+    which is the state this used to ship in. Passing 0 explicitly still means
+    unlimited, so the ceiling can be turned off deliberately.
+    """
     if max_tokens is None:
-        return 0
+        max_tokens = _default_prompt_max_tokens()
     try:
         token_budget = int(max_tokens)
     except (TypeError, ValueError):
-        token_budget = 1800
+        token_budget = _default_prompt_max_tokens()
     if token_budget <= 0:
         return 0
     # Conservative tokenizer-free estimate. This renderer runs inside prompt

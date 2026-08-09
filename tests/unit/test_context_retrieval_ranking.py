@@ -176,3 +176,33 @@ class TestRenderedPrompt:
 
         assert "Sora" in rendered and "Rin" in rendered
         assert "Sora → Rin" in rendered
+
+
+class TestDefaultCeiling:
+    """A caller that says nothing gets the configured ceiling, not no ceiling."""
+
+    def test_saying_nothing_applies_the_configured_budget(self, monkeypatch):
+        monkeypatch.setattr("src.config.NOVEL_CONTEXT_PROMPT_MAX_TOKENS", 60)
+        context = build_context(LARGE_CAST + [("Sora", "Male, the swordsman")])
+
+        rendered = render_novel_context_for_prompt(
+            context, reference_text="Sora drew his blade."
+        )
+
+        assert "Sora" in rendered
+        # The floor on the char estimate is 1000, so that is what 60 tokens buys.
+        assert len(rendered) < 1200
+        assert rendered.count("Filler") < len(LARGE_CAST)
+
+    def test_zero_still_means_no_ceiling(self, monkeypatch):
+        monkeypatch.setattr("src.config.NOVEL_CONTEXT_PROMPT_MAX_TOKENS", 60)
+        context = build_context(LARGE_CAST + [("Sora", "Male, the swordsman")])
+
+        capped = render_novel_context_for_prompt(
+            context, reference_text="Sora drew his blade."
+        )
+        uncapped = render_novel_context_for_prompt(
+            context, reference_text="Sora drew his blade.", max_tokens=0
+        )
+
+        assert len(uncapped) > len(capped)
