@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .characters import (
@@ -310,6 +311,16 @@ def normalize_novel_context_content(content: str) -> str:
     text = str(content or "").strip()
     if not text:
         return ""
+    return _normalize_novel_context_content_cached(text)
+# Normalising deduplicates the cast, which compares every character against
+# every other. That is fine at a persistence boundary, which happens once per
+# context update -- but the prompt renderer normalises on every chunk, and the
+# content it passes is identical until the next update. On a book with a large
+# cast that quadratic sweep was running again for every chunk and costing
+# seconds each time. The function is pure, so repeating it is pure waste; the
+# cache is small because these are whole context documents.
+@lru_cache(maxsize=16)
+def _normalize_novel_context_content_cached(text: str) -> str:
     if DYNAMIC_STATE_START in text and DYNAMIC_STATE_END in text:
         original_global_lore = extract_global_lore(text)
         global_lore = normalize_global_lore(original_global_lore)

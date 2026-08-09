@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.18.1 - 2026-08-09
+
+The prompt budget introduced in 1.18.0 was off by default, so the ranking and the dynamic-state reserve it gates never ran.
+
+### Changed
+
+- `NOVEL_CONTEXT_PROMPT_MAX_TOKENS` now defaults to 3000 rather than 0. Ranking and the budget split only bite once there is a ceiling, so shipping the ceiling off meant the prompt grew with the book exactly as before. A crowded scene measured at roughly 1,650 tokens of rendered context, so 3000 leaves about twice that in headroom while still bounding the growth; the 40% dynamic reserve gives addressing around 4,800 characters of it. Passing 0 explicitly still means no ceiling.
+
+### Fixed
+
+- Rendering the context for a prompt no longer re-runs the whole normalization sweep on every chunk. The renderer normalizes the context it is handed, and normalizing deduplicates the cast by comparing every character against every other — work that belongs at a persistence boundary, where it runs once per context update, not once per chunk against content that has not changed. The name-key helpers underneath it derived their keys from scratch on every one of those comparisons. Both are memoized now: a 200-character cast rendered in 14.2 s per chunk and renders in 0.87 s.
+
+### Tests
+
+- Added coverage for the default ceiling applying when a caller passes nothing, and for an explicit 0 still meaning no ceiling.
+- 2,067 passing, one skipped, ten intentionally deselected. Characterization goldens byte-identical.
+
 ## 1.18.0 - 2026-08-09
 
 Four faults in the novel-context architecture, all of them reaching the translation itself: a character's recorded gender, the pronouns used to address them, and when a relationship was true.

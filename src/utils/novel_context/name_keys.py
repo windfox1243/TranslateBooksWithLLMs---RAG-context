@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 from typing import List, Optional, Tuple
 
 from .constants import (
@@ -84,16 +85,26 @@ _LATIN_NAME_PART_STOPWORDS = {
     "von",
 }
 
+# These three are pure, tiny, and called on the order of a million times per
+# prompt render on a long book -- the character dedup compares every name
+# against every other, and each comparison derives keys again from scratch.
+# Memoising them turns that quadratic work into quadratic dictionary lookups.
+# They still coerce their argument, so a caller passing None or a number keeps
+# working, and the caches are bounded because a book has a bounded number of
+# distinct names.
+@lru_cache(maxsize=200_000)
 def _clean_inline_text(value: str) -> str:
     """Collapse whitespace without changing the language of the content."""
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
+@lru_cache(maxsize=200_000)
 def _strip_balanced_brackets(value: str) -> str:
     value = _clean_inline_text(value)
     if len(value) >= 2 and value[0] == "[" and value[-1] == "]":
         return value[1:-1].strip()
     return value
 
+@lru_cache(maxsize=200_000)
 def _plain_key(value: str) -> str:
     """Return a stable comparison key for names and placeholders."""
     value = unicodedata.normalize("NFKC", _strip_balanced_brackets(value))
