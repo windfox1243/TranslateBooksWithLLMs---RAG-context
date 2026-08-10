@@ -1138,3 +1138,25 @@ def test_accepted_relationship_still_yields_to_a_contradicting_observation(
     assert flipped.status in {"provisional", "quarantined", "rejected"}
     edges = relationship_db.get_relationship_edges(tx, statuses=["accepted"])
     assert [edge["hierarchy"] for edge in edges] == ["source_junior"]
+
+
+def test_node_lookup_accepts_a_reordered_or_hyphenated_spelling(relationship_db):
+    """One character written two ways is one character.
+
+    A surname-first quotation and a hyphenated nickname each registered a second
+    identity, which split that character's relationships and gender away from
+    the node already holding them.
+    """
+
+    tx = "name-spellings"
+    engine = RelationshipReasoningEngine(db=relationship_db)
+    engine.register_node(tx, "Tomio Momozawa", gender="Male")
+    engine.register_node(tx, "Guriko", aliases=["Guri-ko"])
+
+    reordered = relationship_db.get_relationship_node_by_name(tx, "momozawa tomio")
+    assert reordered and reordered["canonical_name"] == "Tomio Momozawa"
+    hyphenated = relationship_db.get_relationship_node_by_name(tx, "guri-ko")
+    assert hyphenated and hyphenated["canonical_name"] == "Guriko"
+
+    # A partial reference is still ambiguous and must not resolve on its own.
+    assert relationship_db.get_relationship_node_by_name(tx, "momozawa") is None

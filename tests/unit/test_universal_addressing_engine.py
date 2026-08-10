@@ -187,3 +187,67 @@ def test_incompatible_register_repair_toi_nguoi():
     )
     assert s == "ta"
     assert t == "ngươi"
+
+
+def test_senior_speaking_to_junior_replaces_the_peer_pair():
+    """A trainer addressing his student is not a peer of hers.
+
+    Only the inverted senior form was caught here, so a peer pair passed the
+    solver untouched and the trainer went on calling his student "cậu".
+    """
+
+    engine = UniversalAddressingEngine(language="vi")
+    s, t, _v = engine.validate_and_repair_pair(
+        self_pronoun="tớ",
+        target_pronoun="cậu",
+        speaker="Tomio Momozawa",
+        addressee="Apollo Rainbow",
+        vocative="Apollo",
+        details_context="senior to junior; trainer-trainee",
+        character_genders={"tomio momozawa": "Male", "apollo rainbow": "Female"},
+    )
+    assert (s, t) == ("anh", "em")
+
+
+def test_senior_without_a_known_gender_falls_back_to_the_neutral_self():
+    engine = UniversalAddressingEngine(language="vi")
+    s, t, _v = engine.validate_and_repair_pair(
+        self_pronoun="mình",
+        target_pronoun="cậu",
+        speaker="Unknown Trainer",
+        addressee="Apollo Rainbow",
+        vocative="Apollo",
+        details_context="senior to junior; trainer-trainee",
+    )
+    assert (s, t) == ("tôi", "em")
+
+
+def test_vocative_role_word_settles_the_direction():
+    """What the speaker calls the addressee describes the addressee alone."""
+
+    engine = UniversalAddressingEngine(language="vi")
+    assert engine.resolve_seniority_hierarchy(
+        "Apollo Rainbow", "Tomio Momozawa",
+        "trainer-trainee relationship",
+        vocative="Huấn luyện viên",
+    ) == "JUNIOR_TO_SENIOR"
+
+
+def test_a_two_sided_social_basis_does_not_invent_a_direction():
+    """"trainer-trainee" names both roles without saying which one speaks.
+
+    Reading the senior cue alone made every such pair junior-to-senior, which
+    pointed the repair the wrong way for the trainer's own lines.
+    """
+
+    engine = UniversalAddressingEngine(language="vi")
+    assert engine.resolve_seniority_hierarchy(
+        "Tomio Momozawa", "Apollo Rainbow",
+        "trainer-trainee relationship, high intimacy",
+        vocative="Apollo",
+    ) == "PEER"
+    assert engine.resolve_seniority_hierarchy(
+        "Apollo Rainbow", "Yuya Serizawa",
+        "student-trainer hierarchy",
+        vocative="Trainer Serizawa",
+    ) == "JUNIOR_TO_SENIOR"

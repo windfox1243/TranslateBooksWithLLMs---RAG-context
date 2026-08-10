@@ -449,3 +449,147 @@ def test_structured_peer_pair_is_left_alone(addressing_db):
     assert len(rules) == 1
     assert rules[0]["self_pronoun"] == "tớ"
     assert rules[0]["target_pronoun"] == "cậu"
+
+
+def test_graph_seniority_repairs_the_trainer_side_of_the_pair(addressing_db):
+    """The trainer's own lines are repaired from the direction the graph knows.
+
+    The social basis the model writes names both roles at once, so it cannot say
+    which end is speaking; the accepted relationship edge can. Without it the
+    trainer addressed his student as a peer while she addressed him as a senior,
+    and the two halves of one relationship disagreed in every prompt.
+    """
+
+    from src.utils.relationship_reasoning_engine import RelationshipReasoningEngine
+    from src.utils.relationship_schema import RelationshipCandidate
+
+    tx = "graph-seniority"
+    graph = RelationshipReasoningEngine(db=addressing_db)
+    graph.register_node(tx, "Tomio Momozawa", gender="Male")
+    graph.register_node(tx, "Apollo Rainbow", gender="Female")
+    quote = "Trainer Momozawa watched Apollo Rainbow run."
+    assert graph.merge_candidate(
+        tx, 0,
+        RelationshipCandidate(
+            source="Tomio Momozawa", target="Apollo Rainbow",
+            relationship_type="mentor", direction="directed", scope="durable",
+            hierarchy="source_senior", rank_relation="source_higher",
+            evidence_spans=[
+                {"quote": quote, "role": "source"},
+                {"quote": quote, "role": "target"},
+            ],
+            confidence=0.95, provenance="llm_context",
+            details="Momozawa trains Apollo Rainbow.",
+        ),
+        source_text=quote,
+        known_character_names=["Tomio Momozawa", "Apollo Rainbow"],
+        active_character_names=["Tomio Momozawa", "Apollo Rainbow"],
+        language="English",
+    ).status == "accepted"
+
+    engine = ContextMergeEngine(db=addressing_db)
+    quotes = ("Apollo, take the inside lane.", "Apollo, one more lap.")
+    for index, line in enumerate(quotes):
+        candidate = _candidate(
+            speaker="Tomio Momozawa",
+            addressee="Apollo Rainbow",
+            target_form={
+                "self_reference": "tớ",
+                "second_person": "cậu",
+                "vocative": "Apollo",
+            },
+            source_forms=[{
+                "text": "Apollo",
+                "usage": "direct_address",
+                "evidence_quote": line,
+            }],
+            register="warm",
+            social_basis=["trainer-trainee"],
+            evidence_quote=line,
+        )
+        engine.apply_delta(
+            tx, index * 2 + 1, candidate.to_delta(),
+            source_text=line,
+            trigger_source="context_update_v2",
+            target_language="Vietnamese",
+            known_character_names=["Tomio Momozawa", "Apollo Rainbow"],
+            source_language="English",
+        )
+
+    rules = addressing_db.get_addressing_rules(tx)
+    assert len(rules) == 1
+    assert rules[0]["self_pronoun"] == "anh"
+    assert rules[0]["target_pronoun"] == "em"
+
+    # An inverted pair is a different claim from an unapplied one, and the graph
+    # still refuses it: the trainer does not call his student "anh".
+    inverted = _candidate(
+        speaker="Tomio Momozawa",
+        addressee="Apollo Rainbow",
+        target_form={
+            "self_reference": "em",
+            "second_person": "anh",
+            "vocative": "Apollo",
+        },
+        source_forms=[{
+            "text": "Apollo",
+            "usage": "direct_address",
+            "evidence_quote": "Apollo, slow down.",
+        }],
+        register="warm",
+        social_basis=["trainer-trainee"],
+        evidence_quote="Apollo, slow down.",
+    )
+    assert not engine.apply_delta(
+        tx, 9, inverted.to_delta(),
+        source_text="Apollo, slow down.",
+        trigger_source="context_update_v2",
+        target_language="Vietnamese",
+        known_character_names=["Tomio Momozawa", "Apollo Rainbow"],
+        source_language="English",
+    )
+    assert addressing_db.get_addressing_rules(tx)[0]["self_pronoun"] == "anh"
+
+
+def test_a_rule_follows_the_character_not_the_spelling(addressing_db):
+    """Both spellings of one name refine one rule instead of opening two."""
+
+    from src.utils.relationship_reasoning_engine import RelationshipReasoningEngine
+
+    tx = "one-character-two-spellings"
+    RelationshipReasoningEngine(db=addressing_db).register_node(
+        tx, "Tomio Momozawa", gender="Male",
+    )
+    kwargs = {
+        "trigger_source": "context_update_v2",
+        "target_language": "Vietnamese",
+        "known_character_names": ["Tomio Momozawa", "Kiryuuin Aoi"],
+        "source_language": "English",
+    }
+    spellings = ("Tomio Momozawa", "Momozawa Tomio")
+    for index, spelling in enumerate(spellings):
+        line = f"Kiryuuin-san, this is {spelling}."
+        candidate = _candidate(
+            speaker=spelling,
+            addressee="Kiryuuin Aoi",
+            target_form={
+                "self_reference": "tôi",
+                "second_person": "cô",
+                "vocative": "Kiryuuin-san",
+            },
+            source_forms=[{
+                "text": "Kiryuuin-san",
+                "usage": "direct_address",
+                "evidence_quote": line,
+            }],
+            register="polite",
+            social_basis=["professional acquaintances"],
+            evidence_quote=line,
+        )
+        engine = ContextMergeEngine(db=addressing_db)
+        engine.apply_delta(
+            tx, index * 2 + 1, candidate.to_delta(), source_text=line, **kwargs,
+        )
+
+    rules = addressing_db.get_addressing_rules(tx, validation_status=None)
+    assert [rule["speaker_name"] for rule in rules] == ["Tomio Momozawa"]

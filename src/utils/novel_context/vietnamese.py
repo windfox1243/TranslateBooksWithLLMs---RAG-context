@@ -563,14 +563,25 @@ def _is_vietnamese_junior_to_senior(
     details: str,
     speaker: str = "",
     addressee: str = "",
+    second_person: str = "",
+    vocative: str = "",
 ) -> bool:
     """Report whether the addressing engine reads this pair as junior to senior."""
-    from src.utils.universal_addressing_engine import UniversalAddressingEngine
+    from src.utils.universal_addressing_engine import (
+        _SENIOR_PRONOUN_SETS,
+        UniversalAddressingEngine,
+    )
 
+    # Calling someone "anh"/"chị"/"thầy" places the speaker below them whatever
+    # the social basis says. The basis often names both roles at once
+    # ("trainer-trainee"), which cannot tell the two directions apart.
+    if _plain_key(second_person) in _SENIOR_PRONOUN_SETS["vi"]:
+        return True
     hierarchy = UniversalAddressingEngine(language="vi").resolve_seniority_hierarchy(
         speaker,
         addressee,
         details,
+        vocative=vocative,
     )
     return hierarchy == "JUNIOR_TO_SENIOR"
 def _repair_vietnamese_addressing_details(
@@ -620,7 +631,13 @@ def _repair_vietnamese_addressing_details(
         # addressing engine further down promotes "tớ"/"mình" to exactly that.
         # Rewriting to "tôi" first hid the peer pronoun the promotion looks for,
         # so a student addressing their trainer ended up sounding like a stranger.
-        and not _is_vietnamese_junior_to_senior(details, speaker, addressee)
+        and not _is_vietnamese_junior_to_senior(
+            details,
+            speaker,
+            addressee,
+            _vietnamese_addressing_field(details, "second-person pronoun"),
+            _vietnamese_addressing_field(details, "vocative/address form"),
+        )
     ):
         details = _replace_vietnamese_addressing_field(
             details,
