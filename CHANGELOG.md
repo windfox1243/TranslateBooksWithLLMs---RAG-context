@@ -7,12 +7,14 @@ A student addressed her trainer as a peer for a whole book, and the narration fo
 ### Fixed
 
 - Directed addressing rules taken from a structured context update now pass the addressing engine before they are stored. Only the markdown path ran that repair, so a rule whose own vocative said `Huấn luyện viên` was stored as the peer pair `tớ`/`cậu`, projected verbatim into every translation prompt, and exported back over the repaired markdown on the next context write. Both paths now apply one set of rules, and the repair runs after every policy check so the checks still judge what the model actually proposed.
+- A relationship the graph has already accepted is no longer retracted by a later restatement of it. The model re-proposes durable relationships on nearly every chunk, and the evidence gates ran again each time, so one restatement whose quote had drifted out of its own chunk demoted the settled edge back to `provisional` — where nothing promotes it back and where `relationship_support_for_addressing`, which reads accepted edges only, cannot see it. Graph membership was effectively decided by the last observation rather than by the weight of the evidence: in a 23-chunk book, 10 of 26 edges ended unaccepted, including the student/trainer pair whose seniority the addressing rules needed. The gates now decide only whether an unproven claim may enter the graph; a re-observation that agrees with the stored edge on direction, seniority, age, and rank passes them, while one that contradicts any of those is still challenged. Prose drift in `details` no longer counts as contradiction, and `supporting_units` now counts the distinct units that have actually backed an edge instead of being reset to 1 on each accept.
 - A Vietnamese speaker who is junior to the person they address now says `em` rather than `tôi`. A formality cue in the rule rewrote a peer `tớ`/`mình` to `tôi` before the addressing engine could promote it to the junior form, so a trainee speaking to her trainer came out sounding like a stranger. The rewrite is now skipped when the pair reads as junior to senior; a genuine peer pair is untouched.
 
 ### Tests
 
 - Added coverage for the structured path repairing a senior-vocative pair before the write and leaving a plain peer pair alone, both asserted through the database and its markdown export.
-- 1,586 passing. Characterization goldens byte-identical.
+- Added coverage for an accepted edge surviving a later unmatched quote — asserted through to the addressing support the projection reads — and for a reversed seniority still being challenged.
+- 1,588 passing. Characterization goldens byte-identical.
 
 ## 1.18.1 - 2026-08-09
 
