@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.18.2 - 2026-08-10
 
 A student addressed her trainer as a peer for a whole book, and the narration followed her there.
 
@@ -18,6 +18,7 @@ A student addressed her trainer as a peer for a whole book, and the narration fo
 
 - Added coverage for the structured path repairing a senior-vocative pair before the write and leaving a plain peer pair alone, both asserted through the database and its markdown export.
 - Added coverage for an accepted edge surviving a later unmatched quote — asserted through to the addressing support the projection reads — and for a reversed seniority still being challenged.
+- Added coverage for the senior side of a pair being repaired with and without a known speaker gender, for a vocative settling the direction, for a two-sided social basis refusing to invent one, and for a reordered or hyphenated spelling resolving to the character already registered.
 - 1,595 passing. Characterization goldens byte-identical.
 
 ## 1.18.1 - 2026-08-09
