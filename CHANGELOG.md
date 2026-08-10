@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+An editor that reviewed two books without one finding looked exactly like two clean books.
+
+### Added
+
+- The Senior Editor is now watched for having gone inert. Its history is read after every unit, and the job log says so once when the last six reviews returned a byte-identical response, or when twelve consecutive reviews reported nothing while the deterministic checks were finding defects in the same units. Both signals are things a working editor cannot plausibly produce, so silence stops being ambiguous: until now a weak editor model that answered every chunk with the same empty envelope was indistinguishable from prose with nothing wrong in it, and nobody could tell which had happened. The check is best effort and never interrupts a translation.
+- An offline quality regression harness, `src/core/quality`, so a prompt, chunking, or editor change can be measured instead of assumed. It scores produced translations against human references with chrF — character n-grams, no tokenizer, no model, no network — and separately asserts the deterministic rules where addressing lives, which are binary and not a matter of degree. A run is compared against a stored baseline rather than judged in isolation, because similarity drifts for harmless reasons. `scripts/run_quality_regression.py` runs a corpus and exits non-zero on a regression. The shipped corpus under `tests/fixtures/quality_regression/` is 20 segments written for this repo; real book text stays outside it.
+
+### Tests
+
+- Added coverage for the inert-editor signals, including that a varied editor, a short identical run, and silence with no deterministic findings beside it are all left alone, that transport failures are not read as judgement, that the warning is said once per job, and that a failing probe stays silent.
+- Added coverage for the quality harness: chrF bounds and whitespace independence, whole-word matching for address terms that hide inside longer words, corpus loading errors, and baseline comparison. The shipped corpus is asserted self-consistent — every reference satisfies its own rules and scores 1.0.
+
 ## 1.18.2 - 2026-08-10
 
 A student addressed her trainer as a peer for a whole book, and the narration followed her there.

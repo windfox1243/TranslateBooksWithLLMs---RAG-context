@@ -24,6 +24,7 @@ class EditorRepository(DatabaseRepository):
         "create_editor_run",
         "finish_editor_run",
         "get_editor_diagnostics",
+        "get_recent_editor_runs",
     })
 
     def create_editor_run(self, payload: Dict[str, Any]) -> Optional[int]:
@@ -135,6 +136,28 @@ class EditorRepository(DatabaseRepository):
             except Exception as exc:
                 print(f"Error finishing editor run: {exc}")
                 return False
+
+    def get_recent_editor_runs(
+        self, translation_id: str, limit: int = 24,
+    ) -> list:
+        """Return the most recent finished editor runs, oldest first.
+
+        Deliberately lighter than `get_editor_diagnostics`: the signal monitor
+        runs after every unit and only needs the few columns that say whether
+        the editor is still reading what it is sent.
+        """
+        with self.database._lock:
+            conn = self.database._get_connection()
+            rows = conn.execute(
+                "SELECT id, chunk_index, model, outcome, response_hash, "
+                "issue_count, warning_count, deterministic_count, "
+                "completion_tokens, thinking_tokens "
+                "FROM editor_runs WHERE translation_id = ? "
+                "AND completed_at IS NOT NULL "
+                "ORDER BY id DESC LIMIT ?",
+                (translation_id, max(1, int(limit))),
+            ).fetchall()
+        return [dict(row) for row in reversed(rows)]
 
     def get_editor_diagnostics(self, translation_id: str) -> Dict[str, Any]:
         """Return aggregate and per-run editor diagnostics for a job."""

@@ -1686,6 +1686,7 @@ async def _run_chunk_reflection_pass_impl(
     repair_validator: Optional[Callable[[str], Optional[str]]] = None,
 ) -> str:
     """Run a 2-pass Senior Translation Editor reflection & repair evaluation on a draft chunk."""
+    from src.core.editor.signal_monitor import warn_if_editor_inert
     from src.core.llm import TranslationExtractor
     from src.core.llm.generation_controls import (
         adaptive_retry_output_tokens,
@@ -1888,6 +1889,13 @@ async def _run_chunk_reflection_pass_impl(
                 1 for finding in residue_findings if finding.blocking
             ) + initial_narrator_finding_count,
             **payload,
+        )
+        # An editor that has gone inert reports `no_issues` forever, which is
+        # indistinguishable from a clean book unless someone says so.
+        warn_if_editor_inert(
+            recorder.db,
+            str(options.get("translation_id") or ""),
+            log_callback,
         )
 
     async def generate_editor(

@@ -816,6 +816,12 @@ class Database:
         """Return aggregate and per-run editor diagnostics for a job."""
         return self.editor.get_editor_diagnostics(translation_id)
 
+    def get_recent_editor_runs(
+        self, translation_id: str, limit: int = 24,
+    ) -> List[Dict[str, Any]]:
+        """Return the most recent finished editor runs, oldest first."""
+        return self.editor.get_recent_editor_runs(translation_id, limit)
+
     def create_editor_repair_batch(
         self, batch_id: str, translation_id: str, scope: str, phase: str,
         chunk_indices: List[int], *, stay_paused: bool = True,
