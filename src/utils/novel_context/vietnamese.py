@@ -559,6 +559,20 @@ def _has_vietnamese_trainer_to_trainee_cue(
             "trainee",
         )
     )
+def _is_vietnamese_junior_to_senior(
+    details: str,
+    speaker: str = "",
+    addressee: str = "",
+) -> bool:
+    """Report whether the addressing engine reads this pair as junior to senior."""
+    from src.utils.universal_addressing_engine import UniversalAddressingEngine
+
+    hierarchy = UniversalAddressingEngine(language="vi").resolve_seniority_hierarchy(
+        speaker,
+        addressee,
+        details,
+    )
+    return hierarchy == "JUNIOR_TO_SENIOR"
 def _repair_vietnamese_addressing_details(
     details: str,
     addressee: str = "",
@@ -602,6 +616,11 @@ def _repair_vietnamese_addressing_details(
     if (
         _plain_key(self_reference_raw) in {"mình", "tớ"}
         and _has_vietnamese_non_peer_formality_cue(details)
+        # A junior speaking to a senior says "em", not the distant "tôi", and the
+        # addressing engine further down promotes "tớ"/"mình" to exactly that.
+        # Rewriting to "tôi" first hid the peer pronoun the promotion looks for,
+        # so a student addressing their trainer ended up sounding like a stranger.
+        and not _is_vietnamese_junior_to_senior(details, speaker, addressee)
     ):
         details = _replace_vietnamese_addressing_field(
             details,

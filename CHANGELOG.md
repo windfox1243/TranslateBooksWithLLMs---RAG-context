@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+A student addressed her trainer as a peer for a whole book, and the narration followed her there.
+
+### Fixed
+
+- Directed addressing rules taken from a structured context update now pass the addressing engine before they are stored. Only the markdown path ran that repair, so a rule whose own vocative said `Huấn luyện viên` was stored as the peer pair `tớ`/`cậu`, projected verbatim into every translation prompt, and exported back over the repaired markdown on the next context write. Both paths now apply one set of rules, and the repair runs after every policy check so the checks still judge what the model actually proposed.
+- A Vietnamese speaker who is junior to the person they address now says `em` rather than `tôi`. A formality cue in the rule rewrote a peer `tớ`/`mình` to `tôi` before the addressing engine could promote it to the junior form, so a trainee speaking to her trainer came out sounding like a stranger. The rewrite is now skipped when the pair reads as junior to senior; a genuine peer pair is untouched.
+
+### Tests
+
+- Added coverage for the structured path repairing a senior-vocative pair before the write and leaving a plain peer pair alone, both asserted through the database and its markdown export.
+- 1,586 passing. Characterization goldens byte-identical.
+
 ## 1.18.1 - 2026-08-09
 
 The prompt budget introduced in 1.18.0 was off by default, so the ranking and the dynamic-state reserve it gates never ran.

@@ -11,6 +11,7 @@ import src.config as config
 from src.persistence.database import Database
 from src.utils.context_schema import AddressingUpdateDelta
 from src.utils.progress_logging import emit_progress_log
+from src.utils.universal_addressing_engine import UniversalAddressingEngine
 
 # Hierarchy of registers for stability comparison
 REGISTER_HIERARCHY = {
@@ -175,6 +176,72 @@ def _vi_pair_direction(self_pronoun: str, target_pronoun: str) -> str:
     return ""
 
 
+def _pair_repair_context(delta: AddressingUpdateDelta, graph_hierarchy: str) -> str:
+    """Describe a pair the way the addressing engine expects to read it.
+
+    The engine resolves seniority from free text, which on the markdown path is
+    the whole `recommended target-language form` line. The structured delta holds
+    the same facts in fields, so they are joined back into one string rather than
+    teaching the engine a second input shape.
+    """
+
+    graph_note = {
+        "source_senior": "senior to junior",
+        "source_junior": "junior to senior",
+    }.get(str(graph_hierarchy or "unknown"), "")
+    parts = [
+        delta.vocative,
+        delta.register,
+        delta.scope,
+        graph_note,
+        *(str(item or "") for item in delta.social_basis or []),
+    ]
+    return "; ".join(part for part in (str(item or "").strip() for item in parts) if part)
+
+
+def _repair_delta_pair(
+    delta: AddressingUpdateDelta,
+    target_language: str,
+    graph_hierarchy: str = "unknown",
+    character_genders: Optional[Dict[str, str]] = None,
+) -> AddressingUpdateDelta:
+    """Apply the target language's pronoun constraints before a rule is stored.
+
+    Every addressing line that reaches the prompt through markdown passes the
+    addressing engine, but a structured delta reached the database untouched --
+    so a pair whose own vocative says `Huấn luyện viên` could be stored as the
+    peer pair `tớ`/`cậu`, projected verbatim into the translation prompt, and
+    exported back over the repaired markdown. Repairing here puts both paths on
+    one set of rules. It runs last, after every policy check, so the checks above
+    still judge exactly what the model proposed.
+    """
+
+    repaired_self, repaired_target, repaired_vocative = (
+        UniversalAddressingEngine(language=target_language).validate_and_repair_pair(
+            self_pronoun=delta.self_pronoun,
+            target_pronoun=delta.second_pronoun,
+            speaker=delta.speaker,
+            addressee=delta.addressee,
+            vocative=delta.vocative,
+            register=delta.register,
+            details_context=_pair_repair_context(delta, graph_hierarchy),
+            character_genders=character_genders,
+        )
+    )
+    if (
+        repaired_self == delta.self_pronoun
+        and repaired_target == delta.second_pronoun
+        and repaired_vocative == delta.vocative
+    ):
+        return delta
+    return replace(
+        delta,
+        self_pronoun=repaired_self,
+        second_pronoun=repaired_target,
+        vocative=repaired_vocative,
+    )
+
+
 def _ground_social_basis(
     social_basis: Iterable[str],
     source_text: str,
@@ -214,6 +281,31 @@ class ContextMergeEngine:
                 self.confidence_threshold = 0.80
         else:
             self.confidence_threshold = float(confidence_threshold)
+
+    def _character_gender_map(self, translation_id: str) -> Dict[str, str]:
+        """Map every known name and alias to its recorded gender, case-folded.
+
+        The addressing engine picks between gendered second-person pronouns from
+        this, so an unknown name has to be absent rather than present as
+        "unknown" -- the engine treats a blank gender as "decide from context".
+        """
+
+        genders: Dict[str, str] = {}
+        try:
+            nodes = self.db.get_relationship_nodes(translation_id)
+        except Exception:
+            return genders
+        for node in nodes:
+            gender = str(node.get("gender") or "").strip()
+            if not gender or gender.casefold() == "unknown":
+                continue
+            names = [node.get("canonical_name"), node.get("normalized_name")]
+            names.extend(node.get("aliases") or [])
+            for name in names:
+                key = _norm(name)
+                if key:
+                    genders[key] = gender
+        return genders
 
     def apply_delta(
         self,
@@ -752,6 +844,14 @@ class ContextMergeEngine:
                     f"identified as temporary/situational context "
                     f"('{delta.vocative}' / '{delta.register}'); preserving durable baseline rule."
                 )
+
+        if requires_paired_forms:
+            delta = _repair_delta_pair(
+                delta,
+                target_language,
+                str(graph_support.get("hierarchy") or "unknown"),
+                self._character_gender_map(translation_id),
+            )
 
         old_state_dict = existing if existing else None
         new_state_dict = {

@@ -361,3 +361,91 @@ def test_existing_v3_copied_vocative_is_migrated_to_provisional(tmp_path):
     )
     assert provisional[0]["social_basis"] == []
     reopened.close()
+
+
+def test_structured_pair_is_repaired_before_it_reaches_the_database(addressing_db):
+    """The structured path applies the same pronoun rules as the markdown one.
+
+    A rule whose own vocative names a senior role cannot be stored as a peer
+    pair: the database feeds the prompt projection directly, so an unrepaired
+    row is a wrong pronoun in the translation and then overwrites the repaired
+    markdown on the next export.
+    """
+
+    engine = ContextMergeEngine(db=addressing_db)
+    kwargs = {
+        "trigger_source": "context_update_v2",
+        "target_language": "Vietnamese",
+        "known_character_names": ["Apollo Rainbow", "Tomio Momozawa"],
+        "source_language": "English",
+    }
+    quotes = ("Trainer, look at this!", "Trainer, I finished the lap.")
+    for index, quote in enumerate(quotes):
+        candidate = _candidate(
+            speaker="Apollo Rainbow",
+            addressee="Tomio Momozawa",
+            target_form={
+                "self_reference": "tớ",
+                "second_person": "cậu",
+                "vocative": "Huấn luyện viên",
+            },
+            source_forms=[{
+                "text": "Trainer",
+                "usage": "direct_address",
+                "evidence_quote": quote,
+            }],
+            register="polite",
+            social_basis=["student-trainer"],
+            evidence_quote=quote,
+        )
+        applied = engine.apply_delta(
+            "trainer", index * 2 + 1, candidate.to_delta(),
+            source_text=quote, **kwargs,
+        )
+
+    assert applied
+    rules = addressing_db.get_addressing_rules("trainer")
+    assert len(rules) == 1
+    assert rules[0]["self_pronoun"] == "em"
+    assert rules[0]["target_pronoun"] == "anh"
+    assert rules[0]["vocative"] == "Huấn luyện viên"
+    assert "self-reference: em; second-person pronoun: anh" in (
+        export_db_addressing_to_markdown("trainer", addressing_db)
+    )
+
+
+def test_structured_peer_pair_is_left_alone(addressing_db):
+    """Repair only fires on a contradiction, never on a plain peer pair."""
+
+    engine = ContextMergeEngine(db=addressing_db)
+    kwargs = {
+        "trigger_source": "context_update_v2",
+        "target_language": "Vietnamese",
+        "known_character_names": ["Alice", "Bob"],
+        "source_language": "English",
+    }
+    for index, quote in enumerate(("Bob, want some tea?", "Bob, let's go.")):
+        candidate = _candidate(
+            target_form={
+                "self_reference": "tớ",
+                "second_person": "cậu",
+                "vocative": "Bob",
+            },
+            source_forms=[{
+                "text": "Bob",
+                "usage": "direct_address",
+                "evidence_quote": quote,
+            }],
+            register="casual",
+            social_basis=["peer"],
+            evidence_quote=quote,
+        )
+        engine.apply_delta(
+            "peer", index * 2 + 1, candidate.to_delta(),
+            source_text=quote, **kwargs,
+        )
+
+    rules = addressing_db.get_addressing_rules("peer")
+    assert len(rules) == 1
+    assert rules[0]["self_pronoun"] == "tớ"
+    assert rules[0]["target_pronoun"] == "cậu"
