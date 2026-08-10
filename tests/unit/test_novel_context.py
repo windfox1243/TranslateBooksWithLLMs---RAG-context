@@ -5598,7 +5598,10 @@ def test_vietnamese_trainer_trainee_intimacy_does_not_use_peer_self_reference():
         target_language="Vietnamese",
     )
 
-    assert "self-reference: tôi; second-person pronoun: anh" in merged
+    # A trainee speaking to their trainer is junior to senior, so the junior
+    # self-reference "em" is the repair -- "tôi" would read as distance the
+    # recorded high intimacy contradicts.
+    assert "self-reference: em; second-person pronoun: anh" in merged
     assert "self-reference: mình" not in merged
 
 
@@ -5681,8 +5684,14 @@ def test_vietnamese_reverse_pair_does_not_force_symmetric_addressing():
     )
 
     assert "Apollo Rainbow → Tomio Momozawa" in merged
-    assert "self-reference: tôi; second-person pronoun: anh" in merged
-    assert "self-reference: em; second-person pronoun: anh" not in merged
+    # The trainee answers the trainer's "anh"/"em" with its complement, which is
+    # not the same thing as copying the reverse pair: the direction stays intact.
+    assert "self-reference: em; second-person pronoun: anh" in merged
+    trainee_line = next(
+        line for line in merged.splitlines()
+        if line.startswith("- Apollo Rainbow → Tomio Momozawa")
+    )
+    assert "self-reference: anh; second-person pronoun: em" not in trainee_line
     assert "self-reference: mình" not in merged
 
 
