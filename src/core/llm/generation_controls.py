@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 GENERATION_MODES = (
     "auto", "off", "on", "minimal", "low", "medium", "high", "dynamic",
@@ -175,6 +175,23 @@ def normalize_thinking_mode(value: Any) -> str:
     return mode if mode in GENERATION_MODES else "auto"
 
 
+def _lowest_offered(
+    capabilities: "GenerationCapabilities", preferred: Sequence[str],
+) -> str:
+    """Return the first preferred mode the model actually offers.
+
+    Model families disagree about which rungs exist -- `gpt-5-pro` offers only
+    `high`, Gemini 3 Pro has no `minimal` -- so a floor has to be expressed as
+    an order of preference rather than one literal, or it resolves to a mode
+    the provider will reject.
+    """
+
+    for mode in preferred:
+        if mode in capabilities.thinking_modes:
+            return mode
+    return capabilities.default_thinking_mode
+
+
 def resolve_thinking_controls(
     provider: str,
     model: str,
@@ -209,12 +226,20 @@ def resolve_thinking_controls(
 
     if mode == "auto":
         if role == "editor":
+            # The editor is the only pass that reads the source alongside the
+            # draft, so its whole value is the comparison. Floored at `minimal`
+            # it stopped doing that: a small model answered every chunk with a
+            # byte-identical empty verdict, spending zero thinking tokens over
+            # two entire books while the deterministic checks were repairing
+            # dozens of defects in the same chunks. `low` is the cheapest
+            # setting that still buys a comparison; an explicit mode from the
+            # user is untouched either way.
             if capabilities.thinking_control in {"level", "effort"}:
-                mode = "minimal" if "minimal" in capabilities.thinking_modes else "low"
+                mode = _lowest_offered(capabilities, ("low", "medium", "high"))
             elif capabilities.thinking_control == "boolean":
                 mode = "off" if capabilities.can_disable_thinking else "on"
             else:
-                mode = "off" if capabilities.can_disable_thinking else "minimal"
+                mode = _lowest_offered(capabilities, ("minimal", "low"))
         elif capabilities.thinking_control == "budget":
             # Preserve the pre-beta.34 Gemini 2.5 behavior where possible.
             mode = "off" if capabilities.can_disable_thinking else "dynamic"
