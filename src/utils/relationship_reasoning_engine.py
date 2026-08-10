@@ -154,6 +154,23 @@ def _quote_is_source_supported(quote: str, source_text: str) -> bool:
     return _match_source_quote(quote, source_text)[0] in {"exact", "normalized"}
 
 
+def _edge_contradicts(existing: Dict[str, Any], candidate: RelationshipCandidate) -> bool:
+    """Report whether a candidate disagrees with an edge about who stands where.
+
+    Narrower than `_edge_changed` on purpose: prose fields like `details` drift
+    between chunks because the model rewords the same observation, and treating
+    that drift as disagreement would let a rephrasing retract a fact the graph
+    had already accepted.
+    """
+
+    return any((
+        normalize_relationship_name(existing.get("direction")) != candidate.direction,
+        normalize_relationship_name(existing.get("hierarchy")) != candidate.hierarchy,
+        normalize_relationship_name(existing.get("relative_age")) != candidate.relative_age,
+        normalize_relationship_name(existing.get("rank_relation")) != candidate.rank_relation,
+    ))
+
+
 def _edge_changed(existing: Dict[str, Any], candidate: RelationshipCandidate) -> bool:
     return any((
         normalize_relationship_name(existing.get("direction")) != candidate.direction,
@@ -413,6 +430,21 @@ class RelationshipReasoningEngine:
             validator_version=2,
         )
 
+    def _supporting_units(
+        self, translation_id: str,
+        existing: Optional[Dict[str, Any]], chunk_index: int,
+    ) -> int:
+        """Count the distinct source units that have ever backed this edge."""
+
+        chunks = {
+            int(item.get("chunk_index", 0))
+            for item in self.db.get_relationship_evidence(
+                translation_id, existing.get("id"),
+            )
+        } if existing else set()
+        chunks.add(int(chunk_index))
+        return len(chunks)
+
     def _provisional_edge(
         self, translation_id: str, chunk_index: int,
         candidate: RelationshipCandidate,
@@ -431,13 +463,7 @@ class RelationshipReasoningEngine:
             if edge.get("relationship_type") == candidate.relationship_type
             and edge.get("scope") == candidate.scope
         ), None)
-        supporting = {
-            int(item.get("chunk_index", 0))
-            for item in self.db.get_relationship_evidence(
-                translation_id, same.get("id") if same else None,
-            )
-        } if same else set()
-        supporting.add(int(chunk_index))
+        supporting = self._supporting_units(translation_id, same, chunk_index)
         edge_id = self.db.upsert_relationship_edge(
             translation_id=translation_id,
             source_node_id=source_node["id"], target_node_id=target_node["id"],
@@ -449,7 +475,7 @@ class RelationshipReasoningEngine:
             status="provisional", is_locked=0, chunk_index=chunk_index,
             provenance=candidate.provenance, details=candidate.details,
             evidence_tier="indirect", reason_code=reason_code,
-            supporting_units=len(supporting), validator_version=2,
+            supporting_units=supporting, validator_version=2,
         )
         for span in candidate.evidence_spans or [{"quote": candidate.evidence_quote}]:
             quote = str(span.get("quote") or "").strip()
@@ -727,7 +753,20 @@ class RelationshipReasoningEngine:
                 log_callback=log_callback,
             )
 
-        if candidate.scope == "durable" and not trusted:
+        # Re-observing a fact the graph already accepted is corroboration, not a
+        # retraction. The gates below decide whether an unproven claim may enter
+        # the graph; re-running them on every later chunk made membership
+        # last-write-wins, so one paraphrased quote that no longer matched its
+        # own chunk demoted a settled edge back to `provisional` -- and nothing
+        # promotes it back, which is how a student/mentor pair stayed invisible
+        # to `relationship_support_for_addressing` for a whole book.
+        revalidated = bool(
+            same_edge
+            and same_edge.get("status") == "accepted"
+            and not _edge_contradicts(same_edge, candidate)
+        )
+
+        if candidate.scope == "durable" and not trusted and not revalidated:
             evidence_quotes = _candidate_evidence_quotes(candidate)
             if not evidence_quotes:
                 edge_id = self._provisional_edge(
@@ -809,7 +848,7 @@ class RelationshipReasoningEngine:
                     edge_id=edge_id, log_callback=log_callback,
                 )
 
-        if not trusted and candidate.judge_decision == "reject":
+        if not trusted and not revalidated and candidate.judge_decision == "reject":
             edge_id = self._provisional_edge(
                 translation_id, chunk_index, candidate, source_node, target_node,
                 reason_code="judge_disagreement", source_text=source_text,
@@ -826,6 +865,7 @@ class RelationshipReasoningEngine:
 
         if (
             not trusted
+            and not revalidated
             and candidate.confidence < self.confidence_threshold
             and candidate.scope != "durable"
         ):
@@ -954,7 +994,9 @@ class RelationshipReasoningEngine:
             details=candidate.details,
             evidence_tier=("direct" if _candidate_evidence_quotes(candidate) else "trusted"),
             reason_code="validated",
-            supporting_units=1,
+            supporting_units=self._supporting_units(
+                translation_id, same_edge, chunk_index,
+            ),
             match_kind=(
                 _match_source_quote(_candidate_evidence_quotes(candidate)[0], source_text)[0]
                 if _candidate_evidence_quotes(candidate) else "trusted"

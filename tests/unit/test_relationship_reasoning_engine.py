@@ -1037,3 +1037,104 @@ def test_provisional_conflicts_are_deduplicated(relationship_db):
             known_character_names=["A", "B"],
         ).status == "provisional"
     assert len(relationship_db.get_relationship_conflicts(tx, status="open")) == 1
+
+
+_STUDENT_QUOTES = (
+    "Apollo Rainbow is ready for the lap.",
+    "Trainer Momozawa nodded.",
+)
+_STUDENT_SOURCE = " ".join(_STUDENT_QUOTES)
+
+
+def _student_candidate(**overrides):
+    values = {
+        "source": "Apollo Rainbow",
+        "target": "Tomio Momozawa",
+        "relationship_type": "student",
+        "direction": "directed",
+        "scope": "durable",
+        "hierarchy": "source_junior",
+        "rank_relation": "source_lower",
+        "evidence_spans": [
+            {"quote": _STUDENT_QUOTES[0], "role": "source"},
+            {"quote": _STUDENT_QUOTES[1], "role": "target"},
+        ],
+        "confidence": 0.94,
+        "provenance": "llm_context",
+        "details": "Apollo trains under Momozawa.",
+    }
+    values.update(overrides)
+    return RelationshipCandidate(**values)
+
+
+def _merge_student(engine, tx, chunk_index, candidate, source_text):
+    return engine.merge_candidate(
+        tx, chunk_index, candidate, source_text=source_text,
+        known_character_names=["Apollo Rainbow", "Tomio Momozawa"],
+        active_character_names=["Apollo Rainbow", "Tomio Momozawa"],
+        language="English",
+    )
+
+
+def test_accepted_relationship_survives_a_later_unmatched_quote(relationship_db):
+    """A settled fact is corroborated by a re-observation, never retracted by it.
+
+    The evidence gates decide whether an unproven claim may enter the graph. Re-
+    running them on every later chunk made membership last-write-wins: the model
+    re-states a durable relationship almost every chunk, and the moment one of
+    those restatements paraphrased its own quote the edge fell back to
+    `provisional` -- invisible to `relationship_support_for_addressing`, which
+    reads accepted edges only, for the rest of the book.
+    """
+
+    tx = "accepted-survives-restatement"
+    engine = _engine_with_characters(
+        relationship_db, tx, "Apollo Rainbow", "Tomio Momozawa",
+    )
+    assert _merge_student(
+        engine, tx, 1, _student_candidate(), _STUDENT_SOURCE,
+    ).status == "accepted"
+
+    later = _merge_student(
+        engine, tx, 2,
+        _student_candidate(
+            details="Apollo Rainbow keeps training under her trainer.",
+        ),
+        "She ran the lap without a word.",
+    )
+
+    assert later.status != "provisional"
+    edges = relationship_db.get_relationship_edges(tx, statuses=["accepted"])
+    assert len(edges) == 1
+    assert edges[0]["hierarchy"] == "source_junior"
+    assert edges[0]["supporting_units"] == 2
+    support = relationship_support_for_addressing(
+        relationship_db, tx, "Apollo Rainbow", "Tomio Momozawa",
+    )
+    assert support["hierarchy"] == "source_junior"
+
+
+def test_accepted_relationship_still_yields_to_a_contradicting_observation(
+    relationship_db,
+):
+    """The guard covers restatement only -- a reversed seniority is still caught."""
+
+    tx = "accepted-yields-to-contradiction"
+    engine = _engine_with_characters(
+        relationship_db, tx, "Apollo Rainbow", "Tomio Momozawa",
+    )
+    assert _merge_student(
+        engine, tx, 1, _student_candidate(), _STUDENT_SOURCE,
+    ).status == "accepted"
+
+    flipped = _merge_student(
+        engine, tx, 2,
+        _student_candidate(
+            hierarchy="source_senior", rank_relation="source_higher",
+        ),
+        "She ran the lap without a word.",
+    )
+
+    assert flipped.status in {"provisional", "quarantined", "rejected"}
+    edges = relationship_db.get_relationship_edges(tx, statuses=["accepted"])
+    assert [edge["hierarchy"] for edge in edges] == ["source_junior"]
