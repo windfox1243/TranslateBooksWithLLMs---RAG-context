@@ -12,7 +12,9 @@ from src.core.llm.providers.openai import OpenAICompatibleProvider
 from src.core.llm.providers.openrouter import OpenRouterProvider
 
 
-def test_gemini_3_editor_auto_uses_minimal_thinking():
+def test_gemini_3_editor_auto_uses_low_thinking():
+    """`minimal` bought no comparison at all; `low` is the floor that does."""
+
     capabilities = generation_capabilities(
         "gemini", "gemini-3-flash-preview"
     )
@@ -22,8 +24,8 @@ def test_gemini_3_editor_auto_uses_minimal_thinking():
     assert resolve_thinking_controls(
         "gemini", "gemini-3-flash-preview", "auto", role="editor"
     ) == {
-        "mode": "minimal",
-        "thinking_level": "minimal",
+        "mode": "low",
+        "thinking_level": "low",
         "thinking_budget": None,
     }
     assert resolve_thinking_controls(
@@ -31,12 +33,32 @@ def test_gemini_3_editor_auto_uses_minimal_thinking():
     )["thinking_level"] is None
 
 
+def test_an_explicit_editor_mode_is_still_obeyed():
+    """The floor applies to `auto` only; a chosen mode is the user's call."""
+
+    assert resolve_thinking_controls(
+        "gemini", "gemini-3-flash-preview", "minimal", role="editor"
+    )["thinking_level"] == "minimal"
+
+
+def test_the_editor_floor_falls_back_to_a_mode_the_model_offers():
+    """`gpt-5-pro` offers only `high`; a literal `low` would be rejected."""
+
+    capabilities = generation_capabilities("openai", "gpt-5-pro")
+    assert capabilities.thinking_modes == ("auto", "high")
+    assert resolve_thinking_controls(
+        "openai", "gpt-5-pro", "auto", role="editor"
+    )["reasoning_effort"] == "high"
+
+
 def test_gemini_25_and_output_budgets_are_bounded():
     controls = resolve_thinking_controls(
         "gemini", "gemini-2.5-flash", "auto", role="editor"
     )
-    assert controls["mode"] == "off"
-    assert controls["thinking_budget"] == 0
+    # An editor with no thinking budget at all is the failure this floor
+    # exists to prevent; 2.5 gets the smallest rung rather than zero.
+    assert controls["mode"] == "minimal"
+    assert controls["thinking_budget"] == 512
     assert resolve_editor_output_tokens(
         "gemini", "gemini-3-flash-preview", "auto", "minimal"
     ) == 4096

@@ -351,9 +351,9 @@ async def test_editor_retries_truncation_with_more_output_and_less_thinking(
     assert client.generate_async.await_count == 2
     first = client.generate_async.call_args_list[0].kwargs
     retry = client.generate_async.call_args_list[1].kwargs
-    assert first["max_output_tokens"] == 4096
-    assert first["thinking_level"] == "minimal"
-    assert retry["max_output_tokens"] == 8192
+    assert first["max_output_tokens"] == 8192
+    assert first["thinking_level"] == "low"
+    assert retry["max_output_tokens"] == 16384
     assert retry["thinking_level"] == "minimal"
 
 
