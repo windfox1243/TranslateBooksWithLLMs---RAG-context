@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import sqlite3
 import threading
@@ -22,6 +23,12 @@ logger = logging.getLogger("persistence.database")
 # _evidence_fingerprint now lives in schema.py, because the migration ALTERs
 # there backfill it. It is imported above and stays reachable from this module
 # for the query methods below.
+
+
+def _tighten_name(value: str) -> str:
+    """Drop the spacing and joining punctuation a name is written with."""
+
+    return re.sub(r"[\s\-_.'’]+", "", str(value or ""))
 
 
 _TRANSLATION_CHILD_TABLES = (
@@ -1585,11 +1592,35 @@ class Database:
         """Resolve a node by an exact normalized canonical name or alias."""
 
         wanted = str(normalized_name or "").casefold().strip()
-        for node in self.get_relationship_nodes(translation_id):
+        if not wanted:
+            return None
+        nodes = self.get_relationship_nodes(translation_id)
+        for node in nodes:
             if str(node.get("normalized_name") or "").casefold() == wanted:
                 return node
             if any(str(alias).casefold().strip() == wanted for alias in node.get("aliases") or []):
                 return node
+
+        # Same name written another way is still the same character. A book
+        # whose cast is named surname-first is quoted both ways, and a nickname
+        # is hyphenated as often as not, so exact matching alone registered
+        # "Momozawa Tomio" and "Guri-ko" as strangers to the nodes already
+        # holding "Tomio Momozawa" and "Guriko" -- splitting one character's
+        # relationships, gender, and addressing rules across two identities.
+        # Both fallbacks need every token of the name, so a partial reference
+        # such as "Momozawa" still resolves to nobody.
+        wanted_tokens = sorted(wanted.split())
+        wanted_tight = _tighten_name(wanted)
+        for node in nodes:
+            labels = [node.get("normalized_name"), *(node.get("aliases") or [])]
+            for label in labels:
+                key = str(label or "").casefold().strip()
+                if not key:
+                    continue
+                if len(wanted_tokens) > 1 and sorted(key.split()) == wanted_tokens:
+                    return node
+                if _tighten_name(key) == wanted_tight:
+                    return node
         return None
 
     def add_relationship_node_alias(

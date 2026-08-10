@@ -48,6 +48,18 @@ _HARMONIOUS_ALIGNMENT_MAP: Dict[Tuple[str, str], Tuple[str, str]] = {
     ("em", "em"): ("em", "anh"),
     ("chị", "chị"): ("chị", "em"),
     ("anh", "anh"): ("anh", "em"),
+    # Calling someone "anh"/"chị"/"thầy"/"cô" already places the speaker below
+    # them, so the peer self-reference contradicts the pair's own second person.
+    # This holds whatever the social basis says, and the basis frequently names
+    # both roles at once ("trainer-trainee") without saying who is speaking.
+    ("tớ", "anh"): ("em", "anh"),
+    ("mình", "anh"): ("em", "anh"),
+    ("tớ", "chị"): ("em", "chị"),
+    ("mình", "chị"): ("em", "chị"),
+    ("tớ", "thầy"): ("em", "thầy"),
+    ("mình", "thầy"): ("em", "thầy"),
+    ("tớ", "cô"): ("em", "cô"),
+    ("mình", "cô"): ("em", "cô"),
     ("tớ", "mày"): ("tao", "mày"),
     ("mình", "mày"): ("tao", "mày"),
     ("tôi", "ngươi"): ("ta", "ngươi"),
@@ -89,13 +101,20 @@ class UniversalAddressingEngine:
         else:
             self.lang_code = "generic"
 
-    def resolve_seniority_hierarchy(self, speaker: str, addressee: str, context: str) -> str:
+    def resolve_seniority_hierarchy(
+        self, speaker: str, addressee: str, context: str, vocative: str = "",
+    ) -> str:
         """
         Determine relative seniority: 'JUNIOR_TO_SENIOR', 'SENIOR_TO_JUNIOR', or 'PEER'.
+
+        The vocative is the strongest directional evidence available here: it is
+        what the speaker calls the addressee, so a role word in it describes the
+        addressee's standing and nobody else's.
         """
         spk = (speaker or "").casefold()
         adr = (addressee or "").casefold()
         ctx = (context or "").casefold()
+        voc = (vocative or "").casefold()
 
         senior_cues = ("trainer", "coach", "mentor", "huấn luyện viên", "teacher", "thầy", "sensei", "sunbae", "sếp", "giám đốc", "senpai", "father", "mother", "parent", "cha", "bố", "ba", "mẹ", "má")
         junior_cues = ("trainee", "student", "học sinh", "hậu bối", "junior", "kohai", "hobae", "son", "daughter", "child", "con")
@@ -106,13 +125,31 @@ class UniversalAddressingEngine:
         if any(c in ctx for c in ("trainee to trainer", "junior to senior", "student to teacher", "trò đến thầy", "child to parent", "father-son", "father-daughter", "mother-son", "mother-daughter", "parent-child", "con với cha", "con với mẹ")):
             return "JUNIOR_TO_SENIOR"
 
-        # Direct explicit role cues in context or addressee
-        if any(_has_cue_word(adr, k) for k in senior_cues) or (any(_has_cue_word(ctx, k) for k in senior_cues) and not any(_has_cue_word(spk, k) for k in senior_cues)):
-            if not any(_has_cue_word(spk, k) for k in senior_cues):
-                return "JUNIOR_TO_SENIOR"
-
-        if any(_has_cue_word(spk, k) for k in senior_cues) and any(_has_cue_word(adr, k) or _has_cue_word(ctx, k) for k in junior_cues):
+        # The vocative names the addressee, so its role word settles the direction
+        if any(_has_cue_word(voc, k) for k in senior_cues):
+            return "JUNIOR_TO_SENIOR"
+        if any(_has_cue_word(voc, k) for k in junior_cues):
             return "SENIOR_TO_JUNIOR"
+
+        # Direct explicit role cues in context or addressee
+        speaker_is_senior = any(_has_cue_word(spk, k) for k in senior_cues)
+        if any(_has_cue_word(adr, k) for k in senior_cues) and not speaker_is_senior:
+            return "JUNIOR_TO_SENIOR"
+
+        if speaker_is_senior and any(_has_cue_word(adr, k) or _has_cue_word(ctx, k) for k in junior_cues):
+            return "SENIOR_TO_JUNIOR"
+
+        # A social basis such as "student-trainer" names both roles without
+        # saying which end is speaking. Reading the senior cue alone made every
+        # such pair junior-to-senior, which pointed the repair the wrong way for
+        # the trainer's own lines. Direction has to come from the graph or the
+        # vocative; free text that carries both roles cannot supply it.
+        if (
+            not speaker_is_senior
+            and any(_has_cue_word(ctx, k) for k in senior_cues)
+            and not any(_has_cue_word(ctx, k) for k in junior_cues)
+        ):
+            return "JUNIOR_TO_SENIOR"
 
         return "PEER"
 
@@ -145,6 +182,13 @@ class UniversalAddressingEngine:
         c_clean = (details_context or "").casefold()
 
         genders = character_genders or {}
+        speaker_g_raw = genders.get(speaker, "") or genders.get((speaker or "").casefold(), "")
+        speaker_g = speaker_g_raw.casefold()
+        is_speaker_female = "female" in speaker_g or "nữ" in speaker_g
+        is_speaker_male = (
+            ("male" in speaker_g and "female" not in speaker_g)
+            or ("nam" in speaker_g and "nữ" not in speaker_g)
+        )
         addressee_g_raw = genders.get(addressee, "") or genders.get((addressee or "").casefold(), "")
         is_addressee_female = (
             "female" in addressee_g_raw.casefold()
@@ -205,7 +249,9 @@ class UniversalAddressingEngine:
                     s_key = "con"
 
         # 1. Resolve 2D Seniority Hierarchy (JUNIOR_TO_SENIOR, SENIOR_TO_JUNIOR, PEER)
-        hierarchy = self.resolve_seniority_hierarchy(speaker, addressee, details_context)
+        hierarchy = self.resolve_seniority_hierarchy(
+            speaker, addressee, details_context, vocative=v_clean,
+        )
 
         peer_set = _PEER_PRONOUN_SETS.get(self.lang_code, set())
         senior_set = _SENIOR_PRONOUN_SETS.get(self.lang_code, set())
@@ -230,13 +276,27 @@ class UniversalAddressingEngine:
                     s_key = "em"
 
         elif hierarchy == "SENIOR_TO_JUNIOR":
-            # Senior calling Junior cannot address Junior as Senior 'anh'/'chị'/'thầy'
-            if t_key in senior_set:
+            # Senior calling Junior cannot address Junior as Senior 'anh'/'chị'/'thầy',
+            # nor as the peer 'cậu' -- the peer form denies the seniority just as
+            # plainly as the senior form inverts it, and only the senior form was
+            # caught, so a trainer went on calling his student 'cậu' for a book.
+            if t_key in senior_set or (self.lang_code == "vi" and t_key in peer_set):
                 t_clean = "em"
                 t_key = t_clean.casefold()
-            # Senior self-reference cannot be junior 'em'
+            # Senior self-reference cannot be junior 'em', and a peer 'tớ'/'mình'
+            # is the same mistake seen from the other side. Prefer the gendered
+            # senior form, which keeps the closeness the peer pronoun carried;
+            # 'tôi' is the fallback when the speaker's gender is unknown.
             if s_key in junior_set:
                 s_clean = "tôi"
+                s_key = s_clean.casefold()
+            elif self.lang_code == "vi" and s_key in {"tớ", "mình"}:
+                if is_speaker_female:
+                    s_clean = "chị"
+                elif is_speaker_male:
+                    s_clean = "anh"
+                else:
+                    s_clean = "tôi"
                 s_key = s_clean.casefold()
 
         # Cross-validation: enforce Vietnamese gendered address alignment only

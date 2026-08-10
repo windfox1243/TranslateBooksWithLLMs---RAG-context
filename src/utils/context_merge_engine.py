@@ -307,6 +307,25 @@ class ContextMergeEngine:
                     genders[key] = gender
         return genders
 
+    def _canonical_character_name(self, translation_id: str, name: str) -> str:
+        """Return the registered spelling of a character, or the name unchanged.
+
+        Addressing rules are keyed by the names the model happened to write, so
+        one character quoted two ways -- "Momozawa Tomio" beside "Tomio
+        Momozawa" -- opened a second rule instead of refining the first. The two
+        then contradicted each other in the same prompt and neither accumulated
+        the evidence the other had.
+        """
+
+        if not name:
+            return name
+        try:
+            node = self.db.get_relationship_node_by_name(translation_id, _norm(name))
+        except Exception:
+            return name
+        canonical = str((node or {}).get("canonical_name") or "").strip()
+        return canonical or name
+
     def apply_delta(
         self,
         translation_id: str,
@@ -328,6 +347,12 @@ class ContextMergeEngine:
         """
         if not delta:
             return False
+
+        delta = replace(
+            delta,
+            speaker=self._canonical_character_name(translation_id, delta.speaker),
+            addressee=self._canonical_character_name(translation_id, delta.addressee),
+        )
 
         all_existing_rules = self.db.get_addressing_rules(
             translation_id, validation_status=None,
@@ -707,6 +732,22 @@ class ContextMergeEngine:
             "user_manual",
         }:
             graph_hierarchy = graph_support.get("hierarchy", "unknown")
+            # A peer pair where the graph knows a seniority is the model failing
+            # to apply that seniority, not asserting the opposite of it. Rejecting
+            # it left the senior side of a relationship with no rule at all while
+            # the junior side kept one, so the two halves disagreed in every
+            # prompt. Repair it here and judge the result; an actually inverted
+            # pair still has nowhere to hide.
+            if (
+                graph_hierarchy in {"source_senior", "source_junior"}
+                and _vi_pair_direction(delta.self_pronoun, delta.second_pronoun) == "peer"
+            ):
+                delta = _repair_delta_pair(
+                    delta,
+                    target_language,
+                    graph_hierarchy,
+                    self._character_gender_map(translation_id),
+                )
             incoming_direction = _vi_pair_direction(
                 delta.self_pronoun,
                 delta.second_pronoun,
