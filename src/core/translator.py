@@ -14,6 +14,7 @@ from tqdm.auto import tqdm
 from src.config import (
     ADAPTIVE_CONTEXT_INITIAL_THINKING,
     DEFAULT_MODEL,
+    EDITOR_LOG_FULL_RESPONSE,
     SENTENCE_TERMINATORS,
     THINKING_MODELS,
     TRANSLATE_TAG_IN,
@@ -1523,6 +1524,32 @@ def format_critique_tldr(critique_text: str, max_bullets: int = 3, max_len: int 
     return " | ".join(summaries)
 
 
+def log_full_editor_response(
+    log_callback: Optional[Callable],
+    stage: str,
+    raw_text: str,
+    chunk_index: Optional[int] = None,
+) -> None:
+    """Print the editor's answer verbatim when the operator asked to see it.
+
+    The TL;DR log summarises an empty verdict and a thorough audit to the same
+    nothing, so a contract change that quietly stops the editor finding defects
+    is invisible from the logs alone. This is the escape hatch for reading what
+    the model actually said, gated because it is thousands of characters a chunk.
+    """
+
+    if not EDITOR_LOG_FULL_RESPONSE:
+        return
+    emit_progress_log(
+        log_callback,
+        "reflection_full_response",
+        f"Senior Editor raw response ({stage}):\n{raw_text or '<empty>'}",
+        layer="senior_editor_reflection",
+        chunk_index=chunk_index,
+        data={"stage": stage, "response_chars": len(raw_text or "")},
+    )
+
+
 # Lives with the rest of the glossary rules now. It is a pure string predicate
 # with no engine dependency, and the novel-context session needed it too --
 # which had src/utils importing from src/core to get it. Re-exported here so
@@ -2203,6 +2230,10 @@ async def _run_chunk_reflection_pass_impl(
         failure_class=initial_failure_class,
         issues=reflection_result.issues,
     )
+    log_full_editor_response(
+        log_callback, "reflection", critique,
+        int(options.get("chunk_index", 0) or 0),
+    )
     if log_callback:
         emit_progress_log(
             log_callback,
@@ -2291,6 +2322,10 @@ async def _run_chunk_reflection_pass_impl(
                     else ""
                 ),
                 issues=retry_result.issues,
+            )
+            log_full_editor_response(
+                log_callback, "reflection_contract_retry", retry_critique,
+                int(options.get("chunk_index", 0) or 0),
             )
             if log_callback:
                 emit_progress_log(

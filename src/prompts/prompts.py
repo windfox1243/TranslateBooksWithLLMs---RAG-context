@@ -22,7 +22,7 @@ CORRECTED_TAG_OUT = "<CORRECTED_TAG_OUT>"
 REFLECTION_JSON_TAG_IN = "<REFLECTION_JSON>"
 REFLECTION_JSON_TAG_OUT = "</REFLECTION_JSON>"
 REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v8"
-REFLECTION_CONTRACT_VERSION = "editor-issue-v7-focused"
+REFLECTION_CONTRACT_VERSION = "editor-issue-v8-enumerated"
 
 REFLECTION_RESPONSE_SCHEMA = {
     "type": "object",
@@ -166,10 +166,26 @@ def _build_reflection_json_contract_section(*, native_schema: bool = False) -> s
 {REFLECTION_JSON_TAG_IN}
 {{"status":"no_issues","issues":[],"voice_observations":[]}}
 {REFLECTION_JSON_TAG_OUT}"""
-    return f"""STRICT OUTPUT CONTRACT:
+    return f"""AUDIT CHECKLIST -- walk every item against the source before answering:
+- omission: source content missing from the draft.
+- addition: draft content with no basis in the source.
+- mistranslation: the draft states something the source does not.
+- glossary error: an established term rendered inconsistently.
+- pronoun bleed: an address term that contradicts the established relationship.
+- gender mismatch: a referent's gender flipped against the source or context.
+- register: honorifics, formality, or politeness level wrong for the speakers.
+- consistency: a name, title, or fact contradicting an earlier chunk.
+- fluency: target-language phrasing a native reader would not write.
+- style: narrator voice or discourse mode drifting from the established profile.
+- placeholder/format: a tag, marker, number, or layout element damaged.
+Report every material defect you find. Reaching the end of the checklist with
+nothing to report is a valid answer only when you actually checked each item.
+
+STRICT OUTPUT CONTRACT:
 - {wrapper} No prose or markdown.
 - Return at most 12 material issues, ordered by severity and confidence.
 - Use no_issues only when no repair is needed; otherwise use needs_repair.
+- category must name the checklist item the issue came from.
 - local_replace requires one exact numbered draft segment, a unique draft_quote,
   and draft_replacement with exact current and replacement spans.
 - rewrite is only for structural, cross-cutting, or completeness defects that

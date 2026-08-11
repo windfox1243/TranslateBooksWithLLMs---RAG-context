@@ -390,6 +390,14 @@ TEMPERATURE = float(os.getenv('TEMPERATURE', '0.3'))
 # BLOCK_LOW_AND_ABOVE, HARM_BLOCK_THRESHOLD_UNSPECIFIED.
 GEMINI_SAFETY_THRESHOLD = os.getenv('GEMINI_SAFETY_THRESHOLD', 'BLOCK_NONE')
 
+# Log the Senior Editor's raw response verbatim instead of the one-line TL;DR.
+# The condensed log hides an editor that has stopped finding anything: an empty
+# verdict and a careful audit both summarise to nothing. Off by default because
+# a full critique is thousands of characters per chunk.
+EDITOR_LOG_FULL_RESPONSE = os.getenv(
+    'EDITOR_LOG_FULL_RESPONSE', 'false',
+).lower() == 'true'
+
 # Auto-pause on HTTP 429 rate limit
 # When True (default): translation pauses after retries are exhausted; user resumes manually.
 # When False: translation auto-resumes from the last checkpoint after waiting `retry_after`
