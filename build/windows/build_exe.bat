@@ -41,7 +41,12 @@ REM Build executable
 echo [4/4] Building TranslateBook.exe...
 echo This may take 5-10 minutes...
 echo.
-pyinstaller --clean TranslateBook.spec
+REM Call the venv interpreter by path rather than the activated `pyinstaller`.
+REM If activation above silently fails, a bare `pyinstaller` resolves to a
+REM global install, and PyInstaller follows imports into whatever that
+REM interpreter has -- a machine with torch installed produced a 382 MB build
+REM instead of 36 MB, with no error to say why.
+..\..\venv\Scripts\python.exe -m PyInstaller --clean TranslateBook.spec
 
 if errorlevel 1 (
     echo.
