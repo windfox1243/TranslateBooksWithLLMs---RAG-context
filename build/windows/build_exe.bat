@@ -31,8 +31,13 @@ if errorlevel 1 (
 echo [OK] PyInstaller ready
 
 REM Clean previous builds
+REM Only the executable, never the directory holding it. `..\..\dist` is also
+REM where a run of the app keeps TranslateBook_Data -- the operator's .env, the
+REM glossary and job databases, the checkpoints, the finished translations --
+REM and deleting the whole tree took all of it with every build.
 echo [3/4] Cleaning previous builds...
-if exist "..\..\dist" rmdir /s /q ..\..\dist
+if exist "..\..\dist\TranslateBook.exe" del /q ..\..\dist\TranslateBook.exe
+if exist "dist" rmdir /s /q dist
 if exist "..\dist" rmdir /s /q ..\dist
 if exist "..\TranslateBookWithLLM" rmdir /s /q ..\TranslateBookWithLLM
 echo [OK] Cleaned
@@ -46,7 +51,10 @@ REM If activation above silently fails, a bare `pyinstaller` resolves to a
 REM global install, and PyInstaller follows imports into whatever that
 REM interpreter has -- a machine with torch installed produced a 382 MB build
 REM instead of 36 MB, with no error to say why.
-..\..\venv\Scripts\python.exe -m PyInstaller --clean TranslateBook.spec
+REM --distpath is explicit because the spec sets none: PyInstaller then writes
+REM to .\dist, which is build\windows\dist, while every message below and the
+REM release steps expect ..\..\dist. The exe had to be moved by hand.
+..\..\venv\Scripts\python.exe -m PyInstaller --clean --distpath ..\..\dist TranslateBook.spec
 
 if errorlevel 1 (
     echo.
