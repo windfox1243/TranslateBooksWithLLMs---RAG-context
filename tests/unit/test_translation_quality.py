@@ -1035,43 +1035,68 @@ async def test_isolated_issue_retry_preserves_valid_sibling():
     assert client.calls == 2
 
 
-@pytest.mark.asyncio
-async def test_minor_issue_is_warning_without_rewrite(tmp_path):
-    critique = (
+def _minor_style_critique(confidence):
+    return (
         '{"status":"needs_repair","issues":[{'
         '"issue_id":"minor-1","category":"style","severity":"minor",'
-        '"confidence":0.99,"repair_kind":"local_replace",'
+        f'"confidence":{confidence},"repair_kind":"local_replace",'
         '"source_quote":"Wait.","draft_quote":"Chờ đã.",'
-        '"instruction":"Optional stylistic preference.",'
+        '"instruction":"Reads stiffer than the source.",'
         '"draft_replacement":{"draft":"Chờ đã.","replacement":"Đợi nhé."},'
         '"glossary_update":null}]}'
     )
 
+
+async def _run_minor_style_issue(tmp_path, job, confidence):
     class Client:
         def __init__(self):
             self.calls = 0
 
         async def generate_async(self, **_kwargs):
             self.calls += 1
-            return SimpleNamespace(content=critique)
+            return SimpleNamespace(content=_minor_style_critique(confidence))
 
     client = Client()
     db_path = str(tmp_path / "jobs.db")
     db = Database(db_path)
-    assert db.create_job("warning-job", "txt", {})
+    assert db.create_job(job, "txt", {})
     result = await run_chunk_reflection_pass(
         source_chunk="Wait.", draft_translation="Chờ đã.",
         target_language="Vietnamese", model_name="test", llm_client=client,
         prompt_options={
             "source_language": "English",
-            "translation_id": "warning-job",
+            "translation_id": job,
             "jobs_db_path": db_path,
             "chunk_index": 0,
         },
     )
-    assert result == "Chờ đã."
     assert client.calls == 1
-    diagnostics = db.get_editor_diagnostics("warning-job")
+    return result, db.get_editor_diagnostics(job)
+
+
+@pytest.mark.asyncio
+async def test_a_confident_minor_issue_is_repaired(tmp_path):
+    """Severity is cost to the reader, not doubt about the finding.
+
+    A minor defect the editor located exactly and was sure of used to be
+    rewritten to review_only as it was parsed, so it could never be applied.
+    """
+
+    result, diagnostics = await _run_minor_style_issue(
+        tmp_path, "minor-confident-job", 0.99,
+    )
+    assert result == "Đợi nhé."
+    assert diagnostics["summary"]["outcomes"] == {"locally_repaired": 1}
+
+
+@pytest.mark.asyncio
+async def test_a_hedged_issue_is_still_only_a_warning(tmp_path):
+    """Doubt, not severity, is what withholds an unattended edit."""
+
+    result, diagnostics = await _run_minor_style_issue(
+        tmp_path, "minor-hedged-job", 0.5,
+    )
+    assert result == "Chờ đã."
     assert diagnostics["summary"]["outcomes"] == {"warnings_only": 1}
     assert diagnostics["summary"]["warnings"] == 1
 

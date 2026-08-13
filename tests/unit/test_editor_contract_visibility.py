@@ -46,7 +46,7 @@ def test_the_native_schema_variant_keeps_the_checklist():
 def test_the_contract_version_records_the_enumeration():
     # The version string is stamped on every editor_runs row, so a job's
     # database is enough to tell which contract produced its verdicts.
-    assert REFLECTION_CONTRACT_VERSION == "editor-issue-v8-enumerated"
+    assert REFLECTION_CONTRACT_VERSION == "editor-issue-v9-severity-split"
 
 
 def test_a_clean_verdict_is_still_allowed():
@@ -88,3 +88,21 @@ def test_an_empty_response_is_reported_rather_than_skipped(monkeypatch):
         lambda event, message, **kwargs: captured.append(message), "reflection", "",
     )
     assert captured and "<empty>" in captured[0]
+
+
+def test_severity_is_separated_from_certainty():
+    """The contract must not tell the model to bury minor defects.
+
+    `Uncertain or minor evidence is review_only` conflated two questions: how
+    much a defect costs the reader, and how sure the editor is that it is one.
+    The second already has its own rule below it, so the first was pure loss --
+    a confidently located minor defect was instructed to arrive unrepairable.
+    """
+
+    for native in (False, True):
+        contract = _build_reflection_json_contract_section(native_schema=native)
+        assert "Uncertain evidence is review_only." in contract
+        assert "Uncertain or minor evidence" not in contract
+        assert "a\n  minor defect you can point at and fix is still local_replace" in contract
+        # The uncertainty gate itself stays.
+        assert "Confidence below 0.80 is" in contract
