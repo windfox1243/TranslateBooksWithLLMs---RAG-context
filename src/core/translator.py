@@ -1361,14 +1361,19 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
     ).strip() or "other"
     severity = str(raw_issue.get("severity") or "major").strip() or "major"
     repair_kind = str(raw_issue.get("repair_kind") or "").strip().casefold()
+    # Certainty decides whether an edit may be applied unattended; severity
+    # decides only how much the defect costs the reader. Downgrading every
+    # `minor` here overrode the editor's own choice of repair, so a defect it
+    # had located exactly and was sure of arrived unrepairable no matter what
+    # the gate downstream allowed.
     if repair_kind not in {"local_replace", "rewrite", "review_only"}:
-        if severity.casefold() == "minor" or confidence < 0.80:
+        if confidence < 0.80:
             repair_kind = "review_only"
         elif draft_replacement:
             repair_kind = "local_replace"
         else:
             repair_kind = "rewrite"
-    if severity.casefold() == "minor" or confidence < 0.80:
+    if confidence < 0.80:
         repair_kind = "review_only"
     return {
         "issue_id": str(
@@ -2783,17 +2788,20 @@ async def _run_chunk_reflection_pass_impl(
         and str(issue["draft_replacement"].get("draft") or "").strip()
         == str(issue["draft_replacement"].get("replacement") or "").strip()
     }
+    # Severity decides how much a defect matters, not how sure the editor is
+    # that it is one. Requiring `major` here threw away every confident `minor`
+    # finding the editor had already chosen to repair -- one measured chunk
+    # returned twelve exact-span edits and applied none of them -- while the
+    # editor's own uncertainty already has a channel: `review_only`, which it
+    # is told to use, and which is still refused below. Confidence remains the
+    # gate, so a hedged repair of any severity stays a warning.
     actionable_issues = [
         issue for issue in reflection_result.issues
         if str(issue.get("issue_id") or "") not in no_op_issue_ids
         and str(issue.get("repair_kind") or "rewrite").casefold() != "review_only"
         and (
             issue.get("deterministic")
-            or (
-                str(issue.get("severity") or "major").casefold()
-                in {"major", "blocker"}
-                and float(issue.get("confidence", 0.8) or 0.0) >= 0.80
-            )
+            or float(issue.get("confidence", 0.8) or 0.0) >= 0.80
         )
     ]
     # Accumulate. Assigning here erased the findings already dropped upstream --

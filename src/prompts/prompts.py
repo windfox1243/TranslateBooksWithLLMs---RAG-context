@@ -22,7 +22,7 @@ CORRECTED_TAG_OUT = "<CORRECTED_TAG_OUT>"
 REFLECTION_JSON_TAG_IN = "<REFLECTION_JSON>"
 REFLECTION_JSON_TAG_OUT = "</REFLECTION_JSON>"
 REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v8"
-REFLECTION_CONTRACT_VERSION = "editor-issue-v8-enumerated"
+REFLECTION_CONTRACT_VERSION = "editor-issue-v9-severity-split"
 
 REFLECTION_RESPONSE_SCHEMA = {
     "type": "object",
@@ -189,7 +189,9 @@ STRICT OUTPUT CONTRACT:
 - local_replace requires one exact numbered draft segment, a unique draft_quote,
   and draft_replacement with exact current and replacement spans.
 - rewrite is only for structural, cross-cutting, or completeness defects that
-  cannot be repaired locally. Uncertain or minor evidence is review_only.
+  cannot be repaired locally. Uncertain evidence is review_only.
+- severity says how much the defect costs the reader, not how sure you are; a
+  minor defect you can point at and fix is still local_replace.
 - Omit preferences and equally valid alternatives. Confidence below 0.80 is
   review_only and must not trigger automatic repair.
 - glossary_update is only for durable terminology; otherwise use null.

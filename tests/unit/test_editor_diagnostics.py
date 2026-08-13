@@ -261,3 +261,114 @@ async def test_findings_dropped_before_the_actionable_filter_are_still_counted(
     assert run["resolved_issue_count"] == 0
     # Two reported, two unapplied: the ungrounded one and the weak one.
     assert run["warning_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_confident_minor_defect_is_repaired_and_a_hedged_one_is_not(
+    tmp_path,
+):
+    """Severity says what a defect costs; confidence says whether to trust it.
+
+    The gate used to demand `major` as well, so a minor defect the editor had
+    located exactly and was sure of was discarded with the rest -- one measured
+    chunk returned twelve such edits and applied none. Certainty is still the
+    gate, and a hedged finding of any severity stays a warning.
+    """
+
+    db_path = str(tmp_path / "jobs.db")
+    db = Database(db_path)
+    assert db.create_job("job-minor", "txt", {})
+    draft = "Alpha one here. Beta two here."
+
+    class Client:
+        async def generate_async(self, **_kwargs):
+            issues = [
+                _issue("1", "Alpha one here.", "Alpha uno here.",
+                       severity="minor", confidence=0.95),
+                _issue("2", "Beta two here.", "Beta dos here.",
+                       severity="major", confidence=0.5,
+                       source_quote="Beta two here.", segment_id="SEG-0002"),
+            ]
+            return SimpleNamespace(
+                content=json.dumps(
+                    {"status": "needs_repair", "issues": issues},
+                    ensure_ascii=False,
+                ),
+                prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            )
+
+    result = await run_chunk_reflection_pass(
+        source_chunk="Alpha one here. Beta two here.",
+        draft_translation=draft,
+        target_language="English",
+        model_name="editor",
+        llm_client=Client(),
+        prompt_options={
+            "translation_id": "job-minor",
+            "jobs_db_path": db_path,
+            "chunk_index": 0,
+            "source_language": "English",
+        },
+    )
+    assert "Alpha uno here." in result
+    assert "Beta two here." in result
+    run = db.get_editor_diagnostics("job-minor")["runs"][0]
+    assert run["resolved_issue_count"] == 1
+    assert run["warning_count"] == 1
+    # The stored attempt says which rule decided, not merely that one did.
+    excerpt = run["attempts"][0]
+    assert excerpt is not None
+
+
+def test_issue_excerpts_record_what_the_repair_gate_judges():
+    from src.utils.editor_diagnostics import issue_excerpts
+
+    excerpts = issue_excerpts([
+        {
+            "issue_id": "1", "category": "pronoun bleed", "severity": "minor",
+            "confidence": 0.9123, "repair_kind": "local_replace",
+            "source_quote": "abc", "draft_quote": "abcd",
+            "draft_replacement": {"draft": "abcd", "replacement": "ab"},
+        },
+        {"issue_id": "2", "confidence": "not a number"},
+    ])
+    assert excerpts[0]["category"] == "pronoun bleed"
+    assert excerpts[0]["severity"] == "minor"
+    assert excerpts[0]["confidence"] == 0.912
+    # A model that answers with the wrong type must not break the record.
+    assert excerpts[1]["confidence"] is None
+    assert excerpts[1]["severity"] == ""
+    assert excerpts[0]["no_op"] is False
+    assert issue_excerpts([
+        {
+            "issue_id": "3", "repair_kind": "local_replace",
+            "draft_replacement": {"draft": "same", "replacement": "same"},
+        },
+    ])[0]["no_op"] is True
+
+
+def test_a_confident_minor_defect_keeps_the_repair_the_editor_chose():
+    """Parsing must not overrule the editor on severity alone.
+
+    Every `minor` issue was rewritten to review_only as it was parsed, before
+    any gate saw it, so no downstream policy could have let one through.
+    """
+
+    from src.core.translator import _normalize_reflection_issue
+
+    def parsed(**overrides):
+        raw = {
+            "issue_id": "1", "segment_id": "SEG-0001",
+            "category": "register", "severity": "minor", "confidence": 0.95,
+            "repair_kind": "local_replace", "source_quote": "a",
+            "draft_quote": "b", "instruction": "Fix it.",
+            "draft_replacement": {"draft": "b", "replacement": "c"},
+        }
+        raw.update(overrides)
+        return _normalize_reflection_issue(raw)
+
+    assert parsed()["repair_kind"] == "local_replace"
+    assert parsed(severity="blocker")["repair_kind"] == "local_replace"
+    # Uncertainty is still the thing that withholds an automatic edit.
+    assert parsed(confidence=0.5)["repair_kind"] == "review_only"
+    assert parsed(severity="major", confidence=0.5)["repair_kind"] == "review_only"

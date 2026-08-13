@@ -33,16 +33,37 @@ def response_hash(value: Any) -> str:
 
 
 def issue_excerpts(issues: Iterable[Dict[str, Any]]) -> list[Dict[str, Any]]:
-    """Keep structural issue metadata without persisting book text."""
+    """Keep structural issue metadata without persisting book text.
+
+    `category`, `severity` and `confidence` are the three fields the repair
+    gate judges an issue by, so without them a run that reported a defect and
+    dropped it says only that it happened, never which rule decided. They are
+    classifications the model assigns, not book text, so they are safe to keep.
+    """
     result = []
     for issue in list(issues or [])[:12]:
         replacement = issue.get("draft_replacement") or {}
+        try:
+            confidence = round(float(issue.get("confidence")), 3)
+        except (TypeError, ValueError):
+            confidence = None
         result.append({
             "issue_id": bounded_excerpt(issue.get("issue_id"), 48),
+            "category": bounded_excerpt(issue.get("category"), 48),
+            "severity": bounded_excerpt(issue.get("severity"), 16),
+            "confidence": confidence,
             "repair_kind": bounded_excerpt(issue.get("repair_kind"), 24),
             "source_chars": len(str(issue.get("source_quote") or "")),
             "draft_chars": len(str(issue.get("draft_quote") or "")),
             "replacement_chars": len(str(replacement.get("replacement") or "")),
+            # An edit that replaces a span with itself. It reads as a finding
+            # everywhere else in the record, and one measured chunk was twelve
+            # of them, so the record has to be able to say so.
+            "no_op": bool(
+                isinstance(issue.get("draft_replacement"), dict)
+                and str(replacement.get("draft") or "").strip()
+                == str(replacement.get("replacement") or "").strip()
+            ),
         })
     return result
 
