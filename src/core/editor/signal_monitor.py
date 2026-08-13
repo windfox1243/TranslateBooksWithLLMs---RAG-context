@@ -9,7 +9,10 @@ reviewed two entire books without ever reporting one finding.
 
 The signals below are deliberately narrow. Each one is something a working
 editor cannot plausibly produce, so a warning means the editor is broken
-rather than the prose being good.
+rather than the prose being good. Every signal also requires the model to have
+spent no thinking tokens across the window: a model that paid to read the
+chunk and came back with nothing was doing its job, and a book that is
+genuinely clean must be allowed to look clean.
 """
 
 from __future__ import annotations
@@ -47,6 +50,20 @@ def _reached_the_model(run: Dict[str, Any]) -> bool:
     return bool(run.get("response_hash"))
 
 
+def _spent_thinking(runs: Iterable[Dict[str, Any]]) -> bool:
+    """Report whether the model did visible work anywhere in this window.
+
+    A clean book produces the same empty verdict as an inert editor, and the
+    response alone cannot separate them. Thinking tokens can: a working editor
+    that reads a chunk and finds nothing wrong still pays for the reading. One
+    measured book had a chunk answered with the identical empty envelope after
+    7,862 thinking tokens -- a real audit that came back clean, which no signal
+    here should call a failure.
+    """
+
+    return any(int(run.get("thinking_tokens") or 0) > 0 for run in runs)
+
+
 def _llm_findings(run: Dict[str, Any]) -> int:
     """Count what the model itself reported, excluding deterministic checks."""
 
@@ -79,7 +96,11 @@ def assess_editor_signal(
     # cheapest way for a weak model to satisfy the output contract.
     recent = judged[-identical_window:]
     hashes = {str(run.get("response_hash")) for run in recent}
-    if len(recent) >= identical_window and len(hashes) == 1:
+    if (
+        len(recent) >= identical_window
+        and len(hashes) == 1
+        and not _spent_thinking(recent)
+    ):
         return EditorSignalVerdict(
             inert=True,
             reason="constant_response",
@@ -106,6 +127,7 @@ def assess_editor_signal(
         len(window) >= silent_window
         and deterministic > 0
         and all(_llm_findings(run) == 0 for run in window)
+        and not _spent_thinking(window)
     ):
         return EditorSignalVerdict(
             inert=True,
