@@ -371,6 +371,110 @@ def format_editor_segments(text: str) -> str:
     )
 
 
+_WHITESPACE_RUN = re.compile(r"\s+")
+
+# Defect classes where identical text is necessarily the same defect. A glossary
+# term, a placeholder, or a surviving source word is wrong on its own, so a twin
+# span elsewhere in the chunk carries the same error and the same repair.
+# Fluency, register, style and mistranslation are judgements about a particular
+# context and say nothing about a span that merely reads the same.
+_REPEATABLE_CATEGORIES = {
+    "glossaryerror", "glossary", "terminology", "term", "consistency",
+    "untranslatedsource", "placeholder", "placeholderformat", "format",
+    "namespelling", "name",
+}
+
+
+def _category_key(value: Any) -> str:
+    """Fold a model-written category to a comparable key.
+
+    The editor writes the checklist item back in its own hand -- `glossary
+    error`, `glossary_error`, `placeholder/format` -- so nothing may depend on
+    the separators it happened to choose.
+    """
+
+    return "".join(char for char in str(value or "").casefold() if char.isalnum())
+
+
+def repeats_are_one_defect(issue: Dict[str, Any]) -> bool:
+    """Report whether an identical span elsewhere carries the same defect."""
+
+    return _category_key(issue.get("category")) in _REPEATABLE_CATEGORIES
+
+
+def find_locator_spans(
+    haystack: str,
+    needle: str,
+    *,
+    ignore_case: bool = True,
+) -> List[tuple[int, int]]:
+    """Locate a quoted span, tolerating whitespace the prompt itself introduced.
+
+    The editor quotes from the segmented view of the draft, and that view joins
+    segments with newlines the draft does not contain -- while the segmenter
+    breaks after every sentence-final period, so `St. Leger` is two segments and
+    a quote crossing the break comes back carrying a newline no exact match can
+    find. Only whitespace runs are relaxed, and each must still be whitespace in
+    the draft, so this cannot match text the editor did not quote.
+    """
+
+    text = str(needle or "").strip()
+    if not text:
+        return []
+    parts = [part for part in _WHITESPACE_RUN.split(text) if part]
+    if not parts:
+        return []
+    pattern = r"\s+".join(re.escape(part) for part in parts)
+    flags = re.DOTALL | (re.IGNORECASE if ignore_case else 0)
+    return [
+        match.span()
+        for match in re.finditer(pattern, str(haystack or ""), flags)
+    ]
+
+
+def _respell_locator_from_draft(draft: str, issue: Dict[str, Any]) -> bool:
+    """Rewrite a locator the draft spells with different whitespace.
+
+    Restated in the draft's own hand, the quote is exact again and every check
+    downstream -- validation, local patching, repair validation -- keeps its
+    unrelaxed matching. One measured chunk lost its repair twice to a quote
+    carrying a newline the segmented view had inserted, and the record blamed
+    the editor for a locator it had copied correctly.
+    """
+
+    changed = False
+    window_start, window_end = _issue_search_window(draft, issue)
+    window = draft[window_start:window_end]
+    quote = str(issue.get("draft_quote") or "").strip()
+    if quote and quote.casefold() not in window.casefold():
+        spans = find_locator_spans(window, quote)
+        if not spans and (window_start, window_end) != (0, len(draft)):
+            # A quote that crosses a segment break cannot fit inside the
+            # segment the editor named, and naming the first of the two is the
+            # only thing it could have done.
+            spans = find_locator_spans(draft, quote)
+            if len(spans) == 1:
+                window_start, window = 0, draft
+                issue.pop("segment_id", None)
+        if len(spans) == 1:
+            issue["draft_quote"] = window[spans[0][0]:spans[0][1]]
+            changed = True
+    replacement = issue.get("draft_replacement")
+    if isinstance(replacement, dict):
+        quote = str(issue.get("draft_quote") or "").strip()
+        old = str(replacement.get("draft") or "").strip()
+        # Case-sensitive: a repair that only changes capitalization would be
+        # rewritten into a no-op by borrowing the draft's own spelling.
+        if old and quote and old not in quote:
+            spans = find_locator_spans(quote, old, ignore_case=False)
+            if len(spans) == 1:
+                patched = dict(replacement)
+                patched["draft"] = quote[spans[0][0]:spans[0][1]]
+                issue["draft_replacement"] = patched
+                changed = True
+    return changed
+
+
 def _issue_search_window(draft: str, issue: Dict[str, Any]) -> tuple[int, int]:
     segment_id = str(issue.get("segment_id") or "").strip().upper()
     if segment_id:
@@ -411,7 +515,7 @@ def validate_issue_locators(
         count = window_folded.count(quote.casefold())
         if count == 0:
             errors.append(f"locator_missing:{issue_id}")
-        elif count > 1:
+        elif count > 1 and not repeats_are_one_defect(issue):
             errors.append(f"locator_ambiguous:{issue_id}")
             continue
         local_quote = quote.casefold()
@@ -440,6 +544,8 @@ def normalize_unique_issue_locators(
     repaired_ids: List[str] = []
     for raw_issue in issues or []:
         issue = dict(raw_issue)
+        if _respell_locator_from_draft(draft, issue):
+            repaired_ids.append(str(issue.get("issue_id") or "unknown"))
         replacement = issue.get("draft_replacement")
         if (
             str(issue.get("repair_kind") or "").casefold() == "local_replace"
@@ -470,7 +576,8 @@ def normalize_unique_issue_locators(
                                 str(issue.get("issue_id") or "unknown")
                             )
         normalized.append(issue)
-    return normalized, repaired_ids
+    # One issue can be both re-spelled and re-grounded; it is one repair.
+    return normalized, list(dict.fromkeys(repaired_ids))
 
 
 def apply_local_editor_patches(
@@ -502,23 +609,37 @@ def apply_local_editor_patches(
         window = draft[window_start:window_end]
         folded = window.casefold()
         quote_folded = quote.casefold()
-        if folded.count(quote_folded) != 1:
+        occurrences = [
+            match.start()
+            for match in re.finditer(re.escape(quote_folded), folded)
+        ]
+        # A repeated span was dropped rather than repaired, so a glossary term
+        # the editor caught once stayed wrong everywhere it recurred. Where the
+        # category makes the twin spans the same defect, every one of them is
+        # patched; anywhere else a repeat is still ambiguous and left alone.
+        if len(occurrences) > 1 and not repeats_are_one_defect(issue):
+            occurrences = []
+        if not occurrences:
             unresolved.append(issue)
             continue
-        quote_start = window_start + folded.index(quote_folded)
-        quote_end = quote_start + len(quote)
-        local = draft[quote_start:quote_end]
-        local_folded = local.casefold()
-        if local.count(old) == 1:
-            local_offset = local.index(old)
-        elif local_folded.count(old.casefold()) == 1:
-            local_offset = local_folded.index(old.casefold())
-        else:
+        located = 0
+        for offset in occurrences:
+            quote_start = window_start + offset
+            quote_end = quote_start + len(quote)
+            local = draft[quote_start:quote_end]
+            local_folded = local.casefold()
+            if local.count(old) == 1:
+                local_offset = local.index(old)
+            elif local_folded.count(old.casefold()) == 1:
+                local_offset = local_folded.index(old.casefold())
+            else:
+                continue
+            start = quote_start + local_offset
+            end = start + len(old)
+            patches.append((start, end, new, issue_id))
+            located += 1
+        if not located:
             unresolved.append(issue)
-            continue
-        start = quote_start + local_offset
-        end = start + len(old)
-        patches.append((start, end, new, issue_id))
 
     patches.sort(key=lambda item: item[0])
     for previous, current in zip(patches, patches[1:]):

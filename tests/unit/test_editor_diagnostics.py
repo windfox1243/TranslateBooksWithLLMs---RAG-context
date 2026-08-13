@@ -372,3 +372,53 @@ def test_a_confident_minor_defect_keeps_the_repair_the_editor_chose():
     # Uncertainty is still the thing that withholds an automatic edit.
     assert parsed(confidence=0.5)["repair_kind"] == "review_only"
     assert parsed(severity="major", confidence=0.5)["repair_kind"] == "review_only"
+
+
+@pytest.mark.asyncio
+async def test_an_edit_refused_for_touching_a_protected_name_is_counted(tmp_path):
+    """A finding the protected-span filter removes is still a finding.
+
+    The editor proposed translating a proper name the deterministic pass had
+    already ruled untouchable. Refusing the edit is right; recording the chunk
+    as though the editor had reported nothing is not, and a chunk whose every
+    finding landed on a protected entity read as a clean chunk.
+    """
+
+    db_path = str(tmp_path / "jobs.db")
+    db = Database(db_path)
+    assert db.create_job("job-protected", "txt", {})
+    draft = "Momozawa Tomio đã đến đây."
+
+    class Client:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate_async(self, **_kwargs):
+            self.calls += 1
+            issue = _issue("1", "Momozawa Tomio", "Đào Trạch Phú Hùng", category="name")
+            issue["source_quote"] = "Momozawa Tomio arrived here."
+            return SimpleNamespace(
+                content=json.dumps(
+                    {"status": "needs_repair", "issues": [issue]},
+                    ensure_ascii=False,
+                ),
+                prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            )
+
+    result = await run_chunk_reflection_pass(
+        source_chunk="Momozawa Tomio arrived here.",
+        draft_translation=draft,
+        target_language="Vietnamese",
+        model_name="editor",
+        llm_client=Client(),
+        prompt_options={
+            "translation_id": "job-protected",
+            "jobs_db_path": db_path,
+            "chunk_index": 0,
+            "source_language": "English",
+        },
+    )
+    assert result == draft
+    run = db.get_editor_diagnostics("job-protected")["runs"][0]
+    assert run["resolved_issue_count"] == 0
+    assert run["warning_count"] == 1
