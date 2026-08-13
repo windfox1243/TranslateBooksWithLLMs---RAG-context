@@ -123,3 +123,44 @@ def test_a_broken_diagnostic_never_interrupts_translation():
     )
     assert verdict.inert is False
     assert logged == []
+
+
+def test_a_clean_book_that_was_actually_read_is_left_alone():
+    """Thinking tokens separate a clean audit from an absent one.
+
+    Measured on a real job: `gemini-3.1-flash-lite` answered one chunk with the
+    same empty envelope as every inert run, after spending 7,862 thinking
+    tokens on it. The response was identical; the reading was not.
+    """
+
+    runs = [
+        _run(i, response_hash="same", thinking_tokens=7862) for i in range(8)
+    ]
+    assert assess_editor_signal(runs).inert is False
+
+
+def test_one_thinking_run_vindicates_the_window():
+    """A model that pays anywhere in the window is not answering blind."""
+
+    runs = [_run(i, response_hash="same") for i in range(8)]
+    runs[-2]["thinking_tokens"] = 120
+    assert assess_editor_signal(runs).inert is False
+
+
+def test_silence_beside_deterministic_findings_still_needs_zero_thinking():
+    runs = [
+        _run(i, deterministic_count=1 if i % 4 == 0 else 0, thinking_tokens=900)
+        for i in range(14)
+    ]
+    assert assess_editor_signal(runs).inert is False
+
+
+def test_the_starved_editor_is_still_caught():
+    """The failure this exists for: no findings, no thinking, defects present."""
+
+    runs = [
+        _run(i, deterministic_count=1 if i % 4 == 0 else 0) for i in range(14)
+    ]
+    verdict = assess_editor_signal(runs)
+    assert verdict.inert is True
+    assert verdict.reason == "no_llm_findings"
