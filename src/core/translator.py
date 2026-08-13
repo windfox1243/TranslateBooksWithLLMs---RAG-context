@@ -2611,6 +2611,9 @@ async def _run_chunk_reflection_pass_impl(
         glossary_terms=glossary_terms,
     )
     if protected_issue_ids:
+        # Dropped here and nowhere counted, so a chunk whose every finding
+        # landed on a protected entity was recorded as having reported none.
+        warning_count += len(protected_issue_ids)
         reflection_result = ReflectionResult(
             "needs_repair" if retained_issues else "no_issues",
             retained_issues,
@@ -2717,6 +2720,15 @@ async def _run_chunk_reflection_pass_impl(
                     if not invalid_ids
                     or str(issue.get("issue_id") or "") in invalid_ids
                 ]
+                # The retry is asked to re-locate specific issues and answers
+                # with whichever it managed. The rest are gone from here on,
+                # and counting them only where they are dropped meant counting
+                # them nowhere: one measured chunk sent two issues to the retry,
+                # got neither back, and recorded no warning at all.
+                returned_ids = {
+                    str(issue.get("issue_id") or "") for issue in corrected
+                }
+                warning_count += len(invalid_ids - returned_ids)
                 reflection_result = ReflectionResult(
                     "needs_repair",
                     [*valid_original, *corrected],
