@@ -1809,6 +1809,10 @@ async def _run_chunk_reflection_pass_impl(
     result_state = "unchanged_draft"
     resolved_issue_count = 0
     unresolved_issue_count = 0
+    # Counts findings that were reported but will not reach the draft. Every
+    # site that *removes* an issue from the result adds to it; issues that stay
+    # in the result are counted once at the end, where the actionable filter
+    # runs, so nothing is credited twice.
     warning_count = 0
     review_issue_count = 0
     max_automatic_repair_attempts = 3
@@ -2428,7 +2432,8 @@ async def _run_chunk_reflection_pass_impl(
             )
             contract_review_required = deterministic_invalid > 0
             review_issue_count += deterministic_invalid
-            warning_count += invalid_issue_count - deterministic_invalid
+            # No increment here: these issues stay in the result as review_only
+            # and are counted once by the actionable filter further down.
 
     if reflection_contract_invalid(reflection_result):
         if log_callback:
@@ -2791,7 +2796,11 @@ async def _run_chunk_reflection_pass_impl(
             )
         )
     ]
-    warning_count = len(reflection_result.issues) - len(actionable_issues)
+    # Accumulate. Assigning here erased the findings already dropped upstream --
+    # an incomplete contract entry, or an issue whose locator never validated --
+    # so a chunk where the editor reported five defects and four were discarded
+    # before this point was recorded as having reported one.
+    warning_count += len(reflection_result.issues) - len(actionable_issues)
     original_draft = draft_translation
     patched_draft, unresolved_issues, patch_errors = apply_local_editor_patches(
         draft_translation, actionable_issues,
