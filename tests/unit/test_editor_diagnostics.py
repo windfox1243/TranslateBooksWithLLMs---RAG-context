@@ -1,5 +1,6 @@
 """Persistence and provider plumbing tests for Senior Editor diagnostics."""
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -179,3 +180,84 @@ async def test_prompt_composition_records_complete_input_hashes(tmp_path):
     assert len(composition["draft_sha256"]) == 64
     assert run["request_count"] == 1
     assert run["max_request_prompt_tokens"] == 3210
+
+
+def _issue(issue_id, draft_quote, replacement, **overrides):
+    """One well-formed local_replace issue, tuned by the caller."""
+
+    issue = {
+        "issue_id": issue_id,
+        "segment_id": "SEG-0001",
+        "category": "mistranslation",
+        "severity": "major",
+        "confidence": 0.95,
+        "repair_kind": "local_replace",
+        "source_quote": "Alpha one here.",
+        "draft_quote": draft_quote,
+        "instruction": "Fix it.",
+        "draft_replacement": {"draft": draft_quote, "replacement": replacement},
+        "glossary_update": None,
+    }
+    issue.update(overrides)
+    return issue
+
+
+@pytest.mark.asyncio
+async def test_findings_dropped_before_the_actionable_filter_are_still_counted(
+    tmp_path,
+):
+    """A finding discarded upstream must not vanish from the run's record.
+
+    The editor reports two defects. One names a span that is not in the draft,
+    so locator validation removes it; the other is too weak to repair
+    automatically. Both are findings the reader never sees applied, and the
+    warning count is the only place that says so.
+    """
+
+    db_path = str(tmp_path / "jobs.db")
+    db = Database(db_path)
+    assert db.create_job("job-warnings", "txt", {})
+    draft = "Alpha one here. Beta two here."
+
+    class Client:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate_async(self, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                issues = [
+                    _issue("1", "Alpha one here.", "Alpha uno here.",
+                           severity="minor", confidence=0.4),
+                    _issue("2", "Nowhere in the draft.", "Somewhere else."),
+                ]
+                content = json.dumps(
+                    {"status": "needs_repair", "issues": issues},
+                    ensure_ascii=False,
+                )
+            else:
+                # The locator retry cannot ground issue 2 either.
+                content = '{"status":"needs_repair","issues":[]}'
+            return SimpleNamespace(
+                content=content, prompt_tokens=100,
+                completion_tokens=50, total_tokens=150,
+            )
+
+    result = await run_chunk_reflection_pass(
+        source_chunk="Alpha one here. Beta two here.",
+        draft_translation=draft,
+        target_language="English",
+        model_name="editor",
+        llm_client=Client(),
+        prompt_options={
+            "translation_id": "job-warnings",
+            "jobs_db_path": db_path,
+            "chunk_index": 0,
+            "source_language": "English",
+        },
+    )
+    assert result == draft
+    run = db.get_editor_diagnostics("job-warnings")["runs"][0]
+    assert run["resolved_issue_count"] == 0
+    # Two reported, two unapplied: the ungrounded one and the weak one.
+    assert run["warning_count"] == 2
