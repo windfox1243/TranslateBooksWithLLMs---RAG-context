@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.18.3 - 2026-08-14
 
 An editor that reviewed two books without one finding looked exactly like two clean books.
 
