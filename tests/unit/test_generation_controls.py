@@ -59,9 +59,20 @@ def test_gemini_25_and_output_budgets_are_bounded():
     # exists to prevent; 2.5 gets the smallest rung rather than zero.
     assert controls["mode"] == "minimal"
     assert controls["thinking_budget"] == 512
+    # Thinking is spent from the output allowance, so an automatic budget
+    # reserves room for it on top of the room the answer needs. Sized for the
+    # answer alone, an editor that thought 7,860 tokens had 330 left to write
+    # its JSON with, and every request it made stopped at the ceiling.
     assert resolve_editor_output_tokens(
         "gemini", "gemini-3-flash-preview", "auto", "minimal"
-    ) == 4096
+    ) == 4096 + 2048
+    assert resolve_editor_output_tokens(
+        "gemini", "gemini-3.1-flash-lite-preview", "auto", "low"
+    ) == 8192 + 8192
+    # A model that cannot think needs no reserve.
+    assert resolve_editor_output_tokens(
+        "openai", "gpt-4o-mini", "auto", "auto"
+    ) == 2048
     assert resolve_editor_output_tokens(
         "gemini", "gemini-3-flash-preview", "model_max", "high",
         reported_limit=32768,

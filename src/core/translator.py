@@ -1269,6 +1269,34 @@ def _load_reflection_json_object(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+# Rungs the editor writes instead of the three the contract offers. Severity
+# no longer decides whether a finding may be repaired, so this costs nothing at
+# the gate -- but a database holding `major`, `high` and `medium` side by side
+# cannot be counted, and one measured book answered with all three.
+_SEVERITY_SYNONYMS = {
+    "critical": "blocker",
+    "severe": "blocker",
+    "high": "major",
+    "moderate": "minor",
+    "medium": "minor",
+    "low": "minor",
+    "trivial": "minor",
+    "nit": "minor",
+    "info": "minor",
+}
+
+
+def _normalized_severity(value: Any) -> str:
+    """Fold an editor's severity word onto the contract's three rungs."""
+
+    text = str(value or "").strip().casefold()
+    if not text:
+        return "major"
+    if text in {"blocker", "major", "minor"}:
+        return text
+    return _SEVERITY_SYNONYMS.get(text, "major")
+
+
 def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
     """Normalize one structured reflection issue into the internal shape."""
     if isinstance(raw_issue, str):
@@ -1360,7 +1388,7 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
     category = str(
         raw_issue.get("category") or raw_issue.get("type") or "other"
     ).strip() or "other"
-    severity = str(raw_issue.get("severity") or "major").strip() or "major"
+    severity = _normalized_severity(raw_issue.get("severity"))
     repair_kind = str(raw_issue.get("repair_kind") or "").strip().casefold()
     # Certainty decides whether an edit may be applied unattended; severity
     # decides only how much the defect costs the reader. Downgrading every
@@ -1820,6 +1848,9 @@ async def _run_chunk_reflection_pass_impl(
     # in the result are counted once at the end, where the actionable filter
     # runs, so nothing is credited twice.
     warning_count = 0
+    # Assigned once the editor's answer is parsed; a run that never got that
+    # far reported nothing.
+    llm_issue_count = 0
     review_issue_count = 0
     max_automatic_repair_attempts = 3
     automatic_repair_attempts = 0
@@ -1896,6 +1927,7 @@ async def _run_chunk_reflection_pass_impl(
         payload.setdefault("resolved_issue_count", resolved_issue_count)
         payload.setdefault("unresolved_issue_count", unresolved_issue_count)
         payload.setdefault("warning_count", warning_count)
+        payload.setdefault("llm_issue_count", llm_issue_count)
         diagnostics = dict(payload.get("diagnostics") or {})
         diagnostics.setdefault("narrator_conformance", narrator_conformance)
         diagnostics.setdefault("prompt_composition", {
@@ -2227,6 +2259,13 @@ async def _run_chunk_reflection_pass_impl(
         )
 
     reflection_result = parse_reflection_result(critique)
+    # What the editor actually reported, before any of this pass filters it.
+    # `issue_count` is what survived to the repair stage, and the two were the
+    # same number until findings started being dropped between them: a chunk
+    # where the editor named ten defects and two were repairable was stored as
+    # a chunk that named two, so the record could not say whether a quiet
+    # editor had found little or had been talked out of most of it.
+    llm_issue_count = len(reflection_result.issues)
     initial_failure_class = ""
     if not critique:
         initial_failure_class = (
@@ -2366,7 +2405,11 @@ async def _run_chunk_reflection_pass_impl(
                         or reflection_result.voice_observations,
                     )
                 elif not reflection_contract_invalid(retry_result):
+                    # The retry answered in place of the first attempt rather
+                    # than correcting part of it, so it is now what the editor
+                    # reported.
                     reflection_result = retry_result
+                    llm_issue_count = len(reflection_result.issues)
                 critique = retry_critique
         except Exception as e:
             if log_callback:

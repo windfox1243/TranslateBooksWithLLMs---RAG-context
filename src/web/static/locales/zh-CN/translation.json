@@ -380,6 +380,7 @@
   "editor_retry_review_required": "高级编辑重试已完成，但仍有重大问题需要人工检查。",
   "editor_retry_failed": "高级编辑重试失败：{{error}}",
   "editor_repair_narrator_all": "暂停并修复 {{count}} 个旁白分块",
+  "editor_retry_more_chunks": "另有 {{count}} 个分块已过时；请使用上方的暂停并修复。",
   "editor_repair_review_all": "修复全部 {{count}} 个待审分块",
   "editor_repair_batch_started": "批量修复已开始；翻译将保持暂停。",
   "editor_repair_batch_progress": "修复进度：{{completed}}/{{total}} 完成 · {{failed}} 失败",

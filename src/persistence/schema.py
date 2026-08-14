@@ -31,7 +31,7 @@ import hashlib
 from typing import Any, Callable
 
 # Bump whenever _create_tables_and_migrate_columns changes.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _evidence_fingerprint(*parts: Any) -> str:
@@ -524,6 +524,7 @@ def _create_tables_and_migrate_columns(cursor: Any) -> None:
             outcome TEXT NOT NULL DEFAULT 'running',
             failure_class TEXT,
             issue_count INTEGER NOT NULL DEFAULT 0,
+            llm_issue_count INTEGER NOT NULL DEFAULT 0,
             warning_count INTEGER NOT NULL DEFAULT 0,
             resolved_issue_count INTEGER NOT NULL DEFAULT 0,
             unresolved_issue_count INTEGER NOT NULL DEFAULT 0,
@@ -755,6 +756,7 @@ def _create_tables_and_migrate_columns(cursor: Any) -> None:
     cursor.execute("PRAGMA table_info(editor_runs)")
     editor_run_columns = {row[1] for row in cursor.fetchall()}
     editor_run_migrations = {
+        "llm_issue_count": "INTEGER NOT NULL DEFAULT 0",
         "warning_count": "INTEGER NOT NULL DEFAULT 0",
         "resolved_issue_count": "INTEGER NOT NULL DEFAULT 0",
         "unresolved_issue_count": "INTEGER NOT NULL DEFAULT 0",

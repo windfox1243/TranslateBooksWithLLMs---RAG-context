@@ -380,6 +380,7 @@
   "editor_retry_review_required": "El reintento terminó, pero aún hay problemas importantes que requieren revisión.",
   "editor_retry_failed": "Error en el reintento del editor: {{error}}",
   "editor_repair_narrator_all": "Pausar y corregir {{count}} fragmentos del narrador",
+  "editor_retry_more_chunks": "Hay {{count}} fragmentos obsoletos más; usa Pausar y corregir arriba.",
   "editor_repair_review_all": "Corregir los {{count}} fragmentos en revisión",
   "editor_repair_batch_started": "El lote de correcciones comenzó; la traducción seguirá pausada.",
   "editor_repair_batch_progress": "Progreso: {{completed}}/{{total}} completos · {{failed}} fallidos",

@@ -12,6 +12,19 @@ GENERATION_MODES = (
 MIN_EDITOR_OUTPUT_TOKENS = 1024
 DEFAULT_EDITOR_OUTPUT_LIMIT = 65536
 
+# Room a thinking model needs before it writes anything, per thinking mode.
+# Providers that report thinking tokens spend them from the output allowance,
+# so this is reserved on top of the room the answer itself needs.
+_THINKING_HEADROOM = {
+    "off": 0,
+    "minimal": 2048,
+    "low": 8192,
+    "medium": 12288,
+    "high": 16384,
+    "dynamic": 16384,
+    "auto": 8192,
+}
+
 
 @dataclass(frozen=True)
 class GenerationCapabilities:
@@ -313,7 +326,7 @@ def resolve_editor_output_tokens(
             pass
 
     mode = normalize_thinking_mode(thinking_mode)
-    automatic = {
+    answer_allowance = {
         "off": 4096,
         "minimal": 4096,
         "low": 8192,
@@ -322,7 +335,17 @@ def resolve_editor_output_tokens(
         "dynamic": 16384,
         "auto": 4096 if normalized_provider == "gemini" else 2048,
     }[mode]
-    return min(automatic, maximum)
+    # Thinking is spent from the same allowance as the answer, so a budget
+    # sized for the answer alone leaves the model nothing to answer with. On
+    # one measured book every truncated editor request stopped at exactly the
+    # ceiling with the thinking taking 7,860 of 8,192 tokens and the JSON
+    # getting the remaining 330 -- and the chunks that were not truncated hit
+    # the same wall differently, thinking to the ceiling and then emitting a
+    # 27-token empty verdict that read as a chunk with nothing wrong in it.
+    # The thinking allowance is now reserved on top of the answer's.
+    if capabilities.thinking_supported and mode != "off":
+        answer_allowance += _THINKING_HEADROOM[mode]
+    return min(answer_allowance, maximum)
 
 
 def adaptive_retry_output_tokens(current: int, maximum: Any = None) -> int:

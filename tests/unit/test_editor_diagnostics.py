@@ -261,6 +261,12 @@ async def test_findings_dropped_before_the_actionable_filter_are_still_counted(
     assert run["resolved_issue_count"] == 0
     # Two reported, two unapplied: the ungrounded one and the weak one.
     assert run["warning_count"] == 2
+    # `llm_issue_count` is what the editor said; `issue_count` is what was
+    # still standing when the repair stage looked. Without the first column a
+    # chunk where one of two findings was thrown away upstream is
+    # indistinguishable from a chunk where the editor only found one.
+    assert run["llm_issue_count"] == 2
+    assert run["issue_count"] == 1
 
 
 @pytest.mark.asyncio
