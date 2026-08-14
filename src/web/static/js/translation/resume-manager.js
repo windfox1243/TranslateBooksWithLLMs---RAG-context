@@ -423,6 +423,8 @@ export const ResumeManager = {
         try {
             const data = await ApiClient.getResumableJobs();
             const jobs = data.resumable_jobs || [];
+            // Kept so the delete confirmation can name the job's context file.
+            this.lastJobs = jobs;
 
             // Get active translation state
             const hasActiveTranslation = StateManager.getState('translation.hasActive') || false;
@@ -768,13 +770,46 @@ export const ResumeManager = {
             return;
         }
 
+        // Asked separately because the file is named after the book and the
+        // target language, not after this job: other runs of the same book
+        // share it, and the user may want to keep the lore for a re-run. The
+        // server refuses anyway when another job still points at it.
+        const job = (this.lastJobs || []).find(
+            (entry) => entry.translation_id === translationId
+        );
+        const contextFile =
+            ((job || {}).config || {}).prompt_options?.novel_context_file || '';
+        let deleteNovelContext = false;
+        if (contextFile) {
+            deleteNovelContext = confirm(
+                t('translation:confirm_delete_novel_context', {
+                    file: contextFile.split(/[\\/]/).pop()
+                })
+            );
+        }
+
         try {
             MessageLogger.addLog(t('translation:deleting_checkpoint_log', { id: translationId }));
 
-            await ApiClient.deleteCheckpoint(translationId);
+            const result = await ApiClient.deleteCheckpoint(translationId, {
+                deleteNovelContext
+            });
 
             MessageLogger.showMessage(t('translation:checkpoint_deleted'), 'success');
             MessageLogger.addLog(t('translation:checkpoint_deleted_log', { id: translationId }));
+            if (result && result.novel_context_removed) {
+                MessageLogger.addLog(
+                    t('translation:novel_context_deleted_log', {
+                        file: result.novel_context_removed
+                    })
+                );
+            } else if (result && result.novel_context_kept_for) {
+                MessageLogger.addLog(
+                    t('translation:novel_context_kept_log', {
+                        id: result.novel_context_kept_for
+                    })
+                );
+            }
 
             // Refresh resumable jobs list
             this.loadResumableJobs();

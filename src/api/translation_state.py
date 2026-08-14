@@ -221,15 +221,22 @@ class TranslationStateManager:
 
         return True
 
-    def delete_checkpoint(self, translation_id: str) -> bool:
+    def delete_checkpoint(
+        self,
+        translation_id: str,
+        *,
+        delete_novel_context: bool = False,
+    ):
         """
         Delete a checkpoint for a job.
 
         Args:
             translation_id: Job identifier
+            delete_novel_context: Also remove the job's novel context file when
+                no other job is using it
 
         Returns:
-            True if deleted successfully
+            A CheckpointDeletion, which is truthy when the job was deleted
         """
         # Remove from in-memory state if exists
         with self._lock:
@@ -237,7 +244,9 @@ class TranslationStateManager:
                 del self._translations[translation_id]
 
         # Delete from database
-        return self.checkpoint_manager.delete_checkpoint(translation_id)
+        return self.checkpoint_manager.delete_checkpoint(
+            translation_id, delete_novel_context=delete_novel_context
+        )
 
     def cleanup_completed_job(self, translation_id: str) -> bool:
         """
