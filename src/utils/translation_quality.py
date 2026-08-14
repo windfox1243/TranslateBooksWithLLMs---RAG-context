@@ -729,6 +729,114 @@ def apply_editor_patches(
     return patched, unresolved, errors
 
 
+@dataclass
+class SalvagedRepair:
+    """What survived of a repair batch, and what had to be given up for it."""
+
+    text: str
+    unresolved: List[Dict[str, Any]]
+    errors: List[str]
+    dropped: List[Dict[str, Any]]
+
+
+def _blame_map(issues: Iterable[Dict[str, Any]]) -> Dict[str, str]:
+    """Map each error a single issue can produce to that issue's id."""
+
+    blame: Dict[str, str] = {}
+    for issue in issues or []:
+        issue_id = str(issue.get("issue_id") or "").strip()
+        if not issue_id:
+            continue
+        replacement = issue.get("draft_replacement")
+        if not isinstance(replacement, dict):
+            continue
+        draft_span = str(replacement.get("draft") or "").strip()
+        target_span = str(replacement.get("replacement") or "").strip()
+        if draft_span:
+            blame[f"replacement_not_applied_locally: {draft_span}"] = issue_id
+        if target_span:
+            blame[f"replacement_missing_locally: {target_span}"] = issue_id
+    return blame
+
+
+def _issue_ids_blamed_by(
+    errors: Iterable[str],
+    issues: Iterable[Dict[str, Any]],
+) -> set:
+    """Return the ids of the issues these errors name.
+
+    Only a repair that failed on its own is attributed. Overlapping patches are
+    left out on purpose: they are two readings of one stretch of text, so
+    dropping either half silently picks a winner in a disagreement the focused
+    retry exists to settle by merging them.
+    """
+
+    blame = _blame_map(issues)
+    return {blame[str(error)] for error in errors or [] if str(error) in blame}
+
+
+def apply_repairs_that_hold(
+    draft_text: str,
+    issues: Iterable[Dict[str, Any]],
+    *,
+    apply_patches,
+    validate,
+) -> SalvagedRepair:
+    """Apply what can be applied, giving up only the repairs that fail.
+
+    A batch used to be accepted whole or discarded whole. One unlocatable
+    quote among six therefore threw away five good repairs, and measurement
+    found that every issue lost in a run was lost that way -- in three chunks
+    that each failed entirely, never scattered across the rest.
+
+    Two things make wholesale reverting the wrong answer. A repair that failed
+    says nothing about the repairs beside it, which are independent edits to
+    different spans. And a fault the draft already had is not caused by any
+    repair, so reverting cannot remove it -- discarding the batch over one of
+    those is pure loss, which is what the two other lost chunks were.
+
+    So faults already true of the draft are excluded, errors that name one
+    repair drop that repair, and the rest is applied again. An error naming no
+    particular repair still fails the batch, because nothing else can be
+    concluded from it -- and neither do patches that collide, which are handled
+    by asking the editor to merge them rather than by choosing between them.
+    """
+
+    draft = str(draft_text or "")
+    candidates = list(issues or [])
+    # What is already wrong before anything is repaired.
+    pre_existing = set(validate(draft, []))
+    dropped: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    while candidates:
+        text, unresolved, errors = apply_patches(draft, candidates)
+        errors = [error for error in errors if error not in pre_existing]
+        if not errors:
+            unresolved_ids = {
+                str(issue.get("issue_id") or "") for issue in unresolved
+            }
+            applied = [
+                issue for issue in candidates
+                if str(issue.get("issue_id") or "") not in unresolved_ids
+            ]
+            errors = [
+                error for error in validate(text, applied)
+                if error not in pre_existing
+            ]
+            if not errors:
+                return SalvagedRepair(text, unresolved + dropped, [], dropped)
+        blamed = _issue_ids_blamed_by(errors, candidates)
+        keep = [
+            issue for issue in candidates
+            if str(issue.get("issue_id") or "").strip() not in blamed
+        ]
+        if not blamed or len(keep) == len(candidates):
+            break
+        dropped.extend(issue for issue in candidates if issue not in keep)
+        candidates = keep
+    return SalvagedRepair(draft, list(issues or []), errors, dropped)
+
+
 def validate_editor_repair(
     repaired_text: str,
     issues: Iterable[Dict[str, Any]],
