@@ -1805,6 +1805,7 @@ async def _run_chunk_reflection_pass_impl(
     from src.utils.translation_quality import (
         apply_editor_patches,
         apply_local_editor_patches,
+        apply_repairs_that_hold,
         build_editor_segments,
         filter_protected_span_editor_issues,
         find_source_residue,
@@ -2934,13 +2935,31 @@ async def _run_chunk_reflection_pass_impl(
     # before this point was recorded as having reported one.
     warning_count += len(reflection_result.issues) - len(actionable_issues)
     original_draft = draft_translation
-    patched_draft, unresolved_issues, patch_errors = apply_editor_patches(
+    salvaged = apply_repairs_that_hold(
         draft_translation,
         actionable_issues,
-        # The alignment the editor answered against is the one built from the
-        # texts it was shown, and it was shown no source when there is none.
-        source_text=source_chunk if source_available else "",
+        apply_patches=lambda text, items: apply_editor_patches(
+            text,
+            items,
+            # The alignment the editor answered against is the one built from
+            # the texts it was shown, and it was shown no source when there is
+            # none.
+            source_text=source_chunk if source_available else "",
+        ),
+        validate=lambda text, items: validate_editor_repair(
+            text,
+            items,
+            draft_text=draft_translation,
+            source_text=source_chunk,
+            source_language=source_language,
+            target_language=target_language,
+            protected_terms=protected_terms,
+            glossary_terms=glossary_terms,
+        ),
     )
+    patched_draft = salvaged.text
+    unresolved_issues = salvaged.unresolved
+    patch_errors = salvaged.errors
     unresolved_ids = {
         str(issue.get("issue_id") or "") for issue in unresolved_issues
     }
@@ -2970,16 +2989,9 @@ async def _run_chunk_reflection_pass_impl(
         resolved_issue_count = 0
         unresolved_issue_count = len(actionable_issues) + review_issue_count
     elif locally_resolved:
-        patch_validation = validate_editor_repair(
-            patched_draft,
-            locally_resolved,
-            draft_text=original_draft,
-            source_text=source_chunk,
-            source_language=source_language,
-            target_language=target_language,
-            protected_terms=protected_terms,
-            glossary_terms=glossary_terms,
-        )
+        # Already validated against the text that is actually being kept, and
+        # re-running it here would re-report the faults the draft arrived with.
+        patch_validation = list(salvaged.errors)
         if not patch_validation:
             if not unresolved_issues:
                 local_term_pairs = extract_term_replacements_from_critique(
@@ -3001,6 +3013,12 @@ async def _run_chunk_reflection_pass_impl(
                     diagnostics={
                         "repair_mode": "local_patch",
                         "ignored_no_op_issue_ids": sorted(no_op_issue_ids),
+                        # A batch that only held once something was given up
+                        # should not read as a clean one.
+                        "dropped_to_apply_the_rest": sorted(
+                            str(issue.get("issue_id") or "unknown")
+                            for issue in salvaged.dropped
+                        ),
                     },
                 )
                 final_text = persist_final_voice(patched_draft)
