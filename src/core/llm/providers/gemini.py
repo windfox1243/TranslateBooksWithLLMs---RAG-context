@@ -45,8 +45,25 @@ _GEMINI_HARM_CATEGORIES = (
 )
 
 
+# Item caps are dropped before the schema is sent. Gemini accepts the editor
+# schema without them and rejects it with them, on every 3.x model tried
+# (3.1-flash-lite, 3.5-flash-lite, 3.5-flash), with a body that says only
+# "Request contains an invalid argument" -- so the rejection was invisible and
+# the editor ran without native structured output on every Gemini job.
+# Removing either single cap is enough, which makes this a budget the schema
+# sits just over rather than an unsupported keyword. A cap is the cheapest
+# thing to give up: it bounds a list the prompt already bounds in words, and
+# an over-long list is handled downstream, whereas losing the schema costs
+# every field constraint at once.
+_UNSENDABLE_SCHEMA_KEYWORDS = ("maxItems",)
+
+
 def _prepare_response_json_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
-    """Return a Gemini JSON Schema copy with deterministic object ordering."""
+    """Return a Gemini JSON Schema copy it will accept.
+
+    Object ordering is made explicit, and the item caps Gemini refuses are
+    removed.
+    """
 
     prepared = deepcopy(schema)
 
@@ -55,6 +72,8 @@ def _prepare_response_json_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
             properties = node.get("properties")
             if node.get("type") == "object" and isinstance(properties, dict):
                 node.setdefault("propertyOrdering", list(properties))
+            for keyword in _UNSENDABLE_SCHEMA_KEYWORDS:
+                node.pop(keyword, None)
             for value in node.values():
                 visit(value)
         elif isinstance(node, list):

@@ -6,8 +6,12 @@ import pytest
 
 from src.core.llm import LLMGenerationOptions, LLMResponse
 from src.core.llm.exceptions import ProviderRequestError, StructuredOutputSchemaError
-from src.core.llm.providers.gemini import GeminiProvider, classify_schema_rejection
-from src.prompts.prompts import REFLECTION_RESPONSE_SCHEMA
+from src.core.llm.providers.gemini import (
+    GeminiProvider,
+    _prepare_response_json_schema,
+    classify_schema_rejection,
+)
+from src.prompts.prompts import REFLECTION_RESPONSE_SCHEMA, UNIT_RESPONSE_SCHEMA
 
 
 class _GeminiResponse:
@@ -86,6 +90,30 @@ async def test_gemini_sends_editor_contract_as_json_schema(monkeypatch):
     assert replacement_schema["anyOf"][0] == {"type": "null"}
     assert replacement_schema["anyOf"][1]["additionalProperties"] is False
     assert REFLECTION_RESPONSE_SCHEMA == original_schema
+
+
+def _keywords_in(node, keyword, found=None):
+    found = [] if found is None else found
+    if isinstance(node, dict):
+        if keyword in node:
+            found.append(node[keyword])
+        for value in node.values():
+            _keywords_in(value, keyword, found)
+    elif isinstance(node, list):
+        for value in node:
+            _keywords_in(value, keyword, found)
+    return found
+
+
+@pytest.mark.parametrize("schema", [REFLECTION_RESPONSE_SCHEMA, UNIT_RESPONSE_SCHEMA])
+def test_the_item_caps_gemini_refuses_are_left_out_of_the_request(schema):
+    # Both editor schemas declare item caps, and Gemini answers a schema
+    # carrying them with a bare "invalid argument" -- which the editor could
+    # only read as "this model cannot do structured output at all", so every
+    # Gemini job ran the unstructured fallback. The cap is stated in the prompt
+    # too, so dropping it here costs nothing the request still needs.
+    assert _keywords_in(schema, "maxItems"), "schema no longer exercises the case"
+    assert _keywords_in(_prepare_response_json_schema(schema), "maxItems") == []
 
 
 @pytest.mark.asyncio
