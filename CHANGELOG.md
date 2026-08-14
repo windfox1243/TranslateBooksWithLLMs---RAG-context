@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `src/core/editor/units.py`, the deterministic groundwork for an editor that names a unit and rewrites it instead of quoting a span. The current contract asks the model for an exact substring of the draft and the text to replace it with, which is two jobs at once — judge the translation, and extract a span character for character — and only the first needs a model. Measured over 31 runs of one book, 14 findings were thrown away for `locator_missing`, `locator_ambiguous`, an unusable replacement, or a retry that answered the wrong question, and not one of them was a disagreement about the translation. The new module splits both texts into paragraphs, aligns them with a length-ratio search, renders them as a side-by-side bitext under ids we issue, and turns a rewritten unit back into exact draft spans by diffing it — so a locator cannot be wrong, and the span the old contract begs for falls out of the rewrite. It also measures how much of a unit a rewrite touched, which is what will let a model that improves whatever it was not asked about be refused rather than merely regretted. Checked against one real book: 3,355 units over 28 chunks, 98.6% paired one to one, none unalignable, and 3,354 rewrites round-tripped exactly through the spans computed for them. `scripts/check_unit_alignment.py` replays that check over any finished job. Nothing calls this yet and no translation behaves differently.
+
 ### Fixed
 
 - A thinking editor is no longer given an output budget it has to think its way out of. Providers that report thinking tokens spend them from the same allowance as the answer, so a budget sized for the JSON alone left the model nothing to write the JSON with. Measured on one 28-chunk book: every truncated editor request stopped at exactly 8,188 tokens of an 8,192 ceiling, with the thinking taking 7,860 and the answer getting the remaining 330, and eleven requests were retried at a doubled budget for no other reason. The automatic editor budget now reserves room for thinking on top of the room the answer needs — 16,384 rather than 8,192 at `low` on Gemini 3 — and a model that cannot think reserves nothing.
