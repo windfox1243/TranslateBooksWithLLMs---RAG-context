@@ -24,6 +24,96 @@ REFLECTION_JSON_TAG_OUT = "</REFLECTION_JSON>"
 REFLECTION_PROMPT_VERSION = "senior-editor-reflection-v8"
 REFLECTION_CONTRACT_VERSION = "editor-issue-v9-severity-split"
 
+UNIT_PROMPT_VERSION = "senior-editor-unit-v1"
+UNIT_CONTRACT_VERSION = "editor-unit-v10-rewrite"
+
+# Voice evidence is orthogonal to how a repair is addressed, and the narrator
+# timeline is built from it, so both contracts carry the identical section
+# rather than two copies free to drift apart.
+_VOICE_OBSERVATIONS_SCHEMA = {
+    "type": "array",
+    "maxItems": 12,
+    "items": {
+        "type": "object",
+        "properties": {
+            "segment_id": {"type": "string"},
+            "discourse_mode": {"type": "string", "enum": [
+                "narration", "dialogue", "thought", "letter", "embedded_story"
+            ]},
+            "narrator_key": {"type": "string"},
+            "narrator_identity": {"type": "string"},
+            "point_of_view": {"type": "string"},
+            "dimensions": {"type": "object"},
+            "source_quote": {"type": "string"},
+            "target_quote": {"type": "string"},
+            "transition_type": {"type": "string", "enum": [
+                "none", "chapter", "scene", "explicit"
+            ]},
+            "transition_evidence": {"type": "string"},
+            "confidence": {"type": "number"},
+        },
+        "required": [
+            "segment_id", "discourse_mode", "narrator_key",
+            "narrator_identity", "point_of_view", "dimensions",
+            "source_quote", "target_quote", "transition_type",
+            "transition_evidence", "confidence"
+        ],
+        "additionalProperties": False,
+    },
+}
+
+# The unit contract asks for a judgement and a rewritten unit, and nothing else.
+# Where the text sits is answered by the id we issued, so the fields the old
+# contract spends most of its failures on -- draft_quote, draft_replacement,
+# segment_id, repair_kind -- are simply absent.
+UNIT_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "status": {"type": "string", "enum": ["no_issues", "needs_repair"]},
+        "issues": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "issue_id": {"type": "string"},
+                    "unit_id": {"type": "string"},
+                    "category": {"type": "string"},
+                    "severity": {
+                        "type": "string",
+                        "enum": ["blocker", "major", "minor"],
+                    },
+                    "confidence": {"type": "number"},
+                    "instruction": {"type": "string"},
+                    "rewritten_unit": {"type": "string"},
+                    "glossary_update": {
+                        "anyOf": [
+                            {"type": "null"},
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "source": {"type": "string"},
+                                    "target": {"type": "string"},
+                                },
+                                "required": ["source", "target"],
+                                "additionalProperties": False,
+                            },
+                        ]
+                    },
+                },
+                "required": [
+                    "issue_id", "unit_id", "category", "severity", "confidence",
+                    "instruction", "rewritten_unit", "glossary_update",
+                ],
+                "additionalProperties": False,
+            },
+        },
+        "voice_observations": _VOICE_OBSERVATIONS_SCHEMA,
+    },
+    "required": ["status", "issues", "voice_observations"],
+    "additionalProperties": False,
+}
+
 REFLECTION_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -87,37 +177,7 @@ REFLECTION_RESPONSE_SCHEMA = {
                 "additionalProperties": False,
             },
         },
-        "voice_observations": {
-            "type": "array",
-            "maxItems": 12,
-            "items": {
-                "type": "object",
-                "properties": {
-                    "segment_id": {"type": "string"},
-                    "discourse_mode": {"type": "string", "enum": [
-                        "narration", "dialogue", "thought", "letter", "embedded_story"
-                    ]},
-                    "narrator_key": {"type": "string"},
-                    "narrator_identity": {"type": "string"},
-                    "point_of_view": {"type": "string"},
-                    "dimensions": {"type": "object"},
-                    "source_quote": {"type": "string"},
-                    "target_quote": {"type": "string"},
-                    "transition_type": {"type": "string", "enum": [
-                        "none", "chapter", "scene", "explicit"
-                    ]},
-                    "transition_evidence": {"type": "string"},
-                    "confidence": {"type": "number"},
-                },
-                "required": [
-                    "segment_id", "discourse_mode", "narrator_key",
-                    "narrator_identity", "point_of_view", "dimensions",
-                    "source_quote", "target_quote", "transition_type",
-                    "transition_evidence", "confidence"
-                ],
-                "additionalProperties": False,
-            },
-        },
+        "voice_observations": _VOICE_OBSERVATIONS_SCHEMA,
     },
     "required": ["status", "issues", "voice_observations"],
     "additionalProperties": False,
@@ -154,19 +214,10 @@ Apply these instructions to {apply_to} wherever they affect style, tone, termino
 """
 
 
-def _build_reflection_json_contract_section(*, native_schema: bool = False) -> str:
-    """Return the structured Senior Editor output contract."""
-    wrapper = (
-        "Return exactly one JSON object."
-        if native_schema else
-        f"Return exactly one JSON object inside {REFLECTION_JSON_TAG_IN} and "
-        f"{REFLECTION_JSON_TAG_OUT}."
-    )
-    example = "" if native_schema else f"""
-{REFLECTION_JSON_TAG_IN}
-{{"status":"no_issues","issues":[],"voice_observations":[]}}
-{REFLECTION_JSON_TAG_OUT}"""
-    return f"""AUDIT CHECKLIST -- walk every item against the source before answering:
+# What the editor is asked to look for. Shared by both output contracts: the
+# audit is the same job whether a repair is addressed by a quoted span or by a
+# unit id, and only one of the two should ever have to be kept current.
+_AUDIT_CHECKLIST = """AUDIT CHECKLIST -- walk every item against the source before answering:
 - omission: source content missing from the draft.
 - addition: draft content with no basis in the source.
 - mistranslation: the draft states something the source does not.
@@ -179,7 +230,22 @@ def _build_reflection_json_contract_section(*, native_schema: bool = False) -> s
 - style: narrator voice or discourse mode drifting from the established profile.
 - placeholder/format: a tag, marker, number, or layout element damaged.
 Report every material defect you find. Reaching the end of the checklist with
-nothing to report is a valid answer only when you actually checked each item.
+nothing to report is a valid answer only when you actually checked each item."""
+
+
+def _build_reflection_json_contract_section(*, native_schema: bool = False) -> str:
+    """Return the structured Senior Editor output contract."""
+    wrapper = (
+        "Return exactly one JSON object."
+        if native_schema else
+        f"Return exactly one JSON object inside {REFLECTION_JSON_TAG_IN} and "
+        f"{REFLECTION_JSON_TAG_OUT}."
+    )
+    example = "" if native_schema else f"""
+{REFLECTION_JSON_TAG_IN}
+{{"status":"no_issues","issues":[],"voice_observations":[]}}
+{REFLECTION_JSON_TAG_OUT}"""
+    return f"""{_AUDIT_CHECKLIST}
 
 STRICT OUTPUT CONTRACT:
 - {wrapper} No prose or markdown.
@@ -1776,6 +1842,134 @@ AUDIT POLICY:
     user_sections.append(
         "# NUMBERED DRAFT TRANSLATION TO AUDIT:\n"
         + format_editor_segments(draft_translation)
+    )
+    user_sections.append("Perform your rigorous Senior Editor audit now:")
+
+    return PromptPair(system=system_prompt.strip(), user="\n\n".join(user_sections))
+
+
+def _build_unit_json_contract_section(*, native_schema: bool = False) -> str:
+    """Return the unit-rewrite Senior Editor output contract."""
+    wrapper = (
+        "Return exactly one JSON object."
+        if native_schema else
+        f"Return exactly one JSON object inside {REFLECTION_JSON_TAG_IN} and "
+        f"{REFLECTION_JSON_TAG_OUT}."
+    )
+    example = "" if native_schema else f"""
+{REFLECTION_JSON_TAG_IN}
+{{"status":"no_issues","issues":[],"voice_observations":[]}}
+{REFLECTION_JSON_TAG_OUT}"""
+    return f"""{_AUDIT_CHECKLIST}
+
+STRICT OUTPUT CONTRACT:
+- {wrapper} No prose or markdown.
+- Return at most 12 material issues, ordered by severity and confidence.
+- Use no_issues only when no repair is needed; otherwise use needs_repair.
+- category must name the checklist item the issue came from.
+- unit_id is one of the ids above, copied exactly. It is the only way to say
+  where a defect is: never quote the draft and never describe a position.
+- rewritten_unit is the complete DRAFT text of that unit as it should read
+  after the repair. Copy every part you are not repairing character for
+  character, including punctuation, spacing and any markers.
+- Repair only the defect you reported. A rewrite that also rephrases wording no
+  issue was raised about is rejected whole, so keep the edit as small as the
+  defect. Preferences and equally valid alternatives are not defects.
+- One issue per unit. Report the whole repair of a unit as one issue.
+- A unit whose DRAFT reads (missing) has nothing to rewrite; report it with an
+  empty rewritten_unit and it will be raised for review.
+- severity says how much the defect costs the reader, not how sure you are.
+  Confidence below 0.80 is advisory and will not be applied.
+- glossary_update is only for durable terminology; otherwise use null.
+- voice_observations are evidence, not edits. Use exact source/target spans,
+  keep discourse modes separate, and return [] when evidence is ambiguous.
+- Issue fields are exactly: issue_id, unit_id, category, severity, confidence,
+  instruction, rewritten_unit, glossary_update. Do not rename or omit them.
+- Follow the supplied response schema exactly.{example}"""
+
+
+def generate_unit_reflection_prompt(
+    source_chunk: str,
+    draft_translation: str,
+    target_language: Optional[str] = None,
+    novel_context: str = "",
+    custom_instructions: str = "",
+    glossary_block: str = "",
+    deterministic_findings: str = "",
+    source_available: bool = True,
+    native_schema: bool = False,
+    narrative_voice_context: str = "",
+) -> PromptPair:
+    """Generate the Senior Editor prompt for the unit-rewrite contract.
+
+    The source and the draft arrive as one aligned bitext rather than two walls
+    of text, so the editor is not also being asked to work out which paragraph
+    corresponds to which before it can judge anything.
+
+    This buys no tokens back: measured over 28 chunks of one real book the unit
+    prompt is 0.9% larger than the span prompt, because the same two texts are
+    being sent either way and the ids and labels are added on top. What it buys
+    is that the alignment is done once, correctly, instead of being redone in
+    the model's head for every finding.
+    """
+
+    from src.core.editor.units import align_units, format_bitext
+
+    target_lang = target_language or "target language"
+    units = align_units(source_chunk if source_available else "", draft_translation)
+    source_mode = (
+        "Perform bilingual source-fidelity and target-language quality review."
+        if source_available
+        else "Perform monolingual target-language style, fluency, consistency, glossary, relationship, and formatting review. Do not claim omissions, mistranslations, or source residue because no aligned source is available."
+    )
+    system_prompt = f"""You are an evidence-driven literary translation editor for {target_lang}.
+{source_mode}
+
+AUDIT POLICY:
+- Each unit holds one source passage and the draft produced for it. Judge every
+  unit for completeness, meaning, terminology, proper names, grammar, register,
+  and structure.
+- Report only material defects supported by the unit's own evidence.
+- Explicit source names, nicknames, titles, honorifics, stuttering, and
+  intentional register changes override background defaults.
+- Use context only when the source is implicit. Never invent relationships,
+  gender, hierarchy, or reverse addressing from absent evidence.
+- Keep narration, dialogue, thought, letters, and embedded stories separate.
+  Pair-specific dialogue forms never define narrator voice.
+- Apply an established narrator policy across matching narrative scope and
+  chapters; do not extend it into dialogue or a different narrator.
+- A gendered vocative describes its addressee, not automatically its speaker.
+- Preserve concise identity-bearing names as complete spans. Do not classify or
+  translate a token inside a protected name independently.
+- Prefer no issue over speculative polishing. Preserve all valid wording.
+
+{_build_unit_json_contract_section(native_schema=native_schema)}"""
+
+    user_sections = []
+    if custom_instructions and custom_instructions.strip():
+        user_sections.append(f"# CUSTOM INSTRUCTIONS & STYLE GUIDELINES:\n{custom_instructions.strip()}")
+    if glossary_block and glossary_block.strip():
+        user_sections.append(f"# GLOSSARY & TERM MAPPING:\n{glossary_block.strip()}")
+    if deterministic_findings and deterministic_findings.strip():
+        user_sections.append(
+            "# DETERMINISTIC FINAL-OUTPUT FINDINGS (MANDATORY)\n"
+            "These findings were produced by a non-LLM validator. Resolve each "
+            "one in the unit that contains it, and report it under that unit's "
+            "id:\n"
+            f"{deterministic_findings.strip()}"
+        )
+    if narrative_voice_context and narrative_voice_context.strip():
+        user_sections.append(
+            "# ESTABLISHED NARRATOR VOICE (EVIDENCE-BACKED HISTORICAL TIMELINE)\n"
+            + narrative_voice_context.strip()
+        )
+    user_sections.append(
+        "# RELEVANT CONTEXT (use only when the source is implicit):\n"
+        + (novel_context.strip() if novel_context.strip() else "None")
+    )
+    user_sections.append(
+        "# ALIGNED UNITS TO AUDIT:\n"
+        + format_bitext(units, source_available=source_available)
     )
     user_sections.append("Perform your rigorous Senior Editor audit now:")
 

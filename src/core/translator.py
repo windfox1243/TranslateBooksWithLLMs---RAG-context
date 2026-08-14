@@ -30,6 +30,7 @@ from src.core.editor.prompting import (
     _render_reflection_novel_context,
     compose_reflection_prompts,
 )
+from src.core.editor.unit_repair import UNIT_REPAIR_KIND
 from src.prompts.prompts import (
     REFLECTION_CONTRACT_VERSION,
     REFLECTION_JSON_TAG_IN,
@@ -1389,6 +1390,32 @@ def _normalize_reflection_issue(raw_issue: Any) -> Optional[Dict[str, Any]]:
         raw_issue.get("category") or raw_issue.get("type") or "other"
     ).strip() or "other"
     severity = _normalized_severity(raw_issue.get("severity"))
+    # The unit contract answers a different question -- which unit, and how it
+    # should read -- so an issue that came back in that shape keeps it. There is
+    # no span to locate and no locator to validate; both are computed later from
+    # the rewrite itself.
+    unit_id = str(raw_issue.get("unit_id") or "").strip().upper()
+    if unit_id and "rewritten_unit" in raw_issue:
+        return {
+            "issue_id": str(
+                raw_issue.get("issue_id") or raw_issue.get("id") or ""
+            ).strip(),
+            "segment_id": "",
+            "unit_id": unit_id,
+            "category": category,
+            "severity": severity,
+            "confidence": confidence,
+            "repair_kind": (
+                "review_only" if confidence < 0.80 else UNIT_REPAIR_KIND
+            ),
+            "source_quote": "",
+            "draft_quote": "",
+            "instruction": instruction,
+            "rewritten_unit": str(raw_issue.get("rewritten_unit") or ""),
+            "draft_replacement": None,
+            "glossary_update": glossary_update,
+            "term_replacement": glossary_update,
+        }
     repair_kind = str(raw_issue.get("repair_kind") or "").strip().casefold()
     # Certainty decides whether an edit may be applied unattended; severity
     # decides only how much the defect costs the reader. Downgrading every
@@ -1748,6 +1775,7 @@ async def _run_chunk_reflection_pass_impl(
 ) -> str:
     """Run a 2-pass Senior Translation Editor reflection & repair evaluation on a draft chunk."""
     from src.core.editor.signal_monitor import warn_if_editor_inert
+    from src.core.editor.unit_repair import unit_mode_enabled
     from src.core.llm import TranslationExtractor
     from src.core.llm.generation_controls import (
         adaptive_retry_output_tokens,
@@ -1756,6 +1784,9 @@ async def _run_chunk_reflection_pass_impl(
     )
     from src.prompts.prompts import (
         REFLECTION_RESPONSE_SCHEMA,
+        UNIT_CONTRACT_VERSION,
+        UNIT_PROMPT_VERSION,
+        UNIT_RESPONSE_SCHEMA,
         generate_chunk_reflection_prompt,
         generate_chunk_repair_prompt,
     )
@@ -1766,6 +1797,7 @@ async def _run_chunk_reflection_pass_impl(
         response_hash,
     )
     from src.utils.translation_quality import (
+        apply_editor_patches,
         apply_local_editor_patches,
         build_editor_segments,
         filter_protected_span_editor_issues,
@@ -1823,11 +1855,17 @@ async def _run_chunk_reflection_pass_impl(
         editor_model.casefold(),
         editor_endpoint.rstrip("/").casefold(),
     )
+    # Which contract the editor was actually asked to answer. The diagnostics
+    # compare runs against each other, and two contracts recorded under one
+    # version would make that comparison meaningless.
+    unit_mode = unit_mode_enabled(options)
     recorder = EditorRunRecorder(
         options,
         target_language=target_language,
-        prompt_version=REFLECTION_PROMPT_VERSION,
-        contract_version=REFLECTION_CONTRACT_VERSION,
+        prompt_version=UNIT_PROMPT_VERSION if unit_mode else REFLECTION_PROMPT_VERSION,
+        contract_version=(
+            UNIT_CONTRACT_VERSION if unit_mode else REFLECTION_CONTRACT_VERSION
+        ),
     )
     request_index = 0
     total_prompt_tokens = 0
@@ -1996,7 +2034,7 @@ async def _run_chunk_reflection_pass_impl(
             escalation_pending = False
             escalation_used = True
         schema = (
-            REFLECTION_RESPONSE_SCHEMA
+            (UNIT_RESPONSE_SCHEMA if unit_mode else REFLECTION_RESPONSE_SCHEMA)
             if structured and options.get("editor_native_schema", True)
             and schema_capability_key not in _EDITOR_SCHEMA_UNSUPPORTED
             else None
@@ -2866,8 +2904,12 @@ async def _run_chunk_reflection_pass_impl(
     # before this point was recorded as having reported one.
     warning_count += len(reflection_result.issues) - len(actionable_issues)
     original_draft = draft_translation
-    patched_draft, unresolved_issues, patch_errors = apply_local_editor_patches(
-        draft_translation, actionable_issues,
+    patched_draft, unresolved_issues, patch_errors = apply_editor_patches(
+        draft_translation,
+        actionable_issues,
+        # The alignment the editor answered against is the one built from the
+        # texts it was shown, and it was shown no source when there is none.
+        source_text=source_chunk if source_available else "",
     )
     unresolved_ids = {
         str(issue.get("issue_id") or "") for issue in unresolved_issues
