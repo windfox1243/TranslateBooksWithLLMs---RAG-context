@@ -115,10 +115,20 @@ def test_a_job_without_a_context_file_deletes_quietly(manager, contexts_dir):
 
 
 def test_the_result_still_reads_as_the_boolean_it_replaced(manager, contexts_dir):
-    # Deletion is idempotent: an id that is already gone still reports success,
-    # which is why the endpoint's 404 branch never fires. Pinned as it stands so
-    # the return type change is not blamed for it later.
+    # The result replaced a plain bool, and callers branched on it directly.
     _start(manager, "trans_1", "")
 
     assert bool(manager.delete_checkpoint("trans_1")) is True
-    assert bool(manager.delete_checkpoint("trans_missing")) is True
+
+
+def test_an_id_that_is_already_gone_is_not_reported_as_deleted(
+    manager, contexts_dir
+):
+    # A second delete removes nothing, so it must not answer 200 -- otherwise
+    # the endpoint's 404 branch is unreachable and the UI cannot tell a stale
+    # entry from a real deletion.
+    _start(manager, "trans_1", "")
+    manager.delete_checkpoint("trans_1")
+
+    assert manager.delete_checkpoint("trans_1").deleted is False
+    assert manager.delete_checkpoint("trans_missing").deleted is False

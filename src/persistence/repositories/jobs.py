@@ -405,14 +405,17 @@ class JobRepository(DatabaseRepository):
             translation_id: Job identifier
 
         Returns:
-            True if deleted successfully
+            True if the job existed and rows were removed. An unknown id is
+            reported as False so callers can tell a deletion from a no-op --
+            this used to always answer True, which left the delete endpoint
+            answering 200 for jobs it had never heard of.
         """
         with self.database._lock:
             try:
                 conn = self.database._get_connection()
-                self.database._delete_job_rows(conn, translation_id)
+                removed = self.database._delete_job_rows(conn, translation_id)
                 conn.commit()
-                return True
+                return removed > 0
             except Exception as e:
                 print(f"Error deleting job: {e}")
                 return False
