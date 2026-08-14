@@ -205,9 +205,12 @@ async def test_incomplete_editor_replacement_contract_retries_once():
     # Only the malformed issue is corrected; the exact edit is then local.
     assert client.calls == 2
     retry = client.requests[1]
-    assert "INVALID ISSUES AND CANDIDATE SEGMENTS" in retry["prompt"]
+    # The locator was never in question -- the replacement was missing -- so the
+    # retry asks for the corrected wording rather than for a corrected span.
+    assert "ISSUES MISSING A REPLACEMENT" in retry["prompt"]
+    assert "keep segment_id and draft_quote" in retry["prompt"]
     assert "Brother, come here." not in retry["prompt"]
-    assert "never rewrite or quote the complete chunk" in retry["system_prompt"]
+    assert "never rewrite or quote the complete" in retry["system_prompt"]
 
 
 @pytest.mark.asyncio
@@ -1289,3 +1292,61 @@ def test_a_repeated_span_judged_in_context_is_still_ambiguous():
     assert result == draft
     assert unresolved == [issue]
     assert errors == []
+
+
+def test_the_same_edit_reported_twice_is_one_repair_not_a_conflict():
+    """Repeating a finding is not disagreeing about it.
+
+    The editor reports a defect once per occurrence it noticed, and the copies
+    became identical patches that collided. A whole chunk's findings were lost
+    that way -- including the ones nobody had raised twice.
+    """
+
+    draft = "Cậu ấy thắng hạng classic năm ngoái."
+    edit = {
+        "repair_kind": "local_replace",
+        "category": "mistranslation",
+        "draft_quote": "hạng classic",
+        "draft_replacement": {"draft": "hạng classic", "replacement": "hạng cổ điển"},
+    }
+    issues = [
+        {"issue_id": "1", **edit},
+        {"issue_id": "2", **edit},
+        {"issue_id": "3", **edit},
+    ]
+
+    result, unresolved, errors = apply_local_editor_patches(draft, issues)
+    assert errors == []
+    assert unresolved == []
+    assert result == "Cậu ấy thắng hạng cổ điển năm ngoái."
+
+
+def test_two_edits_disagreeing_about_one_span_are_still_a_conflict():
+    """Only an identical patch is a repetition; a different one is a dispute."""
+
+    draft = "Cậu ấy thắng hạng classic năm ngoái."
+    issues = [
+        {
+            "issue_id": "1",
+            "repair_kind": "local_replace",
+            "category": "mistranslation",
+            "draft_quote": "hạng classic",
+            "draft_replacement": {
+                "draft": "hạng classic", "replacement": "hạng cổ điển",
+            },
+        },
+        {
+            "issue_id": "2",
+            "repair_kind": "local_replace",
+            "category": "mistranslation",
+            "draft_quote": "hạng classic",
+            "draft_replacement": {
+                "draft": "hạng classic", "replacement": "giải cổ điển",
+            },
+        },
+    ]
+
+    result, _unresolved, errors = apply_local_editor_patches(draft, issues)
+    assert [error.split(":")[0] for error in errors] == ["local_patch_conflict"]
+    assert sorted(errors[0].split(":")[1:]) == ["1", "2"]
+    assert result == draft

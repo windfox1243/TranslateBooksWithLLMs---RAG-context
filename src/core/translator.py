@@ -26,6 +26,7 @@ from src.core.editor.contracts import ReflectionValidationError
 # import them from this module.
 from src.core.editor.prompting import (
     _build_focused_locator_retry_prompt,
+    _build_missing_replacement_retry_prompt,
     _render_reflection_novel_context,
     compose_reflection_prompts,
 )
@@ -2284,19 +2285,19 @@ async def _run_chunk_reflection_pass_impl(
                 },
             )
         if malformed_issue_ids:
-            retry_user_prompt = _build_focused_locator_retry_prompt(
+            # These issues located their span and stopped short of naming the
+            # repair, so asking them to correct a locator asks the wrong
+            # question and gets the same answer back.
+            retry_user_prompt = _build_missing_replacement_retry_prompt(
                 draft_translation,
                 reflection_result.issues,
                 malformed_issue_ids,
-                [
-                    f"draft_replacement_missing:{issue_id}"
-                    for issue_id in sorted(malformed_issue_ids)
-                ],
             )
             retry_system_prompt = (
-                "You correct malformed editor issue locators. Return one JSON "
-                "object only. Use only the supplied issues and candidate draft "
-                "segments; never rewrite or quote the complete chunk."
+                "You supply the missing replacement text for editor issues. "
+                "Return one JSON object only. Use only the supplied issues and "
+                "candidate draft segments; never rewrite or quote the complete "
+                "chunk."
             )
         else:
             retry_user_prompt = (
