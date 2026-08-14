@@ -71,7 +71,13 @@ def issue_excerpts(issues: Iterable[Dict[str, Any]]) -> list[Dict[str, Any]]:
 
 
 def bounded_diagnostics(value: Any) -> Dict[str, Any]:
-    """Reduce arbitrary editor diagnostics to bounded, non-book payloads."""
+    """Reduce arbitrary editor diagnostics to bounded, non-book payloads.
+
+    Any key not named below falls through to the scalar branch, and a list that
+    lands there used to be discarded without a trace: a run that recorded which
+    issue ids it had to give up persisted as one that gave up nothing. So a list
+    of scalars is kept, bounded the same way `reason_codes` is.
+    """
     if not isinstance(value, dict):
         return {}
     result: Dict[str, Any] = {}
@@ -112,6 +118,14 @@ def bounded_diagnostics(value: Any) -> Dict[str, Any]:
             result[key] = safe
         elif isinstance(item, (str, int, float, bool)) or item is None:
             result[key] = bounded_excerpt(item) if isinstance(item, str) else item
+        elif isinstance(item, (list, tuple)) and all(
+            isinstance(entry, (str, int, float, bool)) or entry is None
+            for entry in item
+        ):
+            result[key] = [
+                bounded_excerpt(entry) if isinstance(entry, str) else entry
+                for entry in list(item)[:12]
+            ]
     return result
 
 
