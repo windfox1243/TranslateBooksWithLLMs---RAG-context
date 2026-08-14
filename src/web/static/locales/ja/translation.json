@@ -380,6 +380,7 @@
   "editor_retry_review_required": "再試行は完了しましたが、重大な問題は引き続き確認が必要です。",
   "editor_retry_failed": "エディターの再試行に失敗しました：{{error}}",
   "editor_repair_narrator_all": "一時停止してナレーターの{{count}}チャンクを修正",
+  "editor_retry_more_chunks": "他に{{count}}個のチャンクが古くなっています。上の一時停止して修正を使用してください。",
   "editor_repair_review_all": "レビュー中の{{count}}チャンクをすべて修正",
   "editor_repair_batch_started": "一括修正を開始しました。翻訳は一時停止のままです。",
   "editor_repair_batch_progress": "修正の進捗：{{completed}}/{{total}} 完了・{{failed}} 失敗",

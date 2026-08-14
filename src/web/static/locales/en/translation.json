@@ -380,6 +380,7 @@
   "editor_retry_review_required": "Senior Editor retry completed, but major findings still require review.",
   "editor_retry_failed": "Senior Editor retry failed: {{error}}",
   "editor_repair_narrator_all": "Pause and fix {{count}} narrator chunks",
+  "editor_retry_more_chunks": "{{count}} more chunks are stale; use Pause and fix above.",
   "editor_repair_review_all": "Fix all {{count}} review chunks",
   "editor_repair_batch_started": "Repair batch started; the translation will remain paused.",
   "editor_repair_batch_progress": "Repair progress: {{completed}}/{{total}} complete · {{failed}} failed",

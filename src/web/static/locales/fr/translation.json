@@ -380,6 +380,7 @@
   "editor_retry_review_required": "La nouvelle tentative est terminée, mais des problèmes majeurs exigent encore une vérification.",
   "editor_retry_failed": "Échec de la nouvelle tentative de l'éditeur : {{error}}",
   "editor_repair_narrator_all": "Mettre en pause et corriger {{count}} segments du narrateur",
+  "editor_retry_more_chunks": "{{count}} segments supplémentaires sont obsolètes ; utilisez Mettre en pause et corriger ci-dessus.",
   "editor_repair_review_all": "Corriger les {{count}} segments à vérifier",
   "editor_repair_batch_started": "Le lot de corrections a démarré ; la traduction restera en pause.",
   "editor_repair_batch_progress": "Progression : {{completed}}/{{total}} terminés · {{failed}} échecs",

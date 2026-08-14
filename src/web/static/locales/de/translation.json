@@ -380,6 +380,7 @@
   "editor_retry_review_required": "Die Wiederholung wurde abgeschlossen, aber wichtige Befunde müssen noch geprüft werden.",
   "editor_retry_failed": "Editor-Wiederholung fehlgeschlagen: {{error}}",
   "editor_repair_narrator_all": "Pausieren und {{count}} Erzählerabschnitte korrigieren",
+  "editor_retry_more_chunks": "{{count}} weitere Abschnitte sind veraltet; nutzen Sie oben Pausieren und korrigieren.",
   "editor_repair_review_all": "Alle {{count}} Prüfungsabschnitte korrigieren",
   "editor_repair_batch_started": "Der Korrekturlauf wurde gestartet; die Übersetzung bleibt pausiert.",
   "editor_repair_batch_progress": "Fortschritt: {{completed}}/{{total}} fertig · {{failed}} fehlgeschlagen",

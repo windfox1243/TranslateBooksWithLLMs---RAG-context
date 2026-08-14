@@ -98,7 +98,7 @@ class EditorRepository(DatabaseRepository):
                     """
                     UPDATE editor_runs SET parse_status = ?, outcome = ?,
                         failure_class = ?, issue_count = ?,
-                        warning_count = ?,
+                        llm_issue_count = ?, warning_count = ?,
                         resolved_issue_count = ?, unresolved_issue_count = ?,
                         result_state = ?, recovered_truncation = ?,
                         deterministic_count = ?, prompt_tokens = ?,
@@ -113,6 +113,7 @@ class EditorRepository(DatabaseRepository):
                         payload.get("outcome") or "review_required",
                         payload.get("failure_class"),
                         int(payload.get("issue_count", 0) or 0),
+                        int(payload.get("llm_issue_count", 0) or 0),
                         int(payload.get("warning_count", 0) or 0),
                         int(payload.get("resolved_issue_count", 0) or 0),
                         int(payload.get("unresolved_issue_count", 0) or 0),

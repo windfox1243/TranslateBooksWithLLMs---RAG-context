@@ -1596,7 +1596,11 @@ window.NovelContextUI = {
             };
             pane.appendChild(repairAll);
         }
-        staleChunks.forEach(chunkIndex => {
+        // A book can go stale by the hundred, and one button per chunk filled
+        // the pane with a list nobody could act on. The first few stay
+        // reachable; the rest are what "Pause and fix" above is for.
+        const RETRY_BUTTON_LIMIT = 12;
+        staleChunks.slice(0, RETRY_BUTTON_LIMIT).forEach(chunkIndex => {
             const retry = document.createElement('button');
             retry.type = 'button';
             retry.className = 'btn btn-sm btn-secondary';
@@ -1621,6 +1625,21 @@ window.NovelContextUI = {
             };
             pane.appendChild(retry);
         });
+        if (staleChunks.length > RETRY_BUTTON_LIMIT) {
+            const more = document.createElement('div');
+            more.className = 'text-muted';
+            more.style.margin = '0.5rem 0 0 0';
+            // Marked rather than written: applyToDOM re-translates it on a
+            // language switch without this pane having to render again.
+            more.setAttribute('data-i18n', 'translation:editor_retry_more_chunks');
+            more.setAttribute('data-i18n-params', JSON.stringify({
+                count: staleChunks.length - RETRY_BUTTON_LIMIT
+            }));
+            more.textContent = t('translation:editor_retry_more_chunks', {
+                count: staleChunks.length - RETRY_BUTTON_LIMIT
+            });
+            pane.appendChild(more);
+        }
     },
 
     _openNarratorVoiceEditor: function(profile) {

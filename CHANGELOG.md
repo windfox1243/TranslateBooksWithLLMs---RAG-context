@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A thinking editor is no longer given an output budget it has to think its way out of. Providers that report thinking tokens spend them from the same allowance as the answer, so a budget sized for the JSON alone left the model nothing to write the JSON with. Measured on one 28-chunk book: every truncated editor request stopped at exactly 8,188 tokens of an 8,192 ceiling, with the thinking taking 7,860 and the answer getting the remaining 330, and eleven requests were retried at a doubled budget for no other reason. The automatic editor budget now reserves room for thinking on top of the room the answer needs — 16,384 rather than 8,192 at `low` on Gemini 3 — and a model that cannot think reserves nothing.
+- Severity words the editor invents are folded onto the three the contract offers. Nothing downstream reads severity to decide whether a finding may be repaired, so this changed no outcome, but a column holding `major`, `high` and `medium` side by side cannot be counted, and one measured book answered with all three. `high` and `severe` land on the rungs they mean; anything unrecognised is treated as `major` rather than quietly discarded.
+- The retry buttons for stale chunks are capped at twelve, with a line saying how many more there are. A book can go stale by the hundred, and one button per chunk filled the pane with a list nobody was going to work through.
+
+### Changed
+
+- Editor runs now record what the model reported as well as what survived to the repair stage. `issue_count` was both numbers at once until findings started being dropped between them, so a chunk where the editor named ten defects and two were repairable was stored as a chunk that named two — and the record could not say whether a quiet editor had found little or had been talked out of most of what it found. The new `llm_issue_count` column holds the model's own count. Existing databases gain the column on open; the schema stamp is now 3.
+
+### Notes
+
+- The thinking-token guard added in 1.18.3 rests on an assumption that measurement has since qualified. It treats thinking tokens spent as proof the editor really read the chunk, and on the book above three chunks spent close to 7,860 thinking tokens, returned a 27-token empty verdict with `finish_reason: STOP`, and were recorded as clean. Those are not audits that came back clean; they are a model that spent its whole allowance thinking and had nothing left to answer with. The budget fix above removes the cause, so the guard's premise holds again for runs made after it — but it does not hold for the runs already stored, and a quiet editor in that window can still look like a working one.
+
 ## 1.18.3 - 2026-08-14
 
 An editor that reviewed two books without one finding looked exactly like two clean books.

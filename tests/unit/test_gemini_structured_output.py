@@ -351,9 +351,11 @@ async def test_editor_retries_truncation_with_more_output_and_less_thinking(
     assert client.generate_async.await_count == 2
     first = client.generate_async.call_args_list[0].kwargs
     retry = client.generate_async.call_args_list[1].kwargs
-    assert first["max_output_tokens"] == 8192
+    # 8,192 for the answer plus the same again reserved for `low` thinking,
+    # which Gemini spends from the very same allowance.
+    assert first["max_output_tokens"] == 16384
     assert first["thinking_level"] == "low"
-    assert retry["max_output_tokens"] == 16384
+    assert retry["max_output_tokens"] == 32768
     assert retry["thinking_level"] == "minimal"
 
 

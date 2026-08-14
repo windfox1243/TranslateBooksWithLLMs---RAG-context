@@ -380,6 +380,7 @@
   "editor_retry_review_required": "재시도는 완료되었지만 주요 문제는 여전히 검토가 필요합니다.",
   "editor_retry_failed": "편집기 재시도 실패: {{error}}",
   "editor_repair_narrator_all": "일시 중지하고 내레이터 청크 {{count}}개 수정",
+  "editor_retry_more_chunks": "청크 {{count}}개가 더 오래되었습니다. 위의 일시 중지하고 수정을 사용하세요.",
   "editor_repair_review_all": "검토 청크 {{count}}개 모두 수정",
   "editor_repair_batch_started": "일괄 수정이 시작되었습니다. 번역은 일시 중지 상태로 유지됩니다.",
   "editor_repair_batch_progress": "수정 진행: {{completed}}/{{total}} 완료 · {{failed}} 실패",
