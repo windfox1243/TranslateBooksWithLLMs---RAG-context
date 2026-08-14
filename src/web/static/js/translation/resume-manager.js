@@ -811,13 +811,14 @@ export const ResumeManager = {
                 );
             }
 
-            // Refresh resumable jobs list
-            this.loadResumableJobs();
-
         } catch (error) {
             MessageLogger.showMessage(t('translation:checkpoint_delete_error', { error: error.message }), 'error');
             MessageLogger.addLog(t('translation:resume_network_error_log', { error: error.message }));
             console.error('Error deleting checkpoint:', error);
+        } finally {
+            // Also on failure: a 404 means the job was already gone, so the row
+            // on screen is stale and reloading is what clears it.
+            this.loadResumableJobs();
         }
     },
 

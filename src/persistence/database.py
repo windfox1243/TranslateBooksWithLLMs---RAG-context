@@ -501,23 +501,29 @@ class Database:
         return self.jobs.delete_job(translation_id)
 
     @staticmethod
-    def _delete_job_rows(conn: sqlite3.Connection, translation_id: str) -> None:
-        """Delete one job explicitly, including legacy databases without FKs."""
+    def _delete_job_rows(conn: sqlite3.Connection, translation_id: str) -> int:
+        """Delete one job explicitly, including legacy databases without FKs.
 
-        conn.execute(
+        Returns how many rows went. Child rows count too: a job whose header
+        row is already gone can still leave context and checkpoint rows behind,
+        and clearing those is a real deletion rather than a no-op.
+        """
+
+        removed = conn.execute(
             "DELETE FROM editor_attempts WHERE run_id IN "
             "(SELECT id FROM editor_runs WHERE translation_id = ?)",
             (translation_id,),
-        )
+        ).rowcount
         for table in _TRANSLATION_CHILD_TABLES:
-            conn.execute(
+            removed += conn.execute(
                 f"DELETE FROM {table} WHERE translation_id = ?",
                 (translation_id,),
-            )
-        conn.execute(
+            ).rowcount
+        removed += conn.execute(
             "DELETE FROM translation_jobs WHERE translation_id = ?",
             (translation_id,),
-        )
+        ).rowcount
+        return removed
 
     def find_previous_job_for_context_file(
         self,
