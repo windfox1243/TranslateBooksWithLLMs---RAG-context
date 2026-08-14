@@ -479,12 +479,19 @@ def register(bp, deps, shared):
     @bp.route('/api/checkpoint/<translation_id>', methods=['DELETE'])
     def delete_checkpoint_endpoint(translation_id):
         """Delete a checkpoint (manual cleanup by user)"""
-        success = state_manager.delete_checkpoint(translation_id)
+        delete_context = str(
+            request.args.get('delete_novel_context', '')
+        ).strip().lower() in ('1', 'true', 'yes')
+        result = state_manager.delete_checkpoint(
+            translation_id, delete_novel_context=delete_context
+        )
 
-        if success:
+        if result.deleted:
             return jsonify({
                 "message": "Checkpoint deleted successfully",
-                "translation_id": translation_id
+                "translation_id": translation_id,
+                "novel_context_removed": result.novel_context_removed,
+                "novel_context_kept_for": result.novel_context_kept_for,
             }), 200
         else:
             return jsonify({"error": "Failed to delete checkpoint or checkpoint not found"}), 404

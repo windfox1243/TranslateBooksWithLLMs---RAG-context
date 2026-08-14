@@ -519,10 +519,14 @@ export const ApiClient = {
     /**
      * Delete a checkpoint
      * @param {string} translationId - Translation ID
+     * @param {Object} [options] - Delete options
+     * @param {boolean} [options.deleteNovelContext] - Also delete the job's
+     *   novel context file, unless another job is using it
      * @returns {Promise<Object>} Delete result
      */
-    async deleteCheckpoint(translationId) {
-        return await apiRequest(`/api/checkpoint/${translationId}`, {
+    async deleteCheckpoint(translationId, options = {}) {
+        const query = options.deleteNovelContext ? '?delete_novel_context=1' : '';
+        return await apiRequest(`/api/checkpoint/${translationId}${query}`, {
             method: 'DELETE'
         });
     },

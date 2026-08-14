@@ -2,11 +2,26 @@
 Checkpoint manager for translation job persistence and resume functionality.
 """
 
+import re
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .database import Database
+
+
+@dataclass
+class CheckpointDeletion:
+    """Outcome of one user-initiated job deletion."""
+
+    deleted: bool
+    novel_context_removed: Optional[str] = None
+    novel_context_kept_for: Optional[str] = None
+
+    def __bool__(self) -> bool:
+        # Callers historically branched on the plain boolean this used to be.
+        return self.deleted
 
 
 def _checkpoint_log(
@@ -602,16 +617,94 @@ class CheckpointManager:
         """
         return self.db.update_job_progress(translation_id, status='running')
 
-    def delete_checkpoint(self, translation_id: str) -> bool:
+    def novel_context_file(self, translation_id: str) -> Optional[Path]:
+        """Return this job's novel context file, or None if it has none.
+
+        Only a file sitting directly inside the Novel_Contexts directory is ever
+        returned. Checkpoints can carry an absolute path written by another
+        install, and `resolve_novel_context_path` deliberately redirects those
+        back into the local directory for *reading*; deletion must not inherit
+        that leniency, so the name is reduced to its basename and resolved
+        strictly.
+        """
+        job = self.db.get_job(translation_id)
+        if not job:
+            return None
+        options = (job.get("config") or {}).get("prompt_options") or {}
+        filename = str(options.get("novel_context_file") or "").strip()
+        if not filename:
+            return None
+
+        from src.config import NOVEL_CONTEXTS_DIR
+        from src.utils.novel_context import (
+            is_safe_filename,
+            normalize_novel_context_filename,
+        )
+
+        base_name = re.split(r"[\\/]", filename)[-1]
+        try:
+            base_name = normalize_novel_context_filename(base_name)
+        except Exception:
+            return None
+        if not base_name or not is_safe_filename(base_name):
+            return None
+
+        candidate = NOVEL_CONTEXTS_DIR / base_name
+        try:
+            if candidate.resolve().parent != NOVEL_CONTEXTS_DIR.resolve():
+                return None
+        except OSError:
+            return None
+        return candidate if candidate.is_file() else None
+
+    def novel_context_sharer(self, translation_id: str) -> Optional[str]:
+        """Return another job using this job's context file, if any.
+
+        The filename is derived from book title plus target language, not from
+        the job id, so re-runs and continuations of the same book share one file.
+        Deleting it out from under them would take their accumulated lore too.
+        """
+        job = self.db.get_job(translation_id)
+        if not job:
+            return None
+        options = (job.get("config") or {}).get("prompt_options") or {}
+        filename = str(options.get("novel_context_file") or "").strip()
+        if not filename:
+            return None
+        return self.db.find_previous_job_for_context_file(
+            filename, exclude_translation_id=translation_id
+        )
+
+    def delete_checkpoint(
+        self,
+        translation_id: str,
+        *,
+        delete_novel_context: bool = False,
+    ) -> "CheckpointDeletion":
         """
         Delete a job checkpoint completely (user-initiated cleanup).
 
+        Deleting a job already wipes every structured context row it owns --
+        entities, relationships, narrator profiles, addressing rules. The novel
+        context text file is the one piece that outlives it, and left behind it
+        feeds stale lore into the next run of the same book with none of the
+        structure that backed it. It is still only removed on request, and never
+        when another job is using the same file.
+
         Args:
             translation_id: Job identifier
+            delete_novel_context: Also remove the job's novel context file
 
         Returns:
-            True if deleted successfully
+            What was deleted, and why the context file was kept if it was.
         """
+        context_path = None
+        sharer = None
+        if delete_novel_context:
+            # Resolved before the rows go: the filename lives in the job config.
+            context_path = self.novel_context_file(translation_id)
+            sharer = self.novel_context_sharer(translation_id)
+
         # Delete from database (chunks deleted via CASCADE)
         db_deleted = self.db.delete_job(translation_id)
 
@@ -623,7 +716,26 @@ class CheckpointManager:
             except Exception as e:
                 print(f"Warning: Could not delete upload directory: {e}")
 
-        return db_deleted
+        removed = None
+        kept_for = None
+        if db_deleted and context_path is not None:
+            if sharer:
+                kept_for = sharer
+            else:
+                try:
+                    context_path.unlink()
+                    removed = context_path.name
+                except OSError as error:
+                    _checkpoint_log(
+                        f"Could not delete novel context '{context_path.name}': {error}",
+                        level="warning",
+                    )
+
+        return CheckpointDeletion(
+            deleted=db_deleted,
+            novel_context_removed=removed,
+            novel_context_kept_for=kept_for,
+        )
 
     def cleanup_completed_job(self, translation_id: str) -> bool:
         """
