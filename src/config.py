@@ -398,6 +398,12 @@ EDITOR_LOG_FULL_RESPONSE = os.getenv(
     'EDITOR_LOG_FULL_RESPONSE', 'false',
 ).lower() == 'true'
 
+# Address the Senior Editor's repairs by aligned unit id instead of by a span
+# it has to quote out of the draft. Off by default until the two paths have been
+# measured against each other on the same book; the span contract is unchanged
+# and stays in charge while this is false.
+EDITOR_UNIT_MODE = os.getenv('EDITOR_UNIT_MODE', 'false').lower() == 'true'
+
 # Auto-pause on HTTP 429 rate limit
 # When True (default): translation pauses after retries are exhausted; user resumes manually.
 # When False: translation auto-resumes from the last checkpoint after waiting `retry_after`

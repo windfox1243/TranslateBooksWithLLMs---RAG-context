@@ -13,7 +13,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from src.prompts.prompts import generate_chunk_reflection_prompt
+from src.core.editor.unit_repair import unit_mode_enabled
+from src.prompts.prompts import (
+    generate_chunk_reflection_prompt,
+    generate_unit_reflection_prompt,
+)
 from src.utils.translation_quality import build_editor_segments
 
 
@@ -230,6 +234,15 @@ class ReflectionPrompts:
     components: Dict[str, Any] = field(default_factory=dict)
 
 
+def _source_blocks_complete(source_chunk: str, prompt: str) -> bool:
+    """Report whether every source paragraph reached the prompt."""
+
+    from src.core.editor.units import split_blocks
+
+    blocks = split_blocks(source_chunk)
+    return all(block.text in prompt for block in blocks) if blocks else True
+
+
 def compose_reflection_prompts(
     source_chunk: str,
     draft_translation: str,
@@ -267,6 +280,7 @@ def compose_reflection_prompts(
         retry_seed_issues
         and not deterministic_findings
     )
+    use_unit_mode = unit_mode_enabled(options) and not use_focused_manual_retry
     if use_focused_manual_retry:
         from src.prompts.prompts import PromptPair
 
@@ -289,6 +303,34 @@ def compose_reflection_prompts(
         )
         reflection_pair = PromptPair(focused_system, focused_prompt)
         reflection_fallback_pair = reflection_pair
+    elif use_unit_mode:
+        # The focused retry above exists to re-locate a span the editor quoted
+        # wrongly, so it has nothing to retry here: a unit id either names a
+        # unit or does not, and the answer is the same the second time.
+        reflection_pair = generate_unit_reflection_prompt(
+            source_chunk=source_chunk,
+            draft_translation=draft_translation,
+            target_language=target_language,
+            novel_context=active_novel_context,
+            custom_instructions=custom_instructions,
+            glossary_block=glossary_block,
+            deterministic_findings=deterministic_findings,
+            narrative_voice_context=narrative_voice_context,
+            source_available=source_available,
+            native_schema=True,
+        )
+        reflection_fallback_pair = generate_unit_reflection_prompt(
+            source_chunk=source_chunk,
+            draft_translation=draft_translation,
+            target_language=target_language,
+            novel_context=active_novel_context,
+            custom_instructions=custom_instructions,
+            glossary_block=glossary_block,
+            deterministic_findings=deterministic_findings,
+            narrative_voice_context=narrative_voice_context,
+            source_available=source_available,
+            native_schema=False,
+        )
     else:
         reflection_pair = generate_chunk_reflection_prompt(
             source_chunk=source_chunk,
@@ -325,9 +367,19 @@ def compose_reflection_prompts(
         "fixed_system_chars": len(reflection_pair.system),
         "source_sha256": hashlib.sha256(source_chunk.encode("utf-8")).hexdigest(),
         "draft_sha256": hashlib.sha256(draft_translation.encode("utf-8")).hexdigest(),
-        "source_complete": source_chunk.strip() in reflection_pair.user,
+        # The bitext carries the source a paragraph at a time, so the whole
+        # chunk is never one substring of the prompt. Asking whether every
+        # paragraph arrived is the same question, and the only one this metric
+        # was ever answering.
+        "source_complete": (
+            _source_blocks_complete(source_chunk, reflection_pair.user)
+            if use_unit_mode
+            else source_chunk.strip() in reflection_pair.user
+        ),
         "input_mode": (
-            "focused_manual_retry" if use_focused_manual_retry else "complete_audit"
+            "focused_manual_retry" if use_focused_manual_retry
+            else "unit_bitext" if use_unit_mode
+            else "complete_audit"
         ),
         "retry_source_run_id": options.get("editor_retry_source_run_id") or 0,
         "draft_segment_chars": sum(

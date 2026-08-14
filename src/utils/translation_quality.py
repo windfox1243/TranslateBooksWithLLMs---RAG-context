@@ -580,15 +580,13 @@ def normalize_unique_issue_locators(
     return normalized, list(dict.fromkeys(repaired_ids))
 
 
-def apply_local_editor_patches(
-    draft_text: str,
+def _collect_local_editor_patches(
+    draft: str,
     issues: Iterable[Dict[str, Any]],
-) -> tuple[str, List[Dict[str, Any]], List[str]]:
-    """Apply non-overlapping exact editor substitutions without an LLM rewrite."""
-    draft = str(draft_text or "")
+) -> tuple[List[tuple], List[Dict[str, Any]]]:
+    """Locate each exact editor substitution as a `(start, end, new, id)` span."""
     patches = []
     unresolved: List[Dict[str, Any]] = []
-    errors: List[str] = []
     for issue in issues or []:
         repair_kind = str(issue.get("repair_kind") or "").casefold()
         if repair_kind and repair_kind != "local_replace":
@@ -641,7 +639,16 @@ def apply_local_editor_patches(
         if not located:
             unresolved.append(issue)
 
-    patches.sort(key=lambda item: (item[0], item[1], item[2]))
+    return patches, unresolved
+
+
+def _apply_editor_patch_spans(
+    draft: str,
+    patches: List[tuple],
+) -> tuple[str, List[str]]:
+    """Apply computed spans, or report the conflicts that stopped them."""
+    errors: List[str] = []
+    patches = sorted(patches, key=lambda item: (item[0], item[1], item[2]))
     # The editor sometimes reports one defect once per occurrence it noticed,
     # and identical findings become identical patches. Repeating an edit is not
     # disagreeing about it: the same span replaced by the same text is one
@@ -660,11 +667,66 @@ def apply_local_editor_patches(
                 f"local_patch_conflict:{previous[3]}:{current[3]}"
             )
     if errors:
-        return draft, list(issues or []), errors
+        return draft, errors
     result = draft
     for start, end, new, _issue_id in reversed(patches):
         result = result[:start] + new + result[end:]
-    return result, unresolved, errors
+    return result, errors
+
+
+def apply_local_editor_patches(
+    draft_text: str,
+    issues: Iterable[Dict[str, Any]],
+) -> tuple[str, List[Dict[str, Any]], List[str]]:
+    """Apply non-overlapping exact editor substitutions without an LLM rewrite."""
+    draft = str(draft_text or "")
+    patches, unresolved = _collect_local_editor_patches(draft, issues)
+    patched, errors = _apply_editor_patch_spans(draft, patches)
+    if errors:
+        return draft, list(issues or []), errors
+    return patched, unresolved, errors
+
+
+def apply_editor_patches(
+    draft_text: str,
+    issues: Iterable[Dict[str, Any]],
+    *,
+    source_text: str = "",
+) -> tuple[str, List[Dict[str, Any]], List[str]]:
+    """Apply both kinds of editor repair against one draft, in one pass.
+
+    A quoted span and a rewritten unit are two ways of saying where an edit
+    goes, and a run can carry both -- the deterministic validator still reports
+    spans while the editor answers in units. Their offsets are all measured
+    against the same untouched draft, so they are computed separately and
+    applied together; applying one kind first would move the ground under the
+    other.
+    """
+
+    from src.core.editor.unit_repair import (
+        UNIT_REPAIR_KIND,
+        collect_unit_rewrite_patches,
+    )
+
+    draft = str(draft_text or "")
+    all_issues = list(issues or [])
+    def is_unit(issue: Dict[str, Any]) -> bool:
+        return str(issue.get("repair_kind") or "").casefold() == UNIT_REPAIR_KIND
+
+    unit_issues = [issue for issue in all_issues if is_unit(issue)]
+    if not unit_issues:
+        return apply_local_editor_patches(draft, all_issues)
+
+    span_issues = [issue for issue in all_issues if not is_unit(issue)]
+    span_patches, unresolved = _collect_local_editor_patches(draft, span_issues)
+    unit_patches, unit_unresolved = collect_unit_rewrite_patches(
+        draft, source_text, unit_issues,
+    )
+    unresolved.extend(unit_unresolved)
+    patched, errors = _apply_editor_patch_spans(draft, span_patches + unit_patches)
+    if errors:
+        return draft, all_issues, errors
+    return patched, unresolved, errors
 
 
 def validate_editor_repair(
