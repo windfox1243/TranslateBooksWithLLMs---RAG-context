@@ -428,3 +428,27 @@ async def test_an_edit_refused_for_touching_a_protected_name_is_counted(tmp_path
     run = db.get_editor_diagnostics("job-protected")["runs"][0]
     assert run["resolved_issue_count"] == 0
     assert run["warning_count"] == 1
+
+
+def test_a_list_of_ids_survives_the_bounding_step():
+    # Keys outside the named set fall through to the scalar branch, so a list
+    # of issue ids was dropped entirely: a run that gave up two repairs to keep
+    # the rest recorded as one that gave up none.
+    from src.utils.editor_diagnostics import bounded_diagnostics
+
+    bounded = bounded_diagnostics({
+        "dropped_to_apply_the_rest": ["ISSUE-002", "ISSUE-005"],
+        "ignored_no_op_issue_ids": [],
+    })
+
+    assert bounded["dropped_to_apply_the_rest"] == ["ISSUE-002", "ISSUE-005"]
+    assert bounded["ignored_no_op_issue_ids"] == []
+
+
+def test_book_text_hidden_in_an_unnamed_list_is_still_bounded():
+    from src.utils.editor_diagnostics import bounded_diagnostics
+
+    bounded = bounded_diagnostics({"whatever": ["x" * 4000] * 40})
+
+    assert len(bounded["whatever"]) == 12
+    assert all(len(entry) < 500 for entry in bounded["whatever"])
