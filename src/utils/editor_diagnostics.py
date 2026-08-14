@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Dict, Iterable, Optional
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Dict, Iterable, Iterator, List, Optional
 
 EDITOR_OUTCOMES = {
     "no_issues", "warnings_only", "locally_repaired", "llm_repaired",
@@ -113,12 +115,45 @@ def bounded_diagnostics(value: Any) -> Dict[str, Any]:
     return result
 
 
+_OPEN_EDITOR_RUNS: ContextVar[Optional[List["EditorRunRecorder"]]] = ContextVar(
+    "open_editor_runs", default=None,
+)
+
+
+@contextmanager
+def editor_run_scope() -> Iterator[None]:
+    """Close any editor run the code inside this scope left open.
+
+    A run is written as ``running`` and only a finish moves it off that value.
+    Every give-up path is meant to record one, but an early return or a raised
+    exception parks the row there forever -- and ``running`` belongs to no
+    diagnostics bucket, so an abandoned run is not merely mislabelled, it is
+    invisible: not successful, not degraded, not queued for review.
+
+    A run salvaged here is recorded as needing review with an ``internal``
+    failure class, which is what it is: the editor never reached a verdict for
+    a reason on our side.
+    """
+    open_runs: List["EditorRunRecorder"] = []
+    token = _OPEN_EDITOR_RUNS.set(open_runs)
+    try:
+        yield
+    finally:
+        _OPEN_EDITOR_RUNS.reset(token)
+        for recorder in list(open_runs):
+            try:
+                recorder.finish("review_required", failure_class="internal")
+            except Exception:
+                pass
+
+
 class EditorRunRecorder:
     """Best-effort persistence that never breaks translation work."""
 
     def __init__(self, options: Optional[Dict[str, Any]], **metadata: Any) -> None:
         self.options = options or {}
         self.run_id: Optional[int] = None
+        self.finished = False
         self.db = None
         translation_id = str(self.options.get("translation_id") or "").strip()
         if not translation_id:
@@ -145,6 +180,9 @@ class EditorRunRecorder:
                 "contract_version": metadata.get("contract_version"),
                 "outcome": "running",
             })
+            open_runs = _OPEN_EDITOR_RUNS.get()
+            if open_runs is not None:
+                open_runs.append(self)
         except Exception:
             self.db = None
             self.run_id = None
@@ -156,6 +194,14 @@ class EditorRunRecorder:
     def finish(self, outcome: str, **payload: Any) -> None:
         if outcome not in EDITOR_OUTCOMES:
             outcome = "review_required"
+        # The first verdict is the run's verdict; a scope closing behind a path
+        # that already recorded one must not overwrite it.
+        if self.finished:
+            return
+        self.finished = True
+        open_runs = _OPEN_EDITOR_RUNS.get()
+        if open_runs is not None and self in open_runs:
+            open_runs.remove(self)
         if self.db is not None and self.run_id is not None:
             payload["diagnostics"] = bounded_diagnostics(
                 payload.get("diagnostics")

@@ -15,5 +15,10 @@ class EditorService:
 
     async def review_chunk(self, *args: Any, **kwargs: Any):
         from src.core.translator import _run_chunk_reflection_pass_impl
+        from src.utils.editor_diagnostics import editor_run_scope
 
-        return await _run_chunk_reflection_pass_impl(*args, **kwargs)
+        # Every editor run starts as 'running' and is closed by the state
+        # machine. This is the one boundary all of them cross, so it is where a
+        # run abandoned by an early return or an exception gets its verdict.
+        with editor_run_scope():
+            return await _run_chunk_reflection_pass_impl(*args, **kwargs)
