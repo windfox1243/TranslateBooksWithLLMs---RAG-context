@@ -58,6 +58,12 @@ MAX_CHUNK_REDUCTION_ATTEMPTS = 3
 CHUNK_REDUCTION_FACTOR = 0.6  # Reduce to 60% of original size each attempt
 MIN_CHUNK_CHARACTERS = 200  # Minimum chunk size to attempt translation
 _EDITOR_SCHEMA_UNSUPPORTED = set()
+# Rejections that never named the schema, counted per provider/model/endpoint.
+# One of those is not evidence the model cannot answer a schema -- a bad key,
+# a transient fault and a genuine schema failure all arrive as the same generic
+# INVALID_ARGUMENT -- but a second one in the same process is.
+_EDITOR_SCHEMA_GENERIC_REJECTIONS: Dict[Any, int] = {}
+_EDITOR_SCHEMA_GENERIC_LIMIT = 2
 
 
 def _classify_editor_exception(exc: BaseException) -> str:
@@ -2149,11 +2155,21 @@ async def _run_chunk_reflection_pass_impl(
         except StructuredOutputSchemaError as exc:
             if schema is None:
                 raise
-            disable_native_schema = True
+            if getattr(exc, "identifies_schema", True):
+                disable_native_schema = True
+            else:
+                seen = _EDITOR_SCHEMA_GENERIC_REJECTIONS.get(
+                    schema_capability_key, 0
+                ) + 1
+                _EDITOR_SCHEMA_GENERIC_REJECTIONS[schema_capability_key] = seen
+                disable_native_schema = seen >= _EDITOR_SCHEMA_GENERIC_LIMIT
             record_attempt(
                 f"{stage}_schema_fallback", None, "",
                 failure_class="schema_rejected",
-                reason_codes=[f"native_schema_rejected:{type(exc).__name__}"],
+                reason_codes=[
+                    f"native_schema_rejected:{type(exc).__name__}",
+                    *(["native_schema_disabled"] if disable_native_schema else []),
+                ],
             )
         except Exception as exc:
             raise

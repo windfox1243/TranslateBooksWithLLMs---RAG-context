@@ -65,30 +65,61 @@ def _prepare_response_json_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
     return prepared
 
 
-def _is_structured_schema_rejection(body: str) -> bool:
-    """Return whether a Gemini 400 response identifies the output schema."""
+_SCHEMA_REJECTION_MARKERS = (
+    "generation_config.response_schema",
+    "generationconfig.responseschema",
+    "response_json_schema",
+    "responsejsonschema",
+    "response_format",
+    "responseformat",
+)
+
+# Gemini may collapse schema-complexity failures into a generic response
+# without identifying responseJsonSchema.  The caller only classifies HTTP 400
+# structured-output requests, so this still enables the unstructured fallback.
+_GENERIC_INVALID_ARGUMENT_MARKERS = (
+    '"status":"invalid_argument"',
+    '"status": "invalid_argument"',
+    "request contains an invalid argument",
+)
+
+_CREDENTIAL_REJECTION_MARKERS = (
+    "api key not valid",
+    "api_key_invalid",
+    "invalid authentication",
+    "caller does not have permission",
+    "permission_denied",
+)
+
+
+def mentions_invalid_credentials(body: str) -> bool:
+    """Return whether a Gemini error body blames the credentials."""
 
     normalized = (body or "").casefold().replace("-", "_")
-    return any(
-        marker in normalized
-        for marker in (
-            "generation_config.response_schema",
-            "generationconfig.responseschema",
-            "response_json_schema",
-            "responsejsonschema",
-            "response_format",
-            "responseformat",
-            # Gemini may collapse schema-complexity failures into this generic
-            # response without identifying responseJsonSchema.  The caller
-            # invokes this helper only for HTTP 400 structured-output requests,
-            # so treating INVALID_ARGUMENT as a schema rejection safely enables
-            # the existing unstructured fallback.  A repeated 400 from that
-            # fallback still follows the normal terminal-error path.
-            '"status":"invalid_argument"',
-            '"status": "invalid_argument"',
-            "request contains an invalid argument",
-        )
-    )
+    return any(marker in normalized for marker in _CREDENTIAL_REJECTION_MARKERS)
+
+
+def classify_schema_rejection(body: str) -> str:
+    """Say whether a Gemini 400 is about the output schema, and how surely.
+
+    ``"schema"`` when the body names the schema field, ``"generic"`` when it is
+    an unexplained INVALID_ARGUMENT, and ``""`` when it is neither.
+
+    The distinction matters because the caller stops sending schemas to this
+    model for the rest of the process on the strength of this answer. A body
+    that blames the API key is INVALID_ARGUMENT too, and reading that as a bad
+    schema turns an auth problem into a permanent, silent loss of structured
+    output -- reported as a schema failure, so nothing points at the key.
+    """
+
+    normalized = (body or "").casefold().replace("-", "_")
+    if any(marker in normalized for marker in _SCHEMA_REJECTION_MARKERS):
+        return "schema"
+    if mentions_invalid_credentials(body):
+        return ""
+    if any(marker in normalized for marker in _GENERIC_INVALID_ARGUMENT_MARKERS):
+        return "generic"
+    return ""
 
 
 class GeminiProvider(LLMProvider):
@@ -387,11 +418,14 @@ class GeminiProvider(LLMProvider):
                         e.response.status_code == 400
                         and generation_options
                         and generation_options.response_schema
-                        and _is_structured_schema_rejection(error_body)
                     ):
-                        raise StructuredOutputSchemaError(
-                            "Gemini rejected the structured output schema (HTTP 400)."
-                        ) from e
+                        rejection = classify_schema_rejection(error_body)
+                        if rejection:
+                            raise StructuredOutputSchemaError(
+                                "Gemini rejected the structured output schema "
+                                "(HTTP 400).",
+                                identifies_schema=rejection == "schema",
+                            ) from e
 
                     retryable = is_retryable_http_status(e.response.status_code)
                     if retryable:
@@ -418,7 +452,15 @@ class GeminiProvider(LLMProvider):
                     if not retryable:
                         status = e.response.status_code
                         failure_class = (
-                            "provider_auth" if status in {401, 403}
+                            # Gemini answers an unusable key with 400, not 401,
+                            # so the status alone reads it as a transport fault
+                            # and sends the user looking in the wrong place.
+                            "provider_auth"
+                            if status in {401, 403}
+                            or (
+                                status == 400
+                                and mentions_invalid_credentials(error_body)
+                            )
                             else "provider_quota" if status == 402
                             else "transport"
                         )

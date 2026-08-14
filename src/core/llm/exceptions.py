@@ -27,9 +27,17 @@ class RepetitionLoopError(Exception):
 
 
 class StructuredOutputSchemaError(RuntimeError):
-    """Raised when a provider deterministically rejects an output schema."""
+    """Raised when a provider deterministically rejects an output schema.
 
-    pass
+    ``identifies_schema`` says whether the provider actually named the schema
+    as the problem. A provider that only reported a generic bad-argument error
+    leaves it False, so the caller can fall back for this one request without
+    concluding that the model cannot do structured output at all.
+    """
+
+    def __init__(self, message: str, *, identifies_schema: bool = True):
+        super().__init__(message)
+        self.identifies_schema = identifies_schema
 
 
 class ProviderRequestError(RuntimeError):

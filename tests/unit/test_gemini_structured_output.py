@@ -6,7 +6,7 @@ import pytest
 
 from src.core.llm import LLMGenerationOptions, LLMResponse
 from src.core.llm.exceptions import ProviderRequestError, StructuredOutputSchemaError
-from src.core.llm.providers.gemini import GeminiProvider
+from src.core.llm.providers.gemini import GeminiProvider, classify_schema_rejection
 from src.prompts.prompts import REFLECTION_RESPONSE_SCHEMA
 
 
@@ -132,6 +132,69 @@ async def test_gemini_schema_rejection_is_typed_and_not_retried(
     assert calls == 1
 
 
+@pytest.mark.parametrize("body,expected", [
+    (
+        '{"error":{"code":400,"message":"Unknown name '
+        '\"additionalProperties\" at '
+        'generation_config.response_schema.properties"}}',
+        "schema",
+    ),
+    (
+        '{"error":{"code":400,"message":"Request contains an invalid '
+        'argument.","status":"INVALID_ARGUMENT"}}',
+        "generic",
+    ),
+    # The one that started this: an unusable key is INVALID_ARGUMENT too, and
+    # blaming the schema for it hid the real cause and cost the process its
+    # structured output for good.
+    (
+        '{"error":{"code":400,"message":"API key not valid. Please pass a '
+        'valid API key.","status":"INVALID_ARGUMENT"}}',
+        "",
+    ),
+    (
+        '{"error":{"code":400,"message":"Something else entirely."}}',
+        "",
+    ),
+])
+def test_a_400_is_only_blamed_on_the_schema_when_it_says_so(body, expected):
+    assert classify_schema_rejection(body) == expected
+
+
+@pytest.mark.asyncio
+async def test_a_bad_key_is_reported_as_auth_even_behind_a_schema_request(
+    monkeypatch,
+):
+    provider = GeminiProvider(
+        api_key="YOUR_API_KEY_HERE",
+        model="gemini-3.1-flash-lite",
+    )
+
+    class FakeClient:
+        async def post(self, url, headers=None, json=None, timeout=None):
+            return _http_error_response(
+                url,
+                '{"error":{"code":400,"message":"API key not valid. Please '
+                'pass a valid API key.","status":"INVALID_ARGUMENT"}}',
+            )
+
+    async def fake_get_client():
+        return FakeClient()
+
+    monkeypatch.setattr(provider, "_get_client", fake_get_client)
+
+    with pytest.raises(ProviderRequestError) as exc_info:
+        await provider.generate(
+            "Review this translation.",
+            generation_options=LLMGenerationOptions(
+                response_schema=REFLECTION_RESPONSE_SCHEMA,
+                stage="reflection",
+            ),
+        )
+
+    assert exc_info.value.failure_class == "provider_auth"
+
+
 @pytest.mark.asyncio
 async def test_gemini_generic_400_without_schema_remains_terminal(monkeypatch):
     provider = GeminiProvider(
@@ -170,6 +233,13 @@ async def test_editor_falls_back_after_generic_gemini_schema_rejection(
     monkeypatch,
     clear_editor_schema_capabilities,
 ):
+    """A generic 400 costs this request its schema, not the whole process.
+
+    The body never says the schema was the problem -- a bad key and a
+    transient fault look identical -- so the model is given another chance on
+    the next chunk, and only a second generic rejection retires the schema.
+    """
+
     from src.core.translator import run_chunk_reflection_pass
 
     provider = GeminiProvider(
@@ -177,12 +247,15 @@ async def test_editor_falls_back_after_generic_gemini_schema_rejection(
         model="gemini-3.1-flash-lite",
     )
     sent_payloads = []
+    rejection = _http_error_response(
+        provider.api_endpoint,
+        '{"error":{"code":400,"message":"Request contains an invalid '
+        'argument.","status":"INVALID_ARGUMENT"}}',
+    )
     responses = iter([
-        _http_error_response(
-            provider.api_endpoint,
-            '{"error":{"code":400,"message":"Request contains an invalid '
-            'argument.","status":"INVALID_ARGUMENT"}}',
-        ),
+        rejection,
+        _GeminiResponse(),
+        rejection,
         _GeminiResponse(),
         _GeminiResponse(),
     ])
@@ -201,7 +274,7 @@ async def test_editor_falls_back_after_generic_gemini_schema_rejection(
         "editor_model_resolved": "gemini-3.1-flash-lite",
     }
 
-    for _ in range(2):
+    for _ in range(3):
         result = await run_chunk_reflection_pass(
             source_chunk="Source text.",
             draft_translation="Draft text.",
@@ -212,14 +285,20 @@ async def test_editor_falls_back_after_generic_gemini_schema_rejection(
         )
         assert result == "Draft text."
 
-    assert "responseJsonSchema" in sent_payloads[0]["generationConfig"]
-    assert "responseJsonSchema" not in sent_payloads[1]["generationConfig"]
+    def schema_sent(index):
+        return "responseJsonSchema" in sent_payloads[index]["generationConfig"]
+
+    assert schema_sent(0)
+    assert not schema_sent(1)
     fallback_text = (
         sent_payloads[1]["systemInstruction"]["parts"][0]["text"]
         + sent_payloads[1]["contents"][0]["parts"][0]["text"]
     )
     assert "<REFLECTION_JSON>" in fallback_text
-    assert "responseJsonSchema" not in sent_payloads[2]["generationConfig"]
+    # Tried again on the next chunk, rejected again, and only then retired.
+    assert schema_sent(2)
+    assert not schema_sent(3)
+    assert not schema_sent(4)
 
 
 @pytest.fixture
@@ -227,8 +306,10 @@ def clear_editor_schema_capabilities():
     from src.core import translator
 
     translator._EDITOR_SCHEMA_UNSUPPORTED.clear()
+    translator._EDITOR_SCHEMA_GENERIC_REJECTIONS.clear()
     yield
     translator._EDITOR_SCHEMA_UNSUPPORTED.clear()
+    translator._EDITOR_SCHEMA_GENERIC_REJECTIONS.clear()
 
 
 @pytest.mark.asyncio
