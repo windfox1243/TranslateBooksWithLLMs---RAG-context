@@ -2558,6 +2558,20 @@ async def _run_chunk_reflection_pass_impl(
                     "final_reason_codes": ["contract_parse"],
                 },
             )
+        # A v1 job keeps the draft rather than flagging it, but the run still
+        # ended without a verdict and has to say so. Left unrecorded it stayed
+        # at 'running' and vanished from the diagnostics entirely.
+        finish_run(
+            "review_required",
+            parse_status=reflection_result.parse_status,
+            failure_class=(
+                "contract_incomplete"
+                if _reflection_contract_incomplete(reflection_result)
+                else "contract_parse"
+            ),
+            issue_count=len(reflection_result.issues),
+            unresolved_issue_count=len(reflection_result.issues),
+        )
         return draft_translation
 
     if (
