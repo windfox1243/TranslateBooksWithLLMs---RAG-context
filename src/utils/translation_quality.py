@@ -641,7 +641,19 @@ def apply_local_editor_patches(
         if not located:
             unresolved.append(issue)
 
-    patches.sort(key=lambda item: item[0])
+    patches.sort(key=lambda item: (item[0], item[1], item[2]))
+    # The editor sometimes reports one defect once per occurrence it noticed,
+    # and identical findings become identical patches. Repeating an edit is not
+    # disagreeing about it: the same span replaced by the same text is one
+    # repair however many times it was raised. One measured chunk reported the
+    # same edit five times, the copies collided, and all seven of that chunk's
+    # findings -- including the two that were never in question -- were lost.
+    deduplicated: List[tuple] = []
+    for patch in patches:
+        if deduplicated and deduplicated[-1][:3] == patch[:3]:
+            continue
+        deduplicated.append(patch)
+    patches = deduplicated
     for previous, current in zip(patches, patches[1:]):
         if current[0] < previous[1]:
             errors.append(

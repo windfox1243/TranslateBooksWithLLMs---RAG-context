@@ -17,6 +17,50 @@ from src.prompts.prompts import generate_chunk_reflection_prompt
 from src.utils.translation_quality import build_editor_segments
 
 
+def _candidate_segments_for_issue(
+    segments: List[Dict[str, Any]],
+    by_id: Dict[str, int],
+    issue: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Collect the draft neighborhoods an issue could plausibly be talking about."""
+
+    replacement = issue.get("draft_replacement") or {}
+    needles = [
+        str(replacement.get("draft") or "").strip(),
+        str(issue.get("draft_quote") or "").strip(),
+    ]
+    candidate_indexes = set()
+    requested = str(issue.get("segment_id") or "").upper()
+    if requested in by_id:
+        candidate_indexes.add(by_id[requested])
+    for index, segment in enumerate(segments):
+        folded = str(segment.get("text") or "").casefold()
+        if any(needle and needle.casefold() in folded for needle in needles):
+            candidate_indexes.add(index)
+    if not candidate_indexes:
+        terms = {
+            token.casefold()
+            for needle in needles
+            for token in re.findall(r"\w{3,}", needle, re.UNICODE)
+        }
+        scored = []
+        for index, segment in enumerate(segments):
+            folded = str(segment.get("text") or "").casefold()
+            score = sum(1 for term in terms if term in folded)
+            if score:
+                scored.append((score, index))
+        candidate_indexes.update(
+            index for _score, index in sorted(scored, reverse=True)[:3]
+        )
+    expanded = set()
+    for index in candidate_indexes:
+        expanded.update(
+            candidate for candidate in (index - 1, index, index + 1)
+            if 0 <= candidate < len(segments)
+        )
+    return [segments[index] for index in sorted(expanded)]
+
+
 def _build_focused_locator_retry_prompt(
     draft_text: str,
     issues: List[Dict[str, Any]],
@@ -34,43 +78,11 @@ def _build_focused_locator_retry_prompt(
         issue_id = str(issue.get("issue_id") or "")
         if issue_id not in invalid_ids:
             continue
-        replacement = issue.get("draft_replacement") or {}
-        needles = [
-            str(replacement.get("draft") or "").strip(),
-            str(issue.get("draft_quote") or "").strip(),
-        ]
-        candidate_indexes = set()
-        requested = str(issue.get("segment_id") or "").upper()
-        if requested in by_id:
-            candidate_indexes.add(by_id[requested])
-        for index, segment in enumerate(segments):
-            folded = str(segment.get("text") or "").casefold()
-            if any(needle and needle.casefold() in folded for needle in needles):
-                candidate_indexes.add(index)
-        if not candidate_indexes:
-            terms = {
-                token.casefold()
-                for needle in needles
-                for token in re.findall(r"\w{3,}", needle, re.UNICODE)
-            }
-            scored = []
-            for index, segment in enumerate(segments):
-                folded = str(segment.get("text") or "").casefold()
-                score = sum(1 for term in terms if term in folded)
-                if score:
-                    scored.append((score, index))
-            candidate_indexes.update(
-                index for _score, index in sorted(scored, reverse=True)[:3]
-            )
-        expanded = set()
-        for index in candidate_indexes:
-            expanded.update(
-                candidate for candidate in (index - 1, index, index + 1)
-                if 0 <= candidate < len(segments)
-            )
         payload.append({
             "issue": issue,
-            "candidate_segments": [segments[index] for index in sorted(expanded)],
+            "candidate_segments": _candidate_segments_for_issue(
+                segments, by_id, issue
+            ),
         })
     return (
         "Correct only the invalid exact-span locators below. Return the same "
@@ -83,6 +95,54 @@ def _build_focused_locator_retry_prompt(
         "LOCATOR ERRORS:\n"
         + json.dumps(locator_errors, ensure_ascii=False, separators=(",", ":"))
         + "\n\nINVALID ISSUES AND CANDIDATE SEGMENTS:\n"
+        + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    )
+
+
+def _build_missing_replacement_retry_prompt(
+    draft_text: str,
+    issues: List[Dict[str, Any]],
+    invalid_ids: set[str],
+) -> str:
+    """Ask for the corrected wording an issue left out, not for its locator.
+
+    An issue that quotes its span correctly but supplies no replacement was
+    being sent through the locator retry, which opens by asking the editor to
+    correct locators that were never wrong -- so it answered with the same
+    issues unchanged and every one of them was demoted to review. One measured
+    chunk raised eight major findings this way and repaired none of them.
+    """
+
+    from src.utils.translation_quality import build_editor_segments
+
+    segments = build_editor_segments(draft_text)
+    by_id = {
+        str(item.get("segment_id") or "").upper(): index
+        for index, item in enumerate(segments)
+    }
+    payload = []
+    for issue in issues:
+        if str(issue.get("issue_id") or "") not in invalid_ids:
+            continue
+        payload.append({
+            "issue": issue,
+            "candidate_segments": _candidate_segments_for_issue(
+                segments, by_id, issue
+            ),
+        })
+    return (
+        "Each issue below names a defect but supplies no replacement text. "
+        "Their locators are not in question: keep segment_id and draft_quote "
+        "exactly as given. Return the same reflection JSON schema with status "
+        "needs_repair, only these issues, and voice_observations as an empty "
+        "list. For each issue set draft_replacement.draft to the exact "
+        "substring of draft_quote that is wrong, and "
+        "draft_replacement.replacement to the corrected wording. The "
+        "replacement must be non-empty and must be a rewrite: never an empty "
+        "string, and never a deletion of the quoted text. If the only repair "
+        "you can name is removing text, or you cannot write a corrected "
+        "wording, change that issue to review_only with no draft_replacement.\n"
+        "\nISSUES MISSING A REPLACEMENT:\n"
         + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     )
 
