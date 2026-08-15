@@ -1812,6 +1812,7 @@ async def _run_chunk_reflection_pass_impl(
         find_source_residue,
         identity_preserving_proper_names,
         normalize_unique_issue_locators,
+        replacement_already_in_draft,
         residue_findings_to_editor_issues,
         validate_editor_repair,
         validate_issue_locators,
@@ -2911,8 +2912,14 @@ async def _run_chunk_reflection_pass_impl(
         str(issue.get("issue_id") or "")
         for issue in reflection_result.issues
         if isinstance(issue.get("draft_replacement"), dict)
-        and str(issue["draft_replacement"].get("draft") or "").strip()
-        == str(issue["draft_replacement"].get("replacement") or "").strip()
+        and (
+            str(issue["draft_replacement"].get("draft") or "").strip()
+            == str(issue["draft_replacement"].get("replacement") or "").strip()
+            # An edit written as an expansion of what it quotes, where the draft
+            # already reads the expansion. Left in, it applies nowhere and costs
+            # the chunk two retries and a review.
+            or replacement_already_in_draft(draft_translation, issue)
+        )
     }
     # Severity decides how much a defect matters, not how sure the editor is
     # that it is one. Requiring `major` here threw away every confident `minor`
@@ -3043,6 +3050,7 @@ async def _run_chunk_reflection_pass_impl(
             unresolved_issue_count = len(actionable_issues) + review_issue_count
 
     local_patch_followup_attempted = False
+    already_read_ids: List[str] = []
     if (
         unresolved_issues
         and all(_issue_requires_draft_replacement(issue) for issue in unresolved_issues)
@@ -3109,7 +3117,23 @@ async def _run_chunk_reflection_pass_impl(
                 corrected_issues, _normalized = normalize_unique_issue_locators(
                     followup_base, corrected_issues,
                 )
-                if reflection_contract_invalid(followup_result) or not corrected_issues:
+                # The audit screens these out, but a retry asked to relocate an
+                # edit can answer with one the draft already reads. It asks for
+                # nothing, so it is satisfied rather than unresolved: held out
+                # of the batch, counted as done, and named in the record.
+                already_read = [
+                    issue for issue in corrected_issues
+                    if replacement_already_in_draft(followup_base, issue)
+                ]
+                already_read_ids.extend(
+                    str(issue.get("issue_id") or "unknown") for issue in already_read
+                )
+                corrected_issues = [
+                    issue for issue in corrected_issues if issue not in already_read
+                ]
+                if reflection_contract_invalid(followup_result) or not (
+                    corrected_issues or already_read
+                ):
                     followup_errors.append("local_patch_retry_contract_invalid")
                 else:
                     followup_errors.extend(
@@ -3143,18 +3167,18 @@ async def _run_chunk_reflection_pass_impl(
                     parse_status=followup_result.parse_status,
                     failure_class=("local_patch_conflict" if followup_errors else ""),
                     reason_codes=followup_errors,
-                    issues=corrected_issues,
+                    issues=corrected_issues + already_read,
                 )
                 if not followup_errors and not retry_unresolved:
                     patched_draft = retry_patched
-                    resolved_issue_count += len(corrected_issues)
+                    resolved_issue_count += len(corrected_issues) + len(already_read)
                     unresolved_issues = []
                     unresolved_issue_count = review_issue_count
                     patch_errors = []
                     result_state = "locally_patched"
                     reflection_result = ReflectionResult(
                         "needs_repair",
-                        corrected_issues,
+                        corrected_issues + already_read,
                         followup_raw,
                         followup_result.parse_status,
                         followup_result.voice_observations,
@@ -3204,6 +3228,7 @@ async def _run_chunk_reflection_pass_impl(
                     "focused_local_patch_retry"
                     if local_patch_followup_attempted else "local_patch"
                 ),
+                "already_read_issue_ids": sorted(set(already_read_ids)),
             },
         )
         final_text = persist_final_voice(patched_draft)
