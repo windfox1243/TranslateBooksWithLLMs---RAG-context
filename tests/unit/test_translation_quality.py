@@ -1214,38 +1214,41 @@ async def test_exact_narrator_mismatches_are_patched_before_model_repair():
 def test_a_quote_crossing_a_segment_break_is_read_in_the_draft_s_own_hand():
     """The segmented view inserts newlines the draft does not contain.
 
-    The segmenter breaks after every sentence-final period, so `St. Leger` is
-    two segments, and the view the editor reads joins them with a newline. A
-    quote spanning that break comes back carrying a newline that no exact match
-    can ever find in the draft, and the finding was blamed on the editor for a
-    locator it had copied correctly.
+    The segmenter breaks after a sentence-final period, and the view the editor
+    reads joins the pieces with a newline. A quote spanning that break comes
+    back carrying a newline that no exact match can ever find in the draft, and
+    the finding was blamed on the editor for a locator it had copied correctly.
+
+    An abbreviation no longer opens a break of its own -- see
+    `tests/unit/test_editor_segments.py` -- but a genuine sentence boundary
+    still does, and a quote may legitimately cross one.
     """
 
-    draft = "Anh thắng Kikuka-shō (Japanese St. Leger) năm ngoái."
+    draft = "Anh thắng giải đó. Rồi anh nghỉ hẳn."
     view = format_editor_segments(draft)
-    assert "[SEG-0001] Anh thắng Kikuka-shō (Japanese St." in view
-    assert "[SEG-0002] Leger) năm ngoái." in view
+    assert "[SEG-0001] Anh thắng giải đó." in view
+    assert "[SEG-0002] Rồi anh nghỉ hẳn." in view
 
     issue = {
         "issue_id": "format-1",
         "segment_id": "SEG-0001",
         "category": "placeholder/format",
         "repair_kind": "local_replace",
-        "draft_quote": "Kikuka-shō (Japanese St.\nLeger)",
+        "draft_quote": "giải đó.\nRồi anh",
         "draft_replacement": {
-            "draft": "Kikuka-shō (Japanese St.\nLeger)",
-            "replacement": "Kikuka-shō (Cúp Cúc Hoa)",
+            "draft": "giải đó.\nRồi anh",
+            "replacement": "giải ấy. Rồi anh",
         },
     }
     assert validate_issue_locators(draft, [issue]) != []
 
     grounded, repaired_ids = normalize_unique_issue_locators(draft, [issue])
     assert repaired_ids == ["format-1"]
-    assert grounded[0]["draft_quote"] == "Kikuka-shō (Japanese St. Leger)"
+    assert grounded[0]["draft_quote"] == "giải đó. Rồi anh"
     assert validate_issue_locators(draft, grounded) == []
 
     result, unresolved, errors = apply_local_editor_patches(draft, grounded)
-    assert result == "Anh thắng Kikuka-shō (Cúp Cúc Hoa) năm ngoái."
+    assert result == "Anh thắng giải ấy. Rồi anh nghỉ hẳn."
     assert unresolved == []
     assert errors == []
 
