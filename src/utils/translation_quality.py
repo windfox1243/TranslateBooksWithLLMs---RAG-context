@@ -1145,7 +1145,26 @@ def validate_editor_repair(
             old_target_count = draft_key.count(target_span_key) if target_span_key else 0
             new_target_count = repaired_key.count(target_span_key) if target_span_key else 0
 
-        if not changed_locally or new_draft_count >= old_draft_count:
+        # A repair that puts back something omitted keeps the words it quotes
+        # and adds to them, so neither signal below can see it: the quoted span
+        # survives inside its own replacement, and the added words sit beside
+        # the span rather than inside it, so no diff opcode overlaps it. Such a
+        # repair is read as one that never applied -- a measured chunk lost its
+        # only omission fix that way, then lost it twice more, because each
+        # retry was asked to repair what it had already repaired. Where the
+        # replacement contains the span, the replacement's own arrival is what
+        # says it landed. A case-only edit is excluded: there the two spans
+        # match by construction, and the counts are all there is to judge by.
+        span_expanded = (
+            bool(draft_span_key)
+            and not is_case_only
+            and draft_span_key in target_span_key
+        )
+        if span_expanded:
+            applied = replacement_in_change or new_target_count > old_target_count
+        else:
+            applied = changed_locally and new_draft_count < old_draft_count
+        if not applied:
             errors.append(f"replacement_not_applied_locally: {draft_span}")
         if target_span_key and not (
             replacement_in_change or new_target_count > old_target_count
