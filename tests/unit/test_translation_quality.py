@@ -1123,6 +1123,55 @@ def test_editor_repair_validates_capitalization_only_correction():
     assert errors == []
 
 
+def test_a_repair_that_restores_an_omission_counts_as_applied():
+    # The measured chunk: the editor put back a qualifier the draft had
+    # dropped, which keeps the quoted span and adds to it. The patch applied
+    # cleanly and the validation called it not applied, three times over.
+    draft = "Cô ấy sẽ càn quét Tam quan mùa thu. Không ai biết trước được."
+    issue = {
+        "issue_id": "ISSUE-002",
+        "draft_quote": "Cô ấy sẽ càn quét Tam quan mùa thu.",
+        "draft_replacement": {
+            "draft": "Tam quan mùa thu",
+            "replacement": "Tam quan mùa thu dành cho ngựa cái ba tuổi",
+        },
+    }
+    repaired, unresolved, patch_errors = apply_local_editor_patches(draft, [issue])
+
+    assert unresolved == [] and patch_errors == []
+    assert validate_editor_repair(
+        repaired,
+        [issue],
+        draft_text=draft,
+        source_text="She would sweep the autumn Triple Crown for fillies.",
+        source_language="English",
+        target_language="Vietnamese",
+    ) == []
+
+
+def test_an_omission_repair_left_unapplied_is_still_reported():
+    draft = "Cô ấy sẽ càn quét Tam quan mùa thu. Không ai biết trước được."
+    issue = {
+        "issue_id": "ISSUE-002",
+        "draft_quote": "Cô ấy sẽ càn quét Tam quan mùa thu.",
+        "draft_replacement": {
+            "draft": "Tam quan mùa thu",
+            "replacement": "Tam quan mùa thu dành cho ngựa cái ba tuổi",
+        },
+    }
+
+    errors = validate_editor_repair(
+        draft,
+        [issue],
+        draft_text=draft,
+        source_text="She would sweep the autumn Triple Crown for fillies.",
+        source_language="English",
+        target_language="Vietnamese",
+    )
+
+    assert "replacement_not_applied_locally: Tam quan mùa thu" in errors
+
+
 def test_pronoun_counting_narrator_hint_was_removed():
     import src.utils.translation_quality as quality
 
