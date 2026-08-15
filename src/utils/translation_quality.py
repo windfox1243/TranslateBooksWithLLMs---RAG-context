@@ -337,17 +337,66 @@ def residue_findings_to_editor_issues(
     } for index, finding in enumerate(findings, start=1)]
 
 
+# Dots that end a word without ending a sentence. Splitting on one cuts a name
+# in half, and the editor can then only quote half of it: a measured chunk lost
+# every repair it had because "Kikuka-sho (Japanese St. Leger)" was offered to
+# the editor as two segments, so the quote it answered with stopped at "St."
+# and no replacement could be applied to it.
+_ABBREVIATION_ENDINGS = (
+    "st", "mr", "mrs", "ms", "dr", "prof", "jr", "sr", "vs", "no", "vol",
+    "fig", "co", "inc", "ltd", "etc",
+)
+_BRACKET_PAIRS = {"(": ")", "[": "]", "{": "}", "“": "”"}
+
+
+def _ends_mid_sentence(value: str) -> bool:
+    """Say whether a candidate segment stops somewhere a sentence would not."""
+
+    stripped = value.rstrip()
+    if "\n" in value[len(stripped):]:
+        # A line break ends the segment whatever the punctuation says, and
+        # merging across one would join two paragraphs into a single locator.
+        return False
+    if not stripped.endswith("."):
+        # Only a period is ambiguous; the other terminators are not abbreviated
+        # and are never left open the way a bracket is.
+        return False
+    depth = {opening: 0 for opening in _BRACKET_PAIRS}
+    closings = {closing: opening for opening, closing in _BRACKET_PAIRS.items()}
+    for character in stripped:
+        if character in depth:
+            depth[character] += 1
+        elif character in closings and depth[closings[character]]:
+            depth[closings[character]] -= 1
+    if any(depth.values()):
+        return True
+    last_word = re.split(r"[\s(\[{“]", stripped[:-1])[-1]
+    if last_word.casefold() in _ABBREVIATION_ENDINGS:
+        return True
+    # A lone initial, as in "J. Smith".
+    return len(last_word) == 1 and last_word.isalpha()
+
+
 def build_editor_segments(text: str) -> List[Dict[str, Any]]:
     """Split draft text into stable, offset-preserving editor segments."""
 
     raw = str(text or "")
     segments: List[Dict[str, Any]] = []
     pattern = re.compile(r".*?(?:\r?\n+|(?<=[.!?。！？])(?:\s+|$)|$)", re.DOTALL)
+    pending_start = None
     for match in pattern.finditer(raw):
         value = match.group(0)
         if not value:
             continue
         start, end = match.span()
+        if pending_start is not None:
+            start = pending_start
+            value = raw[start:end]
+        if _ends_mid_sentence(value) and end < len(raw):
+            # Hold the boundary open and let the next piece complete it.
+            pending_start = start
+            continue
+        pending_start = None
         if value.strip():
             segments.append({
                 "segment_id": f"SEG-{len(segments) + 1:04d}",
@@ -355,6 +404,13 @@ def build_editor_segments(text: str) -> List[Dict[str, Any]]:
                 "end": end,
                 "text": value,
             })
+    if pending_start is not None and raw[pending_start:].strip():
+        segments.append({
+            "segment_id": f"SEG-{len(segments) + 1:04d}",
+            "start": pending_start,
+            "end": len(raw),
+            "text": raw[pending_start:],
+        })
     if not segments and raw:
         segments.append({
             "segment_id": "SEG-0001", "start": 0, "end": len(raw), "text": raw,
