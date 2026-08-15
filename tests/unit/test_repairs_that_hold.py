@@ -216,3 +216,100 @@ async def test_a_chunk_keeps_the_repairs_that_applied_when_one_quote_is_wrong():
     )
 
     assert "AAA" in result and "CCC" in result
+
+
+def test_a_chunk_wide_fault_is_narrowed_to_the_repair_that_caused_it():
+    # "source residue remains" is read off the whole chunk, so it accuses no
+    # repair in particular. A measured chunk lost all seven repairs to one.
+    issues = [
+        _issue("ISSUE-001", "alpha", "alpha", "A"),
+        _issue("ISSUE-002", "beta", "beta", "senior"),
+        _issue("ISSUE-003", "gamma", "gamma", "C"),
+    ]
+
+    def validate(text, items):
+        return ["source residue remains: senior"] if "senior" in text else []
+
+    result = apply_repairs_that_hold(
+        "alpha beta gamma",
+        issues,
+        apply_patches=_apply({"ISSUE-001", "ISSUE-002", "ISSUE-003"}),
+        validate=validate,
+    )
+
+    assert result.text == "A beta C"
+    assert [issue["issue_id"] for issue in result.dropped] == ["ISSUE-002"]
+    assert result.errors == []
+
+
+def test_two_repairs_that_only_break_the_chunk_together_are_both_kept_out():
+    # Neither replacement carries the residue alone; the two of them make it.
+    issues = [
+        _issue("ISSUE-001", "alpha", "alpha", "sen"),
+        _issue("ISSUE-002", "beta", "beta", "ior"),
+        _issue("ISSUE-003", "gamma", "gamma", "C"),
+    ]
+
+    def validate(text, items):
+        return ["source residue remains: senior"] if "sen ior" in text else []
+
+    result = apply_repairs_that_hold(
+        "alpha beta gamma",
+        issues,
+        apply_patches=_apply({"ISSUE-001", "ISSUE-002", "ISSUE-003"}),
+        validate=validate,
+    )
+
+    assert "senior" not in result.text.replace(" ", "")
+    assert result.errors == []
+    assert "ISSUE-003" not in {issue["issue_id"] for issue in result.dropped}
+
+
+def test_narrowing_stops_where_every_repair_offends():
+    issues = [
+        _issue("ISSUE-001", "alpha", "alpha", "senior"),
+        _issue("ISSUE-002", "beta", "beta", "senior"),
+    ]
+
+    def validate(text, items):
+        return ["source residue remains: senior"] if "senior" in text else []
+
+    result = apply_repairs_that_hold(
+        "alpha beta",
+        issues,
+        apply_patches=_apply({"ISSUE-001", "ISSUE-002"}),
+        validate=validate,
+    )
+
+    assert result.text == "alpha beta"
+    assert {issue["issue_id"] for issue in result.dropped} == {
+        "ISSUE-001", "ISSUE-002",
+    }
+
+
+def test_narrowing_costs_about_two_trials_per_repair():
+    # The trials are deterministic string work, but they are not free, and a
+    # chunk can carry a dozen findings. Nothing here may go exponential.
+    issues = [_issue(f"ISSUE-{index:03d}", "x", "x", "x") for index in range(12)]
+    issues.append(_issue("ISSUE-BAD", "alpha", "alpha", "senior"))
+    trials = []
+
+    def apply_patches(text, items):
+        trials.append(len(items))
+        for issue in items:
+            pair = issue["draft_replacement"]
+            text = text.replace(pair["draft"], pair["replacement"])
+        return text, [], []
+
+    def validate(text, items):
+        return ["source residue remains: senior"] if "senior" in text else []
+
+    result = apply_repairs_that_hold(
+        "alpha beta",
+        issues,
+        apply_patches=apply_patches,
+        validate=validate,
+    )
+
+    assert [issue["issue_id"] for issue in result.dropped] == ["ISSUE-BAD"]
+    assert len(trials) <= 3 * len(issues)

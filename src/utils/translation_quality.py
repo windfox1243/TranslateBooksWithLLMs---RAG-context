@@ -775,6 +775,86 @@ def _issue_ids_blamed_by(
     return {blame[str(error)] for error in errors or [] if str(error) in blame}
 
 
+def _trial_repair(
+    draft: str,
+    candidates: List[Dict[str, Any]],
+    *,
+    apply_patches,
+    validate,
+    pre_existing: set,
+):
+    """Apply one candidate set and report what is wrong with the result.
+
+    Faults the draft arrived with are excluded throughout: no repair caused
+    them, so no repair can be judged by them.
+    """
+
+    text, unresolved, errors = apply_patches(draft, candidates)
+    errors = [error for error in errors if error not in pre_existing]
+    if errors:
+        return text, unresolved, errors
+    unresolved_ids = {str(issue.get("issue_id") or "") for issue in unresolved}
+    applied = [
+        issue for issue in candidates
+        if str(issue.get("issue_id") or "") not in unresolved_ids
+    ]
+    errors = [
+        error for error in validate(text, applied) if error not in pre_existing
+    ]
+    return text, unresolved, errors
+
+
+def _largest_subset_that_validates(
+    draft: str,
+    candidates: List[Dict[str, Any]],
+    *,
+    apply_patches,
+    validate,
+    pre_existing: set,
+) -> List[Dict[str, Any]]:
+    """Find repairs that hold when the fault names none of them.
+
+    `source residue remains` and `protected_term_removed` are read off the
+    whole chunk, so they say a repair broke something without saying which --
+    and a measured chunk lost every repair it had to one of them. What the text
+    will not say, trying says: halve the batch, keep a half that validates,
+    and split further only where one does not. The trials are string work
+    against the deterministic validator, no model call, and there are about two
+    per repair.
+
+    A half that stands alone can still fail beside the other half, so the union
+    is validated before it is returned and the larger clean half is kept when
+    it does not hold.
+    """
+
+    def trial(subset):
+        if not subset:
+            return True
+        _, _, errors = _trial_repair(
+            draft,
+            subset,
+            apply_patches=apply_patches,
+            validate=validate,
+            pre_existing=pre_existing,
+        )
+        return not errors
+
+    def search(subset):
+        if not subset or trial(subset):
+            return subset
+        if len(subset) == 1:
+            return []
+        middle = len(subset) // 2
+        left = search(subset[:middle])
+        right = search(subset[middle:])
+        merged = left + right
+        if merged and len(merged) < len(subset) and trial(merged):
+            return merged
+        return left if len(left) >= len(right) else right
+
+    return search(candidates)
+
+
 def apply_repairs_that_hold(
     draft_text: str,
     issues: Iterable[Dict[str, Any]],
@@ -796,10 +876,11 @@ def apply_repairs_that_hold(
     those is pure loss, which is what the two other lost chunks were.
 
     So faults already true of the draft are excluded, errors that name one
-    repair drop that repair, and the rest is applied again. An error naming no
-    particular repair still fails the batch, because nothing else can be
-    concluded from it -- and neither do patches that collide, which are handled
-    by asking the editor to merge them rather than by choosing between them.
+    repair drop that repair, and the rest is applied again. A fault read off
+    the whole chunk names no repair, and there the batch is narrowed by trying
+    subsets of it instead. Patches that collide are the one case left whole:
+    they are two readings of one stretch of text, handled by asking the editor
+    to merge them rather than by choosing between them.
     """
 
     draft = str(draft_text or "")
@@ -809,28 +890,38 @@ def apply_repairs_that_hold(
     dropped: List[Dict[str, Any]] = []
     errors: List[str] = []
     while candidates:
-        text, unresolved, errors = apply_patches(draft, candidates)
-        errors = [error for error in errors if error not in pre_existing]
+        text, unresolved, errors = _trial_repair(
+            draft,
+            candidates,
+            apply_patches=apply_patches,
+            validate=validate,
+            pre_existing=pre_existing,
+        )
         if not errors:
-            unresolved_ids = {
-                str(issue.get("issue_id") or "") for issue in unresolved
-            }
-            applied = [
-                issue for issue in candidates
-                if str(issue.get("issue_id") or "") not in unresolved_ids
-            ]
-            errors = [
-                error for error in validate(text, applied)
-                if error not in pre_existing
-            ]
-            if not errors:
-                return SalvagedRepair(text, unresolved + dropped, [], dropped)
+            return SalvagedRepair(text, unresolved + dropped, [], dropped)
         blamed = _issue_ids_blamed_by(errors, candidates)
         keep = [
             issue for issue in candidates
             if str(issue.get("issue_id") or "").strip() not in blamed
         ]
-        if not blamed or len(keep) == len(candidates):
+        if not blamed and len(candidates) > 1 and not any(
+            str(error).startswith("local_patch_conflict:") for error in errors
+        ):
+            # Nothing in the text says which repair broke this, so ask the
+            # repairs themselves. Colliding patches are left out: they are one
+            # disagreement to be merged, not a batch to be narrowed.
+            keep = _largest_subset_that_validates(
+                draft,
+                candidates,
+                apply_patches=apply_patches,
+                validate=validate,
+                pre_existing=pre_existing,
+            )
+        if len(keep) == len(candidates):
+            break
+        if not keep:
+            dropped.extend(candidates)
+            candidates = []
             break
         dropped.extend(issue for issue in candidates if issue not in keep)
         candidates = keep
