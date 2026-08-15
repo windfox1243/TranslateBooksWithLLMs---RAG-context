@@ -458,6 +458,46 @@ def repeats_are_one_defect(issue: Dict[str, Any]) -> bool:
     return _category_key(issue.get("category")) in _REPEATABLE_CATEGORIES
 
 
+def replacement_already_in_draft(draft_text: str, issue: Dict[str, Any]) -> bool:
+    """Report an edit the draft already reads, written as an expansion.
+
+    The editor sometimes quotes part of a passage and answers with the whole of
+    it -- the title it meant to correct, the pair of shouted lines it meant to
+    complete -- when the draft already says exactly that. Applied literally the
+    edit would repeat the words that stand beside the span, so nothing applies
+    it, and the run spends two focused retries asking for an edit that has
+    nowhere to land before giving the chunk to review.
+
+    It is a no-op, and worth naming as one: the draft, at that place, already
+    reads what the editor asked for. An edit whose extra words are genuinely
+    absent is not one of these and is left alone.
+    """
+
+    replacement = issue.get("draft_replacement") if isinstance(issue, dict) else None
+    if not isinstance(replacement, dict):
+        return False
+    draft_span = str(replacement.get("draft") or "").strip()
+    target_span = str(replacement.get("replacement") or "").strip()
+    draft = str(draft_text or "")
+    if not draft_span or not target_span or draft_span == target_span:
+        return False
+    offset = target_span.find(draft_span)
+    if offset < 0:
+        return False
+    positions = [
+        match.start() for match in re.finditer(re.escape(draft_span), draft)
+    ]
+    if not positions:
+        return False
+    # Every occurrence, not merely one: a span that reads the replacement here
+    # and not there is an edit with somewhere to land.
+    return all(
+        draft[position - offset:position - offset + len(target_span)] == target_span
+        for position in positions
+        if position >= offset
+    ) and all(position >= offset for position in positions)
+
+
 def find_locator_spans(
     haystack: str,
     needle: str,
