@@ -1172,6 +1172,27 @@ def test_an_omission_repair_left_unapplied_is_still_reported():
     assert "replacement_not_applied_locally: Tam quan mùa thu" in errors
 
 
+def test_a_removed_name_is_fed_back_as_an_instruction_not_a_code():
+    from src.utils.translation_quality import describe_repair_failures
+
+    described = describe_repair_failures(
+        ["protected_term_removed: Tracen Academy"],
+        draft_text="Học viện (Tracen Academy) mở cửa. Tracen Academy lại mở.",
+    )
+
+    assert described[0].startswith("protected_term_removed: Tracen Academy -- ")
+    assert '"Tracen Academy"' in described[0]
+    assert "2 time(s)" in described[0]
+
+
+def test_a_failure_with_nothing_to_add_is_passed_through_unchanged():
+    from src.utils.translation_quality import describe_repair_failures
+
+    assert describe_repair_failures(
+        ["adapter_placeholder_sequence_changed", "repair output was empty"],
+    ) == ["adapter_placeholder_sequence_changed", "repair output was empty"]
+
+
 def test_pronoun_counting_narrator_hint_was_removed():
     import src.utils.translation_quality as quality
 
