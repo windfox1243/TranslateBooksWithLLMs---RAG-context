@@ -1,6 +1,10 @@
 # Changelog
 
-## 1.18.4 - 2026-08-15
+## Unreleased
+
+### Fixed
+
+- An editor edit may no longer take a character's name out of a line the source speaks it in. Given an addressing table saying how one character names another, an editor can read it as an instruction to replace the name with the role word — answering `Tomio, which one do you think Meek will go for?` with `Trainer, ...`, citing the very rule that says Apollo calls him Tomio, and labelling it a pronoun bleed though no pronoun was touched. The draft was right, the source says so, and nothing caught it: the applier found the span and applied it, and the repair validator protects only multiword proper names, so a one-word name was not protected at all. Such an edit is now dropped unless the source backs it, which it does in one of two ways: the replacement puts another name the source uses in the same place — `Toshio` for `Tomio` where the source made the slip of the tongue, `Goriko` for `Guriko` where the source spells it so — or the edit quotes, verbatim, a source line that does without the name. Replayed over 888 real findings from eight runs of one book, this drops two: the invented one, which had rewritten the line it claimed to be quoting as `going on a date with my trainer` for a source that says `with Tomio`, and one nickname respelling the source spells both ways. Every other name repair in those runs, including both correct respellings above, is untouched.
 
 ### Added
 

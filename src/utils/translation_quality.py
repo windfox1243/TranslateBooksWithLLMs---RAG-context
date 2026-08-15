@@ -20,6 +20,7 @@ _MULTIWORD_PROPER_NAME_RE = re.compile(
     r"(?<!\w)[A-Z][\w'’-]*(?:\s+[A-Z][\w'’-]*){1,4}(?!\w)",
     re.UNICODE,
 )
+_SINGLE_PROPER_NAME_RE = re.compile(r"(?<!\w)[A-Z][\w'’-]*(?!\w)", re.UNICODE)
 @dataclass(frozen=True)
 class ResidueFinding:
     """One high-confidence source-language span that survived in a draft."""
@@ -197,6 +198,136 @@ def filter_protected_span_editor_issues(
             for match in occurrences
         )
         if wholly_protected or destructively_overlaps:
+            rejected_ids.append(str(issue.get("issue_id") or "unknown"))
+        else:
+            retained.append(issue)
+    return retained, rejected_ids
+
+
+def _is_sentence_initial(text: str, start: int) -> bool:
+    """Report whether a capitalized token merely opens a sentence."""
+
+    before = text[:start].rstrip().rstrip("\"'“”‘’([«").rstrip()
+    return not before or before[-1] in ".!?…:;—–"
+
+
+def source_anchored_proper_names(source_text: str) -> List[str]:
+    """Return single words the source uses as names rather than as openers.
+
+    A capitalized word earns its place here by appearing capitalized somewhere
+    other than the start of a sentence and never appearing lower-case anywhere
+    in the same source. That is what separates `Tomio` from `Also` and `Date`,
+    which a quote can start with and a sentence can carry in either case. A
+    stutter is not a name either: `W-well` is a word the draft is supposed to
+    translate, and it is told apart by the single letter it opens with.
+    """
+
+    text = str(source_text or "")
+    if not text:
+        return []
+    lowercase_words = {
+        match.group(0) for match in _WORD_RE.finditer(text) if match.group(0).islower()
+    }
+    mid_sentence: Dict[str, bool] = {}
+    for match in _SINGLE_PROPER_NAME_RE.finditer(text):
+        value = match.group(0)
+        if len(value) < 2 or value.lower() in lowercase_words:
+            continue
+        segments = re.split(r"['’-]", value)
+        if len(segments[0]) < 2 or any(
+            segment.lower() in lowercase_words for segment in segments[1:]
+        ):
+            continue
+        if _is_sentence_initial(text, match.start()):
+            mid_sentence.setdefault(value, False)
+        else:
+            mid_sentence[value] = True
+    return [value for value, seen_mid_sentence in mid_sentence.items() if seen_mid_sentence]
+
+
+def _exact_occurrences(term: str, text: str) -> int:
+    return len(re.findall(rf"(?<!\w){re.escape(term)}(?!\w)", str(text or "")))
+
+
+def _quote_is_verbatim(source_text: str, quote: str) -> bool:
+    def collapse(value: str) -> str:
+        return re.sub(
+            r"\s+", " ", unicodedata.normalize("NFKC", str(value or "")),
+        ).strip()
+
+    collapsed = collapse(quote)
+    return bool(collapsed) and collapsed in collapse(source_text)
+
+
+def _removes_source_anchored_name(
+    source_text: str,
+    names: Iterable[str],
+    issue: Dict[str, Any],
+) -> bool:
+    replacement = issue.get("draft_replacement") if isinstance(issue, dict) else None
+    if not isinstance(replacement, dict):
+        return False
+    draft_span = str(replacement.get("draft") or "")
+    target_span = str(replacement.get("replacement") or "")
+    if not draft_span or not target_span:
+        return False
+    dropped = [
+        name for name in names
+        if _exact_occurrences(name, target_span)
+        < _exact_occurrences(name, draft_span)
+    ]
+    if not dropped:
+        return False
+    # A name written in place of a name is a respelling, and the source is
+    # where the new spelling came from: `Toshio` for `Tomio` where the source
+    # made the slip of the tongue, `Goriko` for `Guriko` where the source spells
+    # it that way. Nothing is being taken out of the draft.
+    if any(
+        name for name in names
+        if _exact_occurrences(name, target_span)
+        > _exact_occurrences(name, draft_span)
+    ):
+        return False
+    # Otherwise the edit has to show the source omitting the name, and it shows
+    # that by quoting the source correctly. A quote the source does not carry is
+    # not evidence -- one of these rewrote the line it claimed to be quoting.
+    quote = str(issue.get("source_quote") or "")
+    return not (
+        _quote_is_verbatim(source_text, quote)
+        and not any(_exact_occurrences(name, quote) for name in dropped)
+    )
+
+
+def filter_source_contradicting_name_edits(
+    source_text: str,
+    issues: Iterable[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], List[str]]:
+    """Reject edits that take out a name the source says at that very place.
+
+    Addressing rules tell the editor how a speaker names an addressee, and an
+    editor reading them can decide that a name the source puts in someone's
+    mouth ought to be a role word instead -- answering `Tomio, which one do you
+    think Meek will go for?` with `Trainer, ...` and citing the rule for Apollo
+    addressing Tomio as its authority. The draft was right and the source says
+    so; nothing downstream catches it, because a single-word name is not one of
+    the multiword spans `identity_preserving_proper_names` protects.
+
+    The source, at that place, is the whole test, and the edit has to show it:
+    either it puts another name the source uses in the same place -- `Toshio`
+    for `Tomio` where the source made the slip of the tongue, `Goriko` for
+    `Guriko` where the source spells it so -- or it quotes, verbatim, a source
+    line that does without the name. An edit that does neither is taking a name
+    out of the draft on its own authority, and the two real ones both did: one
+    quoted the source correctly and contradicted the quote, the other wrote
+    `going on a date with my trainer` for a source that says `with Tomio`.
+    """
+
+    text = str(source_text or "")
+    names = source_anchored_proper_names(text)
+    retained: List[Dict[str, Any]] = []
+    rejected_ids: List[str] = []
+    for issue in issues:
+        if names and _removes_source_anchored_name(text, names, issue):
             rejected_ids.append(str(issue.get("issue_id") or "unknown"))
         else:
             retained.append(issue)
