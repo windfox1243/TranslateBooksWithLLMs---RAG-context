@@ -1202,6 +1202,61 @@ def validate_editor_repair(
     return errors
 
 
+def describe_repair_failures(
+    errors: Iterable[str],
+    *,
+    draft_text: str = "",
+) -> List[str]:
+    """Restate validation failures as instructions a rewrite can act on.
+
+    The failures are reason codes, written for the record: `protected_term_removed:
+    Tracen Academy` says nothing about what the next attempt should do differently.
+    Two measured chunks were asked twice each to fix a name and answered with the
+    same text both times, then went to review. Spelled out -- this exact string,
+    this many times, do not translate it -- the instruction is one a model can
+    follow.
+
+    The codes themselves are left untouched; only this restatement goes into the
+    prompt, so telemetry and retry signatures still read what they always did.
+    """
+
+    draft = str(draft_text or "")
+    described: List[str] = []
+    for error in errors or []:
+        code = str(error)
+        prefix, _, detail = code.partition(": ")
+        detail = detail.strip()
+        if prefix == "protected_term_removed" and detail:
+            pattern = re.escape(detail)
+            if detail[:1].isalnum() and detail[-1:].isalnum():
+                pattern = rf"(?<!\w){pattern}(?!\w)"
+            occurrences = len(re.findall(pattern, draft, re.IGNORECASE))
+            described.append(
+                f'{code} -- keep the name "{detail}" exactly as spelled. It appears '
+                f"{occurrences} time(s) in the draft and must appear at least as "
+                "often in your output. Do not translate it, shorten it, drop it "
+                "from a parenthetical, or respell it."
+            )
+        elif prefix == "source residue remains" and detail:
+            described.append(
+                f'{code} -- "{detail}" is still in the source language. Translate '
+                "it; do not leave it as it stands."
+            )
+        elif prefix == "replacement_not_applied_locally" and detail:
+            described.append(
+                f'{code} -- the span "{detail}" was to be edited and your output '
+                "still reads it unchanged."
+            )
+        elif prefix == "replacement_missing_locally" and detail:
+            described.append(
+                f'{code} -- your output does not contain the agreed replacement '
+                f'"{detail}".'
+            )
+        else:
+            described.append(code)
+    return described
+
+
 def validate_plain_refinement_structure(draft_text: str, repaired_text: str) -> Optional[str]:
     """Validate non-language structural tokens used by plain-text adapters."""
 

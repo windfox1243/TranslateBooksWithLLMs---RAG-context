@@ -1807,6 +1807,7 @@ async def _run_chunk_reflection_pass_impl(
         apply_local_editor_patches,
         apply_repairs_that_hold,
         build_editor_segments,
+        describe_repair_failures,
         filter_protected_span_editor_issues,
         find_source_residue,
         identity_preserving_proper_names,
@@ -3297,7 +3298,9 @@ async def _run_chunk_reflection_pass_impl(
         if validation_errors:
             repair_feedback += (
                 "\n\nPREVIOUS REPAIR VALIDATION FAILURES:\n- "
-                + "\n- ".join(validation_errors)
+                + "\n- ".join(describe_repair_failures(
+                    validation_errors, draft_text=draft_translation,
+                ))
                 + "\nReturn a corrected complete translation."
             )
         repair_pair = generate_chunk_repair_prompt(
