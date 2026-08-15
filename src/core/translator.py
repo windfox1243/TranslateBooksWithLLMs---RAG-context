@@ -3096,12 +3096,20 @@ async def _run_chunk_reflection_pass_impl(
         ]
         previous_response_fingerprint = None
         identical_no_progress = 0
+        # What the last attempt was rejected for. Without it the three attempts
+        # are one question asked three times: every input to the prompt is
+        # fixed before the loop, so the second and third calls resample the
+        # same request at temperature zero and learn nothing from the answer
+        # that just failed.
+        previous_attempt_errors: List[str] = []
         for focused_attempt in range(1, 4):
             followup_prompt = _build_focused_locator_retry_prompt(
                 followup_base,
                 unresolved_issues,
                 followup_ids,
                 followup_reasons,
+                previous_attempt_errors=previous_attempt_errors,
+                previous_attempt_index=focused_attempt - 1,
             )
             followup_errors: List[str] = []
             followup_response = None
@@ -3213,6 +3221,13 @@ async def _run_chunk_reflection_pass_impl(
                 patch_errors.extend(
                     error for error in followup_errors if error not in patch_errors
                 )
+                # An attempt can fail without erroring: it answers cleanly and
+                # leaves issues unresolved. Measured, that is the case that put
+                # the third attempt back on the first attempt's exact prompt.
+                previous_attempt_errors = list(followup_errors) or [
+                    f"local_patch_unresolved:{issue.get('issue_id') or 'unknown'}"
+                    for issue in retry_unresolved
+                ]
                 if identical_no_progress >= 1:
                     patch_errors.append("local_patch_retry_no_progress")
                     break

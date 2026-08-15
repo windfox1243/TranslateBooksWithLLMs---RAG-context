@@ -70,8 +70,18 @@ def _build_focused_locator_retry_prompt(
     issues: List[Dict[str, Any]],
     invalid_ids: set[str],
     locator_errors: List[str],
+    *,
+    previous_attempt_errors: Optional[List[str]] = None,
+    previous_attempt_index: int = 0,
 ) -> str:
-    """Build a compact locator-only request from candidate draft neighborhoods."""
+    """Build a compact locator-only request from candidate draft neighborhoods.
+
+    A retry that already failed is told so. The caller may ask up to three
+    times, and every other input to this prompt is the same on each of them --
+    the same draft, the same issues, the same candidates -- so without the
+    rejection it just received the second call is the first one asked again,
+    and at temperature zero that is what it answers.
+    """
 
     from src.utils.translation_quality import build_editor_segments
 
@@ -88,6 +98,22 @@ def _build_focused_locator_retry_prompt(
                 segments, by_id, issue
             ),
         })
+    rejection = ""
+    if previous_attempt_errors:
+        # Numbered because two attempts can fail for the same reason, and the
+        # text alone would then rebuild the prompt that just failed.
+        rejection = (
+            f"\n\nATTEMPT {max(previous_attempt_index, 1)} OF THIS REQUEST WAS "
+            "REJECTED FOR:\n"
+            + json.dumps(
+                list(previous_attempt_errors),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            + "\nDo not send it again. Pick a different candidate segment, "
+            "narrow draft_replacement.draft until it occurs exactly once, or "
+            "change the issue to review_only with no draft_replacement."
+        )
     return (
         "Correct only the invalid exact-span locators below. Return the same "
         "reflection JSON schema with status needs_repair, only the corrected "
@@ -98,6 +124,7 @@ def _build_focused_locator_retry_prompt(
         "that issue to review_only with no draft_replacement.\n\n"
         "LOCATOR ERRORS:\n"
         + json.dumps(locator_errors, ensure_ascii=False, separators=(",", ":"))
+        + rejection
         + "\n\nINVALID ISSUES AND CANDIDATE SEGMENTS:\n"
         + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     )
