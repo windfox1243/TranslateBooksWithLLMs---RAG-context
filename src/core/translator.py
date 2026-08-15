@@ -1809,6 +1809,7 @@ async def _run_chunk_reflection_pass_impl(
         build_editor_segments,
         describe_repair_failures,
         filter_protected_span_editor_issues,
+        filter_source_contradicting_name_edits,
         find_source_residue,
         identity_preserving_proper_names,
         normalize_unique_issue_locators,
@@ -2743,6 +2744,31 @@ async def _run_chunk_reflection_pass_impl(
                 "Ignored editor changes that targeted complete protected entity spans.",
                 layer="senior_editor_reflection",
                 data={"issue_ids": protected_issue_ids},
+            )
+
+    retained_issues, contradicting_issue_ids = filter_source_contradicting_name_edits(
+        source_chunk,
+        reflection_result.issues,
+    )
+    if contradicting_issue_ids:
+        # Counted the same way as a protected-span drop: a chunk whose only
+        # finding was an edit against its own source reported none, and the
+        # warning is what says otherwise.
+        warning_count += len(contradicting_issue_ids)
+        reflection_result = ReflectionResult(
+            "needs_repair" if retained_issues else "no_issues",
+            retained_issues,
+            reflection_result.raw_text,
+            reflection_result.parse_status,
+            reflection_result.voice_observations,
+        )
+        if log_callback:
+            emit_progress_log(
+                log_callback,
+                "editor_source_contradicting_issues_ignored",
+                "Ignored editor edits that removed a name the source quotes there.",
+                layer="senior_editor_reflection",
+                data={"issue_ids": contradicting_issue_ids},
             )
 
     if not reflection_result.needs_repair:
