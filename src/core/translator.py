@@ -2766,7 +2766,7 @@ async def _run_chunk_reflection_pass_impl(
             emit_progress_log(
                 log_callback,
                 "editor_source_contradicting_issues_ignored",
-                "Ignored editor edits that removed a name the source quotes there.",
+                "Ignored editor edits that rewrote how the source names someone there.",
                 layer="senior_editor_reflection",
                 data={"issue_ids": contradicting_issue_ids},
             )

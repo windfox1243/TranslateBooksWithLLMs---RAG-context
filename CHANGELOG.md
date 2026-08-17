@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- An editor edit may no longer write a name over the title the source speaks in that line. The 1.18.5 guard read one direction only: it stopped the editor answering `Tomio, which one...` with `Trainer, ...`, and left it free to answer `"...Trainer."` with `"...Tomio."`, which a run of the same book then did — quoting the source line correctly, citing the addressing rule that says Apollo calls him Tomio, over a draft that had said `Huấn luyện viên` and was right. The rule now reads both ways. A name may be written into a line only where the source's own quotation of that line carries it; where the line instead calls someone by a title — a word the same source writes in lower case elsewhere, standing where a vocative stands, alone or set off by a comma — the edit is the addressing table overruling the source, and it is dropped. Replayed over 1083 recorded findings from thirteen runs of one book, this new direction rejects none of them, and it rejects exactly the reported edit.
+
+- Translating source text the draft had left untranslated is no longer mistaken for removing a name. A draft that copied `"Don't lose by a nose."` out of the source has to lose every word in it, `Don't` included, to become a translation, and the 1.18.5 guard counted that as an edit dropping a name — blocking the repair and leaving the English in the chunk. Three of the six rejections it makes over those thirteen runs were this. A capitalized word now counts as removed only when the words around it in the draft are not a run the source carries verbatim.
+
 ## 1.18.5 - 2026-08-15
 
 ### Fixed
