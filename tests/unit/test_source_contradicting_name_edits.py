@@ -1,9 +1,10 @@
-"""An edit may not remove a name the source speaks at that very place.
+"""An edit may not rewrite how the source names someone at that very place.
 
-Every case here is a real editor finding from one book: two edits that renamed
-a vocative the source had written plainly, and two that respelled a name the
-way the source spelled it there. Only the first pair is wrong, and the source
-quote is what tells them apart.
+Every case here is a real editor finding from one book: edits that renamed a
+vocative the source had written plainly, one that wrote a name over the title
+the source speaks, and two that respelled a name the way the source spelled it
+there. Only the rewrites are wrong, and the source quote is what tells them
+apart.
 """
 
 from src.utils.translation_quality import (
@@ -109,6 +110,97 @@ def test_an_opener_that_is_not_a_name_does_not_block_an_edit():
         "Hẹn hò hay không, tớ chỉ muốn đón Giáng sinh với huấn luyện viên!",
     )
     retained, rejected = filter_source_contradicting_name_edits(SOURCE, [edit])
+    assert retained == [edit]
+    assert rejected == []
+
+
+TITLE_SOURCE = (
+    "I grinned and stopped outside Tomio’s door. I was the only one gunning "
+    "for Tomio.\n"
+    "“But Apollo, why are you so worked up? Who gives me chocolate shouldn’t "
+    "matter to you, right?”\n"
+    "I peeked up at him through my bangs. Tomio, ever oblivious, just tilted "
+    "his head.\n"
+    "“...Trainer. This is, um… handmade ganache cake...”\n"
+    "So much for pretending my trainer was anyone else’s.\n"
+)
+
+
+def test_the_title_the_source_speaks_is_not_replaced_by_the_stored_vocative():
+    # The real one: an addressing rule says Apollo calls him `Tomio`, and the
+    # editor read it as licence to rewrite the line where she calls him by his
+    # title -- a line whose source it quoted correctly as `...Trainer.`
+    retained, rejected = filter_source_contradicting_name_edits(
+        TITLE_SOURCE,
+        [issue("...Trainer.", "...Huấn luyện viên.", "...Tomio.")],
+    )
+    assert retained == []
+    assert rejected == ["ISSUE-01"]
+
+
+def test_the_pronoun_repairs_in_the_same_response_are_kept():
+    # Three of the four findings in that response were right, and none of them
+    # is about naming: they swap the second-person pronoun the pair uses.
+    edits = [
+        issue(
+            "But Apollo, why are you so worked up?",
+            "Nhưng Apollo, tại sao cậu lại kích động thế?",
+            "Nhưng Apollo, tại sao em lại kích động thế?",
+            issue_id="ISSUE-02",
+        ),
+        issue(
+            "Who gives me chocolate shouldn’t matter to you, right?",
+            "Ai tặng sô-cô-la cho tôi đâu có quan trọng với cậu, đúng không?",
+            "Ai tặng sô-cô-la cho anh đâu có quan trọng với em, đúng không?",
+            issue_id="ISSUE-03",
+        ),
+    ]
+    retained, rejected = filter_source_contradicting_name_edits(TITLE_SOURCE, edits)
+    assert retained == edits
+    assert rejected == []
+
+
+def test_a_name_the_quoted_line_does_speak_may_be_written_in():
+    # Vietnamese says `you` with a name often enough; the source quoting the
+    # name in that line is what makes it the source's own naming.
+    edit = issue(
+        "But Apollo, why are you so worked up?",
+        "Nhưng mà, tại sao cậu lại kích động thế?",
+        "Nhưng Apollo à, tại sao em lại kích động thế?",
+    )
+    retained, rejected = filter_source_contradicting_name_edits(TITLE_SOURCE, [edit])
+    assert retained == [edit]
+    assert rejected == []
+
+
+def test_a_capitalized_word_inside_a_sentence_is_not_an_address():
+    # `Trainer` counts because it stands where a vocative stands. A capitalized
+    # word in the middle of a sentence is just a word, and blocks nothing.
+    source = "Tomio met Trainer Amami at the gate. My trainer waved back.\n"
+    edit = issue(
+        "Tomio met Trainer Amami at the gate.",
+        "Anh ấy gặp cô Amami ở cổng.",
+        "Tomio gặp cô Amami ở cổng.",
+    )
+    retained, rejected = filter_source_contradicting_name_edits(source, [edit])
+    assert retained == [edit]
+    assert rejected == []
+
+
+def test_translating_source_left_in_the_draft_is_not_removing_a_name():
+    # Replayed over the runs, this is what the first version of the filter got
+    # wrong: a draft that had copied the source keeps every capitalized word in
+    # it, and translating the line has to lose them all.
+    source = (
+        "Tomio just sighed at me.\n"
+        "“Stop getting blocked by mobs.” “Don’t lose by a nose.” “More fans.”\n"
+    )
+    edit = issue(
+        "“Stop getting blocked by mobs.” “Don’t lose by a nose.” “More fans.”",
+        "“Đừng để bị chặn bởi đám đông.” “Don’t lose by a nose.” “More fans.”",
+        "“Đừng để bị chặn bởi đám đông.” “Đừng thua sát nút.” “Nhiều fan hơn.”",
+    )
+    retained, rejected = filter_source_contradicting_name_edits(source, [edit])
     assert retained == [edit]
     assert rejected == []
 

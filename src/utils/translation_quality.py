@@ -259,6 +259,30 @@ def _quote_is_verbatim(source_text: str, quote: str) -> bool:
     return bool(collapsed) and collapsed in collapse(source_text)
 
 
+def _sits_in_untranslated_source(draft_span: str, source_text: str, name: str) -> bool:
+    """Report a name that vanishes only because the draft was still in source.
+
+    A draft that copied `"Don't lose by a nose."` out of the source has to lose
+    every word in it, `Don't` included, to become a translation. What tells that
+    apart from an edit dropping a name is the company the word keeps: a run of
+    words around it that the source carries verbatim is the source itself,
+    sitting in the draft untranslated.
+    """
+
+    words = list(_WORD_RE.finditer(draft_span))
+    for position, match in enumerate(words):
+        if match.group(0) != name:
+            continue
+        for start in range(max(0, position - 2), position + 1):
+            end = start + 2
+            if end >= len(words):
+                continue
+            run = draft_span[words[start].start():words[end].end()]
+            if _quote_is_verbatim(source_text, run):
+                return True
+    return False
+
+
 def _removes_source_anchored_name(
     source_text: str,
     names: Iterable[str],
@@ -275,6 +299,10 @@ def _removes_source_anchored_name(
         name for name in names
         if _exact_occurrences(name, target_span)
         < _exact_occurrences(name, draft_span)
+    ]
+    dropped = [
+        name for name in dropped
+        if not _sits_in_untranslated_source(draft_span, source_text, name)
     ]
     if not dropped:
         return False
@@ -296,6 +324,72 @@ def _removes_source_anchored_name(
         _quote_is_verbatim(source_text, quote)
         and not any(_exact_occurrences(name, quote) for name in dropped)
     )
+
+
+def _source_address_titles(source_text: str, quote: str) -> List[str]:
+    """Return words the quoted line uses to call someone by title, not by name.
+
+    `Trainer` in `"...Trainer."` is one: the source capitalizes it because it is
+    being used to address someone, and the same source writes `my trainer` in
+    lower case, which is what tells a title apart from a name. A title earns the
+    label only where a vocative can stand -- alone in the quote, set off by a
+    comma, or closing it -- so an ordinary capitalized word inside a sentence
+    stays out of it.
+    """
+
+    lowercase_words = {
+        match.group(0)
+        for match in _WORD_RE.finditer(str(source_text or ""))
+        if match.group(0).islower()
+    }
+    words = [match.group(0) for match in _WORD_RE.finditer(quote)]
+    titles: List[str] = []
+    for match in _SINGLE_PROPER_NAME_RE.finditer(quote):
+        value = match.group(0)
+        if len(value) < 2 or value.lower() not in lowercase_words:
+            continue
+        before = quote[: match.start()].rstrip()
+        after = quote[match.end():].strip()
+        if (
+            len(words) == 1
+            or before.endswith(",")
+            or after.startswith(",")
+            or after in {"", ".", "!", "?", "...", "…", "—", "–"}
+        ):
+            titles.append(value)
+    return titles
+
+
+def _renames_a_source_title(
+    source_text: str,
+    names: Iterable[str],
+    issue: Dict[str, Any],
+) -> bool:
+    """Report an edit that writes a name over a title the source speaks."""
+
+    replacement = issue.get("draft_replacement") if isinstance(issue, dict) else None
+    if not isinstance(replacement, dict):
+        return False
+    draft_span = str(replacement.get("draft") or "")
+    target_span = str(replacement.get("replacement") or "")
+    if not draft_span or not target_span:
+        return False
+    inserted = [
+        name for name in names
+        if _exact_occurrences(name, target_span)
+        > _exact_occurrences(name, draft_span)
+    ]
+    if not inserted:
+        return False
+    quote = str(issue.get("source_quote") or "")
+    if not _quote_is_verbatim(source_text, quote):
+        return False
+    # The source naming the character in that line is what licenses the name,
+    # and a line that names nobody licenses nothing. A title standing where the
+    # source calls someone is what the draft was translating.
+    if any(_exact_occurrences(name, quote) for name in inserted):
+        return False
+    return bool(_source_address_titles(source_text, quote))
 
 
 def filter_source_contradicting_name_edits(
@@ -320,6 +414,15 @@ def filter_source_contradicting_name_edits(
     out of the draft on its own authority, and the two real ones both did: one
     quoted the source correctly and contradicted the quote, the other wrote
     `going on a date with my trainer` for a source that says `with Tomio`.
+
+    The same rule reads backwards, because the same editor makes the same
+    mistake in the other direction: answering `"...Trainer."` with `"...Tomio."`
+    and citing the rule again, this time to put the name in. The source calls
+    him by his title there and the draft said so. A name may be written into a
+    line only where the source's own quotation of that line carries it; where
+    the line instead carries a title -- a word the same source writes in lower
+    case elsewhere, standing where a vocative stands -- the edit is the rule
+    overruling the source, and it is dropped.
     """
 
     text = str(source_text or "")
@@ -327,7 +430,10 @@ def filter_source_contradicting_name_edits(
     retained: List[Dict[str, Any]] = []
     rejected_ids: List[str] = []
     for issue in issues:
-        if names and _removes_source_anchored_name(text, names, issue):
+        if names and (
+            _removes_source_anchored_name(text, names, issue)
+            or _renames_a_source_title(text, names, issue)
+        ):
             rejected_ids.append(str(issue.get("issue_id") or "unknown"))
         else:
             retained.append(issue)
