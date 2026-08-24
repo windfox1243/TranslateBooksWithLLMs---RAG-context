@@ -25,6 +25,12 @@ function withToken(url) {
 
 /**
  * Handle API errors consistently
+ *
+ * The backend pairs a short `error` label with a `message` holding the actual
+ * reason and, usually, the fix ("add the host to LLM_ENDPOINT_ALLOWLIST").
+ * Keeping only the label left users with an unactionable one-liner and nothing
+ * in the logs (issue #263), so both parts are surfaced.
+ *
  * @param {Response} response - Fetch response
  * @returns {Promise<Object>} Parsed error data
  */

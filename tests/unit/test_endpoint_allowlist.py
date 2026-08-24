@@ -49,6 +49,48 @@ def test_local_and_private_endpoints_are_allowed(endpoint):
 
 
 @pytest.mark.parametrize('endpoint', [
+    # A container / LXC / compose service name: no dot, so only an internal
+    # resolver can answer it.
+    'http://ollama:11434/api/generate',
+    'http://nas:1234/v1/chat/completions',
+    # Names a home router or an mDNS responder hands out.
+    'http://ollama.local:11434/api/generate',
+    'http://ollama.local.:11434/api/generate',  # trailing dot = FQDN form
+    'http://nas.lan:11434/api/generate',
+    'http://pve.home.arpa:11434/api/generate',
+    'http://gpu.home:11434/api/generate',
+    'http://llm.internal:11434/api/generate',
+    'http://llm.intranet:11434/api/generate',
+    'http://llm.corp:11434/api/generate',
+    'http://llm.private:11434/api/generate',
+    # Tailscale: MagicDNS name, shared-address-space IPv4 (RFC 6598), and the
+    # tailnet's IPv6 range.
+    'http://ollama.tail1234.ts.net:11434/api/generate',
+    'http://100.101.102.103:11434/api/generate',
+    'http://[fd7a:115c:a1e0::1]:11434/api/generate',
+])
+def test_private_network_hostnames_are_allowed(endpoint):
+    """Issue #263: a self-hosted backend reached by name, not by literal IP.
+
+    v1.5.0 accepted only literal private addresses, which broke every LAN,
+    container and tailnet deployment that addresses its LLM by hostname.
+    """
+    assert EndpointValidator.validate(endpoint) == (True, None)
+
+
+@pytest.mark.parametrize('endpoint', [
+    'http://8.8.8.8/api/generate',
+    'https://ollama.example.com/api/generate',
+    'https://llm.evil.io:11434/api/generate',
+])
+def test_public_hosts_stay_rejected(endpoint):
+    """Widening the local rules must not open the public internet."""
+    ok, message = EndpointValidator.validate(endpoint)
+    assert ok is False
+    assert 'LLM_ENDPOINT_ALLOWLIST' in message
+
+
+@pytest.mark.parametrize('endpoint', [
     OPENAI_DEFAULT_ENDPOINT,
     OPENAI_ALT_ENDPOINT,  # subdomain rule
     'https://openrouter.ai/api/v1/chat/completions',
@@ -219,6 +261,57 @@ def test_gemini_endpoint_field_is_inert(translate_app, monkeypatch):
     ))
     assert resp.status_code == 200
     assert len(state_manager.created) == 1
+
+
+@pytest.mark.parametrize('endpoint', [
+    'https://ollama.example.com/api/generate',  # not allowlisted
+    'ollama.local:11434',                       # not even a URL
+])
+def test_inert_endpoint_field_never_blocks_a_cloud_job(translate_app, monkeypatch, endpoint):
+    """Issue #263: the frontend sends llm_api_endpoint for every provider.
+
+    Gemini never reads it, so a stale value in the Ollama field must not fail
+    the job before it starts. This is the path where the UI looked healthy
+    (the model list comes from the provider API) yet the translation 400'd.
+    """
+    client, state_manager, _started = translate_app
+    monkeypatch.setenv('GEMINI_API_KEY', 'env-gemini-key')
+    resp = client.post('/api/translate', json=_payload(
+        llm_provider='gemini',
+        model='gemini-2.0-flash',
+        llm_api_endpoint=endpoint,
+        gemini_api_key='__USE_ENV__',
+    ))
+    assert resp.status_code == 200
+    assert len(state_manager.created) == 1
+
+
+def test_rejected_endpoint_reply_carries_an_actionable_message(translate_app):
+    """The label alone is unactionable, so the reason must travel with it."""
+    client, _state_manager, _started = translate_app
+    resp = client.post('/api/translate', json=_payload(
+        llm_provider='ollama',
+        model='qwen3:14b',
+        llm_api_endpoint='https://ollama.example.com/api/generate',
+    ))
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body['error'] == 'Endpoint not allowed'
+    assert 'ollama.example.com' in body['message']
+    assert 'LLM_ENDPOINT_ALLOWLIST' in body['message']
+
+
+def test_hostname_ollama_endpoint_starts_a_job(translate_app):
+    """The exact configuration reported in issue #263."""
+    client, state_manager, started = translate_app
+    resp = client.post('/api/translate', json=_payload(
+        llm_provider='ollama',
+        model='qwen3:14b',
+        llm_api_endpoint='http://ollama.local:11434/api/generate',
+    ))
+    assert resp.status_code == 200
+    assert len(state_manager.created) == 1
+    assert len(started) == 1
 
 
 def test_default_ollama_endpoint_needs_no_key(translate_app):

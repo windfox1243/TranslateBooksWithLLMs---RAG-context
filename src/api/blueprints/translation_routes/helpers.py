@@ -186,14 +186,25 @@ def _editor_endpoint_target(config):
 def _pairing_error(provider, requested_endpoint, request_key):
     """Reject a disallowed endpoint, or an overridden endpoint that would be
     paired with the server's stored key for `provider`."""
+    provider = (provider or 'ollama').lower()
+
+    # The frontend sends llm_api_endpoint unconditionally, so a provider that
+    # never reads it still carries whatever host sits in the Ollama field. That
+    # value reaches no HTTP client, so validating it would reject a perfectly
+    # valid cloud job over a stale field (upstream issue #263).
+    if provider not in _ENDPOINT_CONSUMING_PROVIDERS:
+        return None
+
     ok, err = EndpointValidator.validate(requested_endpoint)
     if not ok:
+        logger.warning(
+            f"Rejected client-supplied endpoint for provider '{provider}': {err}"
+        )
         return jsonify({"error": "Endpoint not allowed", "message": err}), 400
 
     if not _is_provider_endpoint_override(provider, requested_endpoint):
         return None
 
-    provider = (provider or 'ollama').lower()
     if provider in _KEY_PROVIDERS and (not request_key or request_key == USE_ENV_SENTINEL):
         # Only refuse when a stored key actually exists, i.e. when there is
         # something to leak. 'openai' also covers keyless local servers

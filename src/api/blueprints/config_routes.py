@@ -566,6 +566,7 @@ def create_config_blueprint(server_session_id=None):
         """
         ok, err = EndpointValidator.validate(api_endpoint)
         if not ok:
+            logger.warning("Rejected client-supplied OpenAI endpoint: %s", err)
             return jsonify({"error": err}), 400
 
         # When the caller picks a host other than the configured one, the
@@ -712,6 +713,7 @@ def create_config_blueprint(server_session_id=None):
         # No key is involved here, so only the allowlist applies.
         ok, err = EndpointValidator.validate(ollama_base_from_ui)
         if not ok:
+            logger.warning("Rejected client-supplied Ollama endpoint: %s", err)
             return jsonify({"error": err}), 400
 
         try:

@@ -262,7 +262,15 @@ Browse models: [build.nvidia.com](https://build.nvidia.com/)
 
 ## Endpoint Allowlist
 
-The web API lets a request choose the endpoint the server calls, so the server checks that endpoint against an allowlist before using it. Accepted out of the box: the known provider hosts (`api.openai.com`, `generativelanguage.googleapis.com`, `openrouter.ai`, `api.mistral.ai`, `api.deepseek.com`, `api.poe.com`, `integrate.api.nvidia.com`), every `*_API_ENDPOINT` configured in your `.env`, and any loopback, LAN or `host.docker.internal` address so self-hosted Ollama, LM Studio, llama.cpp and vLLM keep working. Anything else returns HTTP 400.
+The web API lets a request choose the endpoint the server calls, so the server checks that endpoint against an allowlist before using it. Accepted out of the box:
+
+- the known provider hosts (`api.openai.com`, `generativelanguage.googleapis.com`, `openrouter.ai`, `api.mistral.ai`, `api.deepseek.com`, `api.poe.com`, `integrate.api.nvidia.com`);
+- every `*_API_ENDPOINT` configured in your `.env`;
+- anything on your own network, so self-hosted Ollama, LM Studio, llama.cpp and vLLM keep working: loopback and LAN addresses (including `100.64.0.0/10`, the range Tailscale uses), `localhost`, `host.docker.internal`, a single-label hostname such as `http://ollama:11434` (a Docker service or LXC name), and any host under `.local`, `.lan`, `.home`, `.home.arpa`, `.internal`, `.intranet`, `.corp`, `.private` or `.ts.net`.
+
+Anything else returns HTTP 400 with the rejected host and the fix in the response, and a `WARNING` line in the server log.
+
+The endpoint is only checked for the providers that actually read it (`ollama`, `openai`, `nim`). The web UI sends the field with every provider, so a stale value there never blocks a Gemini or OpenRouter job.
 
 To allow a self-hosted gateway on a public hostname, add it to `LLM_ENDPOINT_ALLOWLIST` in `.env` (comma-separated; subdomains of a listed host are covered):
 
