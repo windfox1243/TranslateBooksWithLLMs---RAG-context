@@ -266,9 +266,10 @@ The web API lets a request choose the endpoint the server calls, so the server c
 
 - the known provider hosts (`api.openai.com`, `generativelanguage.googleapis.com`, `openrouter.ai`, `api.mistral.ai`, `api.deepseek.com`, `api.poe.com`, `integrate.api.nvidia.com`);
 - every `*_API_ENDPOINT` configured in your `.env`;
-- anything on your own network, so self-hosted Ollama, LM Studio, llama.cpp and vLLM keep working: loopback and LAN addresses (including `100.64.0.0/10`, the range Tailscale uses), `localhost`, `host.docker.internal`, a single-label hostname such as `http://ollama:11434` (a Docker service or LXC name), and any host under `.local`, `.lan`, `.home`, `.home.arpa`, `.internal`, `.intranet`, `.corp`, `.private` or `.ts.net`.
+- anything on your own network, so self-hosted Ollama, LM Studio, llama.cpp and vLLM keep working: loopback and LAN addresses (including `100.64.0.0/10`, the range Tailscale uses), `localhost`, `host.docker.internal`, a single-label hostname such as `http://ollama:11434` (a Docker service or LXC name), and any host under `.local`, `.lan`, `.home`, `.home.arpa`, `.internal`, `.intranet`, `.corp`, `.private` or `.ts.net`;
+- any other hostname that **resolves entirely to your local network**, so a LAN machine named under a domain you own (`ai-server.example.com` answering `192.168.1.50` from your internal DNS) works without any configuration. The lookup only happens for a host none of the rules above accepted, and the verdict is cached for a minute.
 
-Anything else returns HTTP 400 with the rejected host and the fix in the response, and a `WARNING` line in the server log.
+Anything else returns HTTP 400 with the rejected host and the fix in the response, and a `WARNING` line in the server log. A host that resolves to a public address, or does not resolve at all, is rejected.
 
 The endpoint is only checked for the providers that actually read it (`ollama`, `openai`, `nim`). The web UI sends the field with every provider, so a stale value there never blocks a Gemini or OpenRouter job.
 

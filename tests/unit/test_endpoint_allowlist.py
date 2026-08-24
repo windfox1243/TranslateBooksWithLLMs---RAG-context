@@ -8,6 +8,7 @@ Two guards are covered:
    server default must carry its own API key, so the `.env` key never travels
    to a host the request chose.
 """
+import socket
 from types import SimpleNamespace
 
 import pytest
@@ -16,7 +17,33 @@ from flask import Flask
 import src.config as _config
 from src.api.api_keys import resolve_api_key
 from src.api.blueprints.translation_routes import create_translation_blueprint
+from src.api.services import endpoint_validator as _endpoint_validator
 from src.api.services.endpoint_validator import EndpointValidator
+
+# Names the stub resolver knows about. Everything else is treated as NXDOMAIN,
+# which is what a public host that nobody points at a LAN box behaves like.
+_FAKE_DNS = {
+    'ai-server.example.com': ['192.168.1.50'],
+    'llm.example.org': ['10.2.3.4', '10.2.3.5'],
+    'split.example.net': ['10.0.0.9', '93.184.216.34'],  # private + public
+    'public.example.com': ['93.184.216.34'],
+}
+
+
+@pytest.fixture(autouse=True)
+def stub_resolver(monkeypatch):
+    """Keep the resolution fallback hermetic: no test may touch real DNS."""
+    def fake_getaddrinfo(host, *_args, **_kwargs):
+        addresses = _FAKE_DNS.get((host or '').lower())
+        if not addresses:
+            raise socket.gaierror(-2, 'Name or service not known')
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (a, 0))
+                for a in addresses]
+
+    monkeypatch.setattr(socket, 'getaddrinfo', fake_getaddrinfo)
+    _endpoint_validator._resolution_cache.clear()
+    yield
+    _endpoint_validator._resolution_cache.clear()
 
 # Inert placeholder — never a real credential.
 FAKE_KEY = 'sk-xxxxxxxx'
@@ -82,10 +109,66 @@ def test_private_network_hostnames_are_allowed(endpoint):
     'http://8.8.8.8/api/generate',
     'https://ollama.example.com/api/generate',
     'https://llm.evil.io:11434/api/generate',
+    'https://public.example.com/api/generate',      # resolves, but to a public IP
+    'https://split.example.net/api/generate',       # one private answer is not enough
 ])
 def test_public_hosts_stay_rejected(endpoint):
     """Widening the local rules must not open the public internet."""
     ok, message = EndpointValidator.validate(endpoint)
+    assert ok is False
+    assert 'LLM_ENDPOINT_ALLOWLIST' in message
+
+
+@pytest.mark.parametrize('endpoint', [
+    'http://ai-server.example.com:11434/api/generate',
+    'http://llm.example.org:11434/api/generate',
+])
+def test_hostname_resolving_to_the_lan_is_allowed(endpoint):
+    """Issue #263: a LAN box named under a domain the operator owns.
+
+    Nothing about the name says "local", so only resolution can tell. The
+    endpoint is reachable and private, so the job must be allowed to start.
+    """
+    assert EndpointValidator.validate(endpoint) == (True, None)
+
+
+def test_resolution_is_only_a_last_resort(monkeypatch):
+    """The fast paths must never wait on a resolver."""
+    def explode(*_args, **_kwargs):
+        raise AssertionError('resolver must not be consulted')
+
+    monkeypatch.setattr(socket, 'getaddrinfo', explode)
+    for endpoint in (
+        'http://localhost:11434/api/generate',        # syntactic local rule
+        'http://192.168.1.50:11434/api/generate',     # literal private address
+        'http://ollama.local:11434/api/generate',     # private-network suffix
+        'https://api.openai.com/v1/chat/completions',  # allowlisted host
+        'ftp://api.openai.com/x',                     # rejected before any lookup
+    ):
+        EndpointValidator.validate(endpoint)
+
+
+def test_resolution_verdict_is_cached():
+    """A polled endpoint must not trigger a lookup per request."""
+    calls = []
+    real = socket.getaddrinfo
+
+    def counting(host, *args, **kwargs):
+        calls.append(host)
+        return real(host, *args, **kwargs)
+
+    socket.getaddrinfo = counting
+    try:
+        for _ in range(3):
+            assert EndpointValidator.validate(
+                'http://ai-server.example.com:11434/api/generate') == (True, None)
+    finally:
+        socket.getaddrinfo = real
+    assert len(calls) == 1
+
+
+def test_unresolvable_host_is_rejected_without_raising():
+    ok, message = EndpointValidator.validate('http://does-not-exist.example.com/x')
     assert ok is False
     assert 'LLM_ENDPOINT_ALLOWLIST' in message
 

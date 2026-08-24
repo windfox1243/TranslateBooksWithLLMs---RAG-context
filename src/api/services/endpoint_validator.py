@@ -14,8 +14,9 @@ Deliberate trade-off — loopback and private ranges are permitted, and so
 are the hostnames that can only name a machine on such a network. Self-hosted
 backends (Ollama, LM Studio, llama.cpp, vLLM) run on ``localhost``, on a LAN
 address, behind ``host.docker.internal``, or on a name the operator's own
-resolver answers (a container or LXC hostname, ``nas.local``, a tailnet name),
-so rejecting those would break the project's primary use case. The consequence is that this validator
+resolver answers (a container or LXC hostname, ``nas.local``, a tailnet name,
+or a subdomain of a domain they own pointing at a LAN box), so rejecting those
+would break the project's primary use case. The consequence is that this validator
 allows SSRF against the operator's own network. That is only acceptable
 because of the second guard, enforced at the call sites: an endpoint that
 differs from the server default is treated as an override and never paired
@@ -24,6 +25,8 @@ host, so the worst an attacker gets is an unauthenticated probe of a network
 they must already be able to reach the server from.
 """
 import ipaddress
+import socket
+import time
 from typing import Optional, Set, Tuple
 from urllib.parse import urlparse
 
@@ -83,6 +86,13 @@ _LOCAL_SUFFIXES = (
 # Python's ipaddress does not report it as private, but it is never publicly
 # routable, so an endpoint on it is as local as a 10/8 address.
 _SHARED_ADDRESS_SPACE = ipaddress.ip_network('100.64.0.0/10')
+
+# Resolution verdicts are cached for a short while: the UI polls /api/models
+# while it waits for Ollama, and a hostname needing a lookup would otherwise
+# pay for one on every poll. The TTL is deliberately short so that re-pointing
+# a DNS record takes effect without a restart.
+_RESOLUTION_TTL_SECONDS = 60
+_resolution_cache = {}
 
 
 class EndpointValidator:
@@ -145,6 +155,47 @@ class EndpointValidator:
                 or (address.version == 4 and address in _SHARED_ADDRESS_SPACE))
 
     @staticmethod
+    def resolves_to_private_network(hostname: str) -> bool:
+        """Return True when every address ``hostname`` resolves to is local.
+
+        The last resort for a host the syntactic rules and the allowlist both
+        reject. An operator is free to name a LAN box under a domain they own
+        ("ai-server.example.com" answering 192.168.1.50 from an internal
+        resolver), and refusing that was the remaining half of issue #263.
+
+        Only the operator's own network is opened up, which the module docstring
+        already accepts: an attacker-controlled name that resolves to a private
+        address buys nothing more than the private literal it points at, and the
+        pairing rule at the call sites still keeps every stored credential away
+        from a request-chosen host. A name that fails to resolve, or that
+        answers with a single public address, stays rejected.
+        """
+        if not hostname:
+            return False
+
+        host = hostname.strip().lower().rstrip('.')
+        cached = _resolution_cache.get(host)
+        now = time.monotonic()
+        if cached is not None and now - cached[0] < _RESOLUTION_TTL_SECONDS:
+            return cached[1]
+
+        try:
+            infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+        except (socket.gaierror, UnicodeError, OSError, ValueError):
+            # Unresolvable, so unusable as an endpoint anyway. Cached too: a
+            # broken resolver must not be re-queried on every poll.
+            _resolution_cache[host] = (now, False)
+            return False
+
+        addresses = {info[4][0] for info in infos}
+        verdict = bool(addresses) and all(
+            EndpointValidator.is_local_host(address.split('%')[0])
+            for address in addresses
+        )
+        _resolution_cache[host] = (now, verdict)
+        return verdict
+
+    @staticmethod
     def validate(endpoint: Optional[str]) -> Tuple[bool, Optional[str]]:
         """Check a request-supplied endpoint URL.
 
@@ -183,7 +234,15 @@ class EndpointValidator:
         if host in allowed or any(host.endswith('.' + h) for h in allowed):
             return True, None
 
+        # Last resort, and the only branch that performs I/O: a name under a
+        # public suffix may still point at the operator's own machine. Reached
+        # only for a host that is about to be rejected, so the common paths
+        # never wait on a resolver.
+        if EndpointValidator.resolves_to_private_network(host):
+            return True, None
+
         return False, (
             f"Endpoint host '{host}' is not allowed. "
+            "It does not resolve to your local network. "
             "Add it to LLM_ENDPOINT_ALLOWLIST in .env to permit it."
         )
