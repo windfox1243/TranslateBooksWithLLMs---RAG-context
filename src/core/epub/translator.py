@@ -967,7 +967,7 @@ def _precount_chunks_plain_text(
         if body is None:
             return 0
 
-        paragraphs, paragraph_tags, _ = extract_plain_paragraphs(body)
+        paragraphs, paragraph_tags, _, _ = extract_plain_paragraphs(body)
         if not paragraphs:
             return 0
 

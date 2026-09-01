@@ -22,16 +22,14 @@ from typing import List
 import pytest
 from lxml import etree
 
+import src.core.epub.translator as translator_module
 from src.config import INPUT_TAG_IN, INPUT_TAG_OUT
+from src.core.common.plain_text_pipeline import build_plain_segments
 from src.core.epub.plain_extractor import (
     extract_plain_paragraphs,
     replace_body_with_paragraphs,
 )
-from src.core.common.plain_text_pipeline import build_plain_segments
-
-import src.core.epub.translator as translator_module
 from src.core.epub.translator import translate_epub_file
-
 from tests.unit.epub.conftest import (
     REAL_CSS,
     _build_cjk_epub_dir,
@@ -40,7 +38,6 @@ from tests.unit.epub.conftest import (
     _write,
     _zip_dir_as_epub,
 )
-
 
 XHTML_NS = "http://www.w3.org/1999/xhtml"
 
@@ -57,7 +54,7 @@ def _local_tags(element: etree._Element) -> list:
 
 def test_hr_is_collected_as_void_block():
     body = _parse_body("<p>A</p><hr/><p>B</p>")
-    paragraphs, tags, images = extract_plain_paragraphs(body)
+    paragraphs, tags, images, _attrib = extract_plain_paragraphs(body)
 
     assert (paragraphs, tags, images) == (["A", "", "B"], ["p", "hr", "p"], {})
     assert len(paragraphs) == len(tags)
@@ -65,7 +62,7 @@ def test_hr_is_collected_as_void_block():
 
 def test_hr_nested_in_div_is_collected():
     body = _parse_body("<div><p>A</p><hr/><p>B</p></div>")
-    paragraphs, tags, images = extract_plain_paragraphs(body)
+    paragraphs, tags, images, _attrib = extract_plain_paragraphs(body)
 
     assert (paragraphs, tags, images) == (["A", "", "B"], ["p", "hr", "p"], {})
     assert len(paragraphs) == len(tags)
@@ -127,14 +124,16 @@ def test_hr_survives_bilingual_rebuild():
     )
 
 
-def test_hr_attributes_are_dropped():
+def test_hr_attributes_are_preserved():
     body = _parse_body('<p>A</p><hr class="scene"/><p>B</p>')
-    paragraphs, tags, images = extract_plain_paragraphs(body)
-    replace_body_with_paragraphs(body, list(paragraphs), tags, images)
+    paragraphs, tags, images, attrib = extract_plain_paragraphs(body)
+    assert attrib == [{}, {"class": "scene"}, {}]
+
+    replace_body_with_paragraphs(body, list(paragraphs), tags, images, paragraphs_attrib=attrib)
 
     hr_children = [child for child in body if child.tag.split("}")[-1] == "hr"]
     assert len(hr_children) == 1
-    assert hr_children[0].attrib == {}
+    assert hr_children[0].attrib == {"class": "scene"}
 
 
 # ---------------------------------------------------------------------------
