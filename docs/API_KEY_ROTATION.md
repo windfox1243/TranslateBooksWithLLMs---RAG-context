@@ -165,7 +165,9 @@ DEEPSEEK_API_KEY=key1,key2,key3   # Triples your effective RPM ceiling
 ### When rotation is skipped
 
 - **Single-key pools** behave exactly like the previous single-key code: sleep on 429, retry, raise on exhaustion. No rotation overhead.
-- **Ollama** (local) has no rate limits, so it has no key pool. Rotation is irrelevant.
+- **Ollama** (local) has no quota for a purely local model, so it has no key pool for that case. Rotation is irrelevant.
+  - A `-cloud` model (e.g. `gemma3:27b-cloud`), however, is relayed by the local Ollama daemon through the account you signed in with `ollama signin`, and that account can hit HTTP 429 once its usage limit is reached. TBL now pauses the translation and saves a checkpoint instead of leaving the remaining chunks untranslated, and there is still no key rotation for Ollama.
+  - To chain several Ollama accounts, use the **OpenAI-compatible** provider against `https://ollama.com/v1` instead, which does support multi-key rotation.
 - **OpenAI-compatible local servers** (llama.cpp, vLLM, LM Studio) typically run without an API key; rotation is skipped automatically.
 
 ### Combining with checkpointing

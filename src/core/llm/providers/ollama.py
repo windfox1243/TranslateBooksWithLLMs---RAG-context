@@ -32,9 +32,11 @@ from ..base import (
 )
 from ..exceptions import (
     ContextOverflowError,
+    RateLimitError,
     RepetitionLoopError,
     StructuredOutputSchemaError,
 )
+from ..rate_limit_handler import compute_wait_time
 from ..thinking.behavior import ThinkingBehavior, _model_matches_pattern
 from ..thinking.cache import get_thinking_cache
 from ..thinking.detection import detect_repetition_loop
@@ -577,6 +579,33 @@ class OllamaProvider(LLMProvider):
                         error_message = error_data.get("error", str(e))
                     except Exception:
                         pass
+
+                # Handle rate limits (HTTP 429) before anything else: Ollama Cloud
+                # enforces a monthly quota, so retrying cannot clear it. Raise
+                # immediately so the pipeline pauses and checkpoints (issue #279).
+                if e.response is not None and e.response.status_code == 429:
+                    headers = e.response.headers
+                    hinted = any(
+                        header in headers
+                        for header in ("Retry-After", "retry-after",
+                                       "X-RateLimit-Reset", "x-ratelimit-reset")
+                    )
+                    # Without a server hint, leave retry_after unset: the header-less
+                    # fallback (a few seconds) would hammer an exhausted monthly quota,
+                    # while None lets the caller use its own auto-resume delay.
+                    retry_after = compute_wait_time(headers, 0) if hinted else None
+
+                    if self.log_callback:
+                        self.log_callback("llm_rate_limit",
+                            f"{YELLOW}⚠️ Rate limit reached (HTTP 429){RESET}\n"
+                            f"{YELLOW}   Model: {self.model}{RESET}\n"
+                            f"{YELLOW}   Error: {error_message}{RESET}\n"
+                            f"{YELLOW}   Translation is being paused - a checkpoint is saved so you can resume later{RESET}")
+                    else:
+                        print(f"{YELLOW}Rate limit reached (HTTP 429): {error_message}{RESET}")
+                        print(f"{YELLOW}Translation is being paused - a checkpoint is saved so you can resume later{RESET}")
+
+                    raise RateLimitError(error_message, retry_after=retry_after, provider="ollama")
 
                 # Handle context overflow errors
                 if (

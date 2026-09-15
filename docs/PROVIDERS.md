@@ -25,6 +25,10 @@ Runs models locally on your machine.
 
 Browse models: [ollama.com/search](https://ollama.com/search)
 
+### Cloud models
+
+`-cloud` models (e.g. `gemma3:27b-cloud`) are not run locally — the local Ollama daemon relays them to Ollama's hosted infrastructure using the account signed in with `ollama signin`. Once that account's usage limit is reached, the daemon returns HTTP 429. TBL pauses the job and saves a checkpoint, so you can resume once the quota resets or you add credits. The **"Don't auto-pause on rate limit (HTTP 429)"** setting is the opt-out: enable it and TBL waits and auto-resumes instead of pausing.
+
 ### CLI Example
 
 ```bash
