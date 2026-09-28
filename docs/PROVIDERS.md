@@ -103,6 +103,16 @@ python translate.py -i book.txt -o book_fr.txt \
 
 Browse models and pricing: [openrouter.ai/models](https://openrouter.ai/models)
 
+### Reasoning
+
+Many OpenRouter models reason by default (DeepSeek V4.x at effort `high`, Qwen 3.x), and reasoning
+tokens are billed as output: DeepSeek V4.1 Flash was seen producing 4,700 to 31,000 output tokens
+for translation chunks of about 3,000 input tokens. TBL reads each model's reasoning metadata from
+`/api/v1/models` and sends OpenRouter's unified `reasoning` parameter: `{"enabled": false}` when
+reasoning can be turned off, or the lowest supported effort on models where it is mandatory (a
+warning is logged for those). The per-request log line shows the reasoning token count whenever
+the model reports one. `OPENROUTER_DISABLE_THINKING=false` keeps each model's default.
+
 ---
 
 ## OpenAI Cloud

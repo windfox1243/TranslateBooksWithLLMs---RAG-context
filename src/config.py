@@ -468,6 +468,12 @@ MIN_CHUNK_SIZE_TOKENS = 50
 # DEEPSEEK_API_KEY/MODEL, POE_API_KEY/MODEL, NIM_API_KEY/MODEL are loaded via
 # _apply_reloadable_env_settings() so reload_config() can refresh them at runtime.
 OPENROUTER_API_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions'
+# Many OpenRouter models reason by default (DeepSeek V4.x, Qwen 3.x), and the
+# reasoning tokens are billed as output. The provider sends OpenRouter's unified
+# `reasoning` parameter to turn it off, or to the lowest effort on models where
+# reasoning is mandatory, using the metadata /api/v1/models advertises.
+# Set to 'false' to keep each model's default reasoning.
+OPENROUTER_DISABLE_THINKING = os.getenv('OPENROUTER_DISABLE_THINKING', 'true').lower() == 'true'
 MISTRAL_API_ENDPOINT = os.getenv('MISTRAL_API_ENDPOINT', 'https://api.mistral.ai/v1/chat/completions')
 DEEPSEEK_API_ENDPOINT = os.getenv('DEEPSEEK_API_ENDPOINT', 'https://api.deepseek.com/chat/completions')
 # DeepSeek V4 models (deepseek-v4-flash, deepseek-v4-pro) enable thinking by default,
