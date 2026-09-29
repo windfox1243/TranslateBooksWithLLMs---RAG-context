@@ -8,7 +8,8 @@ block. The one exception is <ruby>, whose reading would otherwise be glued to
 its base: it is folded into base（reading） first (see ruby_annotations).
 
 At rebuild time, the body is wiped and reconstructed as a flat sequence of
-block elements (<p>, <h1..h6>, <li>, <blockquote>, <pre>) plus, after each
+block elements (<p>, <h1..h6>, <li>, <blockquote>, <pre>, and a container
+such as <div> that held its text directly, see _collect_blocks) plus, after each
 block that originally contained images, an extra <p class="plain-text-images"> wrapper
 with the original <img> elements unchanged. Each block element is rebuilt with
 its original tag *and the source attributes that still apply to a flattened
@@ -46,6 +47,17 @@ SPACED_TAGS = ("td", "th", "tr", "caption")
 TABLE_CELL_TAGS = ("td", "th", "caption")
 # List wrappers we descend into (the inner <li> items become individual blocks)
 LIST_WRAPPER_TAGS = ("ul", "ol")
+# Phrasing-level tags that belong to the same line of text as the loose text
+# around them. Inside a container, a run of these plus loose text is gathered
+# into a single paragraph (see _collect_blocks). <img> and DROP_TAGS are
+# handled as part of a run too; any tag not listed anywhere is treated as a
+# block of its own, as before.
+INLINE_TAGS = (
+    "a", "abbr", "b", "bdi", "bdo", "big", "br", "cite", "code", "data", "del",
+    "dfn", "em", "font", "i", "ins", "kbd", "label", "mark", "q", "rb", "rp",
+    "rt", "rtc", "ruby", "s", "samp", "small", "span", "strike", "strong",
+    "sub", "sup", "time", "tt", "u", "var", "wbr",
+)
 EPUB_TYPE_ATTR = "{http://www.idpf.org/2007/ops}type"
 # Source attributes copied onto a rebuilt block. The list is a whitelist rather
 # than "everything the source block had" for two reasons:
@@ -74,9 +86,29 @@ def _extract_text_keep_inline(elem: etree._Element, image_sink: List[etree._Elem
     Adds any <img> encountered to image_sink (preserves DOM order).
     Returns whitespace-normalized text.
     """
+    return _extract_run_text(elem.text, list(elem), image_sink)
+
+
+def _extract_run_text(
+    lead_text: str, nodes: List[etree._Element], image_sink: List[etree._Element]
+) -> str:
+    """
+    Flatten a run of sibling nodes, preceded by lead_text, into one string.
+
+    Each node contributes its own content and its tail. This is the body of
+    _extract_text_keep_inline, split out so a container can flatten a slice of
+    its children (a run of inline content between two blocks) and not only an
+    element as a whole.
+    """
     out: List[str] = []
 
     def walk(node: etree._Element, include_tail: bool):
+        if not isinstance(node.tag, str):
+            # Comment or processing instruction: its .text is markup, never
+            # book text, and must not reach the LLM. Its tail is book text.
+            if include_tail and node.tail:
+                out.append(node.tail)
+            return
         name = _local_name(node)
         if name in DROP_TAGS:
             # Skip subtree entirely. Still pick up its tail since it sits at
@@ -103,10 +135,10 @@ def _extract_text_keep_inline(elem: etree._Element, image_sink: List[etree._Elem
         if include_tail and node.tail:
             out.append(node.tail)
 
-    if elem.text:
-        out.append(elem.text)
-    for child in elem:
-        walk(child, include_tail=True)
+    if lead_text:
+        out.append(lead_text)
+    for node in nodes:
+        walk(node, include_tail=True)
 
     text = "".join(out)
     return " ".join(text.split())
@@ -186,85 +218,172 @@ def _collect_table_blocks(
                 images_by_paragraph[idx] = images
 
 
+def _is_inline(node: etree._Element) -> bool:
+    """True for a node that sits on the same line as the loose text around it."""
+    if not isinstance(node.tag, str):
+        # Comments and processing instructions: invisible, but their tail is
+        # loose text of the enclosing container.
+        return True
+    name = _local_name(node)
+    return name in INLINE_TAGS or name in DROP_TAGS or name == "img"
+
+
+def _has_loose_text(lead_text: str, nodes: List[etree._Element]) -> bool:
+    """True when a run carries text that belongs to no element of its own."""
+    if lead_text and lead_text.strip():
+        return True
+    return any(node.tail and node.tail.strip() for node in nodes)
+
+
 def _collect_blocks(
     root: etree._Element,
     paragraphs_text: List[str],
     paragraphs_tag: List[str],
     paragraphs_attrib: List[Dict[str, str]],
     images_by_paragraph: Dict[int, List[etree._Element]],
+    is_container: bool = False,
 ) -> None:
     """
     DOM-walk a container, emitting one entry per block-level element found.
 
     For lists, we descend into <li> items individually (each is its own block).
     For containers (div, section, ...), we recurse.
+
+    Text can also sit loose in the container itself: before its first child,
+    or in the tail of a child (issue #288, calibre's one-<div>-per-paragraph
+    output being the common case). The children are therefore split into runs
+    of inline content separated by block children. A run that carries loose
+    text becomes one paragraph, with its inline elements flattened into it; a
+    run without any is dispatched element by element exactly as before, so a
+    body that lost no text extracts the same paragraphs as it always did.
+
+    is_container: root is one of CONTAINER_TAGS. When such a container holds no
+    block child at all, it IS the paragraph, so the rebuilt block keeps its tag
+    and its attributes (a <div class="calibre8"> stays one). Loose text next to
+    block children, or directly in <body> or a list wrapper, becomes an
+    anonymous <p>: those tags cannot stand in for the paragraph.
     """
+    segments: List[tuple] = []
+    run_lead, run_nodes = root.text, []
     for child in root:
-        name = _local_name(child)
-
-        if name in DROP_TAGS:
+        if _is_inline(child):
+            run_nodes.append(child)
             continue
+        segments.append(("run", run_lead, run_nodes))
+        segments.append(("block", child))
+        run_lead, run_nodes = child.tail, []
+    segments.append(("run", run_lead, run_nodes))
+    only_inline = len(segments) == 1
 
-        if name in VOID_BLOCK_TAGS:
-            paragraphs_text.append("")
-            paragraphs_tag.append(name)
-            paragraphs_attrib.append(dict(child.attrib))
-            continue
-
-        if name == "table":
-            _collect_table_blocks(
-                child, paragraphs_text, paragraphs_tag, paragraphs_attrib, images_by_paragraph
+    for segment in segments:
+        if segment[0] == "block":
+            _collect_block(
+                segment[1], paragraphs_text, paragraphs_tag, paragraphs_attrib, images_by_paragraph
             )
             continue
 
-        if name in LIST_WRAPPER_TAGS:
-            _collect_blocks(child, paragraphs_text, paragraphs_tag, paragraphs_attrib, images_by_paragraph)
+        _, lead_text, nodes = segment
+        if not _has_loose_text(lead_text, nodes):
+            for node in nodes:
+                _collect_block(
+                    node, paragraphs_text, paragraphs_tag, paragraphs_attrib, images_by_paragraph
+                )
             continue
 
-        if name in CONTAINER_TAGS:
-            _collect_blocks(child, paragraphs_text, paragraphs_tag, paragraphs_attrib, images_by_paragraph)
-            continue
-
-        if name in BLOCK_TAGS:
-            images: List[etree._Element] = []
-            if name == "pre":
-                # Preserve code/pre verbatim — but skip <img> inside (rare)
-                text = "".join(child.itertext())
-            else:
-                text = _extract_text_keep_inline(child, images)
-
-            idx = len(paragraphs_text)
-            paragraphs_text.append(text)
-            paragraphs_tag.append(name)
-            paragraphs_attrib.append(dict(child.attrib))
-            if images:
-                images_by_paragraph[idx] = images
-            continue
-
-        if name == "img":
-            # Standalone <img> at body level — anchor to the previous block,
-            # or create a synthetic anchor if it's first.
-            img_copy = _clone_img(child)
-            if paragraphs_text:
-                anchor = len(paragraphs_text) - 1
-                images_by_paragraph.setdefault(anchor, []).append(img_copy)
-            else:
-                paragraphs_text.append("")
-                paragraphs_tag.append("p")
-                paragraphs_attrib.append({})
-                images_by_paragraph[0] = [img_copy]
-            continue
-
-        # Anything else: try to extract textual content as a generic paragraph
         images: List[etree._Element] = []
-        text = _extract_text_keep_inline(child, images)
-        if text.strip() or images:
-            idx = len(paragraphs_text)
-            paragraphs_text.append(text)
+        text = _extract_run_text(lead_text, nodes, images)
+        idx = len(paragraphs_text)
+        paragraphs_text.append(text)
+        if only_inline and is_container:
+            paragraphs_tag.append(_local_name(root))
+            paragraphs_attrib.append(dict(root.attrib))
+        else:
             paragraphs_tag.append("p")
-            paragraphs_attrib.append(dict(child.attrib))
-            if images:
-                images_by_paragraph[idx] = images
+            paragraphs_attrib.append({})
+        if images:
+            images_by_paragraph[idx] = images
+
+
+def _collect_block(
+    child: etree._Element,
+    paragraphs_text: List[str],
+    paragraphs_tag: List[str],
+    paragraphs_attrib: List[Dict[str, str]],
+    images_by_paragraph: Dict[int, List[etree._Element]],
+) -> None:
+    """Emit the entries for one child of a container (see _collect_blocks)."""
+    if not isinstance(child.tag, str):
+        # Comment or processing instruction: nothing to translate.
+        return
+
+    name = _local_name(child)
+
+    if name in DROP_TAGS:
+        return
+
+    if name in VOID_BLOCK_TAGS:
+        paragraphs_text.append("")
+        paragraphs_tag.append(name)
+        paragraphs_attrib.append(dict(child.attrib))
+        return
+
+    if name == "table":
+        _collect_table_blocks(
+            child, paragraphs_text, paragraphs_tag, paragraphs_attrib, images_by_paragraph
+        )
+        return
+
+    if name in LIST_WRAPPER_TAGS:
+        _collect_blocks(child, paragraphs_text, paragraphs_tag, paragraphs_attrib, images_by_paragraph)
+        return
+
+    if name in CONTAINER_TAGS:
+        _collect_blocks(
+            child, paragraphs_text, paragraphs_tag, paragraphs_attrib, images_by_paragraph,
+            is_container=True,
+        )
+        return
+
+    if name in BLOCK_TAGS:
+        images: List[etree._Element] = []
+        if name == "pre":
+            # Preserve code/pre verbatim — but skip <img> inside (rare)
+            text = "".join(child.itertext())
+        else:
+            text = _extract_text_keep_inline(child, images)
+
+        idx = len(paragraphs_text)
+        paragraphs_text.append(text)
+        paragraphs_tag.append(name)
+        paragraphs_attrib.append(dict(child.attrib))
+        if images:
+            images_by_paragraph[idx] = images
+        return
+
+    if name == "img":
+        # Standalone <img> at body level — anchor to the previous block,
+        # or create a synthetic anchor if it's first.
+        img_copy = _clone_img(child)
+        if paragraphs_text:
+            anchor = len(paragraphs_text) - 1
+            images_by_paragraph.setdefault(anchor, []).append(img_copy)
+        else:
+            paragraphs_text.append("")
+            paragraphs_tag.append("p")
+            paragraphs_attrib.append({})
+            images_by_paragraph[0] = [img_copy]
+        return
+
+    # Anything else: try to extract textual content as a generic paragraph
+    images: List[etree._Element] = []
+    text = _extract_text_keep_inline(child, images)
+    if text.strip() or images:
+        idx = len(paragraphs_text)
+        paragraphs_text.append(text)
+        paragraphs_tag.append("p")
+        paragraphs_attrib.append(dict(child.attrib))
+        if images:
+            images_by_paragraph[idx] = images
 
 
 def extract_plain_paragraphs(
