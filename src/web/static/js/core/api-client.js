@@ -35,7 +35,12 @@ async function handleApiError(response) {
     } catch {
         errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
     }
-    throw new Error(errorData.error || errorData.message || `Request failed with status ${response.status}`);
+    const label = errorData.error || '';
+    const detail = errorData.message || '';
+    const parts = [label, detail !== label ? detail : ''].filter(Boolean);
+    const err = new Error(parts.join(' — ') || `Request failed with status ${response.status}`);
+    err.code = errorData.error_code;
+    throw err;
 }
 
 /**

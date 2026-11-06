@@ -20,6 +20,17 @@ from flask import (
     send_from_directory,
 )
 
+from src.utils.webhook_secrets import (
+    has_mask,
+    mask_webhook_headers,
+    mask_webhook_payload,
+    mask_webhook_url,
+    same_origin,
+    unmask_webhook_headers,
+    unmask_webhook_payload,
+    unmask_webhook_url,
+)
+
 # UI locales served by /static/locales/<code>/*.json. Keep in sync with the
 # SUPPORTED_LOCALES constant in src/web/static/js/i18n/i18n.js. The list is
 # small enough that duplication beats a separate config file for now.
@@ -254,13 +265,13 @@ def create_config_blueprint(server_session_id=None):
             "enable_chunk_reflection": str(_config.ENABLE_CHUNK_REFLECTION).strip().lower() == 'true',
             "editor_provider": _config.EDITOR_PROVIDER or "",
             "editor_model": _config.EDITOR_MODEL or "",
-            # Webhook notifications — returned as-is for editing. URLs and tokens
-            # only ever travel between this server and the same-origin browser
-            # session that already controls the .env on disk.
-            "notify_webhook_url": _config.NOTIFY_WEBHOOK_URL,
+            # Webhook notifications: secrets in the URL and header values are
+            # masked (see webhook_secrets). save_settings() restores the stored
+            # value when the masked text comes back unchanged.
+            "notify_webhook_url": mask_webhook_url(_config.NOTIFY_WEBHOOK_URL),
             "notify_webhook_method": _config.NOTIFY_WEBHOOK_METHOD,
-            "notify_webhook_headers": _config.NOTIFY_WEBHOOK_HEADERS,
-            "notify_webhook_payload": _config.NOTIFY_WEBHOOK_PAYLOAD,
+            "notify_webhook_headers": mask_webhook_headers(_config.NOTIFY_WEBHOOK_HEADERS),
+            "notify_webhook_payload": mask_webhook_payload(_config.NOTIFY_WEBHOOK_PAYLOAD),
             "notify_on_success": bool(_config.NOTIFY_ON_SUCCESS),
             "notify_on_failure": bool(_config.NOTIFY_ON_FAILURE),
             "notify_on_interruption": bool(_config.NOTIFY_ON_INTERRUPTION),
@@ -1050,6 +1061,34 @@ def create_config_blueprint(server_session_id=None):
 
             if not updates:
                 return jsonify({"error": "No valid settings to save"}), 400
+
+            # The UI shows masked webhook secrets. Restore the stored value for
+            # parts left masked, but only while the destination is unchanged:
+            # a new host must never receive the stored token, headers or body.
+            if 'NOTIFY_WEBHOOK_URL' in updates:
+                updates['NOTIFY_WEBHOOK_URL'] = unmask_webhook_url(
+                    updates['NOTIFY_WEBHOOK_URL'], _config.NOTIFY_WEBHOOK_URL)
+            effective_url = updates.get('NOTIFY_WEBHOOK_URL', _config.NOTIFY_WEBHOOK_URL)
+            if same_origin(effective_url, _config.NOTIFY_WEBHOOK_URL):
+                if 'NOTIFY_WEBHOOK_HEADERS' in updates:
+                    updates['NOTIFY_WEBHOOK_HEADERS'] = unmask_webhook_headers(
+                        updates['NOTIFY_WEBHOOK_HEADERS'], _config.NOTIFY_WEBHOOK_HEADERS)
+                if 'NOTIFY_WEBHOOK_PAYLOAD' in updates:
+                    updates['NOTIFY_WEBHOOK_PAYLOAD'] = unmask_webhook_payload(
+                        updates['NOTIFY_WEBHOOK_PAYLOAD'], _config.NOTIFY_WEBHOOK_PAYLOAD)
+
+            # Never write a mask marker to .env: reject and ask for the secret again.
+            unresolved = [
+                k for k in ('NOTIFY_WEBHOOK_URL', 'NOTIFY_WEBHOOK_HEADERS', 'NOTIFY_WEBHOOK_PAYLOAD')
+                if has_mask(updates.get(k))
+            ]
+            if unresolved:
+                return jsonify({
+                    "error": "A masked webhook secret could not be restored. "
+                             "Re-enter the secret value in full and save again.",
+                    "error_code": "webhook_secret_unresolved",
+                    "fields": unresolved,
+                }), 400
 
             # Update the .env file
             _update_env_file(updates)
