@@ -15,10 +15,17 @@ from src.config import (
     ADAPTIVE_CONTEXT_INITIAL_THINKING,
     DEFAULT_MODEL,
     EDITOR_LOG_FULL_RESPONSE,
+    PLACEHOLDER_PREFIX,
+    PLACEHOLDER_SUFFIX,
     SENTENCE_TERMINATORS,
     THINKING_MODELS,
     TRANSLATE_TAG_IN,
     TRANSLATE_TAG_OUT,
+)
+from src.core.common.source_residue import (
+    detect_source_residue,
+    residue_log_message,
+    residue_score,
 )
 from src.core.editor.contracts import ReflectionValidationError
 
@@ -510,6 +517,75 @@ async def _make_llm_request_with_adaptive_context(
 
 # Legacy wrapper for backward compatibility
 
+def _placeholder_tokens(text: str, placeholder_format: Optional[Tuple[str, str]]) -> List[str]:
+    """Sorted placeholder tokens of `text`, used to compare two answers."""
+    prefix, suffix = placeholder_format or (PLACEHOLDER_PREFIX, PLACEHOLDER_SUFFIX)
+    return sorted(re.findall(re.escape(prefix) + r"\d+" + re.escape(suffix), text or ""))
+
+
+async def _retry_on_source_residue(
+    translated_text: str,
+    *,
+    main_content: str,
+    source_language: str,
+    target_language: str,
+    log_callback,
+    has_placeholders: bool,
+    prompt_options: Optional[dict],
+    placeholder_format: Optional[Tuple[str, str]],
+    **request_kwargs,
+) -> str:
+    """Re-ask once when an answer still holds source-language text (issue #270).
+
+    The retry states what went wrong in the prompt. The answer with the least
+    residue wins; in placeholder mode a retry that lost or invented a
+    placeholder never replaces an answer that kept them all, since the caller
+    would then throw away a usable chunk. Every finding earns this retry,
+    including the retry-only ones (echo, leftover Latin text); callers then
+    run `detect_blocking_residue` on what comes back and record the chunk as
+    untranslated only for a blocking finding.
+    """
+    if (prompt_options or {}).get('source_residue_retry'):
+        return translated_text
+    report = detect_source_residue(main_content, translated_text, source_language, target_language)
+    if report is None:
+        return translated_text
+
+    if log_callback:
+        log_callback("source_residue_retry",
+                     f"⚠️ {residue_log_message(report, source_language)} - retrying once")
+
+    retry_options = {**(prompt_options or {}), 'source_residue_retry': True}
+    retried = await generate_translation_request(
+        main_content,
+        source_language=source_language,
+        target_language=target_language,
+        log_callback=log_callback,
+        has_placeholders=has_placeholders,
+        prompt_options=retry_options,
+        placeholder_format=placeholder_format,
+        **request_kwargs,
+    )
+    if not retried:
+        return translated_text
+
+    if has_placeholders:
+        expected = _placeholder_tokens(main_content, placeholder_format)
+        first_ok = _placeholder_tokens(translated_text, placeholder_format) == expected
+        retry_ok = _placeholder_tokens(retried, placeholder_format) == expected
+        if first_ok and not retry_ok:
+            return translated_text
+        if retry_ok and not first_ok:
+            return retried
+
+    retry_report = detect_source_residue(main_content, retried, source_language, target_language)
+    if residue_score(retry_report) < residue_score(report):
+        if log_callback and retry_report is None:
+            log_callback("source_residue_recovered", "✓ Retry translated the leftover text")
+        return retried
+    return translated_text
+
+
 async def generate_translation_request(main_content, context_before, context_after, previous_translation_context,
                                        source_language=None, target_language=None, model=DEFAULT_MODEL,
                                        llm_client=None, log_callback=None, has_placeholders=False,
@@ -580,7 +656,22 @@ async def generate_translation_request(main_content, context_before, context_aft
         context_manager.abandon_request()
 
     if translated_text:
-        return translated_text
+        return await _retry_on_source_residue(
+            translated_text,
+            main_content=main_content,
+            context_before=context_before,
+            context_after=context_after,
+            previous_translation_context=previous_translation_context,
+            source_language=source_language,
+            target_language=target_language,
+            model=model,
+            llm_client=llm_client,
+            log_callback=log_callback,
+            has_placeholders=has_placeholders,
+            prompt_options=prompt_options,
+            context_manager=context_manager,
+            placeholder_format=placeholder_format,
+        )
     else:
         err_msg = "ERROR: LLM API request failed"
         if log_callback:
