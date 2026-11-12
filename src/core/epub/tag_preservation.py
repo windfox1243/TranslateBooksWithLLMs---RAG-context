@@ -14,6 +14,7 @@ from typing import Dict, List, Tuple
 
 from src.common.placeholder_format import PlaceholderFormat
 
+from .initial_letters import close_initial_letters, merge_initial_letters
 from .placeholder_validator import PlaceholderValidator
 
 
@@ -113,6 +114,8 @@ class TagPreserver:
         self.tag_map = {}
         self.counter = 0
 
+        text = merge_initial_letters(text)
+
         # Split text into segments: tags vs non-tags
         # This preserves the order and allows us to analyze each segment
         segments = re.split(r'(<[^>]+>)', text)
@@ -193,6 +196,8 @@ class TagPreserver:
         # If technical protection is disabled, fallback to standard preserve_tags
         if not self.protect_technical:
             return self.preserve_tags(text)
+
+        text = merge_initial_letters(text)
 
         # Step 1: Extract multiline blocks (code blocks, $$...$$)
         # These are replaced with temporary markers to keep them atomic
@@ -312,7 +317,7 @@ class TagPreserver:
             if placeholder in restored_text:
                 restored_text = restored_text.replace(placeholder, tag_map[placeholder])
 
-        return restored_text
+        return close_initial_letters(restored_text)
 
     def validate_placeholders(self, text: str, tag_map: Dict[str, str]) -> Tuple[bool, List[str], List[Tuple[str, str]]]:
         """
