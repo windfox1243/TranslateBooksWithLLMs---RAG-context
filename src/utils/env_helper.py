@@ -37,7 +37,7 @@ _DEFAULT_COMPACT_ENV_VALUES = {
     "DEEPSEEK_API_KEY": "",
     "POE_API_KEY": "",
     "NIM_API_KEY": "",
-    "GEMINI_MODEL": "gemini-2.0-flash",
+    "GEMINI_MODEL": "gemini-3.6-flash",
     "OPENROUTER_MODEL": "anthropic/claude-4.5-haiku",
     "MISTRAL_MODEL": "mistral-large-latest",
     "DEEPSEEK_MODEL": "deepseek-v4-pro",
@@ -295,7 +295,7 @@ def interactive_env_setup():
 
     elif config['LLM_PROVIDER'] == 'gemini':
         config['GEMINI_API_KEY'] = input("   Gemini API Key: ").strip()
-        config['GEMINI_MODEL'] = input("   Gemini Model [gemini-2.0-flash]: ").strip() or 'gemini-2.0-flash'
+        config['GEMINI_MODEL'] = input("   Gemini Model [gemini-3.6-flash]: ").strip() or 'gemini-3.6-flash'
 
     elif config['LLM_PROVIDER'] == 'openai':
         config['OPENAI_API_KEY'] = input("   OpenAI API Key: ").strip()
@@ -318,7 +318,7 @@ def interactive_env_setup():
         overrides['DEFAULT_MODEL'] = config['DEFAULT_MODEL']
     elif config['LLM_PROVIDER'] == 'gemini':
         overrides['GEMINI_API_KEY'] = config.get('GEMINI_API_KEY', '')
-        overrides['GEMINI_MODEL'] = config.get('GEMINI_MODEL', 'gemini-2.0-flash')
+        overrides['GEMINI_MODEL'] = config.get('GEMINI_MODEL', 'gemini-3.6-flash')
     elif config['LLM_PROVIDER'] == 'openai':
         overrides['OPENAI_API_KEY'] = config.get('OPENAI_API_KEY', '')
         overrides['API_ENDPOINT'] = config.get(

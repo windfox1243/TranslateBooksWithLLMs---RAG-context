@@ -139,7 +139,7 @@ Google's Gemini models.
 
 ### Models
 
-- `gemini-2.0-flash`
+- `gemini-3.6-flash`
 - `gemini-1.5-pro`
 - `gemini-1.5-flash`
 
@@ -154,7 +154,7 @@ Google's Gemini models.
 python translate.py -i book.txt -o book_fr.txt \
     --provider gemini \
     --gemini_api_key your-key \
-    -m gemini-2.0-flash
+    -m gemini-3.6-flash
 ```
 
 ---
