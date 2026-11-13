@@ -51,6 +51,8 @@ TBL supports any server that implements the OpenAI API format. This includes:
    - Set endpoint to your server URL (see table below)
    - Leave API key empty (local servers don't require it)
 
+> **Anthropic:** Claude models work through Anthropic's OpenAI compatibility layer. Set the endpoint to `https://api.anthropic.com/v1/chat/completions` and use an Anthropic API key. The web UI loads the model list from Anthropic's `/v1/models`, which needs an `anthropic-version` header; the server adds it automatically for this host.
+
 | Server | Default Endpoint |
 |--------|------------------|
 | llama.cpp (`llama-server`) | `http://localhost:8080/v1/chat/completions` |
