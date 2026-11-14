@@ -8,8 +8,8 @@ qualified name. They now all go through get_language_profile().
 
 import pytest
 
+from src.languages.vietnamese.context_rules import _is_vietnamese_target_language
 from src.utils.language_profiles import get_language_profile, is_target_language
-from src.utils.novel_context.vietnamese import _is_vietnamese_target_language
 from src.utils.universal_addressing_engine import UniversalAddressingEngine
 
 

@@ -227,7 +227,7 @@ def quarantine_incompatible_addressing_rules(
 
     if get_language_profile(target_language).addressing_family != "vietnamese":
         return 0
-    from src.utils.context_merge_engine import _vi_pair_direction
+    from src.languages.vietnamese.addressing import pair_direction as _vi_pair_direction
 
     quarantined = 0
     for rule in list(db.get_addressing_rules(translation_id)):

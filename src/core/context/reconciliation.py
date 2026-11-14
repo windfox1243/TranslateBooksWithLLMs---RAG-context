@@ -2,29 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
+from src.languages.vietnamese.addressing import default_pair as vietnamese_default_pair
 from src.persistence.database import Database
 from src.utils.language_profiles import is_target_language
 from src.utils.relationship_reasoning_engine import relationship_support_for_addressing
-
-
-def _vietnamese_pair(
-    hierarchy: str,
-    source_gender: str,
-    target_gender: str,
-) -> Optional[tuple[str, str]]:
-    if hierarchy == "source_junior":
-        if target_gender == "female":
-            return "em", "chị"
-        if target_gender == "male":
-            return "em", "anh"
-    if hierarchy == "source_senior":
-        if source_gender == "female":
-            return "chị", "em"
-        if source_gender == "male":
-            return "anh", "em"
-    return None
 
 
 class ContextReconciler:
@@ -65,7 +46,7 @@ class ContextReconciler:
         target_node = self.db.get_relationship_node_by_name(
             translation_id, addressee_name,
         ) or {}
-        pair = _vietnamese_pair(
+        pair = vietnamese_default_pair(
             str(support.get("hierarchy") or "unknown"),
             str(source_node.get("gender") or "unknown").casefold(),
             str(target_node.get("gender") or "unknown").casefold(),

@@ -10,6 +10,7 @@ Enforces strict linguistic separation:
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from src.languages.vietnamese import addressing as vi_addressing
 from src.utils.language_profiles import get_language_profile
 
 
@@ -21,19 +22,19 @@ def _has_cue_word(text: str, cue: str) -> bool:
 
 # Genuine Seniority Pronoun Sets (Strictly exclude Job Titles / Nouns)
 _SENIOR_PRONOUN_SETS: Dict[str, Set[str]] = {
-    "vi": {"anh", "chị", "thầy", "cô", "sếp", "bác", "chú", "ông", "bà", "cha", "bố", "mẹ", "ba", "má", "tiền bối", "ngài"},
+    "vi": set(vi_addressing.SENIOR_PRONOUNS),
     "ja": {"senpai", "sensei", "sama"},
     "ko": {"sunbae-nim", "sunbae"},
 }
 
 _JUNIOR_PRONOUN_SETS: Dict[str, Set[str]] = {
-    "vi": {"em", "cháu", "con", "hậu bối"},
+    "vi": set(vi_addressing.JUNIOR_PRONOUNS),
     "ja": {"kohai"},
     "ko": {"hobae"},
 }
 
 _PEER_PRONOUN_SETS: Dict[str, Set[str]] = {
-    "vi": {"cậu", "bạn", "tớ", "mình", "mày"},
+    "vi": set(vi_addressing.PEER_PRONOUNS),
     "ja": {"omae", "kimi", "anta"},
     "ko": {"neo", "inoma"},
 }
@@ -46,30 +47,7 @@ _JOB_TITLE_NOUNA: Set[str] = {
 
 # Fast Harmonious Alignment Maps
 _HARMONIOUS_ALIGNMENT_MAP: Dict[Tuple[str, str], Tuple[str, str]] = {
-    # Vietnamese
-    ("em", "em"): ("em", "anh"),
-    ("chị", "chị"): ("chị", "em"),
-    ("anh", "anh"): ("anh", "em"),
-    # Calling someone "anh"/"chị"/"thầy"/"cô" already places the speaker below
-    # them, so the peer self-reference contradicts the pair's own second person.
-    # This holds whatever the social basis says, and the basis frequently names
-    # both roles at once ("trainer-trainee") without saying who is speaking.
-    ("tớ", "anh"): ("em", "anh"),
-    ("mình", "anh"): ("em", "anh"),
-    ("tớ", "chị"): ("em", "chị"),
-    ("mình", "chị"): ("em", "chị"),
-    ("tớ", "thầy"): ("em", "thầy"),
-    ("mình", "thầy"): ("em", "thầy"),
-    ("tớ", "cô"): ("em", "cô"),
-    ("mình", "cô"): ("em", "cô"),
-    ("tớ", "mày"): ("tao", "mày"),
-    ("mình", "mày"): ("tao", "mày"),
-    ("tôi", "ngươi"): ("ta", "ngươi"),
-    ("tớ", "ngươi"): ("ta", "ngươi"),
-    ("mình", "ngươi"): ("ta", "ngươi"),
-    ("tao", "ngài"): ("tôi", "ngài"),
-    ("ta", "cậu"): ("ta", "ngươi"),
-    ("ta", "anh"): ("tôi", "anh"),
+    **vi_addressing.HARMONIOUS_PAIRS,
     # Japanese
     ("watakushi", "omae"): ("ore", "omae"),
     ("watakushi", "kisama"): ("ore", "kisama"),

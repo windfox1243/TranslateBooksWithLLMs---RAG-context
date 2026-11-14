@@ -5,6 +5,16 @@ import re
 from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from src.languages.vietnamese.context_rules import (
+    _filter_vietnamese_addressing_delta,
+    _is_vietnamese_target_language,
+    _remove_vietnamese_addressing_mismatches,
+    _repair_vietnamese_addressing_block,
+    _replace_vietnamese_addressing_field,
+    _seed_vietnamese_addressing_from_relationships,
+    _vietnamese_addressing_field,
+)
+
 from .characters import (
     _canonical_display_name,
     _character_names_match,
@@ -42,15 +52,6 @@ from .glossary import (
     _discarded_incidental_character_aliases,
     _normalized_character_alias_map,
     normalize_global_lore,
-)
-from .vietnamese import (
-    _filter_vietnamese_addressing_delta,
-    _is_vietnamese_target_language,
-    _remove_vietnamese_addressing_mismatches,
-    _repair_vietnamese_addressing_block,
-    _replace_vietnamese_addressing_field,
-    _seed_vietnamese_addressing_from_relationships,
-    _vietnamese_addressing_field,
 )
 
 

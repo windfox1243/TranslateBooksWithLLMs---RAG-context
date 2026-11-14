@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from src.languages.vietnamese.context_rules import _is_vietnamese_target_language
+
 from .characters import _character_gender_map, _character_profile_map
 from .constants import logger
 from .document import (
@@ -38,7 +40,6 @@ from .rendering import (
     _source_memory_budget_chars,
 )
 from .storage import load_novel_context, resolve_novel_context_path
-from .vietnamese import _is_vietnamese_target_language
 
 
 def _package_update_chunk(*args: Any, **kwargs: Any):

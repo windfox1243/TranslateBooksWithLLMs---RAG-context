@@ -1,19 +1,22 @@
-"""Vietnamese-specific addressing inference, repair and mismatch detection."""
+"""Vietnamese addressing inference, repair and mismatch detection for novel context.
+
+Moved here from src/utils/novel_context/vietnamese.py so the generic
+novel-context package carries no Vietnamese rules of its own.
+"""
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.utils.language_profiles import is_target_language
-
-from .characters import (
+from src.utils.novel_context.characters import (
     _canonical_display_name,
     _canonical_gender,
     _clean_inline_text,
     _is_invalid_context_key,
     _plain_key,
 )
-from .dynamic_state import (
+from src.utils.novel_context.dynamic_state import (
     _DYNAMIC_DELETE_VALUES,
     _DYNAMIC_RELATION_PATTERN,
     _canonical_relationship_party,
