@@ -28,14 +28,12 @@ from pathlib import Path
 import pytest
 from lxml import etree
 
+import src.core.epub.translator as translator_module
 from src.core.epub.plain_extractor import (
     extract_plain_paragraphs,
     replace_body_with_paragraphs,
 )
-
-import src.core.epub.translator as translator_module
 from src.core.epub.translator import translate_epub_file
-
 from tests.unit.epub.conftest import (
     REAL_CSS,
     _build_cjk_epub_dir,
@@ -44,7 +42,6 @@ from tests.unit.epub.conftest import (
     _write,
     _zip_dir_as_epub,
 )
-
 
 XHTML_NS = "http://www.w3.org/1999/xhtml"
 

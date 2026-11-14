@@ -12,9 +12,10 @@ Two independent defenses are tested here:
   1. `is_text_free_chunk` + the skip in the chunk loop (nothing is sent).
   2. `replace_body_content` refusing to empty a populated <body>.
 """
+from unittest.mock import MagicMock
+
 import pytest
 from lxml import etree
-from unittest.mock import MagicMock
 
 from src.common.placeholder_format import PlaceholderFormat
 from src.core.epub.body_serializer import extract_body_html, replace_body_content
@@ -24,12 +25,11 @@ from src.core.epub.html_utils import is_text_free_chunk
 from src.core.epub.tag_preservation import TagPreserver
 from src.core.epub.translation_metrics import TranslationMetrics
 from src.core.epub.xhtml_translator import (
-    translate_xhtml_simplified,
     _translate_all_chunks_with_checkpoint,
+    translate_xhtml_simplified,
 )
 from src.core.llm.base import LLMResponse
 from src.persistence.checkpoint_manager import CheckpointManager
-
 
 # The real cover page markup from the reported book (issue F2).
 COVER_XHTML = '''<?xml version="1.0" encoding="utf-8"?>

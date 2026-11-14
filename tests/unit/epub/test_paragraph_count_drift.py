@@ -46,7 +46,6 @@ from lxml import etree
 
 import src.core.epub.translator as translator_module
 from src.core.epub.translator import translate_epub_file
-
 from tests.unit.epub.conftest import (
     REAL_CSS,
     _build_cjk_epub_dir,
@@ -55,7 +54,6 @@ from tests.unit.epub.conftest import (
     _write,
     _zip_dir_as_epub,
 )
-
 
 # A chapter body mixing ordinary paragraphs, the very-short reaction lines
 # called out in F6 ("“嗯？”", "……"), and one
