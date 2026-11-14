@@ -1225,6 +1225,11 @@ async def _process_all_content_files(
         # moment of pausing and then drops on resume. Clean runs are unaffected
         # (processed == chunks_in_this_file when the file completes).
         interrupted_now = bool(check_interruption_callback and check_interruption_callback())
+        if interrupted_now:
+            # A pause inside this file returns success=False and stops the loop
+            # below before the top-of-loop check can record it, so record it
+            # here: otherwise the partial EPUB is saved under the final name.
+            was_interrupted = True
         if interrupted_now and file_stats is not None:
             completed_chunks_global += min(chunks_in_this_file, file_stats.processed_chunks)
         else:

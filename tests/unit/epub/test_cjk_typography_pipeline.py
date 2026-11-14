@@ -110,10 +110,6 @@ async def test_script_normalization_disabled_leaves_css_and_opf_untouched(
 # Criterion 3 -- partial-output parity (the user's original question)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="fork bug: an interruption inside a file is not reported as was_interrupted",
-)
 @pytest.mark.asyncio
 async def test_partial_output_carries_the_same_normalization_as_the_completed_run(
     tmp_path, input_epub, monkeypatch
