@@ -5,3 +5,6 @@
 
 pytest>=7.0
 pytest-asyncio>=0.21
+
+# Static checks used by tests/unit/test_no_undefined_names.py
+pyflakes>=3.0

@@ -92,6 +92,7 @@ from .exceptions import (
     XmlParsingError,
 )
 from .html_chunker import HtmlChunker
+from .html_utils import is_text_free_chunk
 from .placeholder_validator import PlaceholderValidator
 from .tag_preservation import TagPreserver
 from .translation_metrics import TranslationMetrics
@@ -949,7 +950,7 @@ async def _translate_all_chunks_with_checkpoint(
 
     from pathlib import Path
 
-    from src.core.common.parallel import iter_ordered_concurrent
+    from src.core.common.parallel import aclosing, iter_ordered_concurrent
     from src.core.llm.exceptions import RateLimitError
 
     if prompt_options is None:
@@ -1278,6 +1279,25 @@ async def _translate_all_chunks_with_checkpoint(
 
     async def _translate_one(i, analyze_context=True):
         chunk = chunks[i]
+
+        # A chunk with no translatable character (pure markup, a '==' separator,
+        # a bare number, CJK ellipsis) has nothing for the LLM to do. Sending it
+        # anyway invites an empty answer, and an empty answer used to wipe the
+        # body -- the cover page's <svg> image was destroyed this way. Pass it
+        # through verbatim instead, before any context analysis, since there is
+        # no text to learn from either.
+        if is_text_free_chunk(chunk['text'], placeholder_format):
+            if log_callback:
+                log_callback("chunk_text_free_skipped",
+                    f"⏭️ Chunk {i + 1}/{len(chunks)} has no translatable text - kept as-is")
+            # Same completed-chunk bookkeeping as a first-try success, minus the
+            # LLM-call, token and retry counters (no request was made).
+            stats.successful_first_try += 1
+            stats.record_processed()
+            return PlaceholderManager.restore_to_global(
+                chunk['text'], chunk['global_indices']
+            )
+
         global_chunk_idx = _global_chunk_index(i)
         if global_chunk_idx > 0 and checkpoint_manager and translation_id and (
             prompt_options.get("reflection_mode")
@@ -1550,160 +1570,163 @@ async def _translate_all_chunks_with_checkpoint(
 
     # Continuous concurrency with in-order delivery: translated_chunks stays a
     # contiguous prefix (resume-safe) while up to `workers` requests run at once.
-    async for i, result in iter_ordered_concurrent(
+    # aclosing() closes the generator at block exit, so a break or a
+    # raise cancels every in-flight request instead of leaving it running.
+    async with aclosing(iter_ordered_concurrent(
         pending, workers, _translate_one, check_interruption_callback
-    ):
-        if isinstance(result, RateLimitError):
-            # Stop before appending this chunk so resume restarts at it.
-            rate_limit_error = result
-            break
-        if isinstance(result, Exception):
-            # Non-rate-limit errors propagate as before (after persisting the
-            # contiguous prefix already appended).
-            if checkpoint_manager and translation_id and file_href and translated_chunks:
-                _save_state(len(translated_chunks))
-            raise result
+    )) as _ordered_results:
+        async for i, result in _ordered_results:
+            if isinstance(result, RateLimitError):
+                # Stop before appending this chunk so resume restarts at it.
+                rate_limit_error = result
+                break
+            if isinstance(result, Exception):
+                # Non-rate-limit errors propagate as before (after persisting the
+                # contiguous prefix already appended).
+                if checkpoint_manager and translation_id and file_href and translated_chunks:
+                    _save_state(len(translated_chunks))
+                raise result
 
-        succeeded = getattr(result, "succeeded", True)
-        translated_text = str(result)
-        if i < len(translated_chunks):
-            translated_chunks[i] = translated_text
-        elif i == len(translated_chunks):
-            translated_chunks.append(translated_text)
-        else:
-            raise RuntimeError(
-                f"Cannot commit non-contiguous XHTML chunk {i}; "
-                f"translated prefix length is {len(translated_chunks)}"
-            )
-
-        if succeeded:
-            pending = pending_db_addressing_context_by_index.pop(i, None)
-            pending_relationship = pending_relationship_context_by_index.pop(i, None)
-            if (
-                checkpoint_manager
-                and translation_id
-                and hasattr(checkpoint_manager, "db")
-                and context_session
-            ):
-                db = checkpoint_manager.db
-                with db.context_state_transaction():
-                    if (
-                        pending
-                        and prompt_options.get("use_db_directed_addressing", True)
-                    ):
-                        sync_context_update_addressing_to_db(
-                            translation_id=translation_id,
-                            db=db,
-                            updated_context_or_dynamic_state=pending["content"],
-                            target_language=target_language,
-                            chunk_index=_global_chunk_index(i),
-                            log_callback=log_callback,
-                            dialogue_attribution=pending.get("dialogue_attribution"),
-                            candidates=pending.get("candidates"),
-                            source_text=pending.get("source_text", ""),
-                            source_language=source_language,
-                            contract_version=contract_version,
-                        )
-                    if pending_relationship and relationship_mode != "off":
-                        sync_context_update_relationships_to_db(
-                            translation_id=translation_id,
-                            db=db,
-                            updated_context_or_dynamic_state=pending_relationship["content"],
-                            source_text=pending_relationship["source_text"],
-                            candidates=pending_relationship.get("candidates"),
-                            parser_status=pending_relationship.get("parser_status", "absent"),
-                            target_language=target_language,
-                            chunk_index=_global_chunk_index(i),
-                            active_character_names=pending_relationship.get("active_character_names"),
-                            log_callback=log_callback,
-                        )
-                if pending and prompt_options.get("use_db_directed_addressing", True):
-                    apply_db_addressing_to_session(
-                        context_session,
-                        translation_id,
-                        db,
-                    )
-                if pending_relationship and relationship_mode != "off":
-                    apply_relationship_graph_to_session(
-                        context_session,
-                        translation_id,
-                        db,
-                    )
-                context_session.save()
-                if log_callback and contract_version >= 2:
-                    emit_progress_log(
-                        log_callback,
-                        "novel_context_state",
-                        "Context committed",
-                        layer="novel_context",
-                        data={
-                            "type": "novel_context_state",
-                            "content": context_session.content,
-                            "filename": context_session.path.name,
-                        },
-                    )
-            failed_indices.discard(i)
-        else:
-            pending_db_addressing_context_by_index.pop(i, None)
-            pending_relationship_context_by_index.pop(i, None)
-            failed_indices.add(i)
-        stats.failed_chunks = len(failed_indices)
-        stats.processed_chunks = len(translated_chunks)
-        i_done = i
-
-        # Save translation chunk checkpoint to SQLite for the context snapshot dropdown
-        ctx_snapshot, dialogue_attribution, chunk_data = _context_data_for_save(i)
-        if getattr(translated_text, "editor_validation", None):
-            chunk_data["editor_validation"] = translated_text.editor_validation
-        chunk_data["quality_status"] = getattr(
-            translated_text,
-            "quality_status",
-            "passed" if succeeded else "not_checked",
-        )
-        if succeeded:
-            chunk_data.pop("execution_failure_class", None)
-        else:
-            chunk_data["execution_failure_class"] = "structure"
-        chunks[i]['context_snapshot'] = ctx_snapshot
-        chunks[i]['dialogue_attribution'] = dialogue_attribution
-
-        if checkpoint_manager and translation_id and hasattr(checkpoint_manager, 'db'):
-            global_chunk_idx = _global_chunk_index(i)
-            if chunk_data.get('context_snapshot'):
-                checkpoint_context_data_by_global_index[global_chunk_idx] = (
-                    dict(chunk_data)
+            succeeded = getattr(result, "succeeded", True)
+            translated_text = str(result)
+            if i < len(translated_chunks):
+                translated_chunks[i] = translated_text
+            elif i == len(translated_chunks):
+                translated_chunks.append(translated_text)
+            else:
+                raise RuntimeError(
+                    f"Cannot commit non-contiguous XHTML chunk {i}; "
+                    f"translated prefix length is {len(translated_chunks)}"
                 )
 
-            checkpoint_manager.db.save_chunk(
-                translation_id=translation_id,
-                chunk_index=global_chunk_idx,
-                original_text=chunks[i]['text'],
-                translated_text=translated_text,
-                chunk_data=chunk_data,
-                status='completed' if succeeded else 'failed'
+            if succeeded:
+                pending = pending_db_addressing_context_by_index.pop(i, None)
+                pending_relationship = pending_relationship_context_by_index.pop(i, None)
+                if (
+                    checkpoint_manager
+                    and translation_id
+                    and hasattr(checkpoint_manager, "db")
+                    and context_session
+                ):
+                    db = checkpoint_manager.db
+                    with db.context_state_transaction():
+                        if (
+                            pending
+                            and prompt_options.get("use_db_directed_addressing", True)
+                        ):
+                            sync_context_update_addressing_to_db(
+                                translation_id=translation_id,
+                                db=db,
+                                updated_context_or_dynamic_state=pending["content"],
+                                target_language=target_language,
+                                chunk_index=_global_chunk_index(i),
+                                log_callback=log_callback,
+                                dialogue_attribution=pending.get("dialogue_attribution"),
+                                candidates=pending.get("candidates"),
+                                source_text=pending.get("source_text", ""),
+                                source_language=source_language,
+                                contract_version=contract_version,
+                            )
+                        if pending_relationship and relationship_mode != "off":
+                            sync_context_update_relationships_to_db(
+                                translation_id=translation_id,
+                                db=db,
+                                updated_context_or_dynamic_state=pending_relationship["content"],
+                                source_text=pending_relationship["source_text"],
+                                candidates=pending_relationship.get("candidates"),
+                                parser_status=pending_relationship.get("parser_status", "absent"),
+                                target_language=target_language,
+                                chunk_index=_global_chunk_index(i),
+                                active_character_names=pending_relationship.get("active_character_names"),
+                                log_callback=log_callback,
+                            )
+                    if pending and prompt_options.get("use_db_directed_addressing", True):
+                        apply_db_addressing_to_session(
+                            context_session,
+                            translation_id,
+                            db,
+                        )
+                    if pending_relationship and relationship_mode != "off":
+                        apply_relationship_graph_to_session(
+                            context_session,
+                            translation_id,
+                            db,
+                        )
+                    context_session.save()
+                    if log_callback and contract_version >= 2:
+                        emit_progress_log(
+                            log_callback,
+                            "novel_context_state",
+                            "Context committed",
+                            layer="novel_context",
+                            data={
+                                "type": "novel_context_state",
+                                "content": context_session.content,
+                                "filename": context_session.path.name,
+                            },
+                        )
+                failed_indices.discard(i)
+            else:
+                pending_db_addressing_context_by_index.pop(i, None)
+                pending_relationship_context_by_index.pop(i, None)
+                failed_indices.add(i)
+            stats.failed_chunks = len(failed_indices)
+            stats.processed_chunks = len(translated_chunks)
+            i_done = i
+
+            # Save translation chunk checkpoint to SQLite for the context snapshot dropdown
+            ctx_snapshot, dialogue_attribution, chunk_data = _context_data_for_save(i)
+            if getattr(translated_text, "editor_validation", None):
+                chunk_data["editor_validation"] = translated_text.editor_validation
+            chunk_data["quality_status"] = getattr(
+                translated_text,
+                "quality_status",
+                "passed" if succeeded else "not_checked",
             )
+            if succeeded:
+                chunk_data.pop("execution_failure_class", None)
+            else:
+                chunk_data["execution_failure_class"] = "structure"
+            chunks[i]['context_snapshot'] = ctx_snapshot
+            chunks[i]['dialogue_attribution'] = dialogue_attribution
 
-        # === HEALTH CHECK ===
-        # Warn loudly once if the LLM is failing to preserve placeholders at a
-        # high rate. Without this, retries pile up silently.
-        quality_warning = stats.check_quality_warning()
-        if quality_warning and log_callback:
-            log_callback("quality_warning", quality_warning)
+            if checkpoint_manager and translation_id and hasattr(checkpoint_manager, 'db'):
+                global_chunk_idx = _global_chunk_index(i)
+                if chunk_data.get('context_snapshot'):
+                    checkpoint_context_data_by_global_index[global_chunk_idx] = (
+                        dict(chunk_data)
+                    )
 
-        # === PERIODIC CHECKPOINT === (every N chunks and at the last chunk)
-        should_checkpoint = (
-            (i_done + 1) % CHECKPOINT_FREQUENCY == 0 or
-            (i_done + 1) == len(chunks)
-        )
-        if should_checkpoint:
-            _save_state(i_done + 1)
-            if log_callback:
-                log_callback("xhtml_checkpoint_saved",
-                    f"💾 Checkpoint saved: chunk {i_done + 1}/{len(chunks)}")
+                checkpoint_manager.db.save_chunk(
+                    translation_id=translation_id,
+                    chunk_index=global_chunk_idx,
+                    original_text=chunks[i]['text'],
+                    translated_text=translated_text,
+                    chunk_data=chunk_data,
+                    status='completed' if succeeded else 'failed'
+                )
 
-        # Report progress after completing each chunk
-        if stats_callback:
-            stats_callback(stats.to_dict())
+            # === HEALTH CHECK ===
+            # Warn loudly once if the LLM is failing to preserve placeholders at a
+            # high rate. Without this, retries pile up silently.
+            quality_warning = stats.check_quality_warning()
+            if quality_warning and log_callback:
+                log_callback("quality_warning", quality_warning)
+
+            # === PERIODIC CHECKPOINT === (every N chunks and at the last chunk)
+            should_checkpoint = (
+                (i_done + 1) % CHECKPOINT_FREQUENCY == 0 or
+                (i_done + 1) == len(chunks)
+            )
+            if should_checkpoint:
+                _save_state(i_done + 1)
+                if log_callback:
+                    log_callback("xhtml_checkpoint_saved",
+                        f"💾 Checkpoint saved: chunk {i_done + 1}/{len(chunks)}")
+
+            # Report progress after completing each chunk
+            if stats_callback:
+                stats_callback(stats.to_dict())
 
     if rate_limit_error is not None:
         # Persist the contiguous prefix appended before the limit, then
@@ -1870,8 +1893,6 @@ async def _translate_all_chunks(
         source_name = ""
         if prompt_options and 'input_filename' in prompt_options:
             source_name = prompt_options['input_filename']
-        elif file_href:
-            source_name = file_href
         novel_context_file = make_novel_context_filename(source_name, "epub")
         prompt_options['novel_context_file'] = novel_context_file
         if log_callback:

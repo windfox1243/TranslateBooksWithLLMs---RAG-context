@@ -54,7 +54,14 @@ from src.api.routes import configure_routes
 from src.api.translation_state import get_state_manager
 from src.api.websocket import configure_websocket_handlers
 from src.config import API_ENDPOINT as DEFAULT_OLLAMA_API_ENDPOINT
-from src.config import DEFAULT_MODEL, HOST, OUTPUT_DIR, PORT, warn_env_config_missing
+from src.config import (
+    DEFAULT_MODEL,
+    HOST,
+    LLM_PROVIDER,
+    OUTPUT_DIR,
+    PORT,
+    warn_env_config_missing,
+)
 
 # Initialize Flask app with static folder configuration
 # Handle PyInstaller bundle paths
@@ -333,12 +340,17 @@ def start_server():
         logger.info("  TranslateBook with LLMs - Server")
         logger.info("=" * 50)
         logger.info("")
-        logger.info(f"  Ollama Endpoint: {DEFAULT_OLLAMA_API_ENDPOINT}")
+        provider = (LLM_PROVIDER or 'ollama').strip().lower()
+        logger.info(f"  LLM Provider: {provider}")
+        if provider == 'ollama':
+            logger.info(f"  Ollama Endpoint: {DEFAULT_OLLAMA_API_ENDPOINT}")
         logger.info("  Supported formats: .txt, .epub, .srt, .docx")
         logger.info("")
 
-        # Test Ollama connection at startup
-        test_ollama_connection()
+        # Only probe Ollama when it is the configured provider: with another
+        # provider the warning is noise and suggests Ollama is required (#339).
+        if provider == 'ollama':
+            test_ollama_connection()
 
         logger.info("")
         logger.info("=" * 50)

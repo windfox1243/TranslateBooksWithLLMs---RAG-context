@@ -1,0 +1,71 @@
+@charset "utf-8";
+@font-face {
+  font-family: "AaJLKSCDZK (Non-Commercial Use)";
+  src: url(../Fonts/zdy2.ttf);
+}
+/*————————————————————通用————————————————————*/
+body {
+  /*整体*/
+  padding: 0%;
+  /*整体缩放*/
+  margin-top: 6%;
+  /* 章前留空 */
+  margin-bottom: 10%;
+  /* 章后留空 */
+  margin-left: 0.5%;
+  /* 向右偏移 */
+  margin-right: 0.5%;
+  /* 向左偏移 */
+  line-height: 130%;
+  /*行间距*/
+  text-align: justify;
+}
+p {
+  /*段落*/
+  text-align: justify;
+  /* 文本对齐方式 */
+  text-indent: 2em;
+  /*行缩进*/
+  line-height: 135%;
+  /*行间距*/
+  margin-right: 0.5%;
+  margin-left: 0.5%;
+  font-family: DK-SONGTI, st, "宋体", zw, sans-serif;
+}
+/** 英文斜体字 **/
+/*扉页*/
+/*标题页*/
+h1.head {
+  font-family: "AaJLKSCDZK (Non-Commercial Use)", "楷体", sans-serif;
+  font-size: 1.8em;
+  color: #BA2213;
+  text-indent: 0;
+  font-weight: bold;
+  text-indent: 0;
+  padding: auto;
+  text-align: center;
+  margin-top: 2em;
+  line-height: 120%;
+  margin-bottom: 1em;
+}
+/*正文*/
+/**楷体引文**/
+h3 {
+  font-size: 1.3em;
+  /*标题字号*/
+  margin: 1em 0;
+  /*左右偏移*/
+  border-left: 0.2em /*竖线粗细*/ solid #780700 /*竖线颜色*/;
+  line-height: 150%;
+  /*标题与上下距离*/
+  padding-left: 6px;
+  /*字与竖线间距*/
+  color: #780700;
+  font-family: "AaJLKSCDZK (Non-Commercial Use)", "楷体", sans-serif;
+}
+/*出版社*/
+/*多看画廊*/
+/*制作说明页*/
+/*版本说明页*/
+/*版权信息*/
+/*多看弹注*/

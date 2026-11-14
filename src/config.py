@@ -639,6 +639,31 @@ MAX_PLACEHOLDER_CORRECTION_ATTEMPTS = 0
 EPUB_TOKEN_ALIGNMENT_ENABLED = os.getenv('EPUB_TOKEN_ALIGNMENT_ENABLED', 'true').lower() == 'true'
 """Enable token alignment fallback for EPUB translation (Phase 2)"""
 
+SOURCE_RESIDUE_CHECK_ENABLED = os.getenv('SOURCE_RESIDUE_CHECK_ENABLED', 'true').lower() == 'true'
+"""Check every translated chunk for text left in the source language (issue #270).
+
+A chunk that still holds a long run of a script only the source language uses,
+or that comes back identical to its source, is retried once with a stricter
+prompt. If a non-Latin source script is still left after that retry, the chunk
+is recorded as untranslated so a resume or a repair pass retries it; an echo or
+leftover Latin text is accepted after the retry, since it is often legitimate
+(bibliographies, names, code, quotations). Set to false to accept every answer
+as before."""
+
+EPUB_SCRIPT_NORMALIZATION_ENABLED = os.getenv(
+    'EPUB_SCRIPT_NORMALIZATION_ENABLED', 'true').lower() == 'true'
+"""Enable source-script (CJK) typography normalization for translated EPUBs:
+rewrites CJK font stacks/indent/leading/writing-mode in stylesheets and inline
+styles, and drops reader-specific font-override OPF metas, when translating a
+CJK-authored EPUB to a non-CJK target (src/core/epub/cjk_typography.py)."""
+
+EPUB_TRANSLATE_METADATA_ENABLED = os.getenv(
+    'EPUB_TRANSLATE_METADATA_ENABLED', 'true').lower() == 'true'
+"""Enable packaging-metadata localization for translated EPUBs: one extra LLM
+call per book translates dc:title and dc:description, and the translated title
+is propagated to every NCX docTitle (src/core/epub/metadata_translator.py).
+dc:creator is never touched."""
+
 EPUB_TOKEN_ALIGNMENT_METHOD = os.getenv('EPUB_TOKEN_ALIGNMENT_METHOD', 'proportional')
 """
 Alignment method to use:

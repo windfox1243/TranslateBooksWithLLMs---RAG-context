@@ -25,6 +25,8 @@ from src.config import (
     API_ENDPOINT,
     ATTRIBUTION_ENABLED,
     DEFAULT_MODEL,
+    EPUB_SCRIPT_NORMALIZATION_ENABLED,
+    EPUB_TRANSLATE_METADATA_ENABLED,
     GENERATOR_NAME,
     GENERATOR_SOURCE,
     MAX_TOKENS_PER_CHUNK,
@@ -42,8 +44,10 @@ from ..context_optimizer import (
     AdaptiveContextManager,
 )
 from ..post_processor import clean_residual_tag_placeholders
+from .cjk_typography import apply_script_normalization_to_epub_directory
 from .epub_translation_adapter import EpubTranslationAdapter
 from .lang_support import apply_target_language_to_xhtml_directory, get_language_code
+from .metadata_translator import translate_opf_metadata
 from .rtl_support import apply_rtl_to_epub_directory, is_rtl_language
 
 
@@ -288,6 +292,47 @@ async def translate_epub_file(
                 target_language=target_language
             )
 
+            # 5.5. Localize the packaging metadata (OPF dc:title/dc:description
+            # and every NCX docTitle), which readers show on the library shelf
+            # and in the book-information panel.
+            #
+            # Ordering rationale — DO NOT REORDER THIS AND STEP 6.6:
+            #   - after 5 (_update_epub_metadata): that call appends the
+            #     attribution signature to dc:description, and this pass has to
+            #     strip it before sending and re-append it afterwards, so the
+            #     signature must already be there.
+            #   - BEFORE 6.6 (apply_script_normalization_to_epub_directory):
+            #     both passes write the OPF, from two *different* trees — 6.6
+            #     re-parses the OPF from disk. Writing our in-memory
+            #     `manifest_data['opf_tree']` after 6.6 has written its own tree
+            #     would silently revert 6.6's font-override meta removal and its
+            #     page-progression-direction reset. Running first means 6.6
+            #     re-reads a file that already carries the translated metadata,
+            #     and its NCX xml:lang write preserves our docTitle for the same
+            #     reason.
+            #
+            # Guarded like 6.6: metadata localization is a nice-to-have relative
+            # to the translated text and must never fail an otherwise-successful
+            # job. The module already swallows its own failures; this is the
+            # belt-and-braces guard for anything it did not anticipate.
+            if EPUB_TRANSLATE_METADATA_ENABLED:
+                try:
+                    await translate_opf_metadata(
+                        opf_tree=manifest_data['opf_tree'],
+                        opf_path=manifest_data['opf_path'],
+                        opf_dir=manifest_data['opf_dir'],
+                        source_language=source_language,
+                        target_language=target_language,
+                        llm_client=llm_client,
+                        model_name=model_name,
+                        log_callback=log_callback
+                    )
+                except Exception as e_meta:
+                    if log_callback:
+                        log_callback("epub_metadata_translation_failed",
+                                     f"⚠️ Packaging metadata localization "
+                                     f"failed and was skipped: {e_meta}")
+
             # 6. Apply RTL/LTR layout based on source and target languages
             # This handles RTL->RTL, LTR->RTL, RTL->LTR, and LTR->LTR transitions
             if log_callback:
@@ -316,6 +361,47 @@ async def translate_epub_file(
             apply_target_language_to_xhtml_directory(
                 temp_dir, target_language, log_callback=log_callback
             )
+
+            # 6.6. Neutralize source-script (CJK) typography left over from the
+            # original stylesheet/packaging (font stacks, indent, leading,
+            # writing mode, reader-specific font-override metas).
+            #
+            # Ordering rationale:
+            #   - after 5 (_update_epub_metadata): that call performs the
+            #     pipeline's single OPF write; running later means our OPF
+            #     edits are not overwritten.
+            #   - after 5.5 (translate_opf_metadata), and this must not be
+            #     swapped: that pass writes the *in-memory* opf_tree while this
+            #     one re-parses the OPF from disk, so running it first would
+            #     have its meta removal and progression reset overwritten. See
+            #     the longer note at step 5.5.
+            #   - after 6 (apply_rtl_to_epub_directory): that pass injects
+            #     <style> blocks and may set page-progression-direction.
+            #     Running later makes this pass the final authority on
+            #     writing-mode and progression direction, and lets it
+            #     neutralize anything the RTL pass injected.
+            #   - after 6.5 (apply_target_language_to_xhtml_directory): that
+            #     pass rewrites every XHTML root's lang attributes; running
+            #     later avoids two passes re-serializing the same files in an
+            #     interleaved way.
+            #   - before 7 (_repackage_epub): obviously.
+            #
+            # Wrapped in its own try/except: this pass is cosmetic relative to
+            # the translated text and must never fail an otherwise-successful
+            # job, even on a failure its own internal per-file guards did not
+            # anticipate (e.g. an OSError while walking the directory).
+            if EPUB_SCRIPT_NORMALIZATION_ENABLED:
+                try:
+                    norm_result = apply_script_normalization_to_epub_directory(
+                        temp_dir, source_language, target_language,
+                        log_callback=log_callback
+                    )
+                    _log_script_normalization(norm_result, log_callback)
+                except Exception as e_norm:
+                    if log_callback:
+                        log_callback("epub_script_norm_failed",
+                                     f"⚠️ Source-script typography normalization "
+                                     f"failed and was skipped: {e_norm}")
 
             # 7. Repackage EPUB. If translation was paused, write to a `[partial] `
             # filename so users can tell partial outputs from completed ones at a glance.
@@ -390,6 +476,48 @@ async def translate_epub_file(
 
 
 # === Private Helper Functions ===
+
+def _log_script_normalization(norm: dict, log_callback: Optional[Callable]) -> None:
+    """Emit the user-visible log lines for step 6.6's result dict.
+
+    Factored out of translate_epub_file (already long) rather than inlined at
+    the call site. See apply_script_normalization_to_epub_directory's
+    docstring for the exact keys of `norm`.
+    """
+    if not log_callback or not norm['applied']:
+        return
+
+    log_callback("epub_script_normalized",
+                 f"🔤 Source-script typography neutralized: "
+                 f"{norm['css_files_rewritten']} stylesheet(s), "
+                 f"{norm['style_elements_rewritten']} <style> block(s), "
+                 f"{norm['style_attributes_rewritten']} inline style(s)")
+
+    if norm['progression_direction_reset']:
+        log_callback("epub_script_norm_progression_reset",
+                     "📖 Page progression reset to left-to-right")
+
+    if norm['opf_metas_removed']:
+        log_callback("epub_script_norm_opf_metas_removed",
+                     f"🧹 Removed {norm['opf_metas_removed']} reader-specific "
+                     f"font override(s)")
+
+    if norm['embedded_font_bytes'] > 1_000_000:
+        embedded_mb = norm['embedded_font_bytes'] / (1024 * 1024)
+        log_callback("epub_script_norm_fonts_orphaned",
+                     f"ℹ️ {embedded_mb:.1f} MB of source-script fonts remain "
+                     f"embedded and are no longer referenced")
+
+    if norm['encoding_fallbacks']:
+        log_callback("epub_script_norm_encoding_fallback",
+                     f"⚠️ {norm['encoding_fallbacks']} stylesheet(s) had their "
+                     f"encoding guessed while reading")
+
+    if norm['errors']:
+        log_callback("epub_script_norm_errors",
+                     f"⚠️ {norm['errors']} error(s) occurred while normalizing "
+                     f"source-script typography")
+
 
 def _extract_epub(input_filepath: str, temp_dir: str, log_callback: Optional[Callable] = None) -> None:
     """Extract EPUB to temporary directory."""
@@ -839,7 +967,7 @@ def _precount_chunks_plain_text(
         if body is None:
             return 0
 
-        paragraphs, paragraph_tags, _ = extract_plain_paragraphs(body)
+        paragraphs, paragraph_tags, _, _ = extract_plain_paragraphs(body)
         if not paragraphs:
             return 0
 
@@ -1097,6 +1225,11 @@ async def _process_all_content_files(
         # moment of pausing and then drops on resume. Clean runs are unaffected
         # (processed == chunks_in_this_file when the file completes).
         interrupted_now = bool(check_interruption_callback and check_interruption_callback())
+        if interrupted_now:
+            # A pause inside this file returns success=False and stops the loop
+            # below before the top-of-loop check can record it, so record it
+            # here: otherwise the partial EPUB is saved under the final name.
+            was_interrupted = True
         if interrupted_now and file_stats is not None:
             completed_chunks_global += min(chunks_in_this_file, file_stats.processed_chunks)
         else:
@@ -1598,6 +1731,36 @@ def _repackage_epub(
                     arcname = os.path.relpath(file_path_abs, temp_dir)
                     epub_zip.write(file_path_abs, arcname)
 
+def _set_translator_role(
+    opf_root: etree._Element,
+    metadata: etree._Element,
+    contributor_el: etree._Element,
+) -> None:
+    """Mark the contributor as translator in the form the package version allows.
+
+    EPUB 2 expresses the role as an ``opf:role`` attribute on the element.
+    EPUB 3 removed that attribute (EPUBCheck RSC-005) and expresses it as a
+    ``meta`` refinement pointing at the contributor's id.
+    """
+    if opf_root.get('version', '').strip().startswith('2'):
+        contributor_el.set('{http://www.idpf.org/2007/opf}role', 'trl')
+        return
+
+    used_ids = set(opf_root.xpath('//@id'))
+    contributor_id = 'tbl-translator'
+    suffix = 2
+    while contributor_id in used_ids:
+        contributor_id = f'tbl-translator-{suffix}'
+        suffix += 1
+    contributor_el.set('id', contributor_id)
+
+    role_el = etree.SubElement(metadata, '{http://www.idpf.org/2007/opf}meta')
+    role_el.set('refines', f'#{contributor_id}')
+    role_el.set('property', 'role')
+    role_el.set('scheme', 'marc:relators')
+    role_el.text = 'trl'
+
+
 def _update_epub_metadata(
     opf_tree: etree._ElementTree,
     opf_path: str,
@@ -1625,7 +1788,7 @@ def _update_epub_metadata(
                 '{http://purl.org/dc/elements/1.1/}contributor'
             )
             contributor_el.text = GENERATOR_NAME
-            contributor_el.set('{http://www.idpf.org/2007/opf}role', 'trl')
+            _set_translator_role(opf_root, metadata, contributor_el)
 
             # Add or update description with signature
             desc_el = metadata.find('.//dc:description', namespaces=NAMESPACES)

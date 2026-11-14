@@ -17,7 +17,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.core.chunking.decorative_separator import is_decorative_separator
 from src.core.chunking.token_chunker import TokenChunker
-from src.core.common.parallel import iter_ordered_concurrent
+from src.core.common.parallel import aclosing, iter_ordered_concurrent
 from src.core.common.resume_context import (
     EMPTY_RESUME_CONTEXT,
     newest_chunk,
@@ -1008,100 +1008,103 @@ async def translate_paragraphs_plain(
     processed = 0
 
     # Continuous concurrency with in-order delivery (see iter_ordered_concurrent).
-    async for i, result in iter_ordered_concurrent(
+    # aclosing() closes the generator at block exit, so a break or a
+    # raise cancels every in-flight request instead of leaving it running.
+    async with aclosing(iter_ordered_concurrent(
         pending, workers, _translate_chunk, check_interruption_callback
-    ):
-        main_content = chunks[i].get('main_content', '')
-        chunk_succeeded = False
-        value = None
+    )) as _ordered_results:
+        async for i, result in _ordered_results:
+            main_content = chunks[i].get('main_content', '')
+            chunk_succeeded = False
+            value = None
 
-        if isinstance(result, RateLimitError):
-            rate_limit_error = result
-            break
+            if isinstance(result, RateLimitError):
+                rate_limit_error = result
+                break
 
-        if isinstance(result, Exception):
-            if log_callback:
-                log_callback(
-                    "plain_text_chunk_failed",
-                    f"Chunk {i + 1}/{len(chunks)} failed ({result}) - keeping original text"
-                )
-            translated_parts[i] = main_content
-            failed_indices.add(i)
-            stats.failed_chunks = len(failed_indices)
-        else:
-            kind, value = result
-            if kind == 'empty':
-                translated_parts[i] = value
-                stats.successful_first_try += 1
-                chunk_succeeded = True
-            elif kind == 'editor_failed':
-                preserved = getattr(value, "draft_translation", "")
-                translated_parts[i] = clean_translated_text(preserved) or main_content
-                review_required_indices.add(i)
-                stats.review_required_chunks = (
-                    baseline_review_required + len(review_required_indices)
-                )
-                _save_chunk_checkpoint(
-                    i, True, value, quality_status="review_required",
-                )
-                if log_callback:
-                    log_callback(
-                        "plain_text_editor_review_required",
-                        f"Chunk {i + 1}/{len(chunks)} was translated and preserved with Senior Editor review findings.",
-                    )
-                stats.record_processed()
-                if stats_callback:
-                    stats_callback(stats.to_dict())
-                processed += 1
-                continue
-            elif value is None:
+            if isinstance(result, Exception):
                 if log_callback:
                     log_callback(
                         "plain_text_chunk_failed",
-                        f"Chunk {i + 1}/{len(chunks)} failed - keeping original text"
+                        f"Chunk {i + 1}/{len(chunks)} failed ({result}) - keeping original text"
                     )
                 translated_parts[i] = main_content
                 failed_indices.add(i)
                 stats.failed_chunks = len(failed_indices)
             else:
-                quality_status = getattr(value, "quality_status", "passed")
-                cleaned = clean_translated_text(value)
-                cleaned = strip_hallucinated_markup(
-                    cleaned, chunks[i].get('main_content', ''))
-                translated_parts[i] = cleaned
-                completed_translations_by_index[
-                    global_chunk_offset + i
-                ] = cleaned
-                stats.successful_first_try += 1
-                chunk_succeeded = True
-                if quality_status == "review_required":
+                kind, value = result
+                if kind == 'empty':
+                    translated_parts[i] = value
+                    stats.successful_first_try += 1
+                    chunk_succeeded = True
+                elif kind == 'editor_failed':
+                    preserved = getattr(value, "draft_translation", "")
+                    translated_parts[i] = clean_translated_text(preserved) or main_content
                     review_required_indices.add(i)
                     stats.review_required_chunks = (
                         baseline_review_required + len(review_required_indices)
                     )
-                if sequential:
-                    words = cleaned.split()
-                    previous_translation_context = (
-                        " ".join(words[-25:]) if len(words) > 25 else cleaned
+                    _save_chunk_checkpoint(
+                        i, True, value, quality_status="review_required",
                     )
+                    if log_callback:
+                        log_callback(
+                            "plain_text_editor_review_required",
+                            f"Chunk {i + 1}/{len(chunks)} was translated and preserved with Senior Editor review findings.",
+                        )
+                    stats.record_processed()
+                    if stats_callback:
+                        stats_callback(stats.to_dict())
+                    processed += 1
+                    continue
+                elif value is None:
+                    if log_callback:
+                        log_callback(
+                            "plain_text_chunk_failed",
+                            f"Chunk {i + 1}/{len(chunks)} failed - keeping original text"
+                        )
+                    translated_parts[i] = main_content
+                    failed_indices.add(i)
+                    stats.failed_chunks = len(failed_indices)
+                else:
+                    quality_status = getattr(value, "quality_status", "passed")
+                    cleaned = clean_translated_text(value)
+                    cleaned = strip_hallucinated_markup(
+                        cleaned, chunks[i].get('main_content', ''))
+                    translated_parts[i] = cleaned
+                    completed_translations_by_index[
+                        global_chunk_offset + i
+                    ] = cleaned
+                    stats.successful_first_try += 1
+                    chunk_succeeded = True
+                    if quality_status == "review_required":
+                        review_required_indices.add(i)
+                        stats.review_required_chunks = (
+                            baseline_review_required + len(review_required_indices)
+                        )
+                    if sequential:
+                        words = cleaned.split()
+                        previous_translation_context = (
+                            " ".join(words[-25:]) if len(words) > 25 else cleaned
+                        )
 
-        if chunk_succeeded:
-            _commit_context_state(i)
-        _save_chunk_checkpoint(
-            i,
-            chunk_succeeded,
-            editor_error=(value if not isinstance(result, Exception) else None),
-            quality_status=(
-                getattr(value, "quality_status", "passed")
-                if chunk_succeeded else "not_checked"
-            ),
-            execution_failure_class=(None if chunk_succeeded else "translation"),
-        )
+            if chunk_succeeded:
+                _commit_context_state(i)
+            _save_chunk_checkpoint(
+                i,
+                chunk_succeeded,
+                editor_error=(value if not isinstance(result, Exception) else None),
+                quality_status=(
+                    getattr(value, "quality_status", "passed")
+                    if chunk_succeeded else "not_checked"
+                ),
+                execution_failure_class=(None if chunk_succeeded else "translation"),
+            )
 
-        stats.record_processed()
-        if stats_callback:
-            stats_callback(stats.to_dict())
-        processed += 1
+            stats.record_processed()
+            if stats_callback:
+                stats_callback(stats.to_dict())
+            processed += 1
 
     if rate_limit_error is not None:
         # Keep source text for everything not yet translated, then propagate to
