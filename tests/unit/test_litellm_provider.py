@@ -271,7 +271,7 @@ async def test_generic_api_error_with_server_status_is_retried(litellm_stub, no_
 )
 async def test_transient_errors_are_still_retried(litellm_stub, no_sleep, exc):
     # The provider's own binding: another test may reload src.config.
-    from src.core.llm.providers.litellm import LiteLLMProvider, MAX_TRANSLATION_ATTEMPTS
+    from src.core.llm.providers.litellm import MAX_TRANSLATION_ATTEMPTS, LiteLLMProvider
 
     litellm_stub.acompletion.side_effect = exc
 

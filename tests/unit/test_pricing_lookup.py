@@ -8,9 +8,10 @@ model, so a dated snapshot such as "gpt-4.1-nano-2025-04-14" was priced as
 
 https://github.com/hydropix/TranslateBooksWithLLMs/issues/231
 """
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
