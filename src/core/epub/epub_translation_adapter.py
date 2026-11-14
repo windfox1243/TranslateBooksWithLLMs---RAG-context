@@ -321,6 +321,7 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
         checkpoint_manager: Optional[Any] = None,
         translation_id: Optional[str] = None,
         global_chunk_offset: int = 0,
+        continuation_base_id: Optional[str] = None,
     ) -> Tuple[bool, Any]:
         """
         Plain-text-mode translation path: skip placeholders entirely.
@@ -373,6 +374,7 @@ class EpubTranslationAdapter(TranslationAdapter[etree._Element, bool]):
             checkpoint_manager=checkpoint_manager,
             translation_id=translation_id,
             global_chunk_offset=global_chunk_offset,
+            continuation_base_id=continuation_base_id,
         )
 
         if was_interrupted:
