@@ -92,7 +92,7 @@ _RELOADABLE_ENV_SETTINGS = (
     ('DEFAULT_MODEL',       'DEFAULT_MODEL',       'qwen3:14b'),
     ('LLM_PROVIDER',        'LLM_PROVIDER',        'ollama'),
     ('GEMINI_API_KEY',      'GEMINI_API_KEY',      ''),
-    ('GEMINI_MODEL',        'GEMINI_MODEL',        'gemini-2.0-flash'),
+    ('GEMINI_MODEL',        'GEMINI_MODEL',        'gemini-3.6-flash'),
     ('OPENAI_API_KEY',      'OPENAI_API_KEY',      ''),
     ('OPENROUTER_API_KEY',  'OPENROUTER_API_KEY',  ''),
     ('OPENROUTER_MODEL',    'OPENROUTER_MODEL',    'anthropic/claude-sonnet-4'),
@@ -242,6 +242,13 @@ MAX_CONCURRENT_JOBS = max(1, int(os.getenv('MAX_CONCURRENT_JOBS', '4')))
 # the web UI slider/CLI within a reasonable range. Cloud rate limits make very
 # high values counter-productive.
 MAX_PARALLEL_TRANSLATIONS = int(os.getenv('MAX_PARALLEL_TRANSLATIONS', '16'))
+
+# Extra hostnames the LLM endpoint validator accepts, comma-separated.
+# Deliberately not exposed through /api/settings: widening the allowlist from
+# the browser would reopen the credential-exfiltration path this guard closes.
+LLM_ENDPOINT_ALLOWLIST = tuple(
+    h.strip().lower() for h in os.getenv('LLM_ENDPOINT_ALLOWLIST', '').split(',') if h.strip()
+)
 
 # Providers that run on the user's own machine and serialize requests through a
 # single model instance. Parallel dispatch gives them no speedup and can
@@ -461,6 +468,12 @@ MIN_CHUNK_SIZE_TOKENS = 50
 # DEEPSEEK_API_KEY/MODEL, POE_API_KEY/MODEL, NIM_API_KEY/MODEL are loaded via
 # _apply_reloadable_env_settings() so reload_config() can refresh them at runtime.
 OPENROUTER_API_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions'
+# Many OpenRouter models reason by default (DeepSeek V4.x, Qwen 3.x), and the
+# reasoning tokens are billed as output. The provider sends OpenRouter's unified
+# `reasoning` parameter to turn it off, or to the lowest effort on models where
+# reasoning is mandatory, using the metadata /api/v1/models advertises.
+# Set to 'false' to keep each model's default reasoning.
+OPENROUTER_DISABLE_THINKING = os.getenv('OPENROUTER_DISABLE_THINKING', 'true').lower() == 'true'
 MISTRAL_API_ENDPOINT = os.getenv('MISTRAL_API_ENDPOINT', 'https://api.mistral.ai/v1/chat/completions')
 DEEPSEEK_API_ENDPOINT = os.getenv('DEEPSEEK_API_ENDPOINT', 'https://api.deepseek.com/chat/completions')
 # DeepSeek V4 models (deepseek-v4-flash, deepseek-v4-pro) enable thinking by default,

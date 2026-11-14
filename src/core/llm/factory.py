@@ -24,6 +24,7 @@ from src.config import (
     OLLAMA_NUM_CTX,
     OPENAI_API_KEY,
     OPENROUTER_API_KEY,
+    OPENROUTER_DISABLE_THINKING,
     OPENROUTER_MODEL,
     POE_API_ENDPOINT,
     POE_API_KEY,
@@ -124,7 +125,7 @@ def create_llm_provider(provider_type: str = "ollama", **kwargs) -> LLMProvider:
         )
         return GeminiProvider(
             api_key=api_key,
-            model=kwargs.get("model", "gemini-2.0-flash")
+            model=kwargs.get("model", "gemini-3.6-flash")
         )
     elif provider_type.lower() == "openrouter":
         api_key = _require_key(
@@ -134,7 +135,8 @@ def create_llm_provider(provider_type: str = "ollama", **kwargs) -> LLMProvider:
         )
         return OpenRouterProvider(
             api_key=api_key,
-            model=kwargs.get("model", OPENROUTER_MODEL)
+            model=kwargs.get("model", OPENROUTER_MODEL),
+            disable_thinking=kwargs.get("openrouter_disable_thinking", OPENROUTER_DISABLE_THINKING)
         )
     elif provider_type.lower() == "mistral":
         api_key = _require_key(

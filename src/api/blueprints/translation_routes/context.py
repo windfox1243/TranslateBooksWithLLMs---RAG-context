@@ -14,6 +14,8 @@ from .helpers import (
     _build_corrective_refinement_config,
     _claim_context_resync,
     _context_resync_state_from_config,
+    _drop_env_keys_for_overridden_endpoints,
+    _editor_endpoint_target,
     _is_context_resync_active,
     _provider_credentials_error,
     _refresh_inactive_context_resync_state,
@@ -299,6 +301,16 @@ def register(bp, deps, shared):
                 _rehydrate_resume_credentials(
                     correction_config,
                     {"api_key": live_key} if live_key else None,
+                )
+                # The checkpoint may name a non-default endpoint; the .env
+                # key must not follow it there.
+                editor_provider, _ = _editor_endpoint_target(correction_config)
+                _drop_env_keys_for_overridden_endpoints(
+                    correction_config,
+                    request_key=live_key,
+                    editor_request_key=live_config.get(
+                        f"{editor_provider}_api_key"
+                    ),
                 )
                 credential_error = _provider_credentials_error(
                     correction_config

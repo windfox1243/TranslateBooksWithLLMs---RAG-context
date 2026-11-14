@@ -26,7 +26,6 @@ EXCLUDED_DIRS = {
     "dist",
     "translated_files",
     "data",
-    ".telemetry",
     ".wiki_repo",
     ".wiki_repo_archive",
     "benchmark_results",
@@ -36,7 +35,6 @@ EXCLUDED_DIRS = {
     ".claude",
     "DoNotCommit",
     "prompt_optimization_results",
-    ".watermark",
 }
 
 LARGE_FILE_THRESHOLD = 1000

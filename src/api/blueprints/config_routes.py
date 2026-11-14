@@ -20,6 +20,17 @@ from flask import (
     send_from_directory,
 )
 
+from src.utils.webhook_secrets import (
+    has_mask,
+    mask_webhook_headers,
+    mask_webhook_payload,
+    mask_webhook_url,
+    same_origin,
+    unmask_webhook_headers,
+    unmask_webhook_payload,
+    unmask_webhook_url,
+)
+
 # UI locales served by /static/locales/<code>/*.json. Keep in sync with the
 # SUPPORTED_LOCALES constant in src/web/static/js/i18n/i18n.js. The list is
 # small enough that duplication beats a separate config file for now.
@@ -57,6 +68,7 @@ def get_config_path():
 import src.config as _config
 from src import __version__
 from src.api.api_keys import resolve_api_key as _resolve_api_key
+from src.api.services.endpoint_validator import EndpointValidator
 from src.config import reload_config
 from src.core.llm.base import normalize_api_keys
 
@@ -254,13 +266,13 @@ def create_config_blueprint(server_session_id=None):
             "enable_chunk_reflection": str(_config.ENABLE_CHUNK_REFLECTION).strip().lower() == 'true',
             "editor_provider": _config.EDITOR_PROVIDER or "",
             "editor_model": _config.EDITOR_MODEL or "",
-            # Webhook notifications — returned as-is for editing. URLs and tokens
-            # only ever travel between this server and the same-origin browser
-            # session that already controls the .env on disk.
-            "notify_webhook_url": _config.NOTIFY_WEBHOOK_URL,
+            # Webhook notifications: secrets in the URL and header values are
+            # masked (see webhook_secrets). save_settings() restores the stored
+            # value when the masked text comes back unchanged.
+            "notify_webhook_url": mask_webhook_url(_config.NOTIFY_WEBHOOK_URL),
             "notify_webhook_method": _config.NOTIFY_WEBHOOK_METHOD,
-            "notify_webhook_headers": _config.NOTIFY_WEBHOOK_HEADERS,
-            "notify_webhook_payload": _config.NOTIFY_WEBHOOK_PAYLOAD,
+            "notify_webhook_headers": mask_webhook_headers(_config.NOTIFY_WEBHOOK_HEADERS),
+            "notify_webhook_payload": mask_webhook_payload(_config.NOTIFY_WEBHOOK_PAYLOAD),
             "notify_on_success": bool(_config.NOTIFY_ON_SUCCESS),
             "notify_on_failure": bool(_config.NOTIFY_ON_FAILURE),
             "notify_on_interruption": bool(_config.NOTIFY_ON_INTERRUPTION),
@@ -552,7 +564,23 @@ def create_config_blueprint(server_session_id=None):
           would cause HTTP 400 at translation time. Return an explicit error so
           the UI can surface it.
         """
-        api_key = _first_key(_resolve_api_key(provided_api_key, 'OPENAI_API_KEY', _config.OPENAI_API_KEY))
+        ok, err = EndpointValidator.validate(api_endpoint)
+        if not ok:
+            logger.warning("Rejected client-supplied OpenAI endpoint: %s", err)
+            return jsonify({"error": err}), 400
+
+        # When the caller picks a host other than the configured one, the
+        # server's stored key must not follow it (see endpoint_validator).
+        requested = (api_endpoint or '').strip().rstrip('/')
+        is_override = bool(requested) and requested != (
+            _config.OPENAI_API_ENDPOINT or ''
+        ).strip().rstrip('/')
+        api_key = _first_key(_resolve_api_key(
+            provided_api_key,
+            'OPENAI_API_KEY',
+            _config.OPENAI_API_KEY,
+            allow_env_fallback=not is_override,
+        ))
 
         if api_endpoint:
             base_url = api_endpoint.replace('/chat/completions', '').rstrip('/')
@@ -576,6 +604,11 @@ def create_config_blueprint(server_session_id=None):
             headers = {}
             if api_key:
                 headers['Authorization'] = f'Bearer {api_key}'
+            # Anthropic's OpenAI compatibility layer serves chat completions
+            # without extra headers, but its /v1/models endpoint answers
+            # HTTP 400 unless the anthropic-version header is present.
+            if parsed_base.hostname == 'api.anthropic.com':
+                headers['anthropic-version'] = '2023-06-01'
 
             response = requests.get(models_url, headers=headers, timeout=10)
 
@@ -667,7 +700,7 @@ def create_config_blueprint(server_session_id=None):
             config_api_key=_config.GEMINI_API_KEY,
             config_default_model=_config.GEMINI_MODEL,
             provider_class=GeminiProvider,
-            fallback_model="gemini-2.0-flash",
+            fallback_model="gemini-3.6-flash",
             status_prefix="gemini",
             display_name="Gemini",
             api_key_missing_message=(
@@ -681,6 +714,12 @@ def create_config_blueprint(server_session_id=None):
     def _get_ollama_models():
         """Get available models from Ollama API"""
         ollama_base_from_ui = request.args.get('api_endpoint', _config.API_ENDPOINT)
+
+        # No key is involved here, so only the allowlist applies.
+        ok, err = EndpointValidator.validate(ollama_base_from_ui)
+        if not ok:
+            logger.warning("Rejected client-supplied Ollama endpoint: %s", err)
+            return jsonify({"error": err}), 400
 
         try:
             parsed = urlparse(ollama_base_from_ui)
@@ -1050,6 +1089,34 @@ def create_config_blueprint(server_session_id=None):
 
             if not updates:
                 return jsonify({"error": "No valid settings to save"}), 400
+
+            # The UI shows masked webhook secrets. Restore the stored value for
+            # parts left masked, but only while the destination is unchanged:
+            # a new host must never receive the stored token, headers or body.
+            if 'NOTIFY_WEBHOOK_URL' in updates:
+                updates['NOTIFY_WEBHOOK_URL'] = unmask_webhook_url(
+                    updates['NOTIFY_WEBHOOK_URL'], _config.NOTIFY_WEBHOOK_URL)
+            effective_url = updates.get('NOTIFY_WEBHOOK_URL', _config.NOTIFY_WEBHOOK_URL)
+            if same_origin(effective_url, _config.NOTIFY_WEBHOOK_URL):
+                if 'NOTIFY_WEBHOOK_HEADERS' in updates:
+                    updates['NOTIFY_WEBHOOK_HEADERS'] = unmask_webhook_headers(
+                        updates['NOTIFY_WEBHOOK_HEADERS'], _config.NOTIFY_WEBHOOK_HEADERS)
+                if 'NOTIFY_WEBHOOK_PAYLOAD' in updates:
+                    updates['NOTIFY_WEBHOOK_PAYLOAD'] = unmask_webhook_payload(
+                        updates['NOTIFY_WEBHOOK_PAYLOAD'], _config.NOTIFY_WEBHOOK_PAYLOAD)
+
+            # Never write a mask marker to .env: reject and ask for the secret again.
+            unresolved = [
+                k for k in ('NOTIFY_WEBHOOK_URL', 'NOTIFY_WEBHOOK_HEADERS', 'NOTIFY_WEBHOOK_PAYLOAD')
+                if has_mask(updates.get(k))
+            ]
+            if unresolved:
+                return jsonify({
+                    "error": "A masked webhook secret could not be restored. "
+                             "Re-enter the secret value in full and save again.",
+                    "error_code": "webhook_secret_unresolved",
+                    "fields": unresolved,
+                }), 400
 
             # Update the .env file
             _update_env_file(updates)

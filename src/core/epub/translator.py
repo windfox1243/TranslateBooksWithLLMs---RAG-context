@@ -32,6 +32,7 @@ from src.config import (
     NAMESPACES,
     THINKING_MODELS,
 )
+from src.utils.security import safe_extract_zip
 
 from ..common.translation_orchestrator import GenericTranslationOrchestrator
 from ..context_optimizer import (
@@ -396,7 +397,7 @@ def _extract_epub(input_filepath: str, temp_dir: str, log_callback: Optional[Cal
         log_callback("epub_extract_start", "Extracting EPUB...")
 
     with zipfile.ZipFile(input_filepath, 'r') as zip_ref:
-        zip_ref.extractall(temp_dir)
+        safe_extract_zip(zip_ref, temp_dir)
 
 
 def _find_opf_file(temp_dir: str) -> Optional[str]:
@@ -1641,18 +1642,5 @@ def _update_epub_metadata(
                     desc_el.text += signature_text
                 else:
                     desc_el.text = signature_text.strip()
-
-        # Stable per-install identifier for cross-platform rendering diagnostics.
-        # Added as an auxiliary dc:identifier; EPUB allows multiple identifiers.
-        try:
-            from src.utils.text_encoding import derive_identifier_urn
-            aux_id = etree.SubElement(
-                metadata,
-                '{http://purl.org/dc/elements/1.1/}identifier'
-            )
-            aux_id.text = derive_identifier_urn()
-            aux_id.set('id', 'render-uid')
-        except Exception:
-            pass
 
     opf_tree.write(opf_path, encoding='utf-8', xml_declaration=True, pretty_print=True)

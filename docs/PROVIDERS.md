@@ -25,6 +25,10 @@ Runs models locally on your machine.
 
 Browse models: [ollama.com/search](https://ollama.com/search)
 
+### Cloud models
+
+`-cloud` models (e.g. `gemma3:27b-cloud`) are not run locally — the local Ollama daemon relays them to Ollama's hosted infrastructure using the account signed in with `ollama signin`. Once that account's usage limit is reached, the daemon returns HTTP 429. TBL pauses the job and saves a checkpoint, so you can resume once the quota resets or you add credits. The **"Don't auto-pause on rate limit (HTTP 429)"** setting is the opt-out: enable it and TBL waits and auto-resumes instead of pausing.
+
 ### CLI Example
 
 ```bash
@@ -50,6 +54,8 @@ TBL supports any server that implements the OpenAI API format. This includes:
    - Select "OpenAI-Compatible" provider
    - Set endpoint to your server URL (see table below)
    - Leave API key empty (local servers don't require it)
+
+> **Anthropic:** Claude models work through Anthropic's OpenAI compatibility layer. Set the endpoint to `https://api.anthropic.com/v1/chat/completions` and use an Anthropic API key. The web UI loads the model list from Anthropic's `/v1/models`, which needs an `anthropic-version` header; the server adds it automatically for this host.
 
 | Server | Default Endpoint |
 |--------|------------------|
@@ -97,6 +103,16 @@ python translate.py -i book.txt -o book_fr.txt \
 
 Browse models and pricing: [openrouter.ai/models](https://openrouter.ai/models)
 
+### Reasoning
+
+Many OpenRouter models reason by default (DeepSeek V4.x at effort `high`, Qwen 3.x), and reasoning
+tokens are billed as output: DeepSeek V4.1 Flash was seen producing 4,700 to 31,000 output tokens
+for translation chunks of about 3,000 input tokens. TBL reads each model's reasoning metadata from
+`/api/v1/models` and sends OpenRouter's unified `reasoning` parameter: `{"enabled": false}` when
+reasoning can be turned off, or the lowest supported effort on models where it is mandatory (a
+warning is logged for those). The per-request log line shows the reasoning token count whenever
+the model reports one. `OPENROUTER_DISABLE_THINKING=false` keeps each model's default.
+
 ---
 
 ## OpenAI Cloud
@@ -137,7 +153,7 @@ Google's Gemini models.
 
 ### Models
 
-- `gemini-2.0-flash`
+- `gemini-3.6-flash`
 - `gemini-1.5-pro`
 - `gemini-1.5-flash`
 
@@ -152,7 +168,7 @@ Google's Gemini models.
 python translate.py -i book.txt -o book_fr.txt \
     --provider gemini \
     --gemini_api_key your-key \
-    -m gemini-2.0-flash
+    -m gemini-3.6-flash
 ```
 
 ---
@@ -257,6 +273,29 @@ python translate.py -i book.txt -o book_fr.txt \
 ```
 
 Browse models: [build.nvidia.com](https://build.nvidia.com/)
+
+---
+
+## Endpoint Allowlist
+
+The web API lets a request choose the endpoint the server calls, so the server checks that endpoint against an allowlist before using it. Accepted out of the box:
+
+- the known provider hosts (`api.openai.com`, `generativelanguage.googleapis.com`, `openrouter.ai`, `api.mistral.ai`, `api.deepseek.com`, `api.poe.com`, `integrate.api.nvidia.com`);
+- every `*_API_ENDPOINT` configured in your `.env`;
+- anything on your own network, so self-hosted Ollama, LM Studio, llama.cpp and vLLM keep working: loopback and LAN addresses (including `100.64.0.0/10`, the range Tailscale uses), `localhost`, `host.docker.internal`, a single-label hostname such as `http://ollama:11434` (a Docker service or LXC name), and any host under `.local`, `.lan`, `.home`, `.home.arpa`, `.internal`, `.intranet`, `.corp`, `.private` or `.ts.net`;
+- any other hostname that **resolves entirely to your local network**, so a LAN machine named under a domain you own (`ai-server.example.com` answering `192.168.1.50` from your internal DNS) works without any configuration. The lookup only happens for a host none of the rules above accepted, and the verdict is cached for a minute.
+
+Anything else returns HTTP 400 with the rejected host and the fix in the response, and a `WARNING` line in the server log. A host that resolves to a public address, or does not resolve at all, is rejected.
+
+The endpoint is only checked for the providers that actually read it (`ollama`, `openai`, `nim`). The web UI sends the field with every provider, so a stale value there never blocks a Gemini or OpenRouter job.
+
+To allow a self-hosted gateway on a public hostname, add it to `LLM_ENDPOINT_ALLOWLIST` in `.env` (comma-separated; subdomains of a listed host are covered):
+
+```bash
+LLM_ENDPOINT_ALLOWLIST=llm.internal.example.com,gateway.example.org
+```
+
+This variable is read at startup only and is deliberately not editable from the web UI. A second rule pairs with it: when a request supplies an endpoint that differs from the configured default, the server refuses to attach the API key stored in `.env` — that request must send its own key, or it is rejected. Together these guarantee a stored credential is never sent to a host the request chose.
 
 ---
 

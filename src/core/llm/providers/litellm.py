@@ -29,6 +29,7 @@ from ..base import (
     terminal_provider_failure,
 )
 from ..exceptions import ContextOverflowError
+from ..rate_limit_handler import is_retryable_http_status
 
 # Substrings that mark a provider-side context/length overflow, surfaced as
 # ContextOverflowError so the chunking layer can react (shrink and retry).
@@ -45,6 +46,30 @@ _TRANSIENT_EXCEPTIONS = (
     "litellm.exceptions.Timeout",
     "litellm.exceptions.InternalServerError",
     "litellm.exceptions.ServiceUnavailableError",
+)
+
+# Raised by LiteLLM when the input does not fit the model; always surfaced as
+# ContextOverflowError, even when its message misses every overflow keyword.
+_CONTEXT_WINDOW_EXCEPTION = "litellm.exceptions.ContextWindowExceededError"
+
+# LiteLLM exception qualnames caused by the request or the credentials: a retry
+# sends the same thing and fails the same way, so give up on the first one.
+# Matched against the whole MRO, so subclasses (ContentPolicyViolationError,
+# UnsupportedParamsError, ... all derive from BadRequestError) are covered.
+_NON_TRANSIENT_EXCEPTIONS = (
+    "litellm.exceptions.AuthenticationError",
+    "litellm.exceptions.PermissionDeniedError",
+    "litellm.exceptions.NotFoundError",
+    "litellm.exceptions.BadRequestError",
+    "litellm.exceptions.UnprocessableEntityError",
+    "litellm.exceptions.BudgetExceededError",
+)
+
+# The subset of the above that means the credentials are wrong, reported to the
+# Senior Editor as provider_auth rather than as a transport failure.
+_AUTH_EXCEPTIONS = (
+    "litellm.exceptions.AuthenticationError",
+    "litellm.exceptions.PermissionDeniedError",
 )
 
 
@@ -175,11 +200,29 @@ class LiteLLMProvider(LLMProvider):
                 )
 
             except Exception as e:
+                qualnames = _qualnames(e)
                 error_str = str(e).lower()
-                if any(kw in error_str for kw in _CONTEXT_OVERFLOW_KEYWORDS):
+                if (_CONTEXT_WINDOW_EXCEPTION in qualnames
+                        or any(kw in error_str for kw in _CONTEXT_OVERFLOW_KEYWORDS)):
                     raise ContextOverflowError(f"LiteLLM context overflow: {e}") from e
 
-                qualname = f"{type(e).__module__}.{type(e).__name__}"
+                # Auth, bad request, unknown model, ... won't recover on retry:
+                # fail fast, same as the HTTP providers do for non-retryable 4xx.
+                if _is_non_transient(e, qualnames):
+                    print(f"[LiteLLM] Non-retryable error, giving up: {e}")
+                    failure_class = (
+                        "provider_auth"
+                        if any(name in _AUTH_EXCEPTIONS for name in qualnames)
+                        else "transport"
+                    )
+                    status = getattr(e, "status_code", None)
+                    return terminal_provider_failure(
+                        generation_options,
+                        failure_class,
+                        status if isinstance(status, int) else None,
+                    )
+
+                qualname = qualnames[0]
                 is_last = attempt >= MAX_TRANSLATION_ATTEMPTS - 1
                 print(
                     f"[LiteLLM] Error (attempt {attempt + 1}/"
@@ -194,3 +237,29 @@ class LiteLLMProvider(LLMProvider):
                     await asyncio.sleep(2)
 
         return terminal_provider_failure(generation_options, "transport")
+
+
+def _qualnames(exc: Exception) -> List[str]:
+    """Qualified names of the exception's class and its bases, most specific first.
+
+    Exceptions are classified by name rather than isinstance() because litellm
+    is an optional lazy import: its classes cannot be referenced at module load.
+    """
+    return [f"{cls.__module__}.{cls.__name__}" for cls in type(exc).__mro__]
+
+
+def _is_non_transient(exc: Exception, qualnames: List[str]) -> bool:
+    """Whether retrying the same request is pointless.
+
+    Known transient classes win over everything else. Otherwise a known
+    non-transient class, or a non-retryable HTTP status on an exception that
+    carries one (LiteLLM sets `status_code` on its errors, including the
+    generic APIError), means the request itself is at fault. Anything
+    unclassified stays retryable, as before.
+    """
+    if any(name in _TRANSIENT_EXCEPTIONS for name in qualnames):
+        return False
+    if any(name in _NON_TRANSIENT_EXCEPTIONS for name in qualnames):
+        return True
+    status = getattr(exc, "status_code", None)
+    return isinstance(status, int) and not is_retryable_http_status(status)

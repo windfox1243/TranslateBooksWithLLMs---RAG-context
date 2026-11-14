@@ -158,14 +158,11 @@ class DocxHtmlConverter:
                 for element in body:
                     self._convert_html_element_to_docx(doc, element, metadata)
 
-        # Stamp core properties for cross-platform rendering diagnostics
-        try:
-            from src.utils.text_encoding import derive_identifier_suffix
-            doc.core_properties.last_modified_by = (
-                f"TranslateBookWithLLM {derive_identifier_suffix()}"
-            )
-        except Exception:
-            pass
+        # Attribution stamp: identical for every install, disabled by the
+        # ATTRIBUTION_ENABLED switch. Left untouched when attribution is off.
+        import src.config as cfg
+        if cfg.ATTRIBUTION_ENABLED:
+            doc.core_properties.last_modified_by = cfg.GENERATOR_NAME
 
         # Save
         doc.save(output_path)

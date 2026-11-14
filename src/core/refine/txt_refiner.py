@@ -288,12 +288,6 @@ async def refine_txt_file(
         final_text += footer
 
     try:
-        from src.utils.text_encoding import apply_normalization
-        final_text = apply_normalization(final_text)
-    except Exception:
-        pass
-
-    try:
         async with aiofiles.open(output_filepath, 'w', encoding='utf-8') as f:
             await f.write(final_text)
         if log_callback:

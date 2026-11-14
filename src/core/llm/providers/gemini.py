@@ -146,6 +146,7 @@ class GeminiProvider(LLMProvider):
     Provider for Google Gemini API.
 
     Supports Gemini models including:
+        - gemini-3.6-flash
         - gemini-2.0-flash-exp
         - gemini-1.5-pro
         - gemini-1.5-flash
@@ -167,7 +168,7 @@ class GeminiProvider(LLMProvider):
         >>> response = await provider.generate("Translate: Hello")
     """
 
-    def __init__(self, api_key: Union[str, List[str]], model: str = "gemini-2.0-flash"):
+    def __init__(self, api_key: Union[str, List[str]], model: str = "gemini-3.6-flash"):
         """
         Initialize the Gemini provider.
 
@@ -175,7 +176,7 @@ class GeminiProvider(LLMProvider):
             api_key: Google AI API key. Accepts a single key string OR a list
                 of keys for automatic failover on HTTP 429 (the base class wraps
                 them in a KeyPool that rotates on rate-limit).
-            model: Gemini model name (default: gemini-2.0-flash)
+            model: Gemini model name (default: gemini-3.6-flash)
         """
         super().__init__(model, api_keys=api_key, provider_name="gemini")
         self.api_endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -364,8 +365,14 @@ class GeminiProvider(LLMProvider):
                     candidate = response_json["candidates"][0]
                     content = candidate.get("content", {})
                     parts = content.get("parts", [])
-                    if parts:
-                        response_text = parts[0].get("text", "")
+                    # Gemini can split one answer across several parts, and adds
+                    # a part flagged "thought" when thinking is enabled. Keep
+                    # every text part; taking parts[0] truncated long responses.
+                    response_text = "".join(
+                        part.get("text", "")
+                        for part in parts
+                        if not part.get("thought")
+                    )
                     # Detect finishReason: MAX_TOKENS = truncation; SAFETY/RECITATION
                     # = the model produced nothing because the response was blocked
                     # post-generation. We log SAFETY explicitly because a silent

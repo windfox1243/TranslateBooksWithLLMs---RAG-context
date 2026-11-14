@@ -32,9 +32,11 @@ from ..base import (
 )
 from ..exceptions import (
     ContextOverflowError,
+    RateLimitError,
     RepetitionLoopError,
     StructuredOutputSchemaError,
 )
+from ..rate_limit_handler import compute_wait_time
 from ..thinking.behavior import ThinkingBehavior, _model_matches_pattern
 from ..thinking.cache import get_thinking_cache
 from ..thinking.detection import detect_repetition_loop
@@ -51,6 +53,7 @@ class OllamaProvider(LLMProvider):
         self.api_endpoint = api_endpoint.replace('/api/generate', '/api/chat')
         self.context_window = context_window
         self.log_callback = log_callback
+        self._context_detector = ContextDetector()
         # Will be detected on first request via _detect_thinking_behavior()
         self._thinking_behavior: Optional[ThinkingBehavior] = None
         self._supports_think_param: bool = True
@@ -341,6 +344,13 @@ class OllamaProvider(LLMProvider):
                 max_completion_tokens = int(self.context_window * 0.85)
 
                 async with client.stream("POST", self.api_endpoint, json=payload, timeout=timeout) as response:
+                    if response.is_error:
+                        # The body of a streamed response is not fetched yet, so
+                        # reading it from the exception handler below would raise
+                        # httpx.ResponseNotRead. Pull it here, while the stream is
+                        # still open, so Ollama's error message (num_ctx overflow,
+                        # unknown model, ...) survives into the handler.
+                        await response.aread()
                     response.raise_for_status()
 
                     try:
@@ -571,12 +581,43 @@ class OllamaProvider(LLMProvider):
                 RESET = '\033[0m'
 
                 error_message = str(e)
-                if e.response:
+                if e.response is not None:
+                    # Ollama reports failures as {"error": "..."}; fall back to the
+                    # raw body when the server answers with plain text or HTML.
                     try:
-                        error_data = e.response.json()
-                        error_message = error_data.get("error", str(e))
+                        error_message = e.response.json().get("error") or str(e)
                     except Exception:
-                        pass
+                        try:
+                            error_message = e.response.text.strip() or str(e)
+                        except Exception:
+                            pass
+
+                # Handle rate limits (HTTP 429) before anything else: Ollama Cloud
+                # enforces a monthly quota, so retrying cannot clear it. Raise
+                # immediately so the pipeline pauses and checkpoints (issue #279).
+                if e.response is not None and e.response.status_code == 429:
+                    headers = e.response.headers
+                    hinted = any(
+                        header in headers
+                        for header in ("Retry-After", "retry-after",
+                                       "X-RateLimit-Reset", "x-ratelimit-reset")
+                    )
+                    # Without a server hint, leave retry_after unset: the header-less
+                    # fallback (a few seconds) would hammer an exhausted monthly quota,
+                    # while None lets the caller use its own auto-resume delay.
+                    retry_after = compute_wait_time(headers, 0) if hinted else None
+
+                    if self.log_callback:
+                        self.log_callback("llm_rate_limit",
+                            f"{YELLOW}⚠️ Rate limit reached (HTTP 429){RESET}\n"
+                            f"{YELLOW}   Model: {self.model}{RESET}\n"
+                            f"{YELLOW}   Error: {error_message}{RESET}\n"
+                            f"{YELLOW}   Translation is being paused - a checkpoint is saved so you can resume later{RESET}")
+                    else:
+                        print(f"{YELLOW}Rate limit reached (HTTP 429): {error_message}{RESET}")
+                        print(f"{YELLOW}Translation is being paused - a checkpoint is saved so you can resume later{RESET}")
+
+                    raise RateLimitError(error_message, retry_after=retry_after, provider="ollama")
 
                 # Handle context overflow errors
                 if (
