@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from src.core.common.resume_context import read_checkpoint_context
+from src.core.context.analysis import analyze_unit_context
+from src.core.context.commit import commit_pending_context
 from src.core.jobs import UnitTranslationOutcome
 from src.core.llm_client import LLMClient
 from src.utils.unified_logger import get_logger
@@ -471,7 +473,6 @@ class GenericTranslator:
             from src.utils.addressing_schema import context_contract_version
             from src.utils.db_addressing import (
                 apply_db_addressing_to_session,
-                build_directed_addressing_prompt_context,
                 sync_context_update_addressing_to_db,
                 sync_markdown_addressing_to_db,
             )
@@ -481,7 +482,6 @@ class GenericTranslator:
             )
             from src.utils.relationship_sync import (
                 apply_relationship_graph_to_session,
-                build_relationship_prompt_context,
                 judge_ambiguous_relationship_candidates,
                 resolve_relationship_reasoning_mode,
                 sync_context_update_relationships_to_db,
@@ -695,151 +695,37 @@ class GenericTranslator:
                     )
                 )
                 if should_analyze_context:
-                    if log_callback:
-                        log_callback(
-                            "novel_context_updating",
-                            f"Analyzing source context for unit {i+1} before translation...",
-                        )
-                    try:
-                        relationship_fallback_context = context_session.content
-                        change_logs = await context_session.analyze_source(
-                            llm_client=llm_client,
-                            model_name=model_name,
-                            source_chunk=unit.content,
-                            source_language=source_language,
-                            target_language=target_language,
-                            chunk_index=i + 1,
-                            total_chunks=total_units,
-                            scene_key=unit.metadata.get("chapter_index"),
-                        )
-                        # Deterministic social evidence is committed before the
-                        # draft request so an honorific or explicit hierarchy in
-                        # this source unit can guide the translation of the same
-                        # unit. LLM-derived candidates retain their existing
-                        # transaction boundary below.
-                        if self.translation_id and getattr(
-                            self.checkpoint_manager, "db", None
-                        ):
-                            from src.core.context import commit_source_social_evidence
-
-                            commit_source_social_evidence(
-                                translation_id=self.translation_id,
-                                db=self.checkpoint_manager.db,
-                                global_lore=context_session.global_lore,
-                                source_text=unit.content,
-                                dialogue_attribution=(
-                                    context_session.dialogue_attribution
-                                ),
-                                source_language=source_language,
-                                target_language=target_language,
-                                chunk_index=i,
-                                log_callback=log_callback,
-                            )
-                        if log_callback:
-                            log_callback(
-                                "novel_context_updated",
-                                f"Novel context prepared for unit {i+1}.",
-                            )
-                            for change_log in change_logs:
-                                log_callback("novel_context_log", change_log)
+                    analysis = await analyze_unit_context(
+                        context_session=context_session,
+                        db=getattr(self.checkpoint_manager, "db", None),
+                        translation_id=self.translation_id,
+                        llm_client=llm_client,
+                        model_name=model_name,
+                        source_text=unit.content,
+                        source_language=source_language,
+                        target_language=target_language,
+                        local_index=i,
+                        total_units=total_units,
+                        global_index=i,
+                        scene_key=unit.metadata.get("chapter_index"),
+                        contract_version=contract_version,
+                        relationship_mode=relationship_mode,
+                        prompt_options=prompt_options,
+                        unit_label="unit",
+                        log_callback=log_callback,
+                    )
+                    if analysis.analyzed:
                         if unit.metadata is None:
                             unit.metadata = {}
                         unit.metadata['dialogue_attribution'] = (
                             context_session.dialogue_attribution
                         )
-                        unit.metadata['context_snapshot'] = (
-                            context_session.snapshot()
-                        )
+                        unit.metadata['context_snapshot'] = context_session.snapshot()
                         analyzed_context_indices.add(i)
-                        if (
-                            self.translation_id
-                            and getattr(self.checkpoint_manager, "db", None)
-                            and prompt_options.get("use_db_directed_addressing", True)
-                        ):
-                            pending_db_addressing_context_by_index[i] = {
-                                "content": context_session.content,
-                                "dialogue_attribution": context_session.dialogue_attribution,
-                                "candidates": list(
-                                    context_session.addressing_candidates
-                                ),
-                                "parser_status": context_session.addressing_parse_status,
-                                "source_text": unit.content,
-                            }
-                        if (
-                            self.translation_id
-                            and getattr(self.checkpoint_manager, "db", None)
-                            and relationship_mode != "off"
-                        ):
-                            from src.core.context import relevant_character_names
-
-                            locked_facts = [
-                                edge for edge in self.checkpoint_manager.db.get_relationship_edges(
-                                    self.translation_id,
-                                    statuses=["accepted"],
-                                )
-                                if edge.get("is_locked")
-                            ]
-                            judged_candidates = await judge_ambiguous_relationship_candidates(
-                                llm_client=llm_client,
-                                candidates=context_session.relationship_candidates,
-                                source_text=unit.content,
-                                model_name=model_name,
-                                enabled=(
-                                    prompt_options.get("use_relationship_llm_judge")
-                                    in {True, "selective", "always"}
-                                ),
-                                locked_facts=locked_facts,
-                                log_callback=log_callback,
-                            )
-                            pending_relationship_context_by_index[i] = {
-                                "content": context_session.content,
-                                "source_text": unit.content,
-                                "candidates": judged_candidates,
-                                "parser_status": context_session.relationship_parse_status,
-                                "active_character_names": relevant_character_names(
-                                    global_lore=context_session.global_lore,
-                                    source_text=unit.content,
-                                    dialogue_attribution=context_session.dialogue_attribution,
-                                    source_language=source_language,
-                                ),
-                            }
-                            if relationship_mode == "project":
-                                if prompt_options.get(
-                                    "use_db_directed_addressing",
-                                    True,
-                                ):
-                                    apply_db_addressing_to_session(
-                                        context_session,
-                                        self.translation_id,
-                                        self.checkpoint_manager.db,
-                                        fallback_context=relationship_fallback_context,
-                                    )
-                                apply_relationship_graph_to_session(
-                                    context_session,
-                                    self.translation_id,
-                                    self.checkpoint_manager.db,
-                                    fallback_context=relationship_fallback_context,
-                                )
-                                context_session.save()
-                                unit.metadata['context_snapshot'] = (
-                                    context_session.snapshot()
-                                )
-                        if log_callback and contract_version < 2:
-                            log_callback(
-                                "novel_context_state",
-                                "Context updated",
-                                {
-                                    "type": "novel_context_state",
-                                    "content": context_session.content,
-                                    "filename": context_session.path.name,
-                                },
-                            )
-                    except Exception as e:
-                        if log_callback:
-                            log_callback(
-                                "novel_context_update_failed",
-                                f"Failed to prepare novel context: {str(e)}",
-                            )
+                    if analysis.addressing:
+                        pending_db_addressing_context_by_index[i] = analysis.addressing
+                    if analysis.relationships:
+                        pending_relationship_context_by_index[i] = analysis.relationships
                 elif i in checkpoint_context_data_by_index:
                     if unit.metadata is None:
                         unit.metadata = {}
@@ -913,73 +799,22 @@ class GenericTranslator:
                         "file_type": self.adapter.format_name,
                         "editor_phase": "translation",
                     })
-                    if unit.metadata.get("dialogue_attribution"):
-                        unit_prompt_options["dialogue_attribution"] = (
-                            unit.metadata["dialogue_attribution"]
-                        )
-                    elif context_session and context_session.dialogue_attribution:
-                        unit_prompt_options["dialogue_attribution"] = (
-                            context_session.dialogue_attribution
-                        )
-                    if context_session:
-                        from src.core.context import relevant_character_names
-                        unit_prompt_options.setdefault(
-                            "active_character_names",
-                            relevant_character_names(
-                                global_lore=context_session.global_lore,
-                                source_text=unit.content,
-                                dialogue_attribution=context_session.dialogue_attribution,
-                                source_language=source_language,
-                            ),
-                        )
-                    directed_context = build_directed_addressing_prompt_context(
-                        translation_id=self.translation_id,
-                        db=getattr(self.checkpoint_manager, "db", None),
-                        target_language=target_language,
-                        prompt_options=unit_prompt_options,
-                        log_callback=log_callback,
-                    )
-                    if directed_context:
-                        unit_prompt_options["directed_addressing_context"] = directed_context
-                    relationship_context = build_relationship_prompt_context(
-                        translation_id=self.translation_id,
-                        db=getattr(self.checkpoint_manager, "db", None),
-                        target_language=target_language,
-                        prompt_options=unit_prompt_options,
-                        reference_text="\n".join(
-                            part for part in (
-                                unit.context_before,
-                                unit.content,
-                                unit.context_after,
-                            )
-                            if part
-                        ),
-                        log_callback=log_callback,
-                    )
-                    if relationship_context:
-                        unit_prompt_options["relationship_context"] = relationship_context
-                    from src.utils.narrator_voice import build_narrator_voice_context
+                    from src.core.context import attach_draft_prompt_context
                     voice_db = getattr(self.checkpoint_manager, "db", None)
-                    narrative_voice_context = build_narrator_voice_context(
-                        self.translation_id, voice_db,
-                        chunk_index=i,
+                    attach_draft_prompt_context(
+                        unit_prompt_options,
+                        translation_id=self.translation_id,
+                        db=voice_db,
+                        context_session=context_session,
+                        source_text=unit.content,
+                        source_language=source_language,
                         target_language=target_language,
-                    )
-                    if narrative_voice_context:
-                        unit_prompt_options["narrative_voice_context"] = narrative_voice_context
-                    from src.core.context import build_unit_prompt_context
-                    unit_prompt_options["prompt_context_bundle"] = (
-                        build_unit_prompt_context(
-                            global_lore=(
-                                context_session.global_lore
-                                if context_session else ""
-                            ),
-                            reference_text=unit.content,
-                            addressing=directed_context,
-                            relationships=relationship_context,
-                            narrator=narrative_voice_context,
-                            nearby_source=(unit.context_before, unit.context_after),
-                        )
+                        chunk_index=i,
+                        stored_dialogue_attribution=unit.metadata.get(
+                            "dialogue_attribution"
+                        ),
+                        nearby_source=(unit.context_before, unit.context_after),
+                        log_callback=log_callback,
                     )
                     unit_prompt_options.update({
                         "_checkpoint_db": voice_db,
@@ -1154,63 +989,20 @@ class GenericTranslator:
                         'failed_chunks': failed_count
                     })
 
-            def _commit_db_addressing(i):
-                if not (
-                    context_session
-                    and self.translation_id
-                    and getattr(self.checkpoint_manager, "db", None)
-                    and prompt_options.get("use_db_directed_addressing", True)
-                ):
-                    return
-                pending = pending_db_addressing_context_by_index.pop(i, None)
-                if not pending:
-                    return
-                sync_context_update_addressing_to_db(
+            def _commit_pending_context(i):
+                commit_pending_context(
+                    context_session=context_session,
+                    db=getattr(self.checkpoint_manager, "db", None),
                     translation_id=self.translation_id,
-                    db=self.checkpoint_manager.db,
-                    updated_context_or_dynamic_state=pending["content"],
-                    target_language=target_language,
                     chunk_index=i,
-                    log_callback=log_callback,
-                    dialogue_attribution=pending.get("dialogue_attribution"),
-                    candidates=pending.get("candidates"),
-                    source_text=pending.get("source_text", ""),
+                    addressing=pending_db_addressing_context_by_index.pop(i, None),
+                    relationships=pending_relationship_context_by_index.pop(i, None),
+                    target_language=target_language,
                     source_language=source_language,
                     contract_version=contract_version,
-                )
-                apply_db_addressing_to_session(
-                    context_session,
-                    self.translation_id,
-                    self.checkpoint_manager.db,
-                )
-
-            def _commit_relationship_context(i):
-                if not (
-                    context_session
-                    and self.translation_id
-                    and getattr(self.checkpoint_manager, "db", None)
-                    and relationship_mode != "off"
-                ):
-                    return
-                pending_relationship = pending_relationship_context_by_index.pop(i, None)
-                if not pending_relationship:
-                    return
-                sync_context_update_relationships_to_db(
-                    translation_id=self.translation_id,
-                    db=self.checkpoint_manager.db,
-                    updated_context_or_dynamic_state=pending_relationship["content"],
-                    source_text=pending_relationship["source_text"],
-                    candidates=pending_relationship.get("candidates"),
-                    parser_status=pending_relationship.get("parser_status", "absent"),
-                    target_language=target_language,
-                    chunk_index=i,
-                    active_character_names=pending_relationship.get("active_character_names"),
+                    relationship_mode=relationship_mode,
+                    use_db_addressing=prompt_options.get("use_db_directed_addressing", True),
                     log_callback=log_callback,
-                )
-                apply_relationship_graph_to_session(
-                    context_session,
-                    self.translation_id,
-                    self.checkpoint_manager.db,
                 )
 
             async def _sync_successful_translated_context(i, unit, translated_content):
@@ -1255,8 +1047,7 @@ class GenericTranslator:
                     db = getattr(self.checkpoint_manager, "db", None)
                     if self.translation_id and db is not None:
                         with db.context_state_transaction():
-                            _commit_db_addressing(i)
-                            _commit_relationship_context(i)
+                            _commit_pending_context(i)
                             if prompt_options.get(
                                 "use_db_directed_addressing",
                                 True,
@@ -1536,8 +1327,7 @@ class GenericTranslator:
                         _record_failure(i, unit)
                         continue
 
-                    _commit_db_addressing(i)
-                    _commit_relationship_context(i)
+                    _commit_pending_context(i)
                     _commit_context(i, unit)
                     failed_indices.discard(i)
                     failed_count = len(failed_indices)
