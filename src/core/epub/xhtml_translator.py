@@ -60,7 +60,6 @@ from src.prompts.prompts import (
     CORRECTED_TAG_OUT,
     generate_placeholder_correction_prompt,
 )
-from src.utils.addressing_schema import context_contract_version
 from src.utils.db_addressing import (
     apply_db_addressing_to_session,
     sync_markdown_addressing_to_db,
@@ -953,7 +952,6 @@ async def _translate_all_chunks_with_checkpoint(
     if prompt_options is None:
         prompt_options = {}
     relationship_mode = resolve_relationship_reasoning_mode(prompt_options)
-    contract_version = context_contract_version(prompt_options)
     if (global_completed_chunks or 0) == 0:
         emit_progress_log(
             log_callback,
@@ -1339,7 +1337,6 @@ async def _translate_all_chunks_with_checkpoint(
                 total_units=len(chunks),
                 global_index=global_chunk_idx,
                 scene_key=chunk.get("chapter_index"),
-                contract_version=contract_version,
                 relationship_mode=relationship_mode,
                 prompt_options=prompt_options,
                 log_callback=log_callback,
@@ -1471,7 +1468,6 @@ async def _translate_all_chunks_with_checkpoint(
                         relationships=pending_relationship_context_by_index.pop(i, None),
                         target_language=target_language,
                         source_language=source_language,
-                        contract_version=contract_version,
                         relationship_mode=relationship_mode,
                         use_db_addressing=prompt_options.get("use_db_directed_addressing", True),
                         log_callback=log_callback,
@@ -1483,7 +1479,6 @@ async def _translate_all_chunks_with_checkpoint(
                     ):
                         save_committed_context(
                             context_session,
-                            contract_version=contract_version,
                             log_callback=log_callback,
                         )
                 else:

@@ -64,7 +64,6 @@ def _prompt_options_from_start_request(data):
     prompt_options = dict((data or {}).get('prompt_options') or {})
     prompt_options.setdefault('use_relationship_reasoning', 'project')
     prompt_options.setdefault('use_relationship_llm_judge', 'selective')
-    prompt_options.setdefault('context_contract_version', 5)
     prompt_options.setdefault('source_residue_validation', True)
     if 'reflection_mode' not in prompt_options:
         prompt_options['reflection_mode'] = (

@@ -12,7 +12,6 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-from src.utils.addressing_schema import context_contract_version
 from src.utils.progress_logging import emit_progress_log
 from src.utils.translation_quality import (
     find_source_residue,
@@ -31,7 +30,6 @@ class EditorPreflight:
 
     draft_translation: str
     source_available: bool
-    contract_v2: bool
     source_language: str
     glossary_terms: Dict[str, Any]
     protected_terms: List[str]
@@ -56,7 +54,6 @@ def run_editor_preflight(
     source_available = bool(source_chunk and source_chunk.strip()) and str(
         options.get("editor_source_mode") or "checkpoint"
     ).casefold() != "monolingual"
-    contract_v2 = context_contract_version(options) >= 2
     source_language = str(options.get("source_language") or "")
     glossary_terms = (
         options.get("glossary_terms")
@@ -114,7 +111,7 @@ def run_editor_preflight(
             level="warning",
         )
     residue_findings = []
-    if source_available and bool(options.get("source_residue_validation", contract_v2)):
+    if source_available and bool(options.get("source_residue_validation", True)):
         residue_findings = find_source_residue(
             source_chunk,
             draft_translation,
@@ -168,7 +165,7 @@ def run_editor_preflight(
             ),
         )
         if source_available and bool(
-            options.get("source_residue_validation", contract_v2)
+            options.get("source_residue_validation", True)
         ):
             residue_findings = find_source_residue(
                 source_chunk,
@@ -200,7 +197,6 @@ def run_editor_preflight(
     return EditorPreflight(
         draft_translation=draft_translation,
         source_available=source_available,
-        contract_v2=contract_v2,
         source_language=source_language,
         glossary_terms=glossary_terms,
         protected_terms=protected_terms,

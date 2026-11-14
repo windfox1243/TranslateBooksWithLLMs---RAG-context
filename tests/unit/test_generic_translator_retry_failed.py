@@ -398,7 +398,10 @@ async def test_resume_reuses_failed_unit_source_context_without_reanalysis(
 
     assert second_success is True
     assert second_calls == [FAILING_CONTENT]
-    assert context_updates[FAILING_CONTENT] == 2
+    # Source analysis ran once, on the first run; the resumed run reuses it.
+    # (A second count used to come from the legacy output sync, which re-ran
+    # the full analysis after translating and no longer exists.)
+    assert context_updates[FAILING_CONTENT] == 1
     retried_chunk = next(
         chunk for chunk in cm.db.get_chunks("resume-context-job")
         if chunk["original_text"] == FAILING_CONTENT

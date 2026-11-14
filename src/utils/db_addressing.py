@@ -335,89 +335,79 @@ def sync_context_update_addressing_to_db(
     candidates: Optional[Iterable[Any]] = None,
     source_text: str = "",
     source_language: str = "",
-    contract_version: int = 1,
 ) -> int:
-    """Import addressing rules discovered by a context update into DB."""
+    """Import the structured addressing candidates a context update produced.
 
-    if contract_version >= 2:
-        from src.utils.addressing_schema import AddressingCandidateV2
+    Only the JSON candidates are imported. Addressing lines the model also
+    wrote into the markdown dynamic state are not parsed here; reading them
+    was the legacy (contract v1) path.
+    """
 
-        parsed = []
-        for item in candidates or []:
-            candidate = (
-                item
-                if isinstance(item, AddressingCandidateV2)
-                else AddressingCandidateV2.from_dict(
-                    item,
-                    source_language=source_language,
-                )
-            )
-            if candidate:
-                parsed.append(candidate)
-        if not parsed:
-            return 0
-        engine = ContextMergeEngine(db=db)
-        known_names = list(known_character_names or []) or (
-            _known_character_names_from_context(updated_context_or_dynamic_state)
-        )
-        active_names = list(active_character_names or []) + (
-            _active_names_from_dialogue(dialogue_attribution)
-        )
-        applied = 0
-        for candidate in parsed:
-            if candidate.action == "delete":
-                existing = next((
-                    rule for rule in db.get_addressing_rules(translation_id)
-                    if _clean(rule.get("speaker_name")).casefold()
-                    == candidate.speaker.casefold()
-                    and _clean(rule.get("addressee_name")).casefold()
-                    == candidate.addressee.casefold()
-                ), None)
-                if existing and not existing.get("is_locked"):
-                    applied += int(db.delete_addressing_rule(
-                        translation_id,
-                        candidate.speaker,
-                        candidate.addressee,
-                    ))
-                continue
-            applied += int(engine.apply_delta(
-                translation_id=translation_id,
-                chunk_index=chunk_index,
-                delta=candidate.to_delta(),
-                trigger_source="context_update_v2",
-                log_callback=log_callback,
-                target_language=target_language,
-                known_character_names=known_names,
-                active_character_names=active_names,
-                dialogue_attribution=dialogue_attribution,
-                source_text=source_text,
+    from src.utils.addressing_schema import AddressingCandidateV2
+
+    parsed = []
+    for item in candidates or []:
+        candidate = (
+            item
+            if isinstance(item, AddressingCandidateV2)
+            else AddressingCandidateV2.from_dict(
+                item,
                 source_language=source_language,
-            ))
-        emit_progress_log(
-            log_callback,
-            "db_addressing_v2_imported",
-            f"Imported {applied}/{len(parsed)} structured addressing update(s).",
-            layer="db_addressing",
-            data={
-                "candidate_count": len(parsed),
-                "applied_count": applied,
-                "contract_version": 2,
-            },
+            )
         )
-        return applied
-
-    return sync_markdown_addressing_to_db(
-        translation_id=translation_id,
-        db=db,
-        context_or_dynamic_state=updated_context_or_dynamic_state,
-        target_language=target_language,
-        chunk_index=chunk_index,
-        trigger_source="context_update",
-        log_callback=log_callback,
-        known_character_names=known_character_names,
-        active_character_names=active_character_names,
-        dialogue_attribution=dialogue_attribution,
+        if candidate:
+            parsed.append(candidate)
+    if not parsed:
+        return 0
+    engine = ContextMergeEngine(db=db)
+    known_names = list(known_character_names or []) or (
+        _known_character_names_from_context(updated_context_or_dynamic_state)
     )
+    active_names = list(active_character_names or []) + (
+        _active_names_from_dialogue(dialogue_attribution)
+    )
+    applied = 0
+    for candidate in parsed:
+        if candidate.action == "delete":
+            existing = next((
+                rule for rule in db.get_addressing_rules(translation_id)
+                if _clean(rule.get("speaker_name")).casefold()
+                == candidate.speaker.casefold()
+                and _clean(rule.get("addressee_name")).casefold()
+                == candidate.addressee.casefold()
+            ), None)
+            if existing and not existing.get("is_locked"):
+                applied += int(db.delete_addressing_rule(
+                    translation_id,
+                    candidate.speaker,
+                    candidate.addressee,
+                ))
+            continue
+        applied += int(engine.apply_delta(
+            translation_id=translation_id,
+            chunk_index=chunk_index,
+            delta=candidate.to_delta(),
+            trigger_source="context_update_v2",
+            log_callback=log_callback,
+            target_language=target_language,
+            known_character_names=known_names,
+            active_character_names=active_names,
+            dialogue_attribution=dialogue_attribution,
+            source_text=source_text,
+            source_language=source_language,
+        ))
+    emit_progress_log(
+        log_callback,
+        "db_addressing_v2_imported",
+        f"Imported {applied}/{len(parsed)} structured addressing update(s).",
+        layer="db_addressing",
+        data={
+            "candidate_count": len(parsed),
+            "applied_count": applied,
+            "contract_version": 2,
+        },
+    )
+    return applied
 
 
 def _active_names_from_prompt_options(prompt_options: Optional[Dict[str, Any]]) -> List[str]:

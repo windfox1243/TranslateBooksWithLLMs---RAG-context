@@ -43,7 +43,6 @@ async def analyze_unit_context(
     total_units: int,
     global_index: int,
     scene_key: Any,
-    contract_version: int,
     relationship_mode: str,
     prompt_options: Dict[str, Any],
     unit_label: str = "chunk",
@@ -168,16 +167,6 @@ async def analyze_unit_context(
                     fallback_context=fallback_context,
                 )
                 context_session.save()
-        if log_callback and contract_version < 2:
-            log_callback(
-                "novel_context_state",
-                "Context updated",
-                {
-                    "type": "novel_context_state",
-                    "content": context_session.content,
-                    "filename": context_session.path.name,
-                },
-            )
     except Exception as e:
         if log_callback:
             log_callback(

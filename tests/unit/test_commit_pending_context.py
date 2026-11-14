@@ -50,7 +50,6 @@ def _commit(fake_db, **overrides):
         relationships={"content": "R", "source_text": "S"},
         target_language="Vietnamese",
         source_language="English",
-        contract_version=5,
         relationship_mode="selective",
     )
     kwargs.update(overrides)
@@ -96,7 +95,7 @@ def test_relationship_mode_off_skips_relationships_only(calls):
     assert [name for name, _ in calls] == ["addressing", "apply_addressing"]
 
 
-def test_save_emits_the_state_for_contract_v2_and_later(tmp_path):
+def test_save_writes_the_session_and_emits_the_state(tmp_path):
     saved = []
     session = SimpleNamespace(
         save=lambda: saved.append(True),
@@ -104,14 +103,6 @@ def test_save_emits_the_state_for_contract_v2_and_later(tmp_path):
         path=tmp_path / "ctx.md",
     )
     events = []
-    save_committed_context(
-        session, contract_version=5, log_callback=lambda *a, **k: events.append(a)
-    )
+    save_committed_context(session, log_callback=lambda *a, **k: events.append(a))
     assert saved == [True]
     assert events and events[0][0] == "novel_context_state"
-
-    events.clear()
-    save_committed_context(
-        session, contract_version=1, log_callback=lambda *a, **k: events.append(a)
-    )
-    assert events == []
