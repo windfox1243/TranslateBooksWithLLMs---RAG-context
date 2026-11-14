@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from src.persistence.database import Database
+from src.utils.language_profiles import is_target_language
 from src.utils.relationship_reasoning_engine import relationship_support_for_addressing
 
 
@@ -42,7 +43,7 @@ class ContextReconciler:
         chunk_index: int = 0,
         trigger_source: str = "context_reconciler",
     ) -> bool:
-        if "viet" not in target_language.casefold() and target_language.casefold() != "vi":
+        if not is_target_language(target_language, "vi"):
             return False
         provisional = next((
             item for item in self.db.get_addressing_rules(

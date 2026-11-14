@@ -9,6 +9,7 @@ from src.core.context.contracts import SocialHierarchyEvidence
 from src.persistence.database import Database
 from src.utils.addressing_schema import AddressingCandidateV2
 from src.utils.context_merge_engine import ContextMergeEngine
+from src.utils.language_profiles import is_target_language
 from src.utils.relationship_reasoning_engine import RelationshipReasoningEngine
 from src.utils.relationship_schema import RelationshipCandidate
 from src.utils.text_matching import reference_mentions_label
@@ -262,7 +263,7 @@ def apply_social_hierarchy_evidence(
                     translation_id,
                     int(conflict["id"]),
                 )
-        if "viet" not in target_language.casefold() and target_language.casefold() != "vi":
+        if not is_target_language(target_language, "vi"):
             continue
         source_node = db.get_relationship_node_by_name(translation_id, item.source) or {}
         target_node = db.get_relationship_node_by_name(translation_id, item.target) or {}

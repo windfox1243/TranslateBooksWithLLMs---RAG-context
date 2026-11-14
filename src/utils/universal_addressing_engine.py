@@ -10,6 +10,8 @@ Enforces strict linguistic separation:
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from src.utils.language_profiles import get_language_profile
+
 
 def _has_cue_word(text: str, cue: str) -> bool:
     """Check if the cue is present in the text, ensuring word boundaries for short/single words to avoid false positive substring matches."""
@@ -80,6 +82,9 @@ _HARMONIOUS_ALIGNMENT_MAP: Dict[Tuple[str, str], Tuple[str, str]] = {
 }
 
 
+_ENGINE_LANGUAGES = frozenset({"vi", "ja", "ko", "fr", "es"})
+
+
 class UniversalAddressingEngine:
     """
     2D Formality + Seniority Matrix Engine to validate and repair addressing rules.
@@ -87,19 +92,9 @@ class UniversalAddressingEngine:
     """
 
     def __init__(self, language: str = "generic"):
-        lang_clean = (language or "generic").strip().casefold()
-        if lang_clean in {"vietnamese", "tiếng việt", "vi"}:
-            self.lang_code = "vi"
-        elif lang_clean in {"japanese", "tiếng nhật", "ja"}:
-            self.lang_code = "ja"
-        elif lang_clean in {"korean", "tiếng hàn", "ko"}:
-            self.lang_code = "ko"
-        elif lang_clean in {"french", "français", "fr"}:
-            self.lang_code = "fr"
-        elif lang_clean in {"spanish", "es"}:
-            self.lang_code = "es"
-        else:
-            self.lang_code = "generic"
+        # Only languages with addressing tables below get a specific code.
+        code = get_language_profile(language).code
+        self.lang_code = code if code in _ENGINE_LANGUAGES else "generic"
 
     def resolve_seniority_hierarchy(
         self, speaker: str, addressee: str, context: str, vocative: str = "",

@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from src.utils.language_profiles import is_target_language
+
 from .characters import (
     _canonical_display_name,
     _canonical_gender,
@@ -20,8 +22,9 @@ from .dynamic_state import (
 
 
 def _is_vietnamese_target_language(target_language: Optional[str]) -> bool:
-    target = str(target_language or "").strip().casefold()
-    return target in {"vietnamese", "vietnamien", "viet", "tiếng việt", "tieng viet"}
+    return is_target_language(target_language, "vi")
+
+
 def _has_complete_vietnamese_addressing_details(details: str) -> bool:
     self_ref = _vietnamese_addressing_field(details, "self-reference")
     second_p = _vietnamese_addressing_field(details, "second-person pronoun")

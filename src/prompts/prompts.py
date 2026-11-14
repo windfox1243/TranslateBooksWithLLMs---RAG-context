@@ -15,6 +15,7 @@ from src.prompts.examples import (
     get_output_format_example,
     get_subtitle_example,
 )
+from src.utils.language_profiles import get_language_profile, is_target_language
 
 # Tags for placeholder correction responses
 CORRECTED_TAG_IN = "<CORRECTED_TAG_IN>"
@@ -884,12 +885,7 @@ def generate_ner_extraction_prompt(
     parser is permissive (handles markdown fences, missing tags, partial JSON).
     """
     vietnamese_skill_guidance = ""
-    if (target_language or "").strip().casefold() in {
-        "vietnamese",
-        "tiếng việt",
-        "tieng viet",
-        "vi",
-    }:
+    if is_target_language(target_language, "vi"):
         vietnamese_skill_guidance = """
 8. For English named skills, abilities, techniques, spells, combat moves, weapons, artifacts, and equipment, prefer concise Sino-Vietnamese literary target renderings when natural for Vietnamese fantasy or game prose. Preserve English only for brands, code labels, UI/system keys, or terms that clearly should remain untranslated."""
 
@@ -1690,9 +1686,9 @@ def generate_post_processing_prompt(
 
 def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
     """Return language-tailored prompt examples and guidance for the Senior Editor reflection audit."""
-    lang_lower = (target_lang or "").lower().strip()
+    code = get_language_profile(target_lang).code
 
-    if "vietnamese" in lang_lower or lang_lower == "vi":
+    if code == "vi":
         return {
             "loc_example": ' (e.g. in Vietnamese: translate English "Momozawa Trainer" -> "Huấn luyện viên Momozawa", NOT literal unlocalized "Momozawa Trainer")',
             "pronoun_examples": " (e.g. 'em', 'chú', 'con', 'tới', 'tớ')",
@@ -1702,7 +1698,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "stutter_example": ' (e.g., "Wh-what..." -> "Gì-gì...", "S-sorry..." -> "X-xin lỗi...")',
             "addressee_examples": ' (e.g. "cô nương", "tiểu thư", "thiếu gia", "anh", "chị", "em", "bác sĩ")',
         }
-    elif "japanese" in lang_lower or lang_lower == "ja":
+    elif code == "ja":
         return {
             "loc_example": ' (e.g. in Japanese: place titles/honorifics after names like "桃沢トレーナー" or "Sato-senpai", NOT English title-first order)',
             "pronoun_examples": " (e.g. dialogue first-person 'ore/boku/watashi' or informal address 'omae/kisama')",
@@ -1712,7 +1708,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "stutter_example": ' (e.g., "Wh-what..." -> "な、なに...", "S-sorry..." -> "す、すみません...")',
             "addressee_examples": ' (e.g. "Ojou-sama", "Hime-sama", "Senpai", "-san", "-kun", "-chan")',
         }
-    elif "chinese" in lang_lower or lang_lower in ("zh", "zh-cn", "zh-tw"):
+    elif code == "zh":
         return {
             "loc_example": ' (e.g. in Chinese: place titles after names like "桃泽教练" or "张医生", maintaining natural CJK honorific order)',
             "pronoun_examples": " (e.g. dialogue kinship/honorific terms like '哥', '姐', '少爷', '前辈')",
@@ -1722,7 +1718,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "stutter_example": ' (e.g., "Wh-what..." -> "什、什么...", "S-sorry..." -> "对、对不起...")',
             "addressee_examples": ' (e.g. "小姐", "少爷", "前辈", "姑娘", "先生")',
         }
-    elif "korean" in lang_lower or lang_lower == "ko":
+    elif code == "ko":
         return {
             "loc_example": ' (e.g. in Korean: place honorifics after names like "모모자와 트레이너님" or "김선배")',
             "pronoun_examples": " (e.g. dialogue seniority/honorific terms like '오빠', '언니', '형', '누나', '선배님')",
@@ -1732,7 +1728,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "stutter_example": ' (e.g., "Wh-what..." -> "뭐, 뭐야...", "S-sorry..." -> "미, 미안...")',
             "addressee_examples": ' (e.g. "아가씨", "도련님", "선배님", "선생님")',
         }
-    elif "french" in lang_lower or lang_lower == "fr":
+    elif code == "fr":
         return {
             "loc_example": ' (e.g. in French: respect natural adjective placement, honorific titles, and gender agreement)',
             "pronoun_examples": " (e.g. informal 'tu' vs formal 'vous' dialogue register)",
@@ -1742,7 +1738,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "stutter_example": ' (e.g., "Wh-what..." -> "Q-quoi...", "S-sorry..." -> "D-désolé...")',
             "addressee_examples": ' (e.g. "mademoiselle", "monsieur", "maître")',
         }
-    elif "spanish" in lang_lower or lang_lower == "es":
+    elif code == "es":
         return {
             "loc_example": ' (e.g. in Spanish: respect natural noun-adjective order and title placement like "Entrenador Momozawa")',
             "pronoun_examples": " (e.g. informal 'tú'/'vos' vs formal 'usted' dialogue register)",
@@ -1752,7 +1748,7 @@ def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
             "stutter_example": ' (e.g., "Wh-what..." -> "Q-qué...", "S-sorry..." -> "L-lo siento...")',
             "addressee_examples": ' (e.g. "señorita", "joven", "don", "doña")',
         }
-    elif "german" in lang_lower or lang_lower == "de":
+    elif code == "de":
         return {
             "loc_example": ' (e.g. in German: respect natural noun capitalization, title placement, and word order)',
             "pronoun_examples": " (e.g. informal 'du' vs formal 'Sie' dialogue register)",
