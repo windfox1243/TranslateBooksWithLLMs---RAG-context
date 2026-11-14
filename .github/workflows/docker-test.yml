@@ -2,7 +2,7 @@ name: Docker Build and Test
 
 on:
   push:
-    branches: [ main, dev ]
+    branches: [ main ]
     paths:
       - 'deployment/**'
       - 'src/**'
@@ -10,7 +10,7 @@ on:
       - 'requirements.txt'
       - '.github/workflows/docker-test.yml'
   pull_request:
-    branches: [ main, dev ]
+    branches: [ main ]
     paths:
       - 'deployment/**'
       - 'src/**'

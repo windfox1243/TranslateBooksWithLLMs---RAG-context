@@ -13,6 +13,7 @@ deployment/logs/
 .env.*
 !.env.example
 /venv
+/.venv
 build_installer.bat
 build/dist/
 build/TranslateBookWithLLM/
