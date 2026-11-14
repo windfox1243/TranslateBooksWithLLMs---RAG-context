@@ -858,12 +858,18 @@ class GenericTranslator:
 
                 if novel_context_path and novel_context_path.is_file():
                     try:
+                        from src.utils.novel_context import (
+                            build_novel_context,
+                            extract_global_lore,
+                            load_novel_context,
+                        )
+
                         disk_content = load_novel_context(novel_context_path.name, novel_context_path.parent)
                         disk_global_lore = extract_global_lore(disk_content)
                         if disk_global_lore:
                             prompt_options['novel_context'] = build_novel_context(
                                 disk_global_lore,
-                                context_session.dynamic_state if context_session else (current_dynamic_state or ""),
+                                context_session.dynamic_state if context_session else "",
                             )
                     except Exception as exc:
                         # Falling through leaves prompt_options carrying the
