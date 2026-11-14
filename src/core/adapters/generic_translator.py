@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from src.core.common.resume_context import read_checkpoint_context
+from src.core.context.commit import commit_pending_context
 from src.core.jobs import UnitTranslationOutcome
 from src.core.llm_client import LLMClient
 from src.utils.unified_logger import get_logger
@@ -1101,63 +1102,20 @@ class GenericTranslator:
                         'failed_chunks': failed_count
                     })
 
-            def _commit_db_addressing(i):
-                if not (
-                    context_session
-                    and self.translation_id
-                    and getattr(self.checkpoint_manager, "db", None)
-                    and prompt_options.get("use_db_directed_addressing", True)
-                ):
-                    return
-                pending = pending_db_addressing_context_by_index.pop(i, None)
-                if not pending:
-                    return
-                sync_context_update_addressing_to_db(
+            def _commit_pending_context(i):
+                commit_pending_context(
+                    context_session=context_session,
+                    db=getattr(self.checkpoint_manager, "db", None),
                     translation_id=self.translation_id,
-                    db=self.checkpoint_manager.db,
-                    updated_context_or_dynamic_state=pending["content"],
-                    target_language=target_language,
                     chunk_index=i,
-                    log_callback=log_callback,
-                    dialogue_attribution=pending.get("dialogue_attribution"),
-                    candidates=pending.get("candidates"),
-                    source_text=pending.get("source_text", ""),
+                    addressing=pending_db_addressing_context_by_index.pop(i, None),
+                    relationships=pending_relationship_context_by_index.pop(i, None),
+                    target_language=target_language,
                     source_language=source_language,
                     contract_version=contract_version,
-                )
-                apply_db_addressing_to_session(
-                    context_session,
-                    self.translation_id,
-                    self.checkpoint_manager.db,
-                )
-
-            def _commit_relationship_context(i):
-                if not (
-                    context_session
-                    and self.translation_id
-                    and getattr(self.checkpoint_manager, "db", None)
-                    and relationship_mode != "off"
-                ):
-                    return
-                pending_relationship = pending_relationship_context_by_index.pop(i, None)
-                if not pending_relationship:
-                    return
-                sync_context_update_relationships_to_db(
-                    translation_id=self.translation_id,
-                    db=self.checkpoint_manager.db,
-                    updated_context_or_dynamic_state=pending_relationship["content"],
-                    source_text=pending_relationship["source_text"],
-                    candidates=pending_relationship.get("candidates"),
-                    parser_status=pending_relationship.get("parser_status", "absent"),
-                    target_language=target_language,
-                    chunk_index=i,
-                    active_character_names=pending_relationship.get("active_character_names"),
+                    relationship_mode=relationship_mode,
+                    use_db_addressing=prompt_options.get("use_db_directed_addressing", True),
                     log_callback=log_callback,
-                )
-                apply_relationship_graph_to_session(
-                    context_session,
-                    self.translation_id,
-                    self.checkpoint_manager.db,
                 )
 
             async def _sync_successful_translated_context(i, unit, translated_content):
@@ -1202,8 +1160,7 @@ class GenericTranslator:
                     db = getattr(self.checkpoint_manager, "db", None)
                     if self.translation_id and db is not None:
                         with db.context_state_transaction():
-                            _commit_db_addressing(i)
-                            _commit_relationship_context(i)
+                            _commit_pending_context(i)
                             if prompt_options.get(
                                 "use_db_directed_addressing",
                                 True,
@@ -1483,8 +1440,7 @@ class GenericTranslator:
                         _record_failure(i, unit)
                         continue
 
-                    _commit_db_addressing(i)
-                    _commit_relationship_context(i)
+                    _commit_pending_context(i)
                     _commit_context(i, unit)
                     failed_indices.discard(i)
                     failed_count = len(failed_indices)

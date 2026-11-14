@@ -53,6 +53,7 @@ from src.config import (
     detect_format_from_placeholder,
     detect_placeholder_format_in_text,
 )
+from src.core.context.commit import commit_pending_context, save_committed_context
 from src.prompts.prompts import (
     CORRECTED_TAG_IN,
     CORRECTED_TAG_OUT,
@@ -61,7 +62,6 @@ from src.prompts.prompts import (
 from src.utils.addressing_schema import context_contract_version
 from src.utils.db_addressing import (
     apply_db_addressing_to_session,
-    sync_context_update_addressing_to_db,
     sync_markdown_addressing_to_db,
 )
 from src.utils.progress_logging import emit_progress_log
@@ -69,7 +69,6 @@ from src.utils.relationship_sync import (
     apply_relationship_graph_to_session,
     judge_ambiguous_relationship_candidates,
     resolve_relationship_reasoning_mode,
-    sync_context_update_relationships_to_db,
     sync_markdown_relationships_to_db,
 )
 from src.utils.unified_logger import LogLevel, LogType
@@ -1563,71 +1562,34 @@ async def _translate_all_chunks_with_checkpoint(
                 )
 
             if succeeded:
-                pending = pending_db_addressing_context_by_index.pop(i, None)
-                pending_relationship = pending_relationship_context_by_index.pop(i, None)
-                if (
-                    checkpoint_manager
-                    and translation_id
-                    and hasattr(checkpoint_manager, "db")
-                    and context_session
-                ):
-                    db = checkpoint_manager.db
-                    with db.context_state_transaction():
-                        if (
-                            pending
-                            and prompt_options.get("use_db_directed_addressing", True)
-                        ):
-                            sync_context_update_addressing_to_db(
-                                translation_id=translation_id,
-                                db=db,
-                                updated_context_or_dynamic_state=pending["content"],
-                                target_language=target_language,
-                                chunk_index=_global_chunk_index(i),
-                                log_callback=log_callback,
-                                dialogue_attribution=pending.get("dialogue_attribution"),
-                                candidates=pending.get("candidates"),
-                                source_text=pending.get("source_text", ""),
-                                source_language=source_language,
-                                contract_version=contract_version,
-                            )
-                        if pending_relationship and relationship_mode != "off":
-                            sync_context_update_relationships_to_db(
-                                translation_id=translation_id,
-                                db=db,
-                                updated_context_or_dynamic_state=pending_relationship["content"],
-                                source_text=pending_relationship["source_text"],
-                                candidates=pending_relationship.get("candidates"),
-                                parser_status=pending_relationship.get("parser_status", "absent"),
-                                target_language=target_language,
-                                chunk_index=_global_chunk_index(i),
-                                active_character_names=pending_relationship.get("active_character_names"),
-                                log_callback=log_callback,
-                            )
-                    if pending and prompt_options.get("use_db_directed_addressing", True):
-                        apply_db_addressing_to_session(
+                if context_session:
+                    commit_pending_context(
+                        context_session=context_session,
+                        db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
+                        translation_id=translation_id or "",
+                        chunk_index=_global_chunk_index(i),
+                        addressing=pending_db_addressing_context_by_index.pop(i, None),
+                        relationships=pending_relationship_context_by_index.pop(i, None),
+                        target_language=target_language,
+                        source_language=source_language,
+                        contract_version=contract_version,
+                        relationship_mode=relationship_mode,
+                        use_db_addressing=prompt_options.get("use_db_directed_addressing", True),
+                        log_callback=log_callback,
+                    )
+                    if (
+                        checkpoint_manager
+                        and translation_id
+                        and hasattr(checkpoint_manager, "db")
+                    ):
+                        save_committed_context(
                             context_session,
-                            translation_id,
-                            db,
+                            contract_version=contract_version,
+                            log_callback=log_callback,
                         )
-                    if pending_relationship and relationship_mode != "off":
-                        apply_relationship_graph_to_session(
-                            context_session,
-                            translation_id,
-                            db,
-                        )
-                    context_session.save()
-                    if log_callback and contract_version >= 2:
-                        emit_progress_log(
-                            log_callback,
-                            "novel_context_state",
-                            "Context committed",
-                            layer="novel_context",
-                            data={
-                                "type": "novel_context_state",
-                                "content": context_session.content,
-                                "filename": context_session.path.name,
-                            },
-                        )
+                else:
+                    pending_db_addressing_context_by_index.pop(i, None)
+                    pending_relationship_context_by_index.pop(i, None)
                 failed_indices.discard(i)
             else:
                 pending_db_addressing_context_by_index.pop(i, None)
