@@ -1890,8 +1890,6 @@ async def _translate_all_chunks(
         source_name = ""
         if prompt_options and 'input_filename' in prompt_options:
             source_name = prompt_options['input_filename']
-        elif file_href:
-            source_name = file_href
         novel_context_file = make_novel_context_filename(source_name, "epub")
         prompt_options['novel_context_file'] = novel_context_file
         if log_callback:
