@@ -150,6 +150,102 @@ def build_unit_prompt_context(
     ).render()
 
 
+def attach_draft_prompt_context(
+    options: Dict[str, Any],
+    *,
+    translation_id: str,
+    db: Any,
+    context_session: Any,
+    source_text: str,
+    source_language: str,
+    target_language: str,
+    chunk_index: int,
+    stored_dialogue_attribution: Optional[Dict[str, Any]] = None,
+    nearby_source: Iterable[str] = (),
+    log_callback=None,
+) -> Dict[str, Any]:
+    """Add the novel-context sections a draft translation prompt needs.
+
+    Shared by the TXT/SRT, Plain Text and EPUB pipelines, which each built the
+    same sections with small unexplained differences. One rule set now:
+
+    - Dialogue attribution: the unit's own stored attribution first (it was
+      computed for this unit, while the session holds whatever unit it
+      analyzed last), then the session's.
+    - Active character names: recomputed for every unit whenever a context
+      session exists, from the attribution chosen above.
+    - Relationship selection and the prompt bundle read the unit plus its
+      nearby source, when the pipeline has any.
+
+    `options` is updated in place and returned.
+    """
+    from src.utils.db_addressing import build_directed_addressing_prompt_context
+    from src.utils.narrator_voice import build_narrator_voice_context
+    from src.utils.relationship_sync import build_relationship_prompt_context
+
+    nearby = [str(item) for item in nearby_source if item]
+
+    attribution = stored_dialogue_attribution or (
+        context_session.dialogue_attribution if context_session else None
+    )
+    if attribution:
+        options["dialogue_attribution"] = attribution
+    if context_session:
+        options["active_character_names"] = relevant_character_names(
+            global_lore=context_session.global_lore,
+            source_text=source_text,
+            dialogue_attribution=attribution,
+            source_language=source_language,
+        )
+
+    addressing = build_directed_addressing_prompt_context(
+        translation_id=translation_id,
+        db=db,
+        target_language=target_language,
+        prompt_options=options,
+        log_callback=log_callback,
+    )
+    if addressing:
+        options["directed_addressing_context"] = addressing
+
+    reference_text = "\n".join(
+        part for part in (
+            nearby[0] if len(nearby) > 0 else "",
+            source_text,
+            nearby[1] if len(nearby) > 1 else "",
+        )
+        if part
+    )
+    relationships = build_relationship_prompt_context(
+        translation_id=translation_id,
+        db=db,
+        target_language=target_language,
+        prompt_options=options,
+        reference_text=reference_text,
+        log_callback=log_callback,
+    )
+    if relationships:
+        options["relationship_context"] = relationships
+
+    narrator = build_narrator_voice_context(
+        translation_id, db,
+        chunk_index=chunk_index,
+        target_language=target_language,
+    )
+    if narrator:
+        options["narrative_voice_context"] = narrator
+
+    options["prompt_context_bundle"] = build_unit_prompt_context(
+        global_lore=context_session.global_lore if context_session else "",
+        reference_text=source_text,
+        addressing=addressing,
+        relationships=relationships,
+        narrator=narrator,
+        nearby_source=nearby,
+    )
+    return options
+
+
 def prepare_unit_prompt_options(
     base_options: Optional[Dict[str, Any]], *, unit_index: int, phase: str,
     file_type: str, source_text: str, target_language: str,

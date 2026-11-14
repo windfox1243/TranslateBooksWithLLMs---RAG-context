@@ -61,14 +61,12 @@ from src.prompts.prompts import (
 from src.utils.addressing_schema import context_contract_version
 from src.utils.db_addressing import (
     apply_db_addressing_to_session,
-    build_directed_addressing_prompt_context,
     sync_context_update_addressing_to_db,
     sync_markdown_addressing_to_db,
 )
 from src.utils.progress_logging import emit_progress_log
 from src.utils.relationship_sync import (
     apply_relationship_graph_to_session,
-    build_relationship_prompt_context,
     judge_ambiguous_relationship_candidates,
     resolve_relationship_reasoning_mode,
     sync_context_update_relationships_to_db,
@@ -1499,53 +1497,18 @@ async def _translate_all_chunks_with_checkpoint(
             "chapter_index": chunk.get("chapter_index"),
             "scene_key": str(chunk.get("scene_key") or ""),
         })
-        from src.utils.narrator_voice import build_narrator_voice_context
-        narrative_voice_context = build_narrator_voice_context(
-            translation_id or "",
-            getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
+        from src.core.context import attach_draft_prompt_context
+        attach_draft_prompt_context(
+            chunk_prompt_options,
+            translation_id=translation_id or "",
+            db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
+            context_session=context_session,
+            source_text=chunk["text"],
+            source_language=source_language,
+            target_language=target_language,
             chunk_index=global_chunk_idx,
-            target_language=target_language,
-        )
-        if narrative_voice_context:
-            chunk_prompt_options["narrative_voice_context"] = narrative_voice_context
-        if context_session and context_session.dialogue_attribution:
-            from src.core.context import relevant_character_names
-
-            chunk_prompt_options["dialogue_attribution"] = (
-                context_session.dialogue_attribution
-            )
-            chunk_prompt_options["active_character_names"] = relevant_character_names(
-                global_lore=context_session.global_lore,
-                source_text=chunk["text"],
-                dialogue_attribution=context_session.dialogue_attribution,
-                source_language=source_language,
-            )
-        directed_context = build_directed_addressing_prompt_context(
-            translation_id=translation_id or "",
-            db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
-            target_language=target_language,
-            prompt_options=chunk_prompt_options,
+            stored_dialogue_attribution=chunk.get("dialogue_attribution"),
             log_callback=log_callback,
-        )
-        if directed_context:
-            chunk_prompt_options["directed_addressing_context"] = directed_context
-        relationship_context = build_relationship_prompt_context(
-            translation_id=translation_id or "",
-            db=getattr(checkpoint_manager, "db", None) if checkpoint_manager else None,
-            target_language=target_language,
-            prompt_options=chunk_prompt_options,
-            reference_text=chunk['text'],
-            log_callback=log_callback,
-        )
-        if relationship_context:
-            chunk_prompt_options["relationship_context"] = relationship_context
-        from src.core.context import build_unit_prompt_context
-        chunk_prompt_options["prompt_context_bundle"] = build_unit_prompt_context(
-            global_lore=(context_session.global_lore if context_session else ""),
-            reference_text=chunk["text"],
-            addressing=directed_context,
-            relationships=relationship_context,
-            narrator=narrative_voice_context,
         )
         return await translate_chunk_with_fallback(
             chunk_text=chunk['text'],

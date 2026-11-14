@@ -471,7 +471,6 @@ class GenericTranslator:
             from src.utils.addressing_schema import context_contract_version
             from src.utils.db_addressing import (
                 apply_db_addressing_to_session,
-                build_directed_addressing_prompt_context,
                 sync_context_update_addressing_to_db,
                 sync_markdown_addressing_to_db,
             )
@@ -481,7 +480,6 @@ class GenericTranslator:
             )
             from src.utils.relationship_sync import (
                 apply_relationship_graph_to_session,
-                build_relationship_prompt_context,
                 judge_ambiguous_relationship_candidates,
                 resolve_relationship_reasoning_mode,
                 sync_context_update_relationships_to_db,
@@ -913,73 +911,22 @@ class GenericTranslator:
                         "file_type": self.adapter.format_name,
                         "editor_phase": "translation",
                     })
-                    if unit.metadata.get("dialogue_attribution"):
-                        unit_prompt_options["dialogue_attribution"] = (
-                            unit.metadata["dialogue_attribution"]
-                        )
-                    elif context_session and context_session.dialogue_attribution:
-                        unit_prompt_options["dialogue_attribution"] = (
-                            context_session.dialogue_attribution
-                        )
-                    if context_session:
-                        from src.core.context import relevant_character_names
-                        unit_prompt_options.setdefault(
-                            "active_character_names",
-                            relevant_character_names(
-                                global_lore=context_session.global_lore,
-                                source_text=unit.content,
-                                dialogue_attribution=context_session.dialogue_attribution,
-                                source_language=source_language,
-                            ),
-                        )
-                    directed_context = build_directed_addressing_prompt_context(
-                        translation_id=self.translation_id,
-                        db=getattr(self.checkpoint_manager, "db", None),
-                        target_language=target_language,
-                        prompt_options=unit_prompt_options,
-                        log_callback=log_callback,
-                    )
-                    if directed_context:
-                        unit_prompt_options["directed_addressing_context"] = directed_context
-                    relationship_context = build_relationship_prompt_context(
-                        translation_id=self.translation_id,
-                        db=getattr(self.checkpoint_manager, "db", None),
-                        target_language=target_language,
-                        prompt_options=unit_prompt_options,
-                        reference_text="\n".join(
-                            part for part in (
-                                unit.context_before,
-                                unit.content,
-                                unit.context_after,
-                            )
-                            if part
-                        ),
-                        log_callback=log_callback,
-                    )
-                    if relationship_context:
-                        unit_prompt_options["relationship_context"] = relationship_context
-                    from src.utils.narrator_voice import build_narrator_voice_context
+                    from src.core.context import attach_draft_prompt_context
                     voice_db = getattr(self.checkpoint_manager, "db", None)
-                    narrative_voice_context = build_narrator_voice_context(
-                        self.translation_id, voice_db,
-                        chunk_index=i,
+                    attach_draft_prompt_context(
+                        unit_prompt_options,
+                        translation_id=self.translation_id,
+                        db=voice_db,
+                        context_session=context_session,
+                        source_text=unit.content,
+                        source_language=source_language,
                         target_language=target_language,
-                    )
-                    if narrative_voice_context:
-                        unit_prompt_options["narrative_voice_context"] = narrative_voice_context
-                    from src.core.context import build_unit_prompt_context
-                    unit_prompt_options["prompt_context_bundle"] = (
-                        build_unit_prompt_context(
-                            global_lore=(
-                                context_session.global_lore
-                                if context_session else ""
-                            ),
-                            reference_text=unit.content,
-                            addressing=directed_context,
-                            relationships=relationship_context,
-                            narrator=narrative_voice_context,
-                            nearby_source=(unit.context_before, unit.context_after),
-                        )
+                        chunk_index=i,
+                        stored_dialogue_attribution=unit.metadata.get(
+                            "dialogue_attribution"
+                        ),
+                        nearby_source=(unit.context_before, unit.context_after),
+                        log_callback=log_callback,
                     )
                     unit_prompt_options.update({
                         "_checkpoint_db": voice_db,

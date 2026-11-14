@@ -11,6 +11,7 @@ from .social_evidence import (
     extract_social_hierarchy_evidence,
 )
 from .unit_pipeline import (
+    attach_draft_prompt_context,
     build_unit_prompt_context,
     commit_source_social_evidence,
     dialogue_participants,
@@ -21,6 +22,7 @@ __all__ = [
     "ContextAnalysisResult",
     "PromptContextBundle",
     "SocialHierarchyEvidence",
+    "attach_draft_prompt_context",
     "build_unit_prompt_context",
     "commit_source_social_evidence",
     "dialogue_participants",
