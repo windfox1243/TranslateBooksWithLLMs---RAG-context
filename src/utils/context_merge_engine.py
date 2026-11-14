@@ -8,6 +8,7 @@ from dataclasses import replace
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import src.config as config
+from src.languages.vietnamese.addressing import pair_direction as vi_pair_direction
 from src.persistence.database import Database
 from src.utils.context_schema import AddressingUpdateDelta
 from src.utils.progress_logging import emit_progress_log
@@ -32,10 +33,6 @@ TRUSTED_PAIR_SOURCES = {
     "user_manual",
 }
 
-VI_SENIOR_FORMS = {"anh", "chị", "thầy", "cô", "sếp", "bác", "chú", "ông", "bà", "ngài"}
-VI_JUNIOR_FORMS = {"em", "cháu", "con", "hậu bối"}
-VI_PEER_FORMS = {"cậu", "bạn", "tớ", "mình", "tao", "mày"}
-VI_NEUTRAL_SELF_FORMS = {"tôi"}
 _SOURCE_KINSHIP_TERMS = {
     "brother", "sister", "older brother", "older sister", "younger brother",
     "younger sister", "teacher", "senior", "junior", "master", "father",
@@ -158,22 +155,6 @@ def _untranslated_generic_vocative(delta: AddressingUpdateDelta, target_language
         and vocative in source_forms
         and vocative in _SOURCE_KINSHIP_TERMS
     )
-
-
-def _vi_pair_direction(self_pronoun: str, target_pronoun: str) -> str:
-    self_key = _norm(self_pronoun)
-    target_key = _norm(target_pronoun)
-    if self_key in VI_JUNIOR_FORMS and target_key in VI_SENIOR_FORMS:
-        return "junior_to_senior"
-    if self_key in VI_SENIOR_FORMS and target_key in VI_JUNIOR_FORMS:
-        return "senior_to_junior"
-    if self_key in VI_PEER_FORMS and target_key in VI_PEER_FORMS:
-        return "peer"
-    if self_key in VI_NEUTRAL_SELF_FORMS and target_key in VI_PEER_FORMS:
-        return "peer"
-    if self_key and self_key == target_key:
-        return "same"
-    return ""
 
 
 def _pair_repair_context(delta: AddressingUpdateDelta, graph_hierarchy: str) -> str:
@@ -646,7 +627,7 @@ class ContextMergeEngine:
             and delta.contract_version >= 4
             and not trusted_pair_source
         ):
-            incoming_direction = _vi_pair_direction(
+            incoming_direction = vi_pair_direction(
                 delta.self_pronoun,
                 delta.second_pronoun,
             )
@@ -740,7 +721,7 @@ class ContextMergeEngine:
             # pair still has nowhere to hide.
             if (
                 graph_hierarchy in {"source_senior", "source_junior"}
-                and _vi_pair_direction(delta.self_pronoun, delta.second_pronoun) == "peer"
+                and vi_pair_direction(delta.self_pronoun, delta.second_pronoun) == "peer"
             ):
                 delta = _repair_delta_pair(
                     delta,
@@ -748,7 +729,7 @@ class ContextMergeEngine:
                     graph_hierarchy,
                     self._character_gender_map(translation_id),
                 )
-            incoming_direction = _vi_pair_direction(
+            incoming_direction = vi_pair_direction(
                 delta.self_pronoun,
                 delta.second_pronoun,
             )
@@ -854,11 +835,11 @@ class ContextMergeEngine:
             and profile.addressing_family == "vietnamese"
             and not strong_evidence
         ):
-            incoming_direction = _vi_pair_direction(
+            incoming_direction = vi_pair_direction(
                 delta.self_pronoun,
                 delta.second_pronoun,
             )
-            reverse_direction = _vi_pair_direction(
+            reverse_direction = vi_pair_direction(
                 reverse.get("self_pronoun", ""),
                 reverse.get("target_pronoun", ""),
             )

@@ -6,9 +6,11 @@ import re
 from typing import Any, Dict, Iterable, List, Optional
 
 from src.core.context.contracts import SocialHierarchyEvidence
+from src.languages.vietnamese.addressing import default_pair as vietnamese_default_pair
 from src.persistence.database import Database
 from src.utils.addressing_schema import AddressingCandidateV2
 from src.utils.context_merge_engine import ContextMergeEngine
+from src.utils.language_profiles import is_target_language
 from src.utils.relationship_reasoning_engine import RelationshipReasoningEngine
 from src.utils.relationship_schema import RelationshipCandidate
 from src.utils.text_matching import reference_mentions_label
@@ -161,24 +163,6 @@ def extract_social_hierarchy_evidence(
     return results
 
 
-def _vietnamese_pair(
-    hierarchy: str,
-    source_gender: str,
-    target_gender: str,
-) -> Optional[tuple[str, str]]:
-    if hierarchy == "source_junior":
-        if target_gender == "female":
-            return "em", "chị"
-        if target_gender == "male":
-            return "em", "anh"
-    if hierarchy == "source_senior":
-        if source_gender == "female":
-            return "chị", "em"
-        if source_gender == "male":
-            return "anh", "em"
-    return None
-
-
 def apply_social_hierarchy_evidence(
     *,
     translation_id: str,
@@ -262,11 +246,11 @@ def apply_social_hierarchy_evidence(
                     translation_id,
                     int(conflict["id"]),
                 )
-        if "viet" not in target_language.casefold() and target_language.casefold() != "vi":
+        if not is_target_language(target_language, "vi"):
             continue
         source_node = db.get_relationship_node_by_name(translation_id, item.source) or {}
         target_node = db.get_relationship_node_by_name(translation_id, item.target) or {}
-        pair = _vietnamese_pair(
+        pair = vietnamese_default_pair(
             item.hierarchy,
             str(source_node.get("gender") or "unknown").casefold(),
             str(target_node.get("gender") or "unknown").casefold(),

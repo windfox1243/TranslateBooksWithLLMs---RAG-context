@@ -1,17 +1,22 @@
-"""Vietnamese-specific addressing inference, repair and mismatch detection."""
+"""Vietnamese addressing inference, repair and mismatch detection for novel context.
+
+Moved here from src/utils/novel_context/vietnamese.py so the generic
+novel-context package carries no Vietnamese rules of its own.
+"""
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from .characters import (
+from src.utils.language_profiles import is_target_language
+from src.utils.novel_context.characters import (
     _canonical_display_name,
     _canonical_gender,
     _clean_inline_text,
     _is_invalid_context_key,
     _plain_key,
 )
-from .dynamic_state import (
+from src.utils.novel_context.dynamic_state import (
     _DYNAMIC_DELETE_VALUES,
     _DYNAMIC_RELATION_PATTERN,
     _canonical_relationship_party,
@@ -20,8 +25,9 @@ from .dynamic_state import (
 
 
 def _is_vietnamese_target_language(target_language: Optional[str]) -> bool:
-    target = str(target_language or "").strip().casefold()
-    return target in {"vietnamese", "vietnamien", "viet", "tiếng việt", "tieng viet"}
+    return is_target_language(target_language, "vi")
+
+
 def _has_complete_vietnamese_addressing_details(details: str) -> bool:
     self_ref = _vietnamese_addressing_field(details, "self-reference")
     second_p = _vietnamese_addressing_field(details, "second-person pronoun")

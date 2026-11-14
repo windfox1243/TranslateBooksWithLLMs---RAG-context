@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Dict, FrozenSet, Tuple
 
@@ -95,7 +96,7 @@ _PROFILES: Dict[str, LanguageProfile] = {
     "de": LanguageProfile("de", "German", frozenset({"german", "de", "deutsch"}), script="latin", match_policy=LATIN_POLICY, addressing_family="germanic", has_formality_register=True, has_grammatical_gender=True, prompt_style="germanic", residue_social_terms=frozenset({"bruder", "schwester", "vater", "mutter", "onkel", "tante", "meister", "lehrer"})),
     "vi": LanguageProfile("vi", "Vietnamese", frozenset({"vietnamese", "vietnamien", "viet", "vi", "tiếng việt", "tieng viet"}), script="latin", match_policy=LATIN_POLICY, addressing_family="vietnamese", has_formality_register=True, prompt_style="vietnamese", residue_social_terms=frozenset({"anh", "chị", "em", "ông", "bà", "cha", "mẹ", "thầy", "cô"})),
     "zh": LanguageProfile("zh", "Chinese", frozenset({"chinese", "zh", "zh-cn", "zh-tw", "中文", "汉语", "漢語"}), script="cjk", match_policy=CJK_POLICY, addressing_family="chinese", prompt_style="chinese", residue_social_terms=frozenset({"哥哥", "姐姐", "父亲", "母亲", "老师", "主人"})),
-    "ja": LanguageProfile("ja", "Japanese", frozenset({"japanese", "ja", "nihongo", "日本語"}), script="cjk", match_policy=CJK_POLICY, addressing_family="japanese", has_formality_register=True, prompt_style="japanese", residue_social_terms=frozenset({"兄", "姉", "父", "母", "先生", "先輩"})),
+    "ja": LanguageProfile("ja", "Japanese", frozenset({"japanese", "ja", "nihongo", "日本語", "tiếng nhật"}), script="cjk", match_policy=CJK_POLICY, addressing_family="japanese", has_formality_register=True, prompt_style="japanese", residue_social_terms=frozenset({"兄", "姉", "父", "母", "先生", "先輩"})),
     "ko": LanguageProfile("ko", "Korean", frozenset({"korean", "ko", "hangul", "한국어", "tiếng hàn"}), script="hangul", match_policy=HANGUL_POLICY, addressing_family="korean", has_formality_register=True, prompt_style="korean", residue_social_terms=frozenset({"형", "오빠", "누나", "언니", "아버지", "어머니", "선생님"})),
     "ar": LanguageProfile("ar", "Arabic", frozenset({"arabic", "ar", "العربية"}), script="rtl", match_policy=RTL_POLICY, rtl=True, prompt_style="rtl", residue_social_terms=frozenset({"أخي", "أختي", "أبي", "أمي", "سيدي", "معلم"})),
     "ru": LanguageProfile("ru", "Russian", frozenset({"russian", "ru", "русский"}), script="cyrillic", match_policy=LATIN_POLICY, has_grammatical_gender=True, residue_social_terms=frozenset({"брат", "сестра", "отец", "мать", "учитель", "господин"})),
@@ -168,13 +169,36 @@ GENERIC_PROFILE = LanguageProfile(
 )
 
 
+_REGION_SEPARATORS = re.compile(r"[\s\-_/,]+")
+
+
+def _resolve_code(key: str) -> str:
+    """Map a casefolded language name to a profile code, or "".
+
+    Accepts the exact aliases first, then the two forms users and configs
+    commonly write: a locale tag ("vi-VN", "pt_BR") and a name followed by a
+    qualifier ("Vietnamese (Southern)", "Portuguese - Brazil"). Only the
+    leading token is tried, so an unrelated word inside a longer name cannot
+    select a profile.
+    """
+    code = _ALIASES.get(key)
+    if code:
+        return code
+    base = key.split("(", 1)[0].strip()
+    code = _ALIASES.get(base)
+    if code:
+        return code
+    leading = _REGION_SEPARATORS.split(base, 1)[0]
+    return _ALIASES.get(leading, "")
+
+
 def get_language_profile(language: str | None) -> LanguageProfile:
     """Return a known language profile, or a neutral generic fallback."""
 
     key = str(language or "").strip().casefold()
     if not key:
         return GENERIC_PROFILE
-    profile = _PROFILES.get(_ALIASES.get(key, ""), GENERIC_PROFILE)
+    profile = _PROFILES.get(_resolve_code(key), GENERIC_PROFILE)
     dimensions = _VOICE_DIMENSIONS.get(profile.code)
     default_policy = _NARRATOR_DEFAULT_POLICIES.get(
         profile.code, NarratorDefaultPolicy()
@@ -189,6 +213,16 @@ def get_language_profile(language: str | None) -> LanguageProfile:
         "narrator_voice_dimensions": dimensions or profile.narrator_voice_dimensions,
         "narrator_default_policy": default_policy,
     })
+
+
+def is_target_language(language: str | None, code: str) -> bool:
+    """True when `language` resolves to the profile with ISO-like `code`.
+
+    The single place pipeline code asks "is the target Vietnamese?" (or any
+    other language): every hand-written alias set drifted from the others.
+    """
+
+    return get_language_profile(language).code == code
 
 
 def supported_translation_languages() -> tuple[str, ...]:
