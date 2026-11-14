@@ -38,9 +38,9 @@ def test_pair_direction(self_ref, second, expected):
 
 
 def test_engine_reads_its_vietnamese_tables_from_the_pack():
-    assert engine._SENIOR_PRONOUN_SETS["vi"] == set(addressing.SENIOR_PRONOUNS)
-    for pair, repaired in addressing.HARMONIOUS_PAIRS.items():
-        assert engine._HARMONIOUS_ALIGNMENT_MAP[pair] == repaired
+    rules = engine.UniversalAddressingEngine("vi").rules
+    assert rules.senior_pronouns == addressing.SENIOR_PRONOUNS
+    assert rules.harmonious_pairs == addressing.HARMONIOUS_PAIRS
 
 
 def test_prompt_builders_use_the_pack_text():

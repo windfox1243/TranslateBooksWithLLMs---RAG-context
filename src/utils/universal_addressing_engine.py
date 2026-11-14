@@ -10,7 +10,8 @@ Enforces strict linguistic separation:
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from src.languages.vietnamese import addressing as vi_addressing
+from src.languages.addressing_rules import AddressingRules, PairState, SeniorityCues
+from src.languages.vietnamese.engine_rules import RULES as VIETNAMESE_RULES
 from src.utils.language_profiles import get_language_profile
 
 
@@ -20,59 +21,95 @@ def _has_cue_word(text: str, cue: str) -> bool:
         return bool(re.search(rf"\b{re.escape(cue)}\b", text, re.IGNORECASE))
     return cue.casefold() in text.casefold()
 
-# Genuine Seniority Pronoun Sets (Strictly exclude Job Titles / Nouns)
-_SENIOR_PRONOUN_SETS: Dict[str, Set[str]] = {
-    "vi": set(vi_addressing.SENIOR_PRONOUNS),
-    "ja": {"senpai", "sensei", "sama"},
-    "ko": {"sunbae-nim", "sunbae"},
+
+# Seniority cues every language shares: English role words and the romanized
+# Japanese/Korean ones. Each language's rules add their own.
+_BASE_SENIORITY_CUES = SeniorityCues(
+    senior=(
+        "trainer", "coach", "mentor", "teacher", "sensei", "sunbae", "senpai",
+        "father", "mother", "parent",
+    ),
+    junior=(
+        "trainee", "student", "junior", "kohai", "hobae", "son", "daughter",
+        "child",
+    ),
+    senior_to_junior_phrases=(
+        "trainer to trainee", "senior to junior", "teacher to student",
+        "parent to child", "father to son", "father to daughter",
+        "mother to son", "mother to daughter",
+    ),
+    junior_to_senior_phrases=(
+        "trainee to trainer", "junior to senior", "student to teacher",
+        "child to parent", "father-son", "father-daughter", "mother-son",
+        "mother-daughter", "parent-child",
+    ),
+)
+
+# Languages without hooks only get their pronoun classes and repair table.
+_JAPANESE_RULES = AddressingRules(
+    senior_pronouns=frozenset({"senpai", "sensei", "sama"}),
+    junior_pronouns=frozenset({"kohai"}),
+    peer_pronouns=frozenset({"omae", "kimi", "anta"}),
+    harmonious_pairs={
+        ("watakushi", "omae"): ("ore", "omae"),
+        ("watakushi", "kisama"): ("ore", "kisama"),
+        ("boku", "kisama"): ("ore", "kisama"),
+        ("ore", "anata"): ("boku", "anata"),
+    },
+)
+_KOREAN_RULES = AddressingRules(
+    senior_pronouns=frozenset({"sunbae-nim", "sunbae"}),
+    junior_pronouns=frozenset({"hobae"}),
+    peer_pronouns=frozenset({"neo", "inoma"}),
+    harmonious_pairs={
+        ("jeu", "neo"): ("na", "neo"),
+        ("jeu", "inoma"): ("na", "inoma"),
+        ("na", "dang-sin"): ("jeu", "dang-sin"),
+    },
+)
+
+_RULES_BY_LANGUAGE: Dict[str, AddressingRules] = {
+    "vi": VIETNAMESE_RULES,
+    "ja": _JAPANESE_RULES,
+    "ko": _KOREAN_RULES,
+    # French and Spanish are recognized but carry no pair rules yet.
+    "fr": AddressingRules(),
+    "es": AddressingRules(),
 }
-
-_JUNIOR_PRONOUN_SETS: Dict[str, Set[str]] = {
-    "vi": set(vi_addressing.JUNIOR_PRONOUNS),
-    "ja": {"kohai"},
-    "ko": {"hobae"},
-}
-
-_PEER_PRONOUN_SETS: Dict[str, Set[str]] = {
-    "vi": set(vi_addressing.PEER_PRONOUNS),
-    "ja": {"omae", "kimi", "anta"},
-    "ko": {"neo", "inoma"},
-}
-
-# Non-pronoun job titles / nouns that MUST be converted to genuine pronouns
-_JOB_TITLE_NOUNA: Set[str] = {
-    "trainer", "huấn luyện viên", "giám đốc", "bác sĩ", "luật sư", "manager", "doctor",
-    "giam doc", "huan luyen vien", "bac si", "luat su", "chủ tịch", "chu tich",
-}
-
-# Fast Harmonious Alignment Maps
-_HARMONIOUS_ALIGNMENT_MAP: Dict[Tuple[str, str], Tuple[str, str]] = {
-    **vi_addressing.HARMONIOUS_PAIRS,
-    # Japanese
-    ("watakushi", "omae"): ("ore", "omae"),
-    ("watakushi", "kisama"): ("ore", "kisama"),
-    ("boku", "kisama"): ("ore", "kisama"),
-    ("ore", "anata"): ("boku", "anata"),
-    # Korean
-    ("jeu", "neo"): ("na", "neo"),
-    ("jeu", "inoma"): ("na", "inoma"),
-    ("na", "dang-sin"): ("jeu", "dang-sin"),
-}
+_GENERIC_RULES = AddressingRules()
 
 
-_ENGINE_LANGUAGES = frozenset({"vi", "ja", "ko", "fr", "es"})
+def _merge_cues(base: SeniorityCues, extra: SeniorityCues) -> SeniorityCues:
+    return SeniorityCues(
+        senior=base.senior + extra.senior,
+        junior=base.junior + extra.junior,
+        senior_to_junior_phrases=(
+            base.senior_to_junior_phrases + extra.senior_to_junior_phrases
+        ),
+        junior_to_senior_phrases=(
+            base.junior_to_senior_phrases + extra.junior_to_senior_phrases
+        ),
+    )
+
+
+def _read_gender(genders: Dict[str, str], name: str) -> str:
+    return (genders.get(name, "") or genders.get((name or "").casefold(), "")).casefold()
 
 
 class UniversalAddressingEngine:
     """
-    2D Formality + Seniority Matrix Engine to validate and repair addressing rules.
-    Enforces strict separation between pronouns and job titles/vocatives.
+    Validate and repair directed addressing pairs (speaker -> addressee).
+
+    The engine reads genders, resolves seniority and applies the target
+    language's repair table; everything specific to one language comes from
+    that language's AddressingRules (see src/languages/addressing_rules.py).
     """
 
     def __init__(self, language: str = "generic"):
-        # Only languages with addressing tables below get a specific code.
         code = get_language_profile(language).code
-        self.lang_code = code if code in _ENGINE_LANGUAGES else "generic"
+        self.rules = _RULES_BY_LANGUAGE.get(code, _GENERIC_RULES)
+        self.lang_code = code if code in _RULES_BY_LANGUAGE else "generic"
+        self._cues = _merge_cues(_BASE_SENIORITY_CUES, self.rules.seniority_cues)
 
     def resolve_seniority_hierarchy(
         self, speaker: str, addressee: str, context: str, vocative: str = "",
@@ -88,28 +125,28 @@ class UniversalAddressingEngine:
         adr = (addressee or "").casefold()
         ctx = (context or "").casefold()
         voc = (vocative or "").casefold()
-
-        senior_cues = ("trainer", "coach", "mentor", "huấn luyện viên", "teacher", "thầy", "sensei", "sunbae", "sếp", "giám đốc", "senpai", "father", "mother", "parent", "cha", "bố", "ba", "mẹ", "má")
-        junior_cues = ("trainee", "student", "học sinh", "hậu bối", "junior", "kohai", "hobae", "son", "daughter", "child", "con")
+        cues = self._cues
 
         # Explicit directional context cues (e.g. "trainer to trainee")
-        if any(c in ctx for c in ("trainer to trainee", "senior to junior", "teacher to student", "sếp đến nhân viên", "thầy đến trò", "parent to child", "father to son", "father to daughter", "mother to son", "mother to daughter")):
+        if any(c in ctx for c in cues.senior_to_junior_phrases):
             return "SENIOR_TO_JUNIOR"
-        if any(c in ctx for c in ("trainee to trainer", "junior to senior", "student to teacher", "trò đến thầy", "child to parent", "father-son", "father-daughter", "mother-son", "mother-daughter", "parent-child", "con với cha", "con với mẹ")):
+        if any(c in ctx for c in cues.junior_to_senior_phrases):
             return "JUNIOR_TO_SENIOR"
 
         # The vocative names the addressee, so its role word settles the direction
-        if any(_has_cue_word(voc, k) for k in senior_cues):
+        if any(_has_cue_word(voc, k) for k in cues.senior):
             return "JUNIOR_TO_SENIOR"
-        if any(_has_cue_word(voc, k) for k in junior_cues):
+        if any(_has_cue_word(voc, k) for k in cues.junior):
             return "SENIOR_TO_JUNIOR"
 
         # Direct explicit role cues in context or addressee
-        speaker_is_senior = any(_has_cue_word(spk, k) for k in senior_cues)
-        if any(_has_cue_word(adr, k) for k in senior_cues) and not speaker_is_senior:
+        speaker_is_senior = any(_has_cue_word(spk, k) for k in cues.senior)
+        if any(_has_cue_word(adr, k) for k in cues.senior) and not speaker_is_senior:
             return "JUNIOR_TO_SENIOR"
 
-        if speaker_is_senior and any(_has_cue_word(adr, k) or _has_cue_word(ctx, k) for k in junior_cues):
+        if speaker_is_senior and any(
+            _has_cue_word(adr, k) or _has_cue_word(ctx, k) for k in cues.junior
+        ):
             return "SENIOR_TO_JUNIOR"
 
         # A social basis such as "student-trainer" names both roles without
@@ -119,8 +156,8 @@ class UniversalAddressingEngine:
         # vocative; free text that carries both roles cannot supply it.
         if (
             not speaker_is_senior
-            and any(_has_cue_word(ctx, k) for k in senior_cues)
-            and not any(_has_cue_word(ctx, k) for k in junior_cues)
+            and any(_has_cue_word(ctx, k) for k in cues.senior)
+            and not any(_has_cue_word(ctx, k) for k in cues.junior)
         ):
             return "JUNIOR_TO_SENIOR"
 
@@ -138,199 +175,76 @@ class UniversalAddressingEngine:
         character_genders: Optional[Dict[str, str]] = None,
     ) -> Tuple[str, str, str]:
         """
-        Validate and repair a directional addressing pair (self_pronoun, target_pronoun, vocative).
-        Ensures target_pronoun is strictly a GENUINE PRONOUN (never a job title or noun).
-        Cross-validates target pronoun against character_genders metadata.
+        Validate and repair a directional addressing pair.
         Returns (repaired_self, repaired_target, repaired_vocative).
         """
         s_clean = (self_pronoun or "").strip()
         t_clean = (target_pronoun or "").strip()
         v_clean = (vocative or "").strip()
-
         if not s_clean and not t_clean:
             return s_clean, t_clean, v_clean
 
-        s_key = s_clean.casefold()
-        t_key = t_clean.casefold()
-        c_clean = (details_context or "").casefold()
-
+        context = (details_context or "").casefold()
         genders = character_genders or {}
-        speaker_g_raw = genders.get(speaker, "") or genders.get((speaker or "").casefold(), "")
-        speaker_g = speaker_g_raw.casefold()
-        is_speaker_female = "female" in speaker_g or "nữ" in speaker_g
-        is_speaker_male = (
-            ("male" in speaker_g and "female" not in speaker_g)
-            or ("nam" in speaker_g and "nữ" not in speaker_g)
+        speaker_g = _read_gender(genders, speaker)
+        addressee_g = _read_gender(genders, addressee)
+        pair = PairState(
+            self_form=s_clean,
+            target_form=t_clean,
+            vocative=v_clean,
+            speaker=speaker,
+            addressee=addressee,
+            context=context,
+            speaker_female="female" in speaker_g or "nữ" in speaker_g,
+            speaker_male=(
+                ("male" in speaker_g and "female" not in speaker_g)
+                or ("nam" in speaker_g and "nữ" not in speaker_g)
+            ),
+            addressee_female=(
+                "female" in addressee_g
+                or "nữ" in addressee_g
+                or "gender: female" in context
+                or "giới tính: nữ" in context
+            ),
+            addressee_male=(
+                ("male" in addressee_g and "female" not in addressee_g)
+                or ("nam" in addressee_g and "nữ" not in addressee_g)
+                or "gender: male" in context
+                or "giới tính: nam" in context
+            ),
         )
-        addressee_g_raw = genders.get(addressee, "") or genders.get((addressee or "").casefold(), "")
-        is_addressee_female = (
-            "female" in addressee_g_raw.casefold()
-            or "nữ" in addressee_g_raw.casefold()
-            or "gender: female" in c_clean
-            or "giới tính: nữ" in c_clean
-        )
-        is_addressee_male = (
-            ("male" in addressee_g_raw.casefold() and "female" not in addressee_g_raw.casefold())
-            or ("nam" in addressee_g_raw.casefold() and "nữ" not in addressee_g_raw.casefold())
-            or "gender: male" in c_clean
-            or "giới tính: nam" in c_clean
-        )
+        rules = self.rules
 
-        # Strict Rule: Vietnamese job titles/nouns in target_pronoun are moved
-        # to vocative and converted only when the target profile supports that
-        # pronoun system. Unknown/custom languages must remain neutral.
-        if self.lang_code == "vi" and (
-            t_key in _JOB_TITLE_NOUNA or any(t_key.startswith(job) for job in _JOB_TITLE_NOUNA)
-        ):
-            if not v_clean:
-                v_clean = t_clean
-            # Determine genuine pronoun replacement
-            if "teacher" in c_clean or "giáo viên" in c_clean:
-                t_clean = "thầy"
-            elif is_addressee_female:
-                t_clean = "chị"
-            elif "giám đốc" in t_key or "manager" in c_clean or "boss" in c_clean:
-                t_clean = "sếp"
-            elif is_addressee_male:
-                t_clean = "anh"
-            else:
-                t_clean = "chị" if is_addressee_female else "anh"
-            t_key = t_clean.casefold()
+        rules.before_hierarchy(pair)
 
-        # Parent-child relationship cross-field repairs for Vietnamese
-        if self.lang_code == "vi":
-            if s_key == "con" or any(k in c_clean for k in ("father-son", "father-daughter", "mother-son", "mother-daughter", "parent-child", "con với cha", "con với mẹ")):
-                if t_key in {"anh", "chị", "cậu", "bạn", "mày", "ngươi"}:
-                    v_case = v_clean.casefold()
-                    if v_case in {"cha", "bố", "ba"} or any(k in c_clean for k in ("father", "cha", "bố", "ba")):
-                        t_clean = v_clean.lower() if v_case in {"cha", "bố", "ba"} else "cha"
-                    elif v_case in {"mẹ", "má"} or any(k in c_clean for k in ("mother", "mẹ", "má")):
-                        t_clean = v_clean.lower() if v_case in {"mẹ", "má"} else "mẹ"
-                    elif v_case == "father":
-                        t_clean = "cha"
-                    elif v_case == "mother":
-                        t_clean = "mẹ"
-                    elif is_addressee_female:
-                        t_clean = "mẹ"
-                    else:
-                        t_clean = "cha"
-                    t_key = t_clean.casefold()
-
-            if t_key in {"cha", "bố", "ba", "mẹ", "má"} or v_clean.casefold() in {"cha", "bố", "ba", "mẹ", "má", "father", "mother"}:
-                if s_key in {"anh", "chị", "tớ", "mày"}:
-                    s_clean = "con"
-                    s_key = "con"
-
-        # 1. Resolve 2D Seniority Hierarchy (JUNIOR_TO_SENIOR, SENIOR_TO_JUNIOR, PEER)
         hierarchy = self.resolve_seniority_hierarchy(
-            speaker, addressee, details_context, vocative=v_clean,
+            speaker, addressee, details_context, vocative=pair.vocative,
         )
-
-        peer_set = _PEER_PRONOUN_SETS.get(self.lang_code, set())
-        senior_set = _SENIOR_PRONOUN_SETS.get(self.lang_code, set())
-        junior_set = _JUNIOR_PRONOUN_SETS.get(self.lang_code, set())
-
-        # 2. Hierarchy Constraint Solver
         if hierarchy == "JUNIOR_TO_SENIOR":
-            # Junior calling Senior cannot use peer pronoun 'cậu', 'mày', 'omae', 'neo'
-            if t_key in peer_set:
-                if "teacher" in c_clean or "giáo viên" in c_clean:
-                    t_clean = "thầy"
-                elif is_addressee_female:
-                    t_clean = "chị"
-                else:
-                    t_clean = "anh"
-                t_key = t_clean.casefold()
-
-            # Junior self-reference when addressing senior must be 'em' (not peer 'tớ'/'mình') in Vietnamese kinship/seniority
-            if self.lang_code == "vi" and s_key in {"tớ", "mình"}:
-                if t_key in senior_set or any(k in c_clean for k in ("sister", "brother", "senior", "tiền bối", "sư tỷ", "sư huynh", "kinship")):
-                    s_clean = "em"
-                    s_key = "em"
-
+            rules.junior_to_senior(pair)
         elif hierarchy == "SENIOR_TO_JUNIOR":
-            # Senior calling Junior cannot address Junior as Senior 'anh'/'chị'/'thầy',
-            # nor as the peer 'cậu' -- the peer form denies the seniority just as
-            # plainly as the senior form inverts it, and only the senior form was
-            # caught, so a trainer went on calling his student 'cậu' for a book.
-            if t_key in senior_set or (self.lang_code == "vi" and t_key in peer_set):
-                t_clean = "em"
-                t_key = t_clean.casefold()
-            # Senior self-reference cannot be junior 'em', and a peer 'tớ'/'mình'
-            # is the same mistake seen from the other side. Prefer the gendered
-            # senior form, which keeps the closeness the peer pronoun carried;
-            # 'tôi' is the fallback when the speaker's gender is unknown.
-            if s_key in junior_set:
-                s_clean = "tôi"
-                s_key = s_clean.casefold()
-            elif self.lang_code == "vi" and s_key in {"tớ", "mình"}:
-                if is_speaker_female:
-                    s_clean = "chị"
-                elif is_speaker_male:
-                    s_clean = "anh"
-                else:
-                    s_clean = "tôi"
-                s_key = s_clean.casefold()
+            rules.senior_to_junior(pair)
 
-        # Cross-validation: enforce Vietnamese gendered address alignment only
-        # for Vietnamese targets. Other/custom languages keep neutral fallback.
-        if self.lang_code == "vi" and is_addressee_female and t_key == "anh" and "teacher" not in c_clean and "giáo viên" not in c_clean and "thầy" not in c_clean:
-            t_clean = "chị"
-            t_key = "chị"
-        elif self.lang_code == "vi" and is_addressee_male and t_key in {"chị", "cô", "bà"}:
-            t_clean = "anh"
-            t_key = "anh"
+        rules.after_hierarchy(pair)
 
-        # 3. Check Fast Harmonious Alignment Table
-        if self.lang_code != "generic" and (s_key, t_key) in _HARMONIOUS_ALIGNMENT_MAP:
-            repaired_s, repaired_t = _HARMONIOUS_ALIGNMENT_MAP[(s_key, t_key)]
-            s_clean, t_clean = repaired_s, repaired_t
-            s_key, t_key = s_clean.casefold(), t_key.casefold()
+        target_key_before_table = pair.target_key
+        repaired = rules.harmonious_pairs.get((pair.self_key, pair.target_key))
+        if repaired:
+            pair.self_form, pair.target_form = repaired
 
-        # 4. Self-Consistency Guard: Prevent identical self & target pronouns (e.g., em - em, chị - chị)
-        if self.lang_code == "vi" and s_key and s_key == t_key:
-            if s_key == "em":
-                t_clean = "chị" if is_addressee_female else ("anh" if is_addressee_male or "male" in c_clean else "chị")
-            elif s_key in {"chị", "anh"}:
-                t_clean = "em"
-            else:
-                t_clean = v_clean or addressee or t_clean
-            t_key = t_clean.casefold()
+        rules.after_table(pair, target_key_before_table)
 
-        return s_clean, t_clean, v_clean
+        return pair.self_form, pair.target_form, pair.vocative
 
     def get_forbidden_pronouns(self, self_pronoun: str, target_pronoun: str) -> Tuple[Set[str], Set[str]]:
         """
         Derive forbidden self and target pronouns based on active pair rules to enforce negative constraints.
         Returns tuple of (forbidden_self_set, forbidden_target_set).
         """
-        s_clean = (self_pronoun or "").strip().casefold()
-        t_clean = (target_pronoun or "").strip().casefold()
-
-        forbidden_self: Set[str] = set()
-        forbidden_target: Set[str] = set()
-
-        if self.lang_code == "vi":
-            junior_set = _JUNIOR_PRONOUN_SETS["vi"]
-            senior_set = _SENIOR_PRONOUN_SETS["vi"]
-
-            if s_clean in junior_set and t_clean in senior_set:
-                forbidden_self = {"tôi", "tao", "tớ", "mình", "ta"}
-                forbidden_target = {"cậu", "mày", "bạn", "ngươi", "em"}
-            elif s_clean in senior_set and t_clean in junior_set:
-                forbidden_self = {"em", "tớ", "mình", "cháu"}
-                forbidden_target = {"anh", "chị", "thầy", "cô", "sếp", "bác", "chú", "ông", "bà", "tiền bối", "ngài"}
-            elif s_clean in {"tớ", "mình"} and t_clean == "cậu":
-                forbidden_self = {"em", "anh", "chị", "tôi", "tao"}
-                forbidden_target = {"mày", "anh", "chị", "em", "ngươi"}
-            elif s_clean == "tao" and t_clean == "mày":
-                forbidden_self = {"tôi", "tớ", "em", "mình", "cháu"}
-                forbidden_target = {"cậu", "anh", "chị", "bạn", "em"}
-            elif s_clean == "tôi" and t_clean in senior_set:
-                forbidden_self = {"tao", "tớ", "mày"}
-                forbidden_target = {"cậu", "mày", "ngươi"}
-
-        return forbidden_self, forbidden_target
+        return self.rules.forbidden_pronouns(
+            (self_pronoun or "").strip().casefold(),
+            (target_pronoun or "").strip().casefold(),
+        )
 
     def audit_addressing_violations(
         self,

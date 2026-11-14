@@ -573,15 +573,13 @@ def _is_vietnamese_junior_to_senior(
     vocative: str = "",
 ) -> bool:
     """Report whether the addressing engine reads this pair as junior to senior."""
-    from src.utils.universal_addressing_engine import (
-        _SENIOR_PRONOUN_SETS,
-        UniversalAddressingEngine,
-    )
+    from src.languages.vietnamese.addressing import SENIOR_PRONOUNS
+    from src.utils.universal_addressing_engine import UniversalAddressingEngine
 
     # Calling someone "anh"/"chị"/"thầy" places the speaker below them whatever
     # the social basis says. The basis often names both roles at once
     # ("trainer-trainee"), which cannot tell the two directions apart.
-    if _plain_key(second_person) in _SENIOR_PRONOUN_SETS["vi"]:
+    if _plain_key(second_person) in SENIOR_PRONOUNS:
         return True
     hierarchy = UniversalAddressingEngine(language="vi").resolve_seniority_hierarchy(
         speaker,
