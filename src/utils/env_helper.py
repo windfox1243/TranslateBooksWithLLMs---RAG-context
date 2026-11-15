@@ -340,33 +340,6 @@ def interactive_env_setup():
         print(f"\n❌ Failed to create .env file: {e}\n")
 
 
-def cleanup_legacy_env_flags() -> None:
-    """Automatically detect and remove obsolete environment flags (such as USE_LLM_SANITIZER) from .env files on disk."""
-    legacy_keys = {"USE_LLM_SANITIZER"}
-    config_dir = _get_config_dir()
-    for env_filename in [".env", ".env.example"]:
-        env_path = config_dir / env_filename
-        if env_path.exists():
-            try:
-                content = env_path.read_text(encoding="utf-8")
-                lines = content.splitlines()
-                new_lines = [
-                    line for line in lines
-                    if not any(
-                        line.strip().startswith(key + "=") or line.strip() == key
-                        for key in legacy_keys
-                    )
-                ]
-                if len(new_lines) != len(lines):
-                    env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
-            except Exception:
-                pass
-
-
-# Auto-run legacy flag cleanup on import/load
-cleanup_legacy_env_flags()
-
-
 if __name__ == '__main__':
     """Allow running this script standalone for configuration"""
     import sys
