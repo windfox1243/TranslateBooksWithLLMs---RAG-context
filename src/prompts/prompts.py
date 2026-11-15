@@ -389,8 +389,6 @@ def _build_optional_prompt_sections(prompt_options: dict) -> str:
 
 def _build_target_language_style_section(target_language: str) -> str:
     """Return target-language-specific style guardrails."""
-    from src.utils.language_profiles import get_language_profile
-
     profile = get_language_profile(target_language)
     if profile.prompt_style == "vietnamese":
         return _build_vietnamese_style_section()
@@ -1650,84 +1648,6 @@ def generate_post_processing_prompt(
         additional_instructions=additional_instructions,
         glossary_block=glossary_block,
     )
-
-
-def _get_language_specific_prompt_guidance(target_lang: str) -> Dict[str, str]:
-    """Return language-tailored prompt examples and guidance for the Senior Editor reflection audit."""
-    code = get_language_profile(target_lang).code
-
-    if code == "vi":
-        return dict(vi_prompting.REFLECTION_GUIDANCE)
-    elif code == "ja":
-        return {
-            "loc_example": ' (e.g. in Japanese: place titles/honorifics after names like "桃沢トレーナー" or "Sato-senpai", NOT English title-first order)',
-            "pronoun_examples": " (e.g. dialogue first-person 'ore/boku/watashi' or informal address 'omae/kisama')",
-            "monologue_guidance": ' (e.g. internal monologue using natural 1st-person self-thought like jibun/boku/watashi). Do NOT flag internal thoughts as pronoun bleed.',
-            "gender_examples": " (e.g., using male pronouns/honorifics for a female character like '-kun' when lore specifies '-chan' or female register)",
-            "proper_name_example": ' (e.g., preserve concise proper names like "トレセン学園", do NOT over-expand into long descriptive phrases)',
-            "stutter_example": ' (e.g., "Wh-what..." -> "な、なに...", "S-sorry..." -> "す、すみません...")',
-            "addressee_examples": ' (e.g. "Ojou-sama", "Hime-sama", "Senpai", "-san", "-kun", "-chan")',
-        }
-    elif code == "zh":
-        return {
-            "loc_example": ' (e.g. in Chinese: place titles after names like "桃泽教练" or "张医生", maintaining natural CJK honorific order)',
-            "pronoun_examples": " (e.g. dialogue kinship/honorific terms like '哥', '姐', '少爷', '前辈')",
-            "monologue_guidance": ' (e.g. internal monologue thoughts using natural self-reference like 我/自己). Do NOT flag internal thoughts as pronoun bleed.',
-            "gender_examples": " (e.g., mixing up gendered pronouns 他/她/它 for female/male characters according to lore)",
-            "proper_name_example": ' (e.g., preserve concise proper names like "特雷森学园", do NOT over-expand into long descriptive phrases)',
-            "stutter_example": ' (e.g., "Wh-what..." -> "什、什么...", "S-sorry..." -> "对、对不起...")',
-            "addressee_examples": ' (e.g. "小姐", "少爷", "前辈", "姑娘", "先生")',
-        }
-    elif code == "ko":
-        return {
-            "loc_example": ' (e.g. in Korean: place honorifics after names like "모모자와 트레이너님" or "김선배")',
-            "pronoun_examples": " (e.g. dialogue seniority/honorific terms like '오빠', '언니', '형', '누나', '선배님')",
-            "monologue_guidance": ' (e.g. internal monologue thoughts in non-polite self-thought voice). Do NOT flag internal thoughts as pronoun bleed.',
-            "gender_examples": " (e.g., using male sibling terms '형/오빠' for female characters or incorrect honorific levels)",
-            "proper_name_example": ' (e.g., preserve concise proper names like "트레센 학원", do NOT over-expand into long descriptive phrases)',
-            "stutter_example": ' (e.g., "Wh-what..." -> "뭐, 뭐야...", "S-sorry..." -> "미, 미안...")',
-            "addressee_examples": ' (e.g. "아가씨", "도련님", "선배님", "선생님")',
-        }
-    elif code == "fr":
-        return {
-            "loc_example": ' (e.g. in French: respect natural adjective placement, honorific titles, and gender agreement)',
-            "pronoun_examples": " (e.g. informal 'tu' vs formal 'vous' dialogue register)",
-            "monologue_guidance": " or 1st-person POV self-references/internal thoughts.",
-            "gender_examples": " (e.g., incorrect grammatical gender agreement for adjectives/past participles or masculine 'il' for a female character)",
-            "proper_name_example": ' (e.g., preserve concise proper names, do NOT over-expand into long descriptive paraphrases)',
-            "stutter_example": ' (e.g., "Wh-what..." -> "Q-quoi...", "S-sorry..." -> "D-désolé...")',
-            "addressee_examples": ' (e.g. "mademoiselle", "monsieur", "maître")',
-        }
-    elif code == "es":
-        return {
-            "loc_example": ' (e.g. in Spanish: respect natural noun-adjective order and title placement like "Entrenador Momozawa")',
-            "pronoun_examples": " (e.g. informal 'tú'/'vos' vs formal 'usted' dialogue register)",
-            "monologue_guidance": " or 1st-person POV self-references/internal thoughts.",
-            "gender_examples": " (e.g., incorrect grammatical gender agreement for adjectives or masculine 'él' for a female character)",
-            "proper_name_example": ' (e.g., preserve concise proper names, do NOT over-expand into long descriptive paraphrases)',
-            "stutter_example": ' (e.g., "Wh-what..." -> "Q-qué...", "S-sorry..." -> "L-lo siento...")',
-            "addressee_examples": ' (e.g. "señorita", "joven", "don", "doña")',
-        }
-    elif code == "de":
-        return {
-            "loc_example": ' (e.g. in German: respect natural noun capitalization, title placement, and word order)',
-            "pronoun_examples": " (e.g. informal 'du' vs formal 'Sie' dialogue register)",
-            "monologue_guidance": " or 1st-person POV self-references/internal thoughts.",
-            "gender_examples": " (e.g., using masculine 'er' for a female character or incorrect grammatical gender agreement)",
-            "proper_name_example": ' (e.g., preserve concise proper names, do NOT over-expand into long descriptive paraphrases)',
-            "stutter_example": ' (e.g., "Wh-what..." -> "W-was...", "S-sorry..." -> "E-entschuldigung...")',
-            "addressee_examples": ' (e.g. "Fräulein", "Herr", "Frau")',
-        }
-    else:
-        return {
-            "loc_example": f' (e.g. localizing word order, titles, and honorifics according to natural {target_lang} grammar)',
-            "pronoun_examples": " (e.g. dialogue-specific intimate pronouns or informal vocatives)",
-            "monologue_guidance": " or 1st-person POV self-references/emotional mental thoughts.",
-            "gender_examples": " (e.g., using male pronouns/titles for a female character or vice versa)",
-            "proper_name_example": ' (e.g., preserve concise academy/school/institution names intact rather than over-expanding into long descriptive paraphrases)',
-            "stutter_example": ' (e.g. hesitations or stuttered prefixes)',
-            "addressee_examples": ' (e.g. honorific calls, titles, or gendered address forms)',
-        }
 
 
 def generate_chunk_reflection_prompt(

@@ -72,22 +72,6 @@ def _candidate_evidence_quotes(candidate: RelationshipCandidate) -> list[str]:
     return [quote for quote in quotes if quote]
 
 
-def _explicit_inverse_role(candidate: RelationshipCandidate) -> bool:
-    details = normalize_relationship_name(candidate.details)
-    cues = {
-        "parent": {" child ", " son ", " daughter "},
-        "child": {" parent ", " father ", " mother "},
-        "mentor": {" student ", " pupil "},
-        "student": {" mentor ", " teacher "},
-        "master": {" servant "},
-        "servant": {" master "},
-        "superior": {" subordinate "},
-        "subordinate": {" superior "},
-    }.get(candidate.relationship_type, set())
-    padded = f" {details} "
-    return any(cue in padded for cue in cues)
-
-
 def _names_match(candidate: str, known: str, language: str = "") -> bool:
     if normalize_relationship_name(candidate) == normalize_relationship_name(known):
         return True

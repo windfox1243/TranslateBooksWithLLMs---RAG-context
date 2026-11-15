@@ -346,20 +346,6 @@ class NovelContextSession:
         """Return a compressed full-context snapshot."""
         return compress_dynamic_state(self.content)
 
-    def analysis_result(self):
-        """Expose the latest source analysis through the v5 typed contract."""
-        from src.core.context import ContextAnalysisResult
-
-        return ContextAnalysisResult(
-            dialogue_attribution=dict(self.dialogue_attribution or {}),
-            relationship_candidates=list(self.relationship_candidates),
-            addressing_observations=list(self.addressing_candidates),
-            diagnostics={
-                "relationship_parse_status": self.relationship_parse_status,
-                "addressing_parse_status": self.addressing_parse_status,
-            },
-        )
-
     def register_editor_terms(self, term_pairs: List[Tuple[str, str]]) -> List[str]:
         """Register term replacements ordered by Senior Editor critique into global lore & glossary."""
         if not term_pairs:

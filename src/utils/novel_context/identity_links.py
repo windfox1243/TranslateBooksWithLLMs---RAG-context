@@ -203,22 +203,6 @@ def _source_identity_link_proof_status(
             return False, "alias contains the target name but is absent from the source chunk"
 
     return False, "source chunk does not directly prove this alias-target mapping"
-def _source_proves_identity_link(
-    source_text: str,
-    current_global_lore: str,
-    new_characters: str,
-    alias: str,
-    target: str,
-) -> bool:
-    """Return whether raw source text directly proves an alias mapping."""
-    proved, _ = _source_identity_link_proof_status(
-        source_text,
-        current_global_lore,
-        new_characters,
-        alias,
-        target,
-    )
-    return proved
 def _source_reincarnation_gender_for_name(source_text: str, name: str) -> str:
     text = _clean_inline_text(source_text)
     if not text or _is_invalid_context_key(name):

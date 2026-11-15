@@ -30,15 +30,3 @@ STYLE_GUARDRAILS = """
 # Extra rule for glossary NER suggestions (see prompts.generate_ner_prompt).
 NER_SKILL_GUIDANCE = """
 8. For English named skills, abilities, techniques, spells, combat moves, weapons, artifacts, and equipment, prefer concise Sino-Vietnamese literary target renderings when natural for Vietnamese fantasy or game prose. Preserve English only for brands, code labels, UI/system keys, or terms that clearly should remain untranslated."""
-
-# Examples substituted into the Senior Editor reflection prompt (see
-# prompts._get_language_specific_prompt_guidance).
-REFLECTION_GUIDANCE = {
-    "loc_example": ' (e.g. in Vietnamese: translate English "Momozawa Trainer" -> "Huấn luyện viên Momozawa", NOT literal unlocalized "Momozawa Trainer")',
-    "pronoun_examples": " (e.g. 'em', 'chú', 'con', 'tới', 'tớ')",
-    "monologue_guidance": ' (e.g. "Liệu mình/tôi có thắng...", or emotional mental thoughts addressing someone internally like "Em yêu anh..."). In Vietnamese internal monologue, \'mình\'/\'tôi\' are standard for self-reflection, while intimate address pairs (\'em-anh\', \'tớ-cậu\') are completely valid for emotional thoughts directed at a character.',
-    "gender_examples": " (e.g., using male pronouns 'anh' for a female character, or incorrect seniority/kinship terms)",
-    "proper_name_example": ' (e.g., preserve concise proper names like "Học viện Tracen", do NOT over-expand into long descriptive phrases like "Học viện Đào tạo Mã nương Nhật Bản")',
-    "stutter_example": ' (e.g., "Wh-what..." -> "Gì-gì...", "S-sorry..." -> "X-xin lỗi...")',
-    "addressee_examples": ' (e.g. "cô nương", "tiểu thư", "thiếu gia", "anh", "chị", "em", "bác sĩ")',
-}

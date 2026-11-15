@@ -1209,40 +1209,6 @@ class Database:
                 print(f"Error getting addressing rules: {e}")
                 return []
 
-    def set_addressing_rule_validation(
-        self,
-        translation_id: str,
-        speaker_name: str,
-        addressee_name: str,
-        status: str,
-        reason: str = "",
-    ) -> bool:
-        """Activate or quarantine one directed addressing rule."""
-        normalized = (
-            status
-            if status in {"active", "provisional", "quarantined"}
-            else "quarantined"
-        )
-        with self._lock:
-            try:
-                conn = self._get_connection()
-                cursor = conn.execute("""
-                    UPDATE context_addressing_rules
-                    SET validation_status = ?, validation_reason = ?,
-                        validated_at = CURRENT_TIMESTAMP,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE translation_id = ? AND speaker_name = ?
-                      AND addressee_name = ?
-                """, (
-                    normalized, reason or "", translation_id,
-                    speaker_name, addressee_name,
-                ))
-                self._commit_connection(conn)
-                return cursor.rowcount > 0
-            except Exception as e:
-                print(f"Error setting addressing rule validation: {e}")
-                return False
-
     def set_addressing_rule_lock(
         self,
         translation_id: str,

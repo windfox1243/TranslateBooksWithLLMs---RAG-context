@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from src.utils.language_profiles import LanguageProfile, get_language_profile
+from src.utils.language_profiles import get_language_profile
 
 LATIN_BOUNDARY_CHARS = r"A-Za-z0-9À-ÖØ-öø-ÿ_'’-"
 RTL_BOUNDARY_CHARS = r"\u0590-\u05ff\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff"
@@ -111,9 +111,3 @@ def glossary_term_occurrences(
         flags = 0 if case_sensitive else re.IGNORECASE
         return len(re.findall(_latin_boundary_pattern(term), chunk, flags))
     return haystack.count(needle)
-
-
-def display_language_profile(language: str | None) -> LanguageProfile:
-    """Small readability wrapper for call sites that log profile metadata."""
-
-    return get_language_profile(language)

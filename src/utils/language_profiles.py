@@ -54,34 +54,6 @@ class LanguageProfile:
     )
 
 
-@dataclass(frozen=True)
-class LayerCapabilityReport:
-    """Debug metadata describing which language-aware layer behavior was active."""
-
-    layer: str
-    language_profile: str
-    capability: str
-    status: str
-    fallback_reason: str = ""
-
-
-@dataclass(frozen=True)
-class ContextSelectionReason:
-    """Why a context entry was selected for prompt injection."""
-
-    entry_type: str
-    label: str
-    reason: str
-
-
-@dataclass(frozen=True)
-class AdapterRepairValidationResult:
-    """Adapter validation result for LLM repairs."""
-
-    accepted: bool
-    reason: str = ""
-
-
 LATIN_POLICY = TextMatchPolicy(latin_word_boundaries=True)
 CJK_POLICY = TextMatchPolicy(cjk_exact_labels=True, no_space_script=True)
 HANGUL_POLICY = TextMatchPolicy(hangul_exact_labels=True)

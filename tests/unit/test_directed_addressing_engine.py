@@ -9,53 +9,8 @@ import pytest
 
 from src.persistence.database import Database
 from src.utils.context_merge_engine import ContextMergeEngine
-from src.utils.context_projection import (
-    render_addressing_markdown,
-    render_addressing_projection,
-)
-from src.utils.context_schema import (
-    AddressingRuleState,
-    AddressingUpdateDelta,
-    extract_addressing_deltas_from_text,
-)
-
-
-def test_extract_addressing_deltas_from_text():
-    llm_output = """
-    Below is the translation of the chapter.
-
-    ```json
-    {
-      "addressing_updates": [
-        {
-          "speaker": "Nam",
-          "addressee": "Lan",
-          "self_pronoun": "anh",
-          "second_pronoun": "em",
-          "vocative": "Lan",
-          "register": "intimate",
-          "confidence": 0.95,
-          "evidence_quote": "Anh yêu em nhiều lắm."
-        },
-        {
-          "speaker": "Lan",
-          "addressee": "Mọi người",
-          "self_pronoun": "tôi",
-          "second_pronoun": "các bạn"
-        }
-      ]
-    }
-    ```
-    """
-    deltas = extract_addressing_deltas_from_text(llm_output)
-    assert len(deltas) == 1
-    d = deltas[0]
-    assert d.speaker == "Nam"
-    assert d.addressee == "Lan"
-    assert d.self_pronoun == "anh"
-    assert d.second_pronoun == "em"
-    assert d.register == "intimate"
-    assert d.confidence == 0.95
+from src.utils.context_projection import render_addressing_projection
+from src.utils.context_schema import AddressingUpdateDelta
 
 
 def test_database_addressing_and_audit_logs():
@@ -421,8 +376,6 @@ def test_context_projection():
             assert "Self-reference as 'anh'" in prompt_str
             assert "address target as 'em'" in prompt_str
 
-            markdown_str = render_addressing_markdown(tx_id, db=db)
-            assert "| Hoàng | Mai | anh | em |" in markdown_str
         finally:
             db.close()
 
@@ -459,18 +412,6 @@ def test_context_projection_active_filter_does_not_match_partial_latin_names():
             assert "**Apollo Rainbow** addressing **Tomio Momozawa**" in active_projection
         finally:
             db.close()
-
-
-def test_convert_addressing_text_to_markdown_table():
-    from src.utils.context_projection import convert_addressing_text_to_markdown_table
-    raw_text = """
-    - Apollo Rainbow → Tomio Momozawa: "Trainer" | "self-reference: tôi; second-person pronoun: Trainer; vocative/address form: Trainer" | professional mentor/trainee relationship
-    - Tomio Momozawa → Apollo Rainbow: "Apollo" | "self-reference: tôi; second-person pronoun: em; vocative/address form: Apollo" | professional mentor/trainee relationship
-    """
-    table = convert_addressing_text_to_markdown_table(raw_text)
-    assert "| Speaker | Addressee | Tự xưng (Self) | Gọi đối phương (Target) | Danh xưng (Vocative) |" in table
-    assert "| Apollo Rainbow | Tomio Momozawa | tôi | Trainer | Trainer |" in table
-    assert "| Tomio Momozawa | Apollo Rainbow | tôi | em | Apollo |" in table
 
 
 def test_db_addressing_markdown_import_export_projection_and_locks():

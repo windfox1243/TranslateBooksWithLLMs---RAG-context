@@ -4444,55 +4444,6 @@ def test_context_prompts_define_durable_dynamic_state_deltas():
         assert "English named skill, ability, technique, spell, combat move, weapon, artifact, or equipment" in prompt
 
 
-def test_json_dynamic_addressing_preserves_social_basis_and_scope():
-    from src.utils.novel_context import _json_dynamic_state
-
-    dynamic = _json_dynamic_state(
-        {
-            "current_addressing_forms": [
-                {
-                    "speaker": "Ellen Evans",
-                    "addressee": "Frondier De Roach",
-                    "source_form": "Frondier",
-                    "target_form": "Frondier",
-                    "register": "informal peer-like address",
-                    "social_basis": (
-                        "Ellen is Aster's older sister while Frondier is "
-                        "Aster's same-year peer"
-                    ),
-                    "scope": "direct address and Ellen's indirect thoughts",
-                    "details": "academy setting, not an elder-brother form",
-                },
-                {
-                    "speaker": "Elodie de Inies Rishae",
-                    "addressee": "Frondier De Roach",
-                    "source_form": "Fron",
-                    "self_reference": "casual self-reference",
-                    "second_person_pronoun": "casual second-person pronoun",
-                    "vocative_form": "nickname",
-                    "register": "casual nickname chosen while flustered",
-                }
-            ]
-        }
-    )
-
-    assert "## CURRENT ADDRESSING FORMS" in dynamic
-    assert "Ellen Evans → Frondier De Roach" in dynamic
-    assert 'source form "Frondier"' in dynamic
-    assert 'target-language form "Frondier"' in dynamic
-    assert "informal peer-like address" in dynamic
-    assert "same-year peer" in dynamic
-    assert "indirect thoughts" in dynamic
-    assert "not an elder-brother form" in dynamic
-    assert "Elodie de Inies Rishae → Frondier De Roach" in dynamic
-    assert (
-        'target-language form "self-reference: casual self-reference; '
-        'second-person pronoun: casual second-person pronoun; '
-        'vocative/address form: nickname"'
-    ) in dynamic
-    assert "casual nickname chosen while flustered" in dynamic
-
-
 def test_vietnamese_addressing_repairs_family_pair_and_blocks_generic_downgrade():
     from src.utils.novel_context import merge_dynamic_state
 

@@ -180,33 +180,6 @@ def resolve_narrator_policy(
     }
 
 
-def _vietnamese_observed_forms(segment: str, expected: str) -> List[str]:
-    folded = _norm(segment)
-    forms = []
-    strong = ("tớ", "tao")
-    # These alternatives are unambiguous enough to validate mechanically in
-    # narrative text. Kinship and social forms such as ``anh``, ``chị``,
-    # ``em``, ``con``, ``mình`` and ``ta`` can be either first-, second-, or
-    # third-person Vietnamese references. They require contextual review and
-    # must never become deterministic blockers based on sentence position.
-    contextual: tuple[str, ...] = ()
-    for form in strong:
-        if _norm(form) != _norm(expected) and re.search(
-            rf"(?<!\w){re.escape(_norm(form))}(?!\w)", folded,
-        ):
-            forms.append(form)
-    for form in contextual:
-        if _norm(form) == _norm(expected):
-            continue
-        if re.search(
-            rf"(?:^|[.!?…]\s+){re.escape(_norm(form))}(?!\w)", folded,
-        ):
-            forms.append(form)
-    if _norm(expected) != "tôi" and re.search(r"(?<!\w)tôi(?!\w)", folded):
-        forms.append("tôi")
-    return list(dict.fromkeys(forms))
-
-
 _QUOTE_PAIRS = {
     '"': '"', "“": "”", "„": "”", "«": "»", "『": "』", "「": "」",
 }
