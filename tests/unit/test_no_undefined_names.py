@@ -25,6 +25,8 @@ GUARDED_MODULES = [
     "src/core/llm/base.py",
     "src/core/editor/requests.py",
     "src/core/editor/full_repair.py",
+    "src/core/editor/locator_retry.py",
+    "src/core/editor/contract_retry.py",
     "src/core/context/analysis.py",
     "src/core/context/commit.py",
     "src/core/context/unit_pipeline.py",
