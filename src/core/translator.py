@@ -1,7 +1,6 @@
 """
 Translation module for LLM communication
 """
-import hashlib
 import inspect
 import json
 import re
@@ -1598,6 +1597,14 @@ def _reflection_contract_incomplete(result: ReflectionResult) -> bool:
     )
 
 
+def _reflection_contract_invalid(result: ReflectionResult) -> bool:
+    """True when an editor answer cannot be used as a reflection verdict."""
+    return bool(
+        result.parse_status in {"invalid_json", "empty", "incomplete_json"}
+        or _reflection_contract_incomplete(result)
+    )
+
+
 def parse_reflection_result(reflection_text: str) -> ReflectionResult:
     """Parse structured Senior Editor output with a conservative legacy fallback."""
     raw_text = reflection_text or ""
@@ -1908,7 +1915,6 @@ async def _run_chunk_reflection_pass_impl(
     from src.utils.editor_diagnostics import response_hash
     from src.utils.translation_quality import (
         apply_editor_patches,
-        apply_local_editor_patches,
         apply_repairs_that_hold,
         filter_protected_span_editor_issues,
         filter_source_contradicting_name_edits,
@@ -2125,193 +2131,37 @@ async def _run_chunk_reflection_pass_impl(
             },
         )
 
-    def reflection_contract_invalid(result: ReflectionResult) -> bool:
-        return bool(
-            result.parse_status in {"invalid_json", "empty", "incomplete_json"}
-            or _reflection_contract_incomplete(result)
-        )
+    reflection_contract_invalid = _reflection_contract_invalid
 
     contract_review_required = bool(remaining_narrator_blockers)
     if remaining_narrator_blockers:
         review_issue_count += len(remaining_narrator_blockers)
     if reflection_contract_invalid(reflection_result):
-        malformed_issue_ids = {
-            str(issue.get("issue_id") or "")
-            for issue in reflection_result.issues
-            if _issue_requires_draft_replacement(issue)
-            and not issue.get("draft_replacement")
-        }
-        if log_callback:
-            emit_progress_log(
-                log_callback,
-                "reflection_parse_retry",
-                "Senior Editor returned malformed or incomplete JSON; retrying once with the strict editor contract.",
-                layer="senior_editor_reflection",
-                data={
-                    "prompt_version": REFLECTION_PROMPT_VERSION,
-                    "contract_version": REFLECTION_CONTRACT_VERSION,
-                },
-            )
-        if malformed_issue_ids:
-            # These issues located their span and stopped short of naming the
-            # repair, so asking them to correct a locator asks the wrong
-            # question and gets the same answer back.
-            retry_user_prompt = _build_missing_replacement_retry_prompt(
-                draft_translation,
-                reflection_result.issues,
-                malformed_issue_ids,
-            )
-            retry_system_prompt = (
-                "You supply the missing replacement text for editor issues. "
-                "Return one JSON object only. Use only the supplied issues and "
-                "candidate draft segments; never rewrite or quote the complete "
-                "chunk."
-            )
-        else:
-            retry_user_prompt = (
-                f"{reflection_pair.user}\n\n"
-                "The previous response was not a usable JSON contract. Return "
-                "one valid JSON object only, without prose or markdown."
-            )
-            retry_system_prompt = reflection_pair.system
-        try:
-            retry_response = await generate_editor(
-                prompt=retry_user_prompt,
-                system_prompt=retry_system_prompt,
-                temperature=0.0,
-                max_output_tokens=editor_output_tokens,
-                stage="reflection_contract_retry",
-                structured=True,
-            )
-            retry_critique = (
-                (retry_response.content or "").strip()
-                if retry_response and getattr(retry_response, "content", None)
-                else ""
-            )
-            retry_result = parse_reflection_result(retry_critique)
-            record_attempt(
-                "reflection_contract_retry", retry_response, retry_critique,
-                parse_status=retry_result.parse_status,
-                failure_class=(
-                    "contract_incomplete"
-                    if _reflection_contract_incomplete(retry_result)
-                    else "contract_parse"
-                    if retry_result.parse_status in {"invalid_json", "empty"}
-                    else ""
-                ),
-                issues=retry_result.issues,
-            )
-            log_full_editor_response(
-                log_callback, "reflection_contract_retry", retry_critique,
-                int(options.get("chunk_index", 0) or 0),
-            )
-            if log_callback:
-                emit_progress_log(
-                    log_callback,
-                    "reflection_parse_retry_status",
-                    f"Senior Editor reflection retry parsed with {retry_result.parse_status}.",
-                    layer="senior_editor_reflection",
-                    data={
-                        "prompt_version": REFLECTION_PROMPT_VERSION,
-                        "contract_version": REFLECTION_CONTRACT_VERSION,
-                        "parse_status": retry_result.parse_status,
-                    },
-                )
-            if retry_result.parse_status == "json" and retry_result.issues:
-                if malformed_issue_ids:
-                    corrected_by_id = {
-                        str(issue.get("issue_id") or ""): issue
-                        for issue in retry_result.issues
-                        if str(issue.get("issue_id") or "") in malformed_issue_ids
-                    }
-                    merged = [
-                        corrected_by_id.get(str(issue.get("issue_id") or ""), issue)
-                        for issue in reflection_result.issues
-                    ]
-                    reflection_result = ReflectionResult(
-                        "needs_repair", merged, retry_critique, "json",
-                        retry_result.voice_observations
-                        or reflection_result.voice_observations,
-                    )
-                elif not reflection_contract_invalid(retry_result):
-                    # The retry answered in place of the first attempt rather
-                    # than correcting part of it, so it is now what the editor
-                    # reported.
-                    reflection_result = retry_result
-                    llm_issue_count = len(reflection_result.issues)
-                critique = retry_critique
-        except Exception as e:
-            if log_callback:
-                emit_progress_log(
-                    log_callback,
-                    "reflection_parse_retry_failed",
-                    f"Senior Editor reflection JSON retry failed: {e}",
-                    layer="senior_editor_reflection",
-                )
+        from src.core.editor.contract_retry import retry_invalid_contract
+
+        contract_retry = await retry_invalid_contract(
+            session=session,
+            reflection_result=reflection_result,
+            critique=critique,
+            draft_translation=draft_translation,
+            reflection_pair=reflection_pair,
+            options=options,
+            log_callback=log_callback,
+        )
+        reflection_result = contract_retry.reflection_result
+        critique = contract_retry.critique
+        if contract_retry.replaced:
+            llm_issue_count = len(reflection_result.issues)
 
     if reflection_contract_invalid(reflection_result):
-        invalid_issues = [
-            issue for issue in reflection_result.issues
-            if (
-                _issue_requires_draft_replacement(issue)
-                and not issue.get("draft_replacement")
-            )
-        ]
-        valid_issues = [
-            issue for issue in reflection_result.issues
-            if not (
-                _issue_requires_draft_replacement(issue)
-                and not issue.get("draft_replacement")
-            )
-        ]
-        invalid_issue_count = len(invalid_issues)
-        deterministic_invalid = sum(
-            1 for issue in invalid_issues if issue.get("deterministic")
-        )
-        if valid_issues and reflection_result.parse_status == "json":
-            reflection_result = ReflectionResult(
-                "needs_repair",
-                valid_issues,
-                reflection_result.raw_text,
-                reflection_result.parse_status,
-                reflection_result.voice_observations,
-            )
-            contract_review_required = deterministic_invalid > 0
-            review_issue_count += deterministic_invalid
-            warning_count += invalid_issue_count - deterministic_invalid
-            if log_callback:
-                emit_progress_log(
-                    log_callback,
-                    "reflection_partial_contract",
-                    (
-                        "Senior Editor kept valid issues and moved "
-                        f"{invalid_issue_count} incomplete issue(s) to review."
-                    ),
-                    level="warning",
-                    layer="senior_editor_reflection",
-                )
-        elif invalid_issues and reflection_result.parse_status == "json":
-            # Preserve a semantically useful concern when the model cannot
-            # provide a safe exact edit after the focused correction. It is
-            # review evidence, not a reason to resend the complete chunk.
-            reflection_result = ReflectionResult(
-                "needs_repair",
-                [
-                    {
-                        **issue,
-                        "repair_kind": "review_only",
-                        "draft_replacement": None,
-                    }
-                    for issue in invalid_issues
-                ],
-                reflection_result.raw_text,
-                reflection_result.parse_status,
-                reflection_result.voice_observations,
-            )
-            contract_review_required = deterministic_invalid > 0
-            review_issue_count += deterministic_invalid
-            # No increment here: these issues stay in the result as review_only
-            # and are counted once by the actionable filter further down.
+        from src.core.editor.contract_retry import salvage_partial_contract
+
+        salvage = salvage_partial_contract(reflection_result, log_callback=log_callback)
+        reflection_result = salvage.reflection_result
+        if salvage.review_required is not None:
+            contract_review_required = salvage.review_required
+        review_issue_count += salvage.review_increment
+        warning_count += salvage.warning_increment
 
     if reflection_contract_invalid(reflection_result):
         if log_callback:
@@ -2836,176 +2686,35 @@ async def _run_chunk_reflection_pass_impl(
         unresolved_issues
         and all(_issue_requires_draft_replacement(issue) for issue in unresolved_issues)
     ):
+        from src.core.editor.locator_retry import run_focused_locator_retry
+
         local_patch_followup_attempted = True
-        followup_base = original_draft if patch_errors else patched_draft
-        followup_ids = {
-            str(issue.get("issue_id") or "") for issue in unresolved_issues
-            if str(issue.get("issue_id") or "")
-        }
-        followup_reasons = [
-            *patch_errors,
-            *[
-                f"local_patch_unresolved:{issue.get('issue_id') or 'unknown'}"
-                for issue in unresolved_issues
-            ],
-        ]
-        previous_response_fingerprint = None
-        identical_no_progress = 0
-        # What the last attempt was rejected for. Without it the three attempts
-        # are one question asked three times: every input to the prompt is
-        # fixed before the loop, so the second and third calls resample the
-        # same request at temperature zero and learn nothing from the answer
-        # that just failed.
-        previous_attempt_errors: List[str] = []
-        for focused_attempt in range(1, 4):
-            followup_prompt = _build_focused_locator_retry_prompt(
-                followup_base,
-                unresolved_issues,
-                followup_ids,
-                followup_reasons,
-                previous_attempt_errors=previous_attempt_errors,
-                previous_attempt_index=focused_attempt - 1,
+        followup = await run_focused_locator_retry(
+            session=session,
+            followup_base=original_draft if patch_errors else patched_draft,
+            unresolved_issues=unresolved_issues,
+            patch_errors=patch_errors,
+            source_chunk=source_chunk,
+            source_language=source_language,
+            target_language=target_language,
+            protected_terms=protected_terms,
+            glossary_terms=glossary_terms,
+        )
+        already_read_ids.extend(followup.already_read_ids)
+        patch_errors = followup.patch_errors
+        if followup.succeeded:
+            patched_draft = followup.patched_draft
+            resolved_issue_count += len(followup.resolved_issues)
+            unresolved_issues = []
+            unresolved_issue_count = review_issue_count
+            result_state = "locally_patched"
+            reflection_result = ReflectionResult(
+                "needs_repair",
+                followup.resolved_issues,
+                followup.raw,
+                followup.parse_status,
+                followup.voice_observations,
             )
-            followup_errors: List[str] = []
-            followup_response = None
-            followup_raw = ""
-            followup_result = ReflectionResult("no_issues", [], "", "empty")
-            try:
-                followup_response = await generate_editor(
-                    prompt=followup_prompt,
-                    system_prompt=(
-                        "You correct one bounded set of unresolved local translation "
-                        "edits. Use only the supplied candidate neighborhoods. Return "
-                        "canonical reflection JSON and never rewrite the complete chunk."
-                    ),
-                    temperature=0.0,
-                    max_output_tokens=editor_output_tokens,
-                    stage=(
-                        "local_patch_retry" if focused_attempt == 1
-                        else f"local_patch_retry_{focused_attempt}"
-                    ),
-                    structured=True,
-                )
-                followup_raw = str(
-                    getattr(followup_response, "content", "") or ""
-                ).strip()
-                response_fingerprint = hashlib.sha256(
-                    followup_raw.encode("utf-8")
-                ).hexdigest()
-                if response_fingerprint == previous_response_fingerprint:
-                    identical_no_progress += 1
-                else:
-                    identical_no_progress = 0
-                previous_response_fingerprint = response_fingerprint
-                followup_result = parse_reflection_result(followup_raw)
-                corrected_issues = [
-                    issue for issue in followup_result.issues
-                    if not followup_ids
-                    or str(issue.get("issue_id") or "") in followup_ids
-                ]
-                corrected_issues, _normalized = normalize_unique_issue_locators(
-                    followup_base, corrected_issues,
-                )
-                # The audit screens these out, but a retry asked to relocate an
-                # edit can answer with one the draft already reads. It asks for
-                # nothing, so it is satisfied rather than unresolved: held out
-                # of the batch, counted as done, and named in the record.
-                already_read = [
-                    issue for issue in corrected_issues
-                    if replacement_already_in_draft(followup_base, issue)
-                ]
-                already_read_ids.extend(
-                    str(issue.get("issue_id") or "unknown") for issue in already_read
-                )
-                corrected_issues = [
-                    issue for issue in corrected_issues if issue not in already_read
-                ]
-                if reflection_contract_invalid(followup_result) or not (
-                    corrected_issues or already_read
-                ):
-                    followup_errors.append("local_patch_retry_contract_invalid")
-                else:
-                    followup_errors.extend(
-                        validate_issue_locators(followup_base, corrected_issues)
-                    )
-                retry_patched = followup_base
-                retry_unresolved = list(corrected_issues)
-                if not followup_errors:
-                    retry_patched, retry_unresolved, retry_patch_errors = (
-                        apply_local_editor_patches(followup_base, corrected_issues)
-                    )
-                    followup_errors.extend(retry_patch_errors)
-                if not followup_errors and not retry_unresolved:
-                    followup_errors.extend(validate_editor_repair(
-                        retry_patched,
-                        corrected_issues,
-                        draft_text=followup_base,
-                        source_text=source_chunk,
-                        source_language=source_language,
-                        target_language=target_language,
-                        protected_terms=protected_terms,
-                        glossary_terms=glossary_terms,
-                    ))
-                record_attempt(
-                    (
-                        "local_patch_retry" if focused_attempt == 1
-                        else f"local_patch_retry_{focused_attempt}"
-                    ),
-                    followup_response,
-                    followup_raw,
-                    parse_status=followup_result.parse_status,
-                    failure_class=("local_patch_conflict" if followup_errors else ""),
-                    reason_codes=followup_errors,
-                    issues=corrected_issues + already_read,
-                )
-                if not followup_errors and not retry_unresolved:
-                    patched_draft = retry_patched
-                    resolved_issue_count += len(corrected_issues) + len(already_read)
-                    unresolved_issues = []
-                    unresolved_issue_count = review_issue_count
-                    patch_errors = []
-                    result_state = "locally_patched"
-                    reflection_result = ReflectionResult(
-                        "needs_repair",
-                        corrected_issues + already_read,
-                        followup_raw,
-                        followup_result.parse_status,
-                        followup_result.voice_observations,
-                    )
-                    break
-                patch_errors.extend(
-                    error for error in followup_errors if error not in patch_errors
-                )
-                # An attempt can fail without erroring: it answers cleanly and
-                # leaves issues unresolved. Measured, that is the case that put
-                # the third attempt back on the first attempt's exact prompt.
-                previous_attempt_errors = list(followup_errors) or [
-                    f"local_patch_unresolved:{issue.get('issue_id') or 'unknown'}"
-                    for issue in retry_unresolved
-                ]
-                if identical_no_progress >= 1:
-                    patch_errors.append("local_patch_retry_no_progress")
-                    break
-            except Exception as exc:
-                followup_errors.append(
-                    f"local_patch_retry_failed:{type(exc).__name__}"
-                )
-                patch_errors.extend(
-                    error for error in followup_errors if error not in patch_errors
-                )
-                record_attempt(
-                    (
-                        "local_patch_retry" if focused_attempt == 1
-                        else f"local_patch_retry_{focused_attempt}"
-                    ),
-                    followup_response,
-                    followup_raw,
-                    parse_status=followup_result.parse_status,
-                    failure_class="local_patch_conflict",
-                    reason_codes=followup_errors,
-                    issues=followup_result.issues,
-                )
-                break
 
     if not unresolved_issues:
         finish_run(
