@@ -23,6 +23,10 @@ GUARDED_MODULES = [
     "src/core/epub/xhtml_translator.py",
     "src/core/epub/translator.py",
     "src/core/llm/base.py",
+    "src/core/editor/requests.py",
+    "src/core/context/analysis.py",
+    "src/core/context/commit.py",
+    "src/core/context/unit_pipeline.py",
 ]
 
 
