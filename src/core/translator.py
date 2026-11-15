@@ -1905,37 +1905,13 @@ async def _run_chunk_reflection_pass_impl(
     repair_validator: Optional[Callable[[str], Optional[str]]] = None,
 ) -> str:
     """Run a 2-pass Senior Translation Editor reflection & repair evaluation on a draft chunk."""
-    from src.core.editor.signal_monitor import warn_if_editor_inert
-    from src.core.editor.unit_repair import unit_mode_enabled
-    from src.core.llm import TranslationExtractor
-    from src.core.llm.generation_controls import (
-        adaptive_retry_output_tokens,
-        resolve_editor_output_tokens,
-        resolve_thinking_controls,
-    )
-    from src.prompts.prompts import (
-        REFLECTION_RESPONSE_SCHEMA,
-        UNIT_CONTRACT_VERSION,
-        UNIT_PROMPT_VERSION,
-        UNIT_RESPONSE_SCHEMA,
-        generate_chunk_reflection_prompt,
-        generate_chunk_repair_prompt,
-    )
-    from src.utils.editor_diagnostics import (
-        EditorRunRecorder,
-        issue_excerpts,
-        response_hash,
-    )
+    from src.utils.editor_diagnostics import response_hash
     from src.utils.translation_quality import (
         apply_editor_patches,
         apply_local_editor_patches,
         apply_repairs_that_hold,
-        build_editor_segments,
-        describe_repair_failures,
         filter_protected_span_editor_issues,
         filter_source_contradicting_name_edits,
-        find_source_residue,
-        identity_preserving_proper_names,
         normalize_unique_issue_locators,
         replacement_already_in_draft,
         residue_findings_to_editor_issues,
@@ -1946,72 +1922,27 @@ async def _run_chunk_reflection_pass_impl(
     if not draft_translation or not draft_translation.strip() or not llm_client:
         return draft_translation
 
-    from src.core.editor import audit_narrator_conformance, review_required_translation
+    from src.core.editor import review_required_translation
     from src.core.editor.preflight import run_editor_preflight
+    from src.core.editor.requests import EditorRequestSession
 
     options = prompt_options or {}
-    editor_client = options.get("_editor_llm_client") or llm_client
-    editor_model = str(options.get("editor_model_resolved") or model_name)
-    editor_provider = str(
-        options.get("editor_provider_resolved")
-        or options.get("llm_provider")
-        or "unknown"
-    ).casefold()
-    editor_endpoint = str(options.get("editor_api_endpoint") or "")
-    requested_thinking_mode = options.get("editor_thinking_level") or "auto"
-    editor_controls = resolve_thinking_controls(
-        editor_provider,
-        editor_model,
-        requested_thinking_mode,
-        role="editor",
-        endpoint=editor_endpoint,
-        reasoning_supported=bool(options.get("editor_reasoning_supported")),
-    )
-    editor_output_limit = options.get("editor_model_output_limit")
-    editor_output_tokens = resolve_editor_output_tokens(
-        editor_provider,
-        editor_model,
-        options.get("editor_max_output_tokens"),
-        editor_controls.get("mode"),
-        reported_limit=editor_output_limit,
-    )
-    escalation_client = options.get("_editor_escalation_llm_client")
-    escalation_model = str(options.get("editor_escalation_model") or "").strip()
-    escalation_enabled = bool(
-        options.get("editor_escalation_enabled", False)
-        and escalation_client
-        and escalation_model
-    )
-    escalation_pending = False
-    escalation_used = False
-    schema_capability_key = (
-        editor_provider,
-        editor_model.casefold(),
-        editor_endpoint.rstrip("/").casefold(),
-    )
-    # Which contract the editor was actually asked to answer. The diagnostics
-    # compare runs against each other, and two contracts recorded under one
-    # version would make that comparison meaningless.
-    unit_mode = unit_mode_enabled(options)
-    recorder = EditorRunRecorder(
-        options,
+    # Client selection, request budget, schema/truncation fallbacks and token
+    # accounting live in the session; this function decides what to ask.
+    session = EditorRequestSession(
+        options=options,
+        llm_client=llm_client,
+        model_name=model_name,
         target_language=target_language,
-        prompt_version=UNIT_PROMPT_VERSION if unit_mode else REFLECTION_PROMPT_VERSION,
-        contract_version=(
-            UNIT_CONTRACT_VERSION if unit_mode else REFLECTION_CONTRACT_VERSION
-        ),
+        log_callback=log_callback,
     )
-    request_index = 0
-    total_prompt_tokens = 0
-    total_completion_tokens = 0
-    total_thinking_tokens = 0
-    total_tokens = 0
-    truncation_retry_stages: set[str] = set()
-    editor_request_count = 0
-    any_truncation = False
-    recovered_truncation = False
-    last_finish_reason = ""
-    last_blocked_reason = ""
+    editor_client = session.client
+    editor_output_tokens = session.output_tokens
+    recorder = session.recorder
+    reflection_components = session.reflection_components
+    record_attempt = session.record_attempt
+    generate_editor = session.generate
+
     result_state = "unchanged_draft"
     resolved_issue_count = 0
     unresolved_issue_count = 0
@@ -2028,311 +1959,28 @@ async def _run_chunk_reflection_pass_impl(
     automatic_repair_attempts = 0
     narrator_conformance: Dict[str, Any] = {"status": "not_checked"}
     initial_narrator_finding_count = 0
-    request_compositions: List[Dict[str, Any]] = []
-    reflection_components: Dict[str, Any] = {}
-
-    def capture_request_composition(
-        stage: str, prompt: str, system_prompt: str,
-    ) -> None:
-        request_compositions.append({
-            "stage": stage,
-            "system_chars": len(system_prompt),
-            "user_chars": len(prompt),
-            "estimated_input_tokens": (len(system_prompt) + len(prompt) + 3) // 4,
-            "prompt_hash": hashlib.sha256(
-                (system_prompt + "\x1f" + prompt).encode("utf-8")
-            ).hexdigest(),
-        })
-
-    def record_attempt(
-        stage: str,
-        response: Any,
-        raw: str,
-        *,
-        parse_status: str = "",
-        failure_class: str = "",
-        reason_codes: Optional[List[str]] = None,
-        issues: Optional[List[Dict[str, Any]]] = None,
-    ) -> None:
-        nonlocal request_index, total_prompt_tokens, total_completion_tokens
-        nonlocal total_thinking_tokens, total_tokens
-        nonlocal any_truncation, last_finish_reason, last_blocked_reason
-        request_index += 1
-        prompt_tokens = int(getattr(response, "prompt_tokens", 0) or 0)
-        completion_tokens = int(getattr(response, "completion_tokens", 0) or 0)
-        thinking_tokens = int(getattr(response, "thinking_tokens", 0) or 0)
-        attempt_total = int(
-            getattr(response, "total_tokens", 0)
-            or prompt_tokens + completion_tokens + thinking_tokens
-        )
-        total_prompt_tokens += prompt_tokens
-        total_completion_tokens += completion_tokens
-        total_thinking_tokens += thinking_tokens
-        total_tokens += attempt_total
-        attempt_truncated = getattr(response, "was_truncated", False) is True
-        any_truncation = any_truncation or attempt_truncated
-        finish_reason = str(getattr(response, "finish_reason", "") or "")
-        blocked_reason = str(getattr(response, "blocked_reason", "") or "")
-        if finish_reason:
-            last_finish_reason = finish_reason
-        if blocked_reason:
-            last_blocked_reason = blocked_reason
-        recorder.attempt({
-            "attempt_index": request_index,
-            "stage": stage,
-            "parse_status": parse_status,
-            "failure_class": failure_class,
-            "reason_codes": reason_codes or [],
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "thinking_tokens": thinking_tokens,
-            "total_tokens": attempt_total,
-            "was_truncated": attempt_truncated,
-            "finish_reason": finish_reason,
-            "blocked_reason": blocked_reason,
-            "response_hash": response_hash(raw),
-            "excerpts": issue_excerpts(issues or []),
-        })
 
     def finish_run(outcome: str, **payload: Any) -> None:
-        payload.setdefault("result_state", result_state)
-        payload.setdefault("resolved_issue_count", resolved_issue_count)
-        payload.setdefault("unresolved_issue_count", unresolved_issue_count)
-        payload.setdefault("warning_count", warning_count)
-        payload.setdefault("llm_issue_count", llm_issue_count)
-        diagnostics = dict(payload.get("diagnostics") or {})
-        diagnostics.setdefault("narrator_conformance", narrator_conformance)
-        diagnostics.setdefault("prompt_composition", {
-            **reflection_components,
-            "requests": request_compositions,
-        })
-        diagnostics.setdefault("automatic_retry", {
-            "trigger": (
-                "deterministic_validation"
-                if automatic_repair_attempts else "none"
-            ),
-            "current_attempt": automatic_repair_attempts,
-            "maximum_attempts": max_automatic_repair_attempts,
-            "terminal_reason": outcome,
-        })
-        payload["diagnostics"] = diagnostics
-        recorder.finish(
+        # Reads the run's outcome state at call time, so every exit records
+        # the counts as they stand when it is taken.
+        session.finish(
             outcome,
-            prompt_tokens=total_prompt_tokens,
-            completion_tokens=total_completion_tokens,
-            thinking_tokens=total_thinking_tokens,
-            total_tokens=total_tokens,
-            was_truncated=any_truncation,
-            recovered_truncation=recovered_truncation,
-            finish_reason=last_finish_reason,
-            blocked_reason=last_blocked_reason,
+            defaults={
+                "result_state": result_state,
+                "resolved_issue_count": resolved_issue_count,
+                "unresolved_issue_count": unresolved_issue_count,
+                "warning_count": warning_count,
+                "llm_issue_count": llm_issue_count,
+            },
+            narrator_conformance=narrator_conformance,
+            automatic_repair_attempts=automatic_repair_attempts,
+            max_automatic_repair_attempts=max_automatic_repair_attempts,
             deterministic_count=sum(
                 1 for finding in residue_findings if finding.blocking
             ) + initial_narrator_finding_count,
-            **payload,
-        )
-        # An editor that has gone inert reports `no_issues` forever, which is
-        # indistinguishable from a clean book unless someone says so.
-        warn_if_editor_inert(
-            recorder.db,
-            str(options.get("translation_id") or ""),
-            log_callback,
+            payload=payload,
         )
 
-    async def generate_editor(
-        *,
-        prompt: str,
-        system_prompt: str,
-        temperature: float,
-        max_output_tokens: int,
-        stage: str,
-        structured: bool = False,
-        fallback_prompt: Optional[str] = None,
-        fallback_system_prompt: Optional[str] = None,
-    ) -> Any:
-        nonlocal editor_request_count, recovered_truncation
-        nonlocal escalation_pending, escalation_used
-        active_client = editor_client
-        active_model = editor_model
-        active_controls = editor_controls
-        if escalation_pending and stage.startswith("repair_"):
-            active_client = escalation_client
-            active_model = escalation_model
-            active_controls = resolve_thinking_controls(
-                str(options.get("editor_escalation_provider") or editor_provider),
-                active_model,
-                options.get("editor_escalation_thinking_level") or "minimal",
-                role="editor",
-                endpoint=str(options.get("editor_escalation_endpoint") or ""),
-            )
-            escalation_pending = False
-            escalation_used = True
-        schema = (
-            (UNIT_RESPONSE_SCHEMA if unit_mode else REFLECTION_RESPONSE_SCHEMA)
-            if structured and options.get("editor_native_schema", True)
-            and schema_capability_key not in _EDITOR_SCHEMA_UNSUPPORTED
-            else None
-        )
-        disable_native_schema = False
-        active_prompt = prompt if schema is not None else (fallback_prompt or prompt)
-        active_system_prompt = (
-            system_prompt
-            if schema is not None
-            else (fallback_system_prompt or system_prompt)
-        )
-
-        async def retry_truncated(response: Any, active_schema: Any) -> Any:
-            nonlocal editor_request_count, recovered_truncation
-            if (
-                response is None
-                or getattr(response, "was_truncated", False) is not True
-                or stage in truncation_retry_stages
-            ):
-                return response
-            truncation_retry_stages.add(stage)
-            raw = str(getattr(response, "content", "") or "")
-            record_attempt(
-                f"{stage}_max_tokens",
-                response,
-                raw,
-                parse_status=(
-                    parse_reflection_result(raw).parse_status
-                    if structured else ""
-                ),
-                failure_class="provider_truncated",
-                reason_codes=["adaptive_output_retry"],
-            )
-            retry_tokens = adaptive_retry_output_tokens(
-                max_output_tokens,
-                editor_output_limit,
-            )
-            retry_controls = resolve_thinking_controls(
-                editor_provider,
-                editor_model,
-                "minimal",
-                role="editor",
-                endpoint=editor_endpoint,
-                reasoning_supported=bool(options.get("editor_reasoning_supported")),
-            )
-            if log_callback:
-                emit_progress_log(
-                    log_callback,
-                    "editor_truncation_retry",
-                    (
-                        "Senior Editor exhausted its output allowance; retrying "
-                        f"with {retry_tokens} tokens and reduced reasoning."
-                    ),
-                    level="warning",
-                    layer="senior_editor_reflection",
-                    data={
-                        "previous_output_tokens": max_output_tokens,
-                        "retry_output_tokens": retry_tokens,
-                        "thinking_mode": retry_controls.get("mode"),
-                    },
-                )
-            if editor_request_count >= 6:
-                return response
-            editor_request_count += 1
-            capture_request_composition(
-                f"{stage}_max_tokens_retry", active_prompt, active_system_prompt,
-            )
-            retried = await _generate_editor_response(
-                llm_client=active_client,
-                prompt=active_prompt,
-                system_prompt=active_system_prompt,
-                model_name=active_model,
-                temperature=0.0,
-                max_output_tokens=retry_tokens,
-                response_schema=active_schema,
-                stage=f"{stage}_max_tokens_retry",
-                **{
-                    key: retry_controls.get(key) for key in (
-                        "thinking_level", "thinking_budget",
-                        "thinking_enabled", "reasoning_effort",
-                    )
-                },
-            )
-            if retried is not None and getattr(retried, "was_truncated", False) is not True:
-                recovered_truncation = True
-            return retried
-
-        try:
-            if editor_request_count >= 6:
-                raise RuntimeError("Senior Editor request budget exhausted")
-            editor_request_count += 1
-            capture_request_composition(stage, active_prompt, active_system_prompt)
-            response = await _generate_editor_response(
-                llm_client=active_client,
-                prompt=active_prompt,
-                system_prompt=active_system_prompt,
-                model_name=active_model,
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-                response_schema=schema,
-                stage=stage,
-                **{
-                    key: active_controls.get(key) for key in (
-                        "thinking_level", "thinking_budget",
-                        "thinking_enabled", "reasoning_effort",
-                    )
-                },
-            )
-            if response is None:
-                raise RuntimeError("Senior Editor provider returned no response")
-            return await retry_truncated(response, schema)
-        except StructuredOutputSchemaError as exc:
-            if schema is None:
-                raise
-            if getattr(exc, "identifies_schema", True):
-                disable_native_schema = True
-            else:
-                seen = _EDITOR_SCHEMA_GENERIC_REJECTIONS.get(
-                    schema_capability_key, 0
-                ) + 1
-                _EDITOR_SCHEMA_GENERIC_REJECTIONS[schema_capability_key] = seen
-                disable_native_schema = seen >= _EDITOR_SCHEMA_GENERIC_LIMIT
-            record_attempt(
-                f"{stage}_schema_fallback", None, "",
-                failure_class="schema_rejected",
-                reason_codes=[
-                    f"native_schema_rejected:{type(exc).__name__}",
-                    *(["native_schema_disabled"] if disable_native_schema else []),
-                ],
-            )
-        except Exception as exc:
-            raise
-        if disable_native_schema:
-            _EDITOR_SCHEMA_UNSUPPORTED.add(schema_capability_key)
-        if editor_request_count >= 6:
-            raise RuntimeError("Senior Editor request budget exhausted")
-        editor_request_count += 1
-        capture_request_composition(
-            f"{stage}_tagged_fallback",
-            fallback_prompt or prompt,
-            fallback_system_prompt or system_prompt,
-        )
-        response = await _generate_editor_response(
-            llm_client=active_client,
-            prompt=fallback_prompt or prompt,
-            system_prompt=fallback_system_prompt or system_prompt,
-            model_name=active_model,
-            temperature=temperature,
-            max_output_tokens=max_output_tokens,
-            response_schema=None,
-            stage=f"{stage}_tagged_fallback",
-            **{
-                key: active_controls.get(key) for key in (
-                    "thinking_level", "thinking_budget",
-                    "thinking_enabled", "reasoning_effort",
-                )
-            },
-        )
-        if response is not None:
-            try:
-                response.structured_output_fallback = True
-            except Exception:
-                pass
-        return await retry_truncated(response, None)
     preflight = run_editor_preflight(
         source_chunk,
         draft_translation,
@@ -3451,9 +3099,6 @@ async def _run_chunk_reflection_pass_impl(
     term_pairs = extract_term_replacements_from_critique(critique_feedback)
     if not term_pairs:
         term_pairs = extract_term_replacements_from_critique(critique)
-    validation_errors: List[str] = []
-    repair_attempt_diagnostics = []
-    previous_failure_signature: Optional[tuple[str, ...]] = None
     if log_callback:
         emit_progress_log(
             log_callback,
@@ -3465,194 +3110,48 @@ async def _run_chunk_reflection_pass_impl(
             ),
             layer="senior_editor_repair",
         )
-    for repair_attempt in range(max_automatic_repair_attempts):
-        automatic_repair_attempts = repair_attempt + 1
-        repair_feedback = critique_feedback
-        if validation_errors:
-            repair_feedback += (
-                "\n\nPREVIOUS REPAIR VALIDATION FAILURES:\n- "
-                + "\n- ".join(describe_repair_failures(
-                    validation_errors, draft_text=draft_translation,
-                ))
-                + "\nReturn a corrected complete translation."
-            )
-        repair_pair = generate_chunk_repair_prompt(
-            source_chunk=source_chunk,
-            draft_translation=draft_translation,
-            critique_feedback=repair_feedback,
-            target_language=target_language,
-            custom_instructions=custom_instructions,
-            glossary_block=glossary_block,
-            novel_context=active_novel_context,
-            source_available=source_available,
-            narrative_voice_context=narrative_voice_context,
-        )
-        validation_errors = []
-        repair_response = None
-        raw_content = ""
-        try:
-            repair_response = await generate_editor(
-                prompt=repair_pair.user,
-                system_prompt=repair_pair.system,
-                temperature=0.3 if repair_attempt == 0 else 0.0,
-                max_output_tokens=max(
-                    editor_output_tokens,
-                    min(16384, len(draft_translation) // 3 + 1024),
-                ),
-                stage=f"repair_{repair_attempt + 1}",
-            )
-            raw_content = (
-                repair_response.content
-                if repair_response and getattr(repair_response, "content", None)
-                else ""
-            )
-            repaired_text = (
-                editor_client.extract_translation(raw_content)
-                if hasattr(editor_client, "extract_translation")
-                else None
-            )
-            if not repaired_text:
-                extractor = TranslationExtractor("<TRANSLATION>", "</TRANSLATION>")
-                repaired_text = extractor.extract(raw_content)
-            repaired_text = str(repaired_text or "").strip()
-            if not repaired_text:
-                validation_errors.append("repair output was empty")
-            if repaired_text and repair_validator:
-                try:
-                    adapter_feedback = repair_validator(repaired_text)
-                except Exception as validation_error:
-                    adapter_feedback = f"repair validator raised {validation_error}"
-                if adapter_feedback:
-                    validation_errors.append(str(adapter_feedback))
-            if repaired_text:
-                validation_errors.extend(validate_editor_repair(
-                    repaired_text,
-                    reflection_result.issues,
-                    draft_text=draft_translation,
-                    source_text=source_chunk,
-                    source_language=source_language,
-                    target_language=target_language,
-                    protected_terms=protected_terms,
-                    glossary_terms=glossary_terms,
-                ))
-            if repaired_text:
-                repaired_conformance = audit_narrator_conformance(
-                    source_text=source_chunk,
-                    target_text=repaired_text,
-                    source_language=source_language,
-                    target_language=target_language,
-                    file_type=str(options.get("file_type") or "txt"),
-                    dialogue_attribution=options.get("dialogue_attribution") or {},
-                    db=options.get("_checkpoint_db"),
-                    translation_id=str(options.get("translation_id") or ""),
-                    chunk_index=int(options.get("chunk_index", 0) or 0),
-                    explicit_override=str(
-                        options.get("narrator_self_reference_override") or ""
-                    ),
-                )
-                narrator_conformance = repaired_conformance
-                if repaired_conformance.get("status") == "fail":
-                    validation_errors.extend(
-                        f"{item.get('reason_code')}:{item.get('segment_id')}"
-                        for item in repaired_conformance.get("violating_segments") or []
-                        if item.get("blocking", True)
-                    )
-            if repaired_text and not validation_errors:
-                record_attempt(
-                    f"repair_{repair_attempt + 1}", repair_response, raw_content,
-                    parse_status="translation_tags",
-                    issues=reflection_result.issues,
-                )
-                if term_pairs and context_session and hasattr(
-                    context_session,
-                    "register_editor_terms",
-                ):
-                    context_session.register_editor_terms(term_pairs)
-                if log_callback:
-                    emit_progress_log(
-                        log_callback,
-                        "editor_state_fallback_applied",
-                        "Senior Editor state: full-chunk fallback validated and applied.",
-                        layer="senior_editor_repair",
-                    )
-                finish_run(
-                    "review_required" if review_required else "llm_repaired",
-                    parse_status=reflection_result.parse_status,
-                    issue_count=len(reflection_result.issues),
-                    response_hash=response_hash(raw_content),
-                    diagnostics={"repair_attempt": repair_attempt + 1},
-                    result_state="rewritten",
-                    resolved_issue_count=len(reflection_result.issues),
-                    unresolved_issue_count=review_issue_count,
-                )
-                return persist_final_voice(repaired_text)
-        except Exception as e:
-            validation_errors.append(
-                f"repair_call_failed:{_classify_editor_exception(e)}"
-            )
+    from src.core.editor.full_repair import run_full_chunk_repair
 
-        failure_class = (
-            "provider_empty" if "empty" in " ".join(validation_errors).casefold()
-            else "adapter_invalid" if any(
-                str(reason).startswith("adapter_")
-                for reason in validation_errors
-            )
-            else "repair_validation"
+    repair = await run_full_chunk_repair(
+        session=session,
+        source_chunk=source_chunk,
+        draft_translation=draft_translation,
+        critique_feedback=critique_feedback,
+        reflection_issues=reflection_result.issues,
+        term_pairs=term_pairs,
+        context_session=context_session,
+        target_language=target_language,
+        source_language=source_language,
+        custom_instructions=custom_instructions,
+        glossary_block=glossary_block,
+        active_novel_context=active_novel_context,
+        source_available=source_available,
+        narrative_voice_context=narrative_voice_context,
+        protected_terms=protected_terms,
+        glossary_terms=glossary_terms,
+        options=options,
+        repair_validator=repair_validator,
+        max_attempts=max_automatic_repair_attempts,
+        log_callback=log_callback,
+    )
+    # finish_run reads these, so they carry what the loop ended with.
+    automatic_repair_attempts = repair.attempts
+    if repair.narrator_conformance is not None:
+        narrator_conformance = repair.narrator_conformance
+    if repair.repaired_text:
+        finish_run(
+            "review_required" if review_required else "llm_repaired",
+            parse_status=reflection_result.parse_status,
+            issue_count=len(reflection_result.issues),
+            response_hash=response_hash(repair.raw_content),
+            diagnostics={"repair_attempt": repair.attempts},
+            result_state="rewritten",
+            resolved_issue_count=len(reflection_result.issues),
+            unresolved_issue_count=review_issue_count,
         )
-        record_attempt(
-            f"repair_{repair_attempt + 1}",
-            locals().get("repair_response"),
-            str(locals().get("raw_content") or ""),
-            failure_class=failure_class,
-            reason_codes=validation_errors,
-            issues=reflection_result.issues,
-        )
-
-        if log_callback:
-            emit_progress_log(
-                log_callback,
-                "repair_validation_failed",
-                "Senior Editor state: full-chunk fallback was rejected; preserving the best valid draft for review.",
-                level="warning",
-                layer="senior_editor_repair",
-                data={"attempt": repair_attempt + 1, "reasons": validation_errors},
-            )
-        repair_attempt_diagnostics.append({
-            "attempt": repair_attempt + 1,
-            "reason_codes": list(validation_errors),
-            "adapter_valid": not any(
-                str(reason).startswith("adapter_")
-                for reason in validation_errors
-            ),
-        })
-        failure_signature = tuple(sorted(set(validation_errors)))
-        if failure_signature and failure_signature == previous_failure_signature:
-            if (
-                escalation_enabled and not escalation_used
-                and repair_attempt + 1 < max_automatic_repair_attempts
-            ):
-                escalation_pending = True
-                if log_callback:
-                    emit_progress_log(
-                        log_callback,
-                        "editor_escalation_scheduled",
-                        "Senior Editor state: one configured escalation will review the unchanged validation failure.",
-                        level="warning",
-                        layer="senior_editor_repair",
-                    )
-                previous_failure_signature = None
-                continue
-            if log_callback:
-                emit_progress_log(
-                    log_callback,
-                    "repair_no_progress",
-                    "Senior Editor state: stopping automatic repair because the validation findings did not improve.",
-                    level="warning",
-                    layer="senior_editor_repair",
-                    data={"attempt": repair_attempt + 1},
-                )
-            break
-        previous_failure_signature = failure_signature
+        return persist_final_voice(repair.repaired_text)
+    validation_errors = repair.validation_errors
+    repair_attempt_diagnostics = repair.attempt_diagnostics
 
     has_deterministic_blocker = any(
         bool(issue.get("deterministic"))
