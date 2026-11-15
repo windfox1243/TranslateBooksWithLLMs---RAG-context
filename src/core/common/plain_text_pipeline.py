@@ -30,7 +30,6 @@ from src.core.epub.translation_metrics import TranslationMetrics
 from src.core.llm.exceptions import RateLimitError
 from src.core.post_processor import clean_translated_text
 from src.core.translator import generate_translation_request
-from src.utils.addressing_schema import context_contract_version
 from src.utils.db_addressing import (
     apply_db_addressing_to_session,
     sync_markdown_addressing_to_db,
@@ -373,7 +372,6 @@ async def translate_paragraphs_plain(
 
     if prompt_options is None:
         prompt_options = {}
-    contract_version = context_contract_version(prompt_options)
     relationship_mode = resolve_relationship_reasoning_mode(prompt_options)
 
     context_session = None
@@ -641,7 +639,6 @@ async def translate_paragraphs_plain(
                 total_units=len(chunks),
                 global_index=global_chunk_offset + i,
                 scene_key=chunks[i].get("chapter_index"),
-                contract_version=contract_version,
                 relationship_mode=relationship_mode,
                 prompt_options=prompt_options,
                 log_callback=log_callback,
@@ -801,7 +798,6 @@ async def translate_paragraphs_plain(
             relationships=pending_relationships_by_index.pop(i, None),
             target_language=target_language,
             source_language=source_language,
-            contract_version=contract_version,
             relationship_mode=relationship_mode,
             use_db_addressing=prompt_options.get("use_db_directed_addressing", True),
             log_callback=log_callback,
@@ -809,7 +805,6 @@ async def translate_paragraphs_plain(
         if committed:
             save_committed_context(
                 context_session,
-                contract_version=contract_version,
                 log_callback=log_callback,
             )
 

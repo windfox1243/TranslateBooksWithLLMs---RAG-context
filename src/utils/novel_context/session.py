@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.languages.vietnamese.context_rules import _is_vietnamese_target_language
+from src.utils.language_profiles import is_target_language
 
 from .characters import _character_gender_map, _character_profile_map
 from .constants import logger
@@ -476,9 +477,7 @@ class NovelContextSession:
             dialogue_attribution_sink=dialogue_sink,
             relationship_candidate_sink=relationship_sink,
             addressing_candidate_sink=addressing_sink,
-            context_contract_version=int(
-                self.prompt_options.get("context_contract_version", 1)
-            ),
+            structured_candidates=True,
             selective_context_view=self.prompt_options.get(
                 "novel_context_selective_update",
                 True,
@@ -534,114 +533,37 @@ class NovelContextSession:
     async def sync_translated_output(
         self,
         translated_chunk: str,
-        source_chunk: str = "",
         target_language: Optional[str] = None,
-        source_language: Optional[str] = None,
-        llm_client: Optional[Any] = None,
-        model_name: str = "",
-        chunk_index: int = 0,
-        total_chunks: int = 0,
     ) -> bool:
-        """Sync final polished translation output (from Senior Editor pass) back into dynamic context."""
+        """Fold deterministic observations from the final translation into context.
+
+        Source analysis is authoritative for lore and relationships; the final
+        translation only contributes target-language checks (today the
+        Vietnamese addressing sanitizer) and never triggers another model
+        request. Returns True when the dynamic state changed.
+        """
         if not translated_chunk or not translated_chunk.strip():
             return False
-
-        target_lang = target_language or self.prompt_options.get("target_language") or "Vietnamese"
-        source_lang = source_language or self.prompt_options.get("source_language") or "English"
-
-        contract_version = int(
-            self.prompt_options.get("context_contract_version", 1) or 1
-        )
-
-        # Contract v5 treats source analysis as authoritative for lore and
-        # relationships.  The final translation is only allowed to contribute
-        # deterministic target-language observations after structural success;
-        # it must not trigger a second full lore/relationship analysis request.
-        if contract_version >= 5:
-            alias_map = _character_alias_map(self.global_lore)
-            sanitized_dynamic = _sanitize_vietnamese_dynamic_state(
-                dynamic_state=self.dynamic_state,
-                alias_map=alias_map,
-                character_genders=_character_gender_map(self.global_lore),
-                character_profiles=_character_profile_map(self.global_lore),
-                translated_chunk=translated_chunk,
-                dialogue_attribution=self.dialogue_attribution,
-                target_language=target_lang,
-            )
-            if sanitized_dynamic and sanitized_dynamic.strip() != self.dynamic_state.strip():
-                self.dynamic_state = sanitized_dynamic
-                self.save()
-                return True
+        target_lang = target_language or self.prompt_options.get("target_language") or ""
+        if not is_target_language(target_lang, "vi"):
             return False
 
-        if llm_client and source_chunk:
-            from src.utils.dialogue_attribution import detect_dialogue_turns
-            dialogue_turns = detect_dialogue_turns(source_chunk)
-            dialogue_sink: Dict[str, Any] = {}
-            relationship_sink: Dict[str, Any] = {}
-            addressing_sink: Dict[str, Any] = {}
-            self.global_lore, self.dynamic_state, change_logs = await self.update_chunk(
-                llm_client=llm_client,
-                model_name=model_name,
-                current_global_lore=self.global_lore,
-                current_dynamic_state=self.dynamic_state,
-                source_chunk=source_chunk,
-                translated_chunk=translated_chunk,
-                source_language=source_lang,
-                target_language=target_lang,
-                chunk_index=chunk_index,
-                total_chunks=total_chunks,
-                dialogue_turns=dialogue_turns,
-                current_dialogue_state=self.dialogue_state,
-                dialogue_attribution_sink=dialogue_sink,
-                relationship_candidate_sink=relationship_sink,
-                addressing_candidate_sink=addressing_sink,
-                context_contract_version=int(
-                    self.prompt_options.get("context_contract_version", 1)
-                ),
-                selective_context_view=self.prompt_options.get("novel_context_selective_update", True),
-                context_view_max_tokens=self.prompt_options.get("novel_context_update_prompt_max_tokens"),
-                custom_instructions=str(self.prompt_options.get("custom_instructions") or ""),
-                glossary_block=str(self.prompt_options.get("glossary_block") or ""),
-                log_callback=self.log_callback,
-            )
-            self.relationship_candidates = list(
-                relationship_sink.get("candidates") or []
-            )
-            self.relationship_parse_status = str(
-                relationship_sink.get("parse_status") or "absent"
-            )
-            self.addressing_candidates = list(
-                addressing_sink.get("candidates") or []
-            )
-            self.addressing_parse_status = str(
-                addressing_sink.get("parse_status") or "absent"
-            )
-            from src.utils.dialogue_attribution import dialogue_attribution_or_carry
-            self.dialogue_attribution = dialogue_attribution_or_carry(
-                dialogue_sink, self.dialogue_state
-            )
-            self.dialogue_state = dict(
-                self.dialogue_attribution.get("state_after") or {}
-            )
+        sanitized_dynamic = _sanitize_vietnamese_dynamic_state(
+            dynamic_state=self.dynamic_state,
+            alias_map=_character_alias_map(self.global_lore),
+            character_genders=_character_gender_map(self.global_lore),
+            character_profiles=_character_profile_map(self.global_lore),
+            translated_chunk=translated_chunk,
+            dialogue_attribution=self.dialogue_attribution,
+            target_language=target_lang,
+        )
+        if sanitized_dynamic and sanitized_dynamic.strip() != self.dynamic_state.strip():
+            self.dynamic_state = sanitized_dynamic
             self.save()
             return True
-        else:
-            alias_map = _character_alias_map(self.global_lore)
-            sanitized_dynamic = _sanitize_vietnamese_dynamic_state(
-                dynamic_state=self.dynamic_state,
-                alias_map=alias_map,
-                character_genders=_character_gender_map(self.global_lore),
-                character_profiles=_character_profile_map(self.global_lore),
-                translated_chunk=translated_chunk,
-                dialogue_attribution=self.dialogue_attribution,
-                target_language=target_lang,
-            )
-            if sanitized_dynamic and sanitized_dynamic.strip() != self.dynamic_state.strip():
-                self.dynamic_state = sanitized_dynamic
-                self.save()
-                return True
         return False
+
+
 def open_novel_context_session(
     prompt_options: Dict[str, Any],
     novel_contexts_dir: Path,

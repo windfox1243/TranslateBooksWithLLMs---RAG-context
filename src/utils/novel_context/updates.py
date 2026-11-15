@@ -145,7 +145,7 @@ async def update_novel_context_chunk(
     dialogue_attribution_sink: Optional[Dict[str, Any]] = None,
     relationship_candidate_sink: Optional[Dict[str, Any]] = None,
     addressing_candidate_sink: Optional[Dict[str, Any]] = None,
-    context_contract_version: int = 1,
+    structured_candidates: bool = False,
     selective_context_view: bool = True,
     context_view_max_tokens: Optional[int] = None,
     custom_instructions: str = "",
@@ -153,6 +153,11 @@ async def update_novel_context_chunk(
     log_callback: Optional[Callable] = None,
 ) -> Tuple[str, str, List[str]]:
     """Calls the LLM to update global lore and dynamic state incrementally.
+
+    `structured_candidates` asks the model for the JSON addressing
+    candidates (and runs the coverage retry for pairs it missed). Source
+    analysis and context resync ask for them; the refinement pass, which has
+    nowhere to put them, does not.
 
     Returns:
         Tuple of (updated_global_lore, updated_dynamic_state, change_logs)
@@ -216,7 +221,7 @@ async def update_novel_context_chunk(
     else:
         user_prompt = UPDATE_USER_PROMPT_TEMPLATE.format(**prompt_values)
         system_prompt = UPDATE_SYSTEM_PROMPT
-    if context_contract_version >= 2:
+    if structured_candidates:
         system_prompt = _inject_addressing_candidate_contract(system_prompt)
 
     try:
@@ -310,7 +315,7 @@ async def update_novel_context_chunk(
 
         addressing_candidates = []
         addressing_parse_status = "absent"
-        if context_contract_version >= 2 and addressing_candidate_raw:
+        if structured_candidates and addressing_candidate_raw:
             from src.utils.addressing_schema import parse_addressing_candidate_block
             from src.utils.progress_logging import emit_progress_log
 
@@ -557,7 +562,7 @@ async def update_novel_context_chunk(
             current_dialogue_state,
         )
         coverage_gaps: List[Dict[str, Any]] = []
-        if context_contract_version >= 2:
+        if structured_candidates:
             from src.utils.progress_logging import emit_progress_log
 
             requirements = _missing_addressing_requirements(

@@ -217,9 +217,6 @@ def _render_reflection_novel_context(
     directed_context = str(options.get("directed_addressing_context") or "").strip()
     relationship_context = str(options.get("relationship_context") or "").strip()
     prompt_context_bundle = str(options.get("prompt_context_bundle") or "").strip()
-    context_contract_version = int(
-        options.get("context_contract_version", 1) or 1
-    )
     blocks = []
     if prompt_context_bundle:
         blocks.append(prompt_context_bundle)
@@ -233,9 +230,7 @@ def _render_reflection_novel_context(
             "# STRUCTURED RELATIONSHIP CONTEXT\n"
             f"{relationship_context}"
         )
-    if active_context and not (
-        context_contract_version >= 5 and prompt_context_bundle
-    ):
+    if active_context and not prompt_context_bundle:
         blocks.append(
             "# ACTIVE MARKDOWN NOVEL CONTEXT\n"
             f"{active_context}"

@@ -22,7 +22,6 @@ def commit_pending_context(
     relationships: Optional[Dict[str, Any]],
     target_language: str,
     source_language: str,
-    contract_version: int,
     relationship_mode: str,
     use_db_addressing: bool = True,
     log_callback: Optional[Callable] = None,
@@ -64,7 +63,6 @@ def commit_pending_context(
                 candidates=addressing.get("candidates"),
                 source_text=addressing.get("source_text", ""),
                 source_language=source_language,
-                contract_version=contract_version,
             )
         if commit_relationships:
             sync_context_update_relationships_to_db(
@@ -89,14 +87,13 @@ def commit_pending_context(
 def save_committed_context(
     context_session: Any,
     *,
-    contract_version: int,
     log_callback: Optional[Callable] = None,
 ) -> None:
     """Persist the session file and tell the UI the context changed."""
     from src.utils.progress_logging import emit_progress_log
 
     context_session.save()
-    if log_callback and contract_version >= 2:
+    if log_callback:
         emit_progress_log(
             log_callback,
             "novel_context_state",

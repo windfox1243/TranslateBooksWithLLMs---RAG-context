@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, Optional
 
 from src.core.common.resume_context import read_checkpoint_context
 from src.core.context.analysis import analyze_unit_context
-from src.core.context.commit import commit_pending_context
+from src.core.context.commit import commit_pending_context, save_committed_context
 from src.core.jobs import UnitTranslationOutcome
 from src.core.llm_client import LLMClient
 from src.utils.unified_logger import get_logger
@@ -287,7 +287,6 @@ class GenericTranslator:
                 })
         else:
             # 4. Create new translation job
-            prompt_options.setdefault("context_contract_version", 5)
             prompt_options.setdefault("use_relationship_llm_judge", "selective")
             prompt_options.setdefault("source_residue_validation", True)
             self.checkpoint_manager.start_job(
@@ -470,10 +469,8 @@ class GenericTranslator:
             auto_update_context = prompt_options.get('auto_update_context', False)
 
             from src.config import NOVEL_CONTEXTS_DIR
-            from src.utils.addressing_schema import context_contract_version
             from src.utils.db_addressing import (
                 apply_db_addressing_to_session,
-                sync_context_update_addressing_to_db,
                 sync_markdown_addressing_to_db,
             )
             from src.utils.novel_context import (
@@ -482,13 +479,10 @@ class GenericTranslator:
             )
             from src.utils.relationship_sync import (
                 apply_relationship_graph_to_session,
-                judge_ambiguous_relationship_candidates,
                 resolve_relationship_reasoning_mode,
-                sync_context_update_relationships_to_db,
                 sync_markdown_relationships_to_db,
             )
             relationship_mode = resolve_relationship_reasoning_mode(prompt_options)
-            contract_version = context_contract_version(prompt_options)
             from src.utils.progress_logging import emit_progress_log
 
             emit_progress_log(
@@ -708,7 +702,6 @@ class GenericTranslator:
                         total_units=total_units,
                         global_index=i,
                         scene_key=unit.metadata.get("chapter_index"),
-                        contract_version=contract_version,
                         relationship_mode=relationship_mode,
                         prompt_options=prompt_options,
                         unit_label="unit",
@@ -999,7 +992,6 @@ class GenericTranslator:
                     relationships=pending_relationship_context_by_index.pop(i, None),
                     target_language=target_language,
                     source_language=source_language,
-                    contract_version=contract_version,
                     relationship_mode=relationship_mode,
                     use_db_addressing=prompt_options.get("use_db_directed_addressing", True),
                     log_callback=log_callback,
@@ -1011,105 +1003,15 @@ class GenericTranslator:
                 try:
                     await context_session.sync_translated_output(
                         translated_chunk=translated_content,
-                        source_chunk=unit.content,
                         target_language=target_language,
-                        source_language=source_language,
-                        llm_client=llm_client,
-                        model_name=model_name,
-                        chunk_index=i + 1,
-                        total_chunks=total_units,
                     )
-                    judged_candidates = []
-                    if (
-                        self.translation_id
-                        and getattr(self.checkpoint_manager, "db", None)
-                        and relationship_mode != "off"
-                    ):
-                        locked_facts = [
-                            edge for edge in self.checkpoint_manager.db.get_relationship_edges(
-                                self.translation_id,
-                                statuses=["accepted"],
-                            )
-                            if edge.get("is_locked")
-                        ]
-                        judged_candidates = await judge_ambiguous_relationship_candidates(
-                            llm_client=llm_client,
-                            candidates=context_session.relationship_candidates,
-                            source_text=unit.content,
-                            model_name=model_name,
-                            enabled=(
-                                prompt_options.get("use_relationship_llm_judge")
-                                in {True, "selective", "always"}
-                            ),
-                            locked_facts=locked_facts,
-                            log_callback=log_callback,
-                        )
-                    db = getattr(self.checkpoint_manager, "db", None)
-                    if self.translation_id and db is not None:
-                        with db.context_state_transaction():
-                            _commit_pending_context(i)
-                            if prompt_options.get(
-                                "use_db_directed_addressing",
-                                True,
-                            ):
-                                sync_context_update_addressing_to_db(
-                                    translation_id=self.translation_id,
-                                    db=db,
-                                    updated_context_or_dynamic_state=context_session.content,
-                                    target_language=target_language,
-                                    chunk_index=i,
-                                    log_callback=log_callback,
-                                    dialogue_attribution=context_session.dialogue_attribution,
-                                    candidates=context_session.addressing_candidates,
-                                    source_text=unit.content,
-                                    source_language=source_language,
-                                    contract_version=contract_version,
-                                )
-                            if relationship_mode != "off":
-                                from src.core.context import relevant_character_names
-
-                                sync_context_update_relationships_to_db(
-                                    translation_id=self.translation_id,
-                                    db=db,
-                                    updated_context_or_dynamic_state=context_session.content,
-                                    source_text=unit.content,
-                                    candidates=judged_candidates,
-                                    parser_status=context_session.relationship_parse_status,
-                                    target_language=target_language,
-                                    chunk_index=i,
-                                    active_character_names=relevant_character_names(
-                                        global_lore=context_session.global_lore,
-                                        source_text=unit.content,
-                                        dialogue_attribution=context_session.dialogue_attribution,
-                                        source_language=source_language,
-                                    ),
-                                    log_callback=log_callback,
-                                )
-                        if prompt_options.get("use_db_directed_addressing", True):
-                            apply_db_addressing_to_session(
-                                context_session,
-                                self.translation_id,
-                                db,
-                            )
-                        if relationship_mode != "off":
-                            apply_relationship_graph_to_session(
-                                context_session,
-                                self.translation_id,
-                                db,
-                            )
-                    context_session.save()
-                    if log_callback and contract_version >= 2:
-                        emit_progress_log(
-                            log_callback,
-                            "novel_context_state",
-                            "Context committed",
-                            layer="novel_context",
-                            data={
-                                "type": "novel_context_state",
-                                "content": context_session.content,
-                                "filename": context_session.path.name,
-                            },
-                        )
+                    # The pending addressing and relationship updates were
+                    # produced by this unit's source analysis; commit them now
+                    # that the translation succeeded. Nothing else is
+                    # re-judged or re-imported here: the output sync above no
+                    # longer produces candidates of its own.
+                    _commit_pending_context(i)
+                    save_committed_context(context_session, log_callback=log_callback)
                 except Exception as sync_err:
                     if log_callback:
                         log_callback(
@@ -1734,7 +1636,6 @@ async def _resync_context_snapshots_async(
     def activate_staged_timeline(final_context):
         staged = db.get_context_resync_stage(run_id)
         options = config.get('prompt_options') or {}
-        contract_version = int(options.get("context_contract_version", 1) or 1)
         with db.context_state_transaction():
             if not global_only_resync:
                 db.quarantine_narrator_voice_after(
@@ -1813,7 +1714,6 @@ async def _resync_context_snapshots_async(
                         candidates=item.get("addressing_candidates") or [],
                         source_text=item.get("original_text") or "",
                         source_language=config.get('source_language') or "",
-                        contract_version=contract_version,
                     )
         db.finish_context_resync_run(
             run_id,
@@ -2136,6 +2036,7 @@ async def _resync_context_snapshots_async(
                 dialogue_attribution_sink=dialogue_sink,
                 relationship_candidate_sink=relationship_sink,
                 addressing_candidate_sink=addressing_sink,
+                structured_candidates=True,
                 selective_context_view=(
                     (config.get('prompt_options') or {}).get(
                         "novel_context_selective_update",

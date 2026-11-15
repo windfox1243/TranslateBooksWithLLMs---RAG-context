@@ -538,10 +538,9 @@ def _build_novel_context_section(
     if not prompt_options:
         return ""
 
-    contract_version = int(prompt_options.get("context_contract_version", 1) or 1)
     prompt_bundle = str(prompt_options.get("prompt_context_bundle") or "").strip()
     novel_context = prompt_options.get('novel_context')
-    if contract_version >= 5 and prompt_bundle:
+    if prompt_bundle:
         rendered_context = prompt_bundle
     else:
         if not novel_context or not str(novel_context).strip():
@@ -589,10 +588,7 @@ def _build_directed_addressing_section(prompt_options: dict) -> str:
     """Build a structured DB-backed directed-addressing prompt block."""
     if not prompt_options:
         return ""
-    if (
-        int(prompt_options.get("context_contract_version", 1) or 1) >= 5
-        and str(prompt_options.get("prompt_context_bundle") or "").strip()
-    ):
+    if str(prompt_options.get("prompt_context_bundle") or "").strip():
         return ""
     directed_context = str(
         prompt_options.get("directed_addressing_context") or ""
@@ -611,10 +607,7 @@ def _build_relationship_context_section(prompt_options: dict) -> str:
 
     if not prompt_options:
         return ""
-    if (
-        int(prompt_options.get("context_contract_version", 1) or 1) >= 5
-        and str(prompt_options.get("prompt_context_bundle") or "").strip()
-    ):
+    if str(prompt_options.get("prompt_context_bundle") or "").strip():
         return ""
     relationship_context = str(
         prompt_options.get("relationship_context") or ""
@@ -783,10 +776,7 @@ For consistency and natural flow, here's what came immediately before:
     narrator_voice_context = str(
         prompt_options.get("narrative_voice_context") or ""
     ).strip()
-    bundle_has_narrator = (
-        int(prompt_options.get("context_contract_version", 1) or 1) >= 5
-        and bool(str(prompt_options.get("prompt_context_bundle") or "").strip())
-    )
+    bundle_has_narrator = bool(str(prompt_options.get("prompt_context_bundle") or "").strip())
     narrator_voice_section = (
         "# ESTABLISHED NARRATOR VOICE (HISTORICAL TIMELINE)\n"
         + narrator_voice_context
@@ -1102,10 +1092,7 @@ For consistency and natural flow, here's what came immediately before:
     narrator_voice_context = str(
         prompt_options.get("narrative_voice_context") or ""
     ).strip()
-    bundle_has_narrator = (
-        int(prompt_options.get("context_contract_version", 1) or 1) >= 5
-        and bool(str(prompt_options.get("prompt_context_bundle") or "").strip())
-    )
+    bundle_has_narrator = bool(str(prompt_options.get("prompt_context_bundle") or "").strip())
     narrator_voice_section = (
         "# ESTABLISHED NARRATOR VOICE (HISTORICAL, READ-ONLY)\n"
         + narrator_voice_context

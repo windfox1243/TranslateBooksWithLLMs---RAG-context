@@ -1921,7 +1921,6 @@ async def _run_chunk_reflection_pass_impl(
         generate_chunk_reflection_prompt,
         generate_chunk_repair_prompt,
     )
-    from src.utils.addressing_schema import context_contract_version
     from src.utils.editor_diagnostics import (
         EditorRunRecorder,
         issue_excerpts,
@@ -2347,7 +2346,6 @@ async def _run_chunk_reflection_pass_impl(
     # names from this scope.
     draft_translation = preflight.draft_translation
     source_available = preflight.source_available
-    contract_v2 = preflight.contract_v2
     source_language = preflight.source_language
     glossary_terms = preflight.glossary_terms
     protected_terms = preflight.protected_terms
@@ -2427,7 +2425,7 @@ async def _run_chunk_reflection_pass_impl(
             failure_class=failure_class,
             reason_codes=[f"provider_failure:{failure_class}"],
         )
-        has_residue = contract_v2 and any(
+        has_residue = any(
             finding.blocking for finding in residue_findings
         )
         finish_run(
@@ -2482,7 +2480,7 @@ async def _run_chunk_reflection_pass_impl(
     def reflection_contract_invalid(result: ReflectionResult) -> bool:
         return bool(
             result.parse_status in {"invalid_json", "empty", "incomplete_json"}
-            or (contract_v2 and _reflection_contract_incomplete(result))
+            or _reflection_contract_incomplete(result)
         )
 
     contract_review_required = bool(remaining_narrator_blockers)
@@ -2680,32 +2678,7 @@ async def _run_chunk_reflection_pass_impl(
                     "parse_status": reflection_result.parse_status,
                 },
             )
-        if contract_v2:
-            blocked = any(finding.blocking for finding in residue_findings)
-            finish_run(
-                "review_required",
-                parse_status=reflection_result.parse_status,
-                failure_class=(
-                    "contract_incomplete"
-                    if _reflection_contract_incomplete(reflection_result)
-                    else "contract_parse"
-                ),
-                issue_count=len(reflection_result.issues),
-                unresolved_issue_count=(
-                    len(reflection_result.issues) + (1 if blocked else 0)
-                ),
-            )
-            return review_required_translation(
-                draft_translation,
-                {
-                    "stage": "reflection_contract",
-                    "status": "review_required",
-                    "final_reason_codes": ["contract_parse"],
-                },
-            )
-        # A v1 job keeps the draft rather than flagging it, but the run still
-        # ended without a verdict and has to say so. Left unrecorded it stayed
-        # at 'running' and vanished from the diagnostics entirely.
+        blocked = any(finding.blocking for finding in residue_findings)
         finish_run(
             "review_required",
             parse_status=reflection_result.parse_status,
@@ -2715,9 +2688,18 @@ async def _run_chunk_reflection_pass_impl(
                 else "contract_parse"
             ),
             issue_count=len(reflection_result.issues),
-            unresolved_issue_count=len(reflection_result.issues),
+            unresolved_issue_count=(
+                len(reflection_result.issues) + (1 if blocked else 0)
+            ),
         )
-        return draft_translation
+        return review_required_translation(
+            draft_translation,
+            {
+                "stage": "reflection_contract",
+                "status": "review_required",
+                "final_reason_codes": ["contract_parse"],
+            },
+        )
 
     if (
         reflection_result.parse_status.startswith("legacy")
@@ -3542,7 +3524,7 @@ async def _run_chunk_reflection_pass_impl(
                     adapter_feedback = f"repair validator raised {validation_error}"
                 if adapter_feedback:
                     validation_errors.append(str(adapter_feedback))
-            if repaired_text and contract_v2:
+            if repaired_text:
                 validation_errors.extend(validate_editor_repair(
                     repaired_text,
                     reflection_result.issues,

@@ -68,7 +68,6 @@ async def _analyze(session, **overrides):
         total_units=3,
         global_index=10,
         scene_key=None,
-        contract_version=5,
         relationship_mode="project",
         prompt_options={},
     )

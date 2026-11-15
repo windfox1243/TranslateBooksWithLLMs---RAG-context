@@ -297,9 +297,12 @@ def parse_addressing_candidate_block(
 
 
 def context_contract_version(prompt_options: Optional[Dict[str, Any]]) -> int:
-    """Resolve the persisted context contract; absent means legacy v1."""
+    """Return the context contract every job runs.
 
-    try:
-        return int((prompt_options or {}).get("context_contract_version", 1))
-    except (TypeError, ValueError):
-        return 1
+    Jobs used to carry a "context_contract_version" from 1 to 5 and the
+    pipeline kept a code path for each. Only the current contract is
+    implemented now; a job saved with an older number, or with none,
+    resumes on it. The stored value is ignored.
+    """
+
+    return ADDRESSING_CONTRACT_VERSION
