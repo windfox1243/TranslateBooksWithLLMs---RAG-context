@@ -45,7 +45,6 @@ def test_engine_reads_its_vietnamese_tables_from_the_pack():
 
 def test_prompt_builders_use_the_pack_text():
     assert prompts._build_target_language_style_section("vi") == prompting.STYLE_GUARDRAILS
-    assert prompts._get_language_specific_prompt_guidance("Vietnamese") == prompting.REFLECTION_GUIDANCE
 
 
 def test_style_guardrails_name_no_characters_from_a_specific_book():

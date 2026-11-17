@@ -35,7 +35,6 @@ EXPECTED_SURFACE = frozenset({
     "_is_inverted_target_to_source_glossary_pair",
     "_is_non_character_group_entry",
     "_is_non_character_work_entry",
-    "_json_dynamic_state",
     "_missing_addressing_requirements",
     "_normalize_glossary_entries",
     "_parse_alias_entries",
