@@ -78,6 +78,7 @@ if __name__ == "__main__":
     prompt_group.add_argument("--refine-only", action="store_true", dest="refine_only", help="Run ONLY a refinement pass on an already-translated file (skips the translation phase). The input file is assumed to already be in the target language.")
     prompt_group.add_argument("--glossary", default=None, help="Path to a glossary file (.json or .csv) injected per-chunk to keep entity translations consistent.")
     prompt_group.add_argument("--novel-context", default=None, dest="novel_context_file", help="Path or name of the novel context file in Novel_Contexts/ (e.g. novel_context.txt).")
+    prompt_group.add_argument("--cost-preset", default=None, dest="cost_preset", choices=["economy", "balanced", "quality"], help="Trade LLM calls per chunk for quality: economy analyzes context every 3rd chunk and skips lore consolidation, the relationship judge and the Senior Editor; quality analyzes every chunk and runs the Senior Editor; balanced keeps each setting as configured (default: COST_PRESET from .env, else balanced).")
     prompt_group.add_argument("--auto-update-context", action="store_true", dest="auto_update_context", help="Auto-update the novel context file with new characters, genders, and relationships after each chunk translation.")
 
     # TTS (Text-to-Speech) arguments
@@ -230,6 +231,8 @@ if __name__ == "__main__":
         'novel_context_file': args.novel_context_file,
         'auto_update_context': args.auto_update_context,
     }
+    if args.cost_preset:
+        prompt_options['cost_preset'] = args.cost_preset
 
     # Load glossary file (JSON or CSV) into prompt_options
     if args.glossary:

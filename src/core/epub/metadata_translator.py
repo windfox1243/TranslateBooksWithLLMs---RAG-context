@@ -42,6 +42,7 @@ from src.config import (
     TRANSLATE_TAG_IN,
     TRANSLATE_TAG_OUT,
 )
+from src.core.llm.call_ledger import PURPOSE_OTHER, llm_purpose
 
 # The CJK character class is imported rather than redefined. `cjk_typography`
 # already documents why it holds a copy of the canonical class from
@@ -293,6 +294,7 @@ def _update_ncx_doctitle(ncx_path: str, title: str,
         return False
 
 
+@llm_purpose(PURPOSE_OTHER)
 async def _request_metadata_translation(
     llm_client: Any,
     system_prompt: str,

@@ -20,6 +20,8 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Callable, Dict, List, Optional
 
+from src.core.llm.call_ledger import PURPOSE_EDITOR, llm_purpose
+
 # Requests one run may send, retries and fallbacks included.
 EDITOR_REQUEST_BUDGET = 6
 
@@ -251,6 +253,7 @@ class EditorRequestSession:
 
     # --- requests ---------------------------------------------------------
 
+    @llm_purpose(PURPOSE_EDITOR)
     async def generate(
         self,
         *,

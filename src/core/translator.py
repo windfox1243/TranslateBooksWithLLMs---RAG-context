@@ -37,6 +37,7 @@ from src.core.editor.prompting import (
     compose_reflection_prompts,
 )
 from src.core.editor.unit_repair import UNIT_REPAIR_KIND
+from src.core.llm.call_ledger import PURPOSE_EDITOR, PURPOSE_REFINEMENT, llm_purpose
 from src.prompts.prompts import (
     REFLECTION_CONTRACT_VERSION,
     REFLECTION_JSON_TAG_IN,
@@ -681,6 +682,7 @@ async def generate_translation_request(main_content, context_before, context_aft
 
 
 
+@llm_purpose(PURPOSE_REFINEMENT)
 async def _refinement_request_attempt(
     draft_translation: str,
     context_before: str,
@@ -1897,6 +1899,7 @@ async def _generate_editor_response(
     return result
 
 
+@llm_purpose(PURPOSE_EDITOR)
 async def _run_chunk_reflection_pass_impl(
     source_chunk: str,
     draft_translation: str,

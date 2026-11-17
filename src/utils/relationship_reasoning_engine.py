@@ -9,6 +9,7 @@ import unicodedata
 from dataclasses import replace
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
+from src.core.llm.call_ledger import PURPOSE_CONTEXT, llm_purpose
 from src.persistence.database import Database
 from src.utils.progress_logging import emit_progress_log
 from src.utils.relationship_schema import (
@@ -1431,6 +1432,7 @@ def relationship_candidate_needs_llm_judge(candidate: RelationshipCandidate) -> 
     )
 
 
+@llm_purpose(PURPOSE_CONTEXT)
 async def judge_relationship_candidate(
     llm_client: Any,
     candidate: RelationshipCandidate,

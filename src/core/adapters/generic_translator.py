@@ -1422,6 +1422,7 @@ async def _resync_context_snapshots_async(
     )
     from src.utils.relationship_sync import (
         judge_ambiguous_relationship_candidates,
+        relationship_llm_judge_enabled,
         resolve_relationship_reasoning_mode,
         sync_context_update_relationships_to_db,
         sync_markdown_relationships_to_db,
@@ -2050,6 +2051,9 @@ async def _resync_context_snapshots_async(
                 ),
                 custom_instructions=str((config.get('prompt_options') or {}).get("custom_instructions") or ""),
                 glossary_block=str((config.get('prompt_options') or {}).get("glossary_block") or ""),
+                consolidation_interval=(config.get('prompt_options') or {}).get(
+                    "novel_context_consolidation_interval"
+                ),
             )
             if source_text.strip():
                 source_memory_chunks.append(source_text)
@@ -2119,11 +2123,8 @@ async def _resync_context_snapshots_async(
                                 candidates=staged_relationships,
                                 source_text=source_text,
                                 model_name=model_name,
-                                enabled=bool(
-                                    (config.get('prompt_options') or {}).get(
-                                        "use_relationship_llm_judge",
-                                        False,
-                                    )
+                                enabled=relationship_llm_judge_enabled(
+                                    config.get('prompt_options')
                                 ),
                                 locked_facts=locked_facts,
                             )

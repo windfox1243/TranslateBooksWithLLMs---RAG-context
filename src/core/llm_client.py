@@ -14,6 +14,7 @@ from src.core.llm import (
     RepetitionLoopError,
     create_llm_provider,
 )
+from src.core.llm.call_ledger import record_llm_call
 from src.core.llm.thinking.behavior import ThinkingBehavior
 
 # Re-export for convenience
@@ -119,6 +120,7 @@ class LLMClient:
                     ),
                 )
 
+        record_llm_call()
         kwargs = {"system_prompt": system_prompt}
         if "generation_options" in inspect.signature(provider.generate).parameters:
             kwargs["generation_options"] = generation_options

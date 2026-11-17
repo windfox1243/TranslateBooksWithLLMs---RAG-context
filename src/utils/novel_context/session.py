@@ -198,6 +198,9 @@ class RefinementContextTracker:
             dialogue_sink: Dict[str, Any] = {}
             dialogue_turns = detect_dialogue_turns(text)
             self.global_lore, self.dynamic_state, change_logs = await self.update_chunk(
+                consolidation_interval=self.prompt_options.get(
+                    "novel_context_consolidation_interval"
+                ),
                 llm_client=llm_client,
                 model_name=model_name,
                 current_global_lore=self.global_lore,
@@ -447,6 +450,9 @@ class NovelContextSession:
         relationship_sink: Dict[str, Any] = {}
         addressing_sink: Dict[str, Any] = {}
         self.global_lore, self.dynamic_state, change_logs = await self.update_chunk(
+            consolidation_interval=self.prompt_options.get(
+                "novel_context_consolidation_interval"
+            ),
             llm_client=llm_client,
             model_name=model_name,
             current_global_lore=self.global_lore,
