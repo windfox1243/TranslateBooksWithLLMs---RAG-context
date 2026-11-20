@@ -61,6 +61,7 @@ async def analyze_unit_context(
     from src.utils.relationship_sync import (
         apply_relationship_graph_to_session,
         judge_ambiguous_relationship_candidates,
+        relationship_llm_judge_enabled,
     )
 
     result = UnitContextAnalysis()
@@ -131,10 +132,7 @@ async def analyze_unit_context(
                 candidates=context_session.relationship_candidates,
                 source_text=source_text,
                 model_name=model_name,
-                enabled=(
-                    prompt_options.get("use_relationship_llm_judge")
-                    in {True, "selective", "always"}
-                ),
+                enabled=relationship_llm_judge_enabled(prompt_options),
                 locked_facts=locked_facts,
                 log_callback=log_callback,
             )

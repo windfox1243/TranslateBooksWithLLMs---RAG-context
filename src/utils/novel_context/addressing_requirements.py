@@ -5,6 +5,8 @@ import json
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from src.core.llm.call_ledger import PURPOSE_CONTEXT, llm_purpose
+
 from .characters import _plain_key
 from .dynamic_state import _DYNAMIC_RELATION_PATTERN, _split_dynamic_sections
 
@@ -117,6 +119,7 @@ def _missing_addressing_requirements(
             }
         )
     return requirements
+@llm_purpose(PURPOSE_CONTEXT)
 async def _retry_missing_addressing_candidates(
     llm_client: Any,
     requirements: List[Dict[str, Any]],

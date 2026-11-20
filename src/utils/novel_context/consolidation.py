@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from src.core.llm.call_ledger import PURPOSE_CONTEXT, llm_purpose
+
 from .characters import (
     _alias_entries_to_map,
     _canonical_display_name,
@@ -213,6 +215,7 @@ def _consolidation_max_drop_percent() -> int:
         )
     except Exception:
         return 34
+@llm_purpose(PURPOSE_CONTEXT)
 async def consolidate_context_lore(
     llm_client: Any,
     model_name: str,
@@ -430,8 +433,18 @@ async def consolidate_context_lore(
     except Exception as exc:
         logger.error(f"Error during context consolidation LLM call: {exc}")
         return global_lore, change_logs
-def _consolidation_interval() -> int:
-    """Return the configured consolidation interval (0 = disabled)."""
+def _consolidation_interval(override: Optional[Any] = None) -> int:
+    """Return the consolidation interval (0 = disabled).
+
+    `override` is the job's own value (prompt option
+    novel_context_consolidation_interval, which a cost preset may set);
+    without one the NOVEL_CONTEXT_CONSOLIDATION_INTERVAL setting applies.
+    """
+    if override is not None and override != "":
+        try:
+            return max(0, int(override))
+        except (TypeError, ValueError):
+            pass
     try:
         from src import config as _config
         return max(0, int(getattr(_config, "NOVEL_CONTEXT_CONSOLIDATION_INTERVAL", 5)))

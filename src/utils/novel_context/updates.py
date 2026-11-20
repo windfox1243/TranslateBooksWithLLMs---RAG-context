@@ -5,6 +5,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from src.core.llm.call_ledger import PURPOSE_CONTEXT, llm_purpose
+
 from .addressing_requirements import (
     _inject_addressing_candidate_contract,
     _missing_addressing_requirements,
@@ -128,6 +130,7 @@ def _update_failed(
     )
 
 
+@llm_purpose(PURPOSE_CONTEXT)
 async def update_novel_context_chunk(
     llm_client: Any,
     model_name: str,
@@ -151,6 +154,7 @@ async def update_novel_context_chunk(
     custom_instructions: str = "",
     glossary_block: str = "",
     log_callback: Optional[Callable] = None,
+    consolidation_interval: Optional[int] = None,
 ) -> Tuple[str, str, List[str]]:
     """Calls the LLM to update global lore and dynamic state incrementally.
 
@@ -530,7 +534,7 @@ async def update_novel_context_chunk(
 
         # LLM consolidation pass: periodically deduplicate character descriptions
         # that the deterministic merge layer missed (semantically similar rephrasing).
-        consolidation_interval = _consolidation_interval()
+        consolidation_interval = _consolidation_interval(consolidation_interval)
         is_last_chunk = (total_chunks > 0 and chunk_index == total_chunks)
         if (
             consolidation_interval > 0

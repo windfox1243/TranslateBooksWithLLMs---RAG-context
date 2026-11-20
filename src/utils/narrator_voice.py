@@ -6,6 +6,7 @@ import json
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
+from src.core.llm.call_ledger import PURPOSE_CONTEXT, llm_purpose
 from src.utils.language_profiles import get_language_profile
 
 VOICE_CONTRACT_VERSION = 2
@@ -421,6 +422,7 @@ def persist_voice_observations(
     return stats
 
 
+@llm_purpose(PURPOSE_CONTEXT)
 async def _preflight_narrator_voice(
     *, db: Any, translation_id: str, chunks: Sequence[Dict[str, Any]],
     target_language: str, model_name: str, llm_client: Any,
@@ -513,6 +515,7 @@ async def _preflight_narrator_voice(
         return {"status": "failed", "error": type(exc).__name__, "next_boundary": 2}
 
 
+@llm_purpose(PURPOSE_CONTEXT)
 async def bootstrap_narrator_voice(
     *, db: Any, translation_id: str, chunks: Sequence[Dict[str, Any]],
     target_language: str, model_name: str, llm_client: Any,

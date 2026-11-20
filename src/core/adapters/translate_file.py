@@ -10,11 +10,16 @@ File type detection supports:
 3. Automatic routing to appropriate processors
 """
 
+import functools
+import inspect
 import os
 import tempfile
 from typing import Any, Callable, Dict, Optional
 
+from src.core.cost_presets import apply_cost_preset
+from src.core.llm.call_ledger import job_ledger
 from src.utils.file_detector import detect_file_type, detect_file_type_by_content
+from src.utils.progress_logging import emit_progress_log
 
 from .epub_adapter import EpubAdapter
 from .exceptions import UnsupportedFormatError
@@ -23,6 +28,83 @@ from .srt_adapter import SrtAdapter
 from .txt_adapter import TxtAdapter
 
 
+class _CompletedChunks:
+    """Chunks completed during this run, read from the job's stats updates.
+
+    A resumed job first reports the chunks its checkpoint restored, so the
+    run's own count is the last value seen minus the first one.
+    """
+
+    def __init__(self) -> None:
+        self.first: Optional[int] = None
+        self.last = 0
+
+    def observe(self, stats: Any) -> None:
+        if not isinstance(stats, dict) or "completed_chunks" not in stats:
+            return
+        try:
+            completed = int(stats.get("completed_chunks") or 0)
+        except (TypeError, ValueError):
+            return
+        if self.first is None:
+            self.first = completed
+        self.last = max(self.last, completed)
+
+    @property
+    def count(self) -> int:
+        return max(0, self.last - (self.first or 0))
+
+
+def _with_cost_preset_and_call_report(fn: Callable) -> Callable:
+    """Resolve the job's cost preset and report its LLM calls per chunk.
+
+    The preset is written into the caller's own prompt_options dict, because
+    the translators record and mutate that dict in place. The LLM call ledger
+    covers everything the job does, and its summary is logged once the job
+    ends, whether it succeeded, failed or was interrupted.
+    """
+    signature = inspect.signature(fn)
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        bound = signature.bind(*args, **kwargs)
+        arguments = bound.arguments
+        prompt_options = arguments.get("prompt_options")
+        if prompt_options is None:
+            prompt_options = {}
+            arguments["prompt_options"] = prompt_options
+        prompt_options.update(apply_cost_preset(prompt_options))
+
+        completed = _CompletedChunks()
+        stats_callback = arguments.get("stats_callback")
+
+        def observing_stats_callback(stats: Any) -> Any:
+            completed.observe(stats)
+            if stats_callback is not None:
+                return stats_callback(stats)
+            return None
+
+        arguments["stats_callback"] = observing_stats_callback
+        log_callback = arguments.get("log_callback")
+        with job_ledger() as ledger:
+            try:
+                return await fn(*bound.args, **bound.kwargs)
+            finally:
+                summary = ledger.summary(completed.count)
+                summary["cost_preset"] = prompt_options.get("cost_preset")
+                emit_progress_log(
+                    log_callback,
+                    "llm_call_summary",
+                    f"{ledger.describe(completed.count)} "
+                    f"[cost preset: {prompt_options.get('cost_preset')}]",
+                    layer="cost",
+                    data=summary,
+                )
+
+    return wrapper
+
+
+@_with_cost_preset_and_call_report
 async def translate_file(
     input_filepath: str,
     output_filepath: str,

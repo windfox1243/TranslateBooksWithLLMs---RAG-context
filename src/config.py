@@ -112,6 +112,8 @@ _RELOADABLE_ENV_SETTINGS = (
     ('DISABLE_AUTO_PAUSE',   'DISABLE_AUTO_PAUSE',   'false'),
     ('ADDRESSING_MERGE_CONFIDENCE_THRESHOLD', 'ADDRESSING_MERGE_CONFIDENCE_THRESHOLD', '0.80'),
     ('ENABLE_CHUNK_REFLECTION', 'ENABLE_CHUNK_REFLECTION', 'false'),
+    # economy / balanced / quality; see src/core/cost_presets.py.
+    ('COST_PRESET',             'COST_PRESET',             'balanced'),
     ('EDITOR_PROVIDER',          'EDITOR_PROVIDER',          ''),
     ('EDITOR_MODEL',             'EDITOR_MODEL',             ''),
     # Webhook notifications — kept here so the web UI can change them at runtime

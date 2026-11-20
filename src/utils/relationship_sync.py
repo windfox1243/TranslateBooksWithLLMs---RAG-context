@@ -8,6 +8,7 @@ import re
 from dataclasses import replace
 from typing import Any, Dict, Iterable, List, Optional
 
+from src.core.llm.call_ledger import PURPOSE_CONTEXT, llm_purpose
 from src.persistence.database import Database
 from src.utils.progress_logging import emit_progress_log
 from src.utils.relationship_projection import build_relationship_projection
@@ -49,6 +50,18 @@ def resolve_relationship_reasoning_mode(prompt_options: Optional[Dict[str, Any]]
         return "off"
     mode = str(value).strip().casefold()
     return mode if mode in {"off", "shadow", "project"} else "project"
+
+
+def relationship_llm_judge_enabled(prompt_options: Optional[Dict[str, Any]]) -> bool:
+    """Whether ambiguous relationship candidates go to the LLM judge.
+
+    "selective" and "always" (and True) turn it on; anything else, including
+    the string "off" a cost preset writes, leaves it off.
+    """
+    value = (prompt_options or {}).get("use_relationship_llm_judge")
+    if isinstance(value, str):
+        value = value.strip().casefold()
+    return value in {True, "selective", "always"}
 
 
 def _active_names_from_options(prompt_options: Optional[Dict[str, Any]]) -> List[str]:
@@ -469,6 +482,7 @@ def sync_context_update_relationships_to_db(
     return decisions
 
 
+@llm_purpose(PURPOSE_CONTEXT)
 async def judge_ambiguous_relationship_candidates(
     *,
     llm_client: Any,

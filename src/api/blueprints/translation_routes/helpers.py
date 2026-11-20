@@ -61,7 +61,10 @@ def _clamp_chunk_tokens(value):
 
 def _prompt_options_from_start_request(data):
     """Return start-request prompt options with legacy reflection fallback."""
-    prompt_options = dict((data or {}).get('prompt_options') or {})
+    from src.core.cost_presets import apply_cost_preset
+
+    # The preset goes first so the defaults below only fill what it leaves.
+    prompt_options = apply_cost_preset((data or {}).get('prompt_options'))
     prompt_options.setdefault('use_relationship_reasoning', 'project')
     prompt_options.setdefault('use_relationship_llm_judge', 'selective')
     prompt_options.setdefault('source_residue_validation', True)
