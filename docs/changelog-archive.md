@@ -1,0 +1,2052 @@
+# Changelog archive (1.x)
+
+Entries for the 1.x releases, moved here unchanged from `CHANGELOG.md`
+when the fork started its own 2.x line. New entries go in
+[`CHANGELOG.md`](../CHANGELOG.md).
+
+
+## 1.18.6 - 2026-08-17
+
+### Fixed
+
+- An editor edit may no longer write a name over the title the source speaks in that line. The 1.18.5 guard read one direction only: it stopped the editor answering `Tomio, which one...` with `Trainer, ...`, and left it free to answer `"...Trainer."` with `"...Tomio."`, which a run of the same book then did — quoting the source line correctly, citing the addressing rule that says Apollo calls him Tomio, over a draft that had said `Huấn luyện viên` and was right. The rule now reads both ways. A name may be written into a line only where the source's own quotation of that line carries it; where the line instead calls someone by a title — a word the same source writes in lower case elsewhere, standing where a vocative stands, alone or set off by a comma — the edit is the addressing table overruling the source, and it is dropped. Replayed over 1083 recorded findings from thirteen runs of one book, this new direction rejects none of them, and it rejects exactly the reported edit.
+
+- Translating source text the draft had left untranslated is no longer mistaken for removing a name. A draft that copied `"Don't lose by a nose."` out of the source has to lose every word in it, `Don't` included, to become a translation, and the 1.18.5 guard counted that as an edit dropping a name — blocking the repair and leaving the English in the chunk. Three of the six rejections it makes over those thirteen runs were this. A capitalized word now counts as removed only when the words around it in the draft are not a run the source carries verbatim.
+
+## 1.18.5 - 2026-08-15
+
+### Fixed
+
+- The focused locator retry no longer asks one question three times. When local patches do not land, the editor is asked again — up to three times — with the unresolved issues and the draft neighborhoods they might be talking about. Every input to that prompt was computed before the loop that sends it and none of them was updated inside it, so at `temperature=0.0` the second and third calls were the first one resent. Across ten measured runs of one book, all nineteen chunks that reached a second attempt sent a byte-identical prompt hash, seventeen of them ended in `review_required`, and 100k tokens went to attempts that carried no information the first had not. The only brake was a check for a byte-identical *response*, which a provider that is not deterministic at temperature zero almost never trips. Each attempt is now told which attempt it is and what its predecessor was rejected for, with the three ways out named: pick a different candidate segment, narrow the replacement span until it occurs exactly once, or drop the issue to `review_only`. An attempt that answers cleanly but leaves issues unresolved feeds those back too — measured, that silent case is what put a third attempt back on the first one's exact prompt. The first attempt's prompt is unchanged.
+
+- An editor edit may no longer take a character's name out of a line the source speaks it in. Given an addressing table saying how one character names another, an editor can read it as an instruction to replace the name with the role word — answering `Tomio, which one do you think Meek will go for?` with `Trainer, ...`, citing the very rule that says Apollo calls him Tomio, and labelling it a pronoun bleed though no pronoun was touched. The draft was right, the source says so, and nothing caught it: the applier found the span and applied it, and the repair validator protects only multiword proper names, so a one-word name was not protected at all. Such an edit is now dropped unless the source backs it, which it does in one of two ways: the replacement puts another name the source uses in the same place — `Toshio` for `Tomio` where the source made the slip of the tongue, `Goriko` for `Guriko` where the source spells it so — or the edit quotes, verbatim, a source line that does without the name. Replayed over 888 real findings from eight runs of one book, this drops two: the invented one, which had rewritten the line it claimed to be quoting as `going on a date with my trainer` for a source that says `with Tomio`, and one nickname respelling the source spells both ways. Every other name repair in those runs, including both correct respellings above, is untouched.
+
+## 1.18.4 - 2026-08-15
+
+### Added
+
+- `src/core/editor/units.py`, the deterministic groundwork for an editor that names a unit and rewrites it instead of quoting a span. The current contract asks the model for an exact substring of the draft and the text to replace it with, which is two jobs at once — judge the translation, and extract a span character for character — and only the first needs a model. Measured over 31 runs of one book, 14 findings were thrown away for `locator_missing`, `locator_ambiguous`, an unusable replacement, or a retry that answered the wrong question, and not one of them was a disagreement about the translation. The new module splits both texts into paragraphs, aligns them with a length-ratio search, renders them as a side-by-side bitext under ids we issue, and turns a rewritten unit back into exact draft spans by diffing it — so a locator cannot be wrong, and the span the old contract begs for falls out of the rewrite. It also measures how much of a unit a rewrite touched, which is what will let a model that improves whatever it was not asked about be refused rather than merely regretted. Checked against one real book: 3,355 units over 28 chunks, 98.6% paired one to one, none unalignable, and 3,354 rewrites round-tripped exactly through the spans computed for them. `scripts/check_unit_alignment.py` replays that check over any finished job. Nothing calls this yet and no translation behaves differently.
+
+- `EDITOR_UNIT_MODE=true` runs the Senior Editor on the unit contract built on that groundwork, alongside the existing one and off by default. The editor is shown the source and the draft as one aligned bitext under ids we issued, and answers with a unit id and the whole unit rewritten — no `draft_quote`, no `draft_replacement`, no `segment_id`, which are the fields the span contract spends nearly all of its failures on. The exact spans are then computed from the rewrite by diffing it, so a repair cannot fail to be located. Returning a whole unit also makes scope measurable for the first time: a span edit only ever showed the span it admitted to, so a model quietly retranslating the paragraph looked identical to one fixing a word in it, and a rewrite touching more than half its unit is now refused rather than applied. Refused, unknown, empty, no-op and duplicate rewrites all leave as unresolved issues carrying their reason, which is what the existing repair pass already consumes. This buys no tokens back — measured over 28 chunks of one book the unit prompt is 0.9% larger, since the same two texts are sent either way — and it is not yet the default: both paths have to be measured against each other on the same book first. Runs made on it record contract `editor-unit-v10-rewrite` so the two cannot be confused in the diagnostics.
+
+### Fixed
+
+- A thinking editor is no longer given an output budget it has to think its way out of. Providers that report thinking tokens spend them from the same allowance as the answer, so a budget sized for the JSON alone left the model nothing to write the JSON with. Measured on one 28-chunk book: every truncated editor request stopped at exactly 8,188 tokens of an 8,192 ceiling, with the thinking taking 7,860 and the answer getting the remaining 330, and eleven requests were retried at a doubled budget for no other reason. The automatic editor budget now reserves room for thinking on top of the room the answer needs — 16,384 rather than 8,192 at `low` on Gemini 3 — and a model that cannot think reserves nothing.
+- Severity words the editor invents are folded onto the three the contract offers. Nothing downstream reads severity to decide whether a finding may be repaired, so this changed no outcome, but a column holding `major`, `high` and `medium` side by side cannot be counted, and one measured book answered with all three. `high` and `severe` land on the rungs they mean; anything unrecognised is treated as `major` rather than quietly discarded.
+- The retry buttons for stale chunks are capped at twelve, with a line saying how many more there are. A book can go stale by the hundred, and one button per chunk filled the pane with a list nobody was going to work through.
+- The editor schema is no longer rejected by every Gemini 3.x model. With native structured output re-enabled, measurement showed the schema refused on the very first request of both contract arms, every time, behind a body saying only that the request contains an invalid argument — so no Gemini job has ever run the editor with native structured output. Sending schema variants directly narrows it to the item caps on two arrays: removing them makes both editor schemas accepted on every 3.x model tried, leaving them in is a deterministic 400. The caps are what gets given up; they bound a list the prompt already bounds in words, and an over-long list is handled downstream, whereas losing the schema gives up every field constraint at once.
+- A rejected schema is blamed on the schema only when the provider says so. Gemini answers an unusable API key with the same generic `INVALID_ARGUMENT` it answers a bad schema with, so the editor read an auth failure as proof the model cannot answer a schema, silently downgraded, recorded `schema_rejected`, and left nothing in the diagnostics pointing at the key. A 400 is now read three ways: a body naming the schema field retires it, a body blaming the credentials takes the terminal path and is finally classed `provider_auth`, and an unexplained rejection falls back for that one request only — the model gets another chance on the next chunk, and only a second unexplained rejection retires the schema.
+- An editor run can no longer be abandoned at `running`. Every diagnostics bucket is keyed on the values a run moves to, so a run left at `running` does not read as a failure — the chunk simply stops appearing. Measurement found one: a v1 job whose editor answered unparseable JSON twice returned the draft and recorded no verdict at all. `EditorService.review_chunk` is the one boundary every review crosses, so it now closes whatever the pass left open, recorded as needing review with an internal failure class; a run that recorded its own verdict keeps it.
+- A batch of repairs no longer stands or falls whole. Measuring a real run, every finding lost was lost that way: seventeen gone, all inside three chunks that each failed entirely, none scattered across the twenty-five that stayed clean — and one truncated quote threw away five good repairs beside it. Faults the draft already carried are excluded first, since reverting cannot remove them; the repairs an error names are dropped and the rest applied again. Where the fault is read off the whole chunk and names no repair, the batch is halved against the deterministic validator until the culprit is isolated — string work, no model call, about two trials per repair. Colliding patches stay out of it: they are two readings of one stretch of text, and narrowing would pick a winner in a disagreement the focused retry exists to settle. A batch that only held once something was given up says what it gave up.
+- The segmenter no longer cuts a name in half at its abbreviation. It broke after every period followed by a space, which put a break inside `Kikuka-sho (Japanese St. Leger)`; the editor could then quote only as far as `St.`, and the replacement it asked for could not be applied to the half it had been given — a measured chunk lost all six of its repairs that way. A period that ends a word without ending a sentence no longer opens a break, whether it sits inside an unclosed bracket or quote, after a known abbreviation, or after a lone initial. A line break still ends a segment whatever the punctuation says.
+- Lists of ids survive the diagnostics bounding. `bounded_diagnostics` named the keys it knew how to shrink and let everything else fall through to a branch keeping scalars only, so a list under any other key was discarded without a trace and the ids a run gave up to keep the rest persisted as an empty record — the run read as clean. A list of scalars is now kept, bounded exactly the way `reason_codes` is.
+- A repair that restores something omitted is counted as a repair that applied. Such a repair quotes a span and answers with the span plus what was missing, so the quoted text survives inside its own replacement and the added words sit beside it — neither signal the validator had could see it, and it was read as a repair that never landed. A measured chunk lost its only omission fix that way, then lost it twice more, because each retry was asked to repair what it had already repaired.
+- A rejected rewrite is told what to do rather than what went wrong. The failures are reason codes written for the record: `protected_term_removed: Tracen Academy` says nothing about the next attempt. Two measured chunks were handed one twice each, answered with the same text both times, and went to review with nothing repaired. Spelled out — this exact string, this many times, do not translate it — the instruction is one a model can follow, and both chunks repaired on the second attempt when it was. The codes themselves are untouched, so telemetry and retry signatures read what they always did.
+- An edit the draft already reads is recognised instead of retried. The editor sometimes quotes part of a passage and answers with the whole of it when the draft already says exactly that; applied literally the edit would repeat the words standing beside the span, so nothing applies it, and two measured chunks each spent both focused retries on an edit with nowhere to land before going to review with nothing wrong with them. The audit now drops such an issue, and a retry that answers with one is counted as satisfied rather than argued with. An expansion whose extra words are genuinely absent is untouched — every occurrence of the span has to read the replacement already, not merely one. The issue ids land in the run record under `already_read_issue_ids`.
+- Deleting a job no longer answers 200 for an id it never had. `delete_job` returned `True` whatever happened, so the endpoint's 404 branch could never fire and a stale entry in the resume list was indistinguishable from a real job. It now reports how many rows it removed, counting child rows — a job whose header row is already gone can still leave context and checkpoint rows behind, and clearing those is a real deletion. The resume list reloads whatever the answer was, since a 404 means the row on screen is the stale one.
+- The novel context file can leave with the job that built it. Deleting a job already wiped every structured context row it owned while the lore text file survived, so the next run of the same book read stale lore with none of the structure behind it. Deletion is opt-in per request and the resume list asks a second time, naming the file; the file is kept when another job still points at the same name, which is common because the name is built from book plus target language rather than from the job id. The path is resolved strictly inside the novel contexts directory — the read path deliberately redirects absolute paths written by other installs, and deletion does not inherit that leniency.
+
+### Changed
+
+- Editor runs now record what the model reported as well as what survived to the repair stage. `issue_count` was both numbers at once until findings started being dropped between them, so a chunk where the editor named ten defects and two were repairable was stored as a chunk that named two — and the record could not say whether a quiet editor had found little or had been talked out of most of what it found. The new `llm_issue_count` column holds the model's own count. Existing databases gain the column on open; the schema stamp is now 3.
+
+### Notes
+
+- The unit contract added above is still off, and the measurements are the reason. Run side by side on the same 28-chunk book four times, the span contract carried more findings through to repair every time — 67, 61, 78 and 74 against 38, 49, 42 and 40 — and spent fewer editor tokens every time, 429k–501k against 636k–755k. The contract stays in the tree because it is complete and measured, not because it is next; nothing about it is being removed and nothing about it is being turned on.
+- The thinking-token guard added in 1.18.3 rests on an assumption that measurement has since qualified. It treats thinking tokens spent as proof the editor really read the chunk, and on the book above three chunks spent close to 7,860 thinking tokens, returned a 27-token empty verdict with `finish_reason: STOP`, and were recorded as clean. Those are not audits that came back clean; they are a model that spent its whole allowance thinking and had nothing left to answer with. The budget fix above removes the cause, so the guard's premise holds again for runs made after it — but it does not hold for the runs already stored, and a quiet editor in that window can still look like a working one.
+
+## 1.18.3 - 2026-08-14
+
+An editor that reviewed two books without one finding looked exactly like two clean books.
+
+### Added
+
+- The Senior Editor is now watched for having gone inert. Its history is read after every unit, and the job log says so once when the last six reviews returned a byte-identical response, or when twelve consecutive reviews reported nothing while the deterministic checks were finding defects in the same units. Both signals additionally require the model to have spent no thinking tokens anywhere in the window, because a working editor that reads a chunk and finds nothing wrong still pays for the reading — one measured book answered a chunk with the identical empty envelope after 7,862 thinking tokens, and that is a real audit that came back clean, not a failure. With that guard the signals are things a working editor cannot plausibly produce, so silence stops being ambiguous: until now a weak editor model that answered every chunk with the same empty envelope was indistinguishable from prose with nothing wrong in it, and nobody could tell which had happened. The check is best effort and never interrupts a translation.
+- An offline quality regression harness, `src/core/quality`, so a prompt, chunking, or editor change can be measured instead of assumed. It scores produced translations against human references with chrF — character n-grams, no tokenizer, no model, no network — and separately asserts the deterministic rules where addressing lives, which are binary and not a matter of degree. A run is compared against a stored baseline rather than judged in isolation, because similarity drifts for harmless reasons. `scripts/run_quality_regression.py` runs a corpus and exits non-zero on a regression. The shipped corpus under `tests/fixtures/quality_regression/` is 20 segments written for this repo; real book text stays outside it.
+- `EDITOR_LOG_FULL_RESPONSE=true` prints the editor's raw answer verbatim instead of the three-bullet TL;DR. The summary condenses an empty verdict and a thorough audit to the same nothing, so the logs could not distinguish an editor that found nothing from an editor that looked for nothing — which is how a silent editor ran unnoticed for weeks, and what finally settled the question below. Off by default: a full critique is thousands of characters per chunk.
+
+### Fixed
+
+- A Senior Editor finding discarded before the repair stage is no longer erased from the run's record. `warning_count` was assigned at the end of the pass rather than accumulated, so everything already dropped upstream — a contract entry missing its replacement, an issue whose exact span could not be grounded in the draft even after the locator retry — was overwritten by the final tally. A chunk where the editor reported five defects and four were discarded on the way was stored as having reported one, and the inert-editor signals read those same counts, so the layer meant to notice a quiet editor was being fed the quietened numbers. Measured on one 20-chunk book: the editor returned 81 findings and the database recorded 61.
+
+- A Senior Editor quote that crosses a segment boundary is now found in the draft. The editor reads a segmented view of its draft, and that view joins segments with newlines the draft does not contain — while the segmenter breaks after every sentence-final period, so `Japanese St. Leger` is two segments and any quote spanning the break came back carrying a newline that no exact match could ever locate. The locator was read as the editor's mistake: one measured chunk failed repair validation twice on a span it had copied correctly, and ended the only chunk of that book needing human review. Quotes are now restated in the draft's own spelling before anything looks for them, so validation, local patching and repair validation all keep their unrelaxed matching. Only whitespace is relaxed, and only where the relaxed match is unique.
+- A repeated span is repaired everywhere it occurs when the defect cannot depend on context. A quote appearing more than once was refused as ambiguous, so a glossary term, a placeholder or a surviving source word that the editor caught in one place stayed wrong in every other place it recurred in the same chunk. Those defect classes are wrong on their own, so twin spans carry the same error and the same repair; fluency, register, style and mistranslation are judgements about a particular sentence, and a repeat of those is still reported rather than guessed at.
+- Two more places that discard a Senior Editor finding now count it. An edit refused for targeting a protected proper name, and a finding the locator retry was asked to re-locate and did not return, were both dropped without a trace — a chunk whose every finding landed on a protected entity was recorded as a clean chunk. Measured on one 14-chunk book: the editor returned 37 findings, 7 were discarded on the way, and the record accounted for 2 of them.
+- The same edit reported more than once is applied once instead of colliding with itself. The editor raises a defect once per occurrence it noticed, and identical findings became identical patches, which the overlap check read as two edits disputing one span; the chunk then went through three local-patch retries that returned the same duplicates each time, and every finding it held was left unresolved. Repeating an edit is not disagreeing about it, so an identical patch is now collapsed, while two patches proposing different text for one span are still a conflict. Measured on one 28-chunk book: a chunk raised the same edit five times and lost all seven of its findings, including the two nobody had raised twice.
+- An editor finding that names its defect but supplies no replacement is now asked for the replacement. The retry sent for it opens by asking the editor to correct invalid exact-span locators, and these locators were never wrong — only the corrected wording was missing — so the model answered with the same issues unchanged and all of them were demoted to review. The retry now says what is actually missing, keeps the locator fixed, and states that the replacement must be a rewrite rather than an empty string, since deleting the quoted sentence is not what a pronoun or register defect calls for. Measured on the same book: one chunk raised eight major findings this way and repaired none of them.
+- Building the Windows executable no longer deletes the data of the copy already installed beside it. The build cleaned `dist` by removing the whole directory, and `dist` is also where a run of the app keeps `TranslateBook_Data` — the operator's `.env`, the glossary and job databases, the checkpoints, and every finished translation — so each rebuild took all of it and said only `[OK] Cleaned`. Only the executable is removed now. The build also writes to `dist` again rather than to `build\windows\dist`: the spec sets no output path, so PyInstaller had been writing beside itself while the script's own message, and the release steps that follow it, pointed at the top-level directory, and the executable had to be moved by hand after every build.
+
+### Changed
+
+- Severity no longer decides whether a Senior Editor finding may be repaired; certainty does. Every issue marked `minor` was rewritten to `review_only` while it was still being parsed, before any policy saw it, so a defect the editor had located exactly and was 0.99 sure of could not be applied by any downstream rule — and `minor` is where register, honorifics and phrasing live, which is most of what a bilingual editor is for. The confidence floor is unchanged at 0.80 and still withholds an unattended edit, `review_only` is still refused, and the editor is still told to omit preferences and equally valid alternatives; a hedged finding of any severity remains a warning. The contract now says the same thing to the model, which was being told that minor evidence is review_only, and the contract version is `editor-issue-v9-severity-split`.
+- Editor diagnostics now record what the repair gate judges. Each stored issue carries its `category`, `severity`, `confidence`, and whether its replacement was a no-op — an edit replacing a span with itself. Without them a run said a finding had been reported and dropped but never which rule dropped it, and a measured chunk that returned twelve exact-span edits and applied none of them could not be explained from the database at all. These are classifications the model assigns, not book text, so they keep the same boundary the rest of the diagnostics hold.
+- The Senior Editor is told again what counts as a defect. `editor-issue-v7-focused` had deleted the contract's enumeration of defect classes — omission, mistranslation, glossary error, pronoun bleed, gender mismatch, register, consistency, fluency, style, placeholder and format — and replaced it with the circular instruction to report issues when issues exist. The checklist is back as an explicit audit the model walks before answering, the strict JSON schema is unchanged, and `category` must now name the checklist item the issue came from. The contract version is `editor-issue-v8-enumerated`, stamped on every `editor_runs` row, so a job's database says which contract judged it. Recorded honestly: this was expected to be the fix for the silent editor and measurement says it was not. Re-running the same book on the restored contract, with the checklist verifiably in the prompt, produced the same byte-identical empty verdict for all 13 chunks and the same zero thinking tokens. The contract is better specified; it was not what was wrong.
+- The Senior Editor's automatic thinking level is now `low` rather than `minimal`, and never zero. The editor is the only pass that reads the source beside the draft, so its entire value is the comparison, and `minimal` bought it no room to make one. Models that offer no `low` rung take the lowest they do offer, so the floor cannot resolve to a level the provider rejects. Gemini 2.5 editors, which were getting thinking switched off outright, now get the smallest budget instead. An explicitly chosen editor thinking level is untouched; only `auto` moves. Expect the editor to cost more per chunk: thinking tokens are now actually spent, and the automatic editor output budget doubles with the higher level.
+
+### Notes
+
+- The silent editor was the editor model, not the prompt. Held against the same book, the same prompt and the same `editor-issue-v8-enumerated` contract, `gemini-3.5-flash-lite` answered every one of 13 chunks with the same 27-token empty verdict and spent zero thinking tokens, while `gemini-3.1-flash-lite` spent 76,979 thinking tokens and reported 60 defects across 19 chunks. Nothing in the earlier logs could have shown this, because both look like a clean book from the outside. `.env.example` now says so beside `EDITOR_MODEL`, and the two mechanisms that make the difference visible — the inert-editor signals and `EDITOR_LOG_FULL_RESPONSE` — are what turned four weeks of ambiguity into one measurement.
+
+### Tests
+
+- Added coverage for the inert-editor signals, including that a varied editor, a short identical run, and silence with no deterministic findings beside it are all left alone, that transport failures are not read as judgement, that the warning is said once per job, and that a failing probe stays silent.
+- Rewrote the minor-issue assertions around the new split: a confident minor finding is applied, a hedged one of any severity is still only a warning, asserted both at the parsing boundary and end to end through the reflection pass. Added coverage pinning the contract's own wording of it, and pinning `category`, `severity`, `confidence` and the no-op flag into the stored excerpts, including a model that answers with the wrong type.
+- Added coverage for a finding dropped by locator validation and a finding too weak to repair both reaching the stored warning count, driven end to end through the reflection pass, and for an edit refused for targeting a protected proper name reaching it too.
+- Added coverage for a quote carrying the segment view's own newline being grounded, patched, and asserted against the view that produced it; for a repeated glossary term repaired at every occurrence; and for a repeated fluency span still refused as ambiguous.
+- Added coverage for one edit reported three times applying cleanly and for two edits proposing different text for one span still conflicting, and rewrote the incomplete-replacement retry assertions around the prompt that asks for the missing wording.
+- Added coverage for the thinking-token guard on both signals: a clean book whose chunks were actually read is left alone even when every response is identical, one thinking run anywhere in the window vindicates it, and an editor that spent nothing is still caught.
+- Rewrote the editor thinking-floor assertions around `low`, and added cases for an explicit mode overriding the floor and for a model that offers no `low` rung falling back to one it does.
+- Added coverage for the quality harness: chrF bounds and whitespace independence, whole-word matching for address terms that hide inside longer words, corpus loading errors, and baseline comparison. The shipped corpus is asserted self-consistent — every reference satisfies its own rules and scores 1.0.
+- Added coverage pinning every defect class into the editor contract, in both the tagged and the native-schema variant, and pinning the contract version that carries them. The raw-response log is asserted silent by default, verbatim when enabled, and explicit about an empty answer rather than skipping it.
+
+## 1.18.2 - 2026-08-10
+
+A student addressed her trainer as a peer for a whole book, and the narration followed her there.
+
+### Fixed
+
+- Directed addressing rules taken from a structured context update now pass the addressing engine before they are stored. Only the markdown path ran that repair, so a rule whose own vocative said `Huấn luyện viên` was stored as the peer pair `tớ`/`cậu`, projected verbatim into every translation prompt, and exported back over the repaired markdown on the next context write. Both paths now apply one set of rules, and the repair runs after every policy check so the checks still judge what the model actually proposed.
+- A relationship the graph has already accepted is no longer retracted by a later restatement of it. The model re-proposes durable relationships on nearly every chunk, and the evidence gates ran again each time, so one restatement whose quote had drifted out of its own chunk demoted the settled edge back to `provisional` — where nothing promotes it back and where `relationship_support_for_addressing`, which reads accepted edges only, cannot see it. Graph membership was effectively decided by the last observation rather than by the weight of the evidence: in a 23-chunk book, 10 of 26 edges ended unaccepted, including the student/trainer pair whose seniority the addressing rules needed. The gates now decide only whether an unproven claim may enter the graph; a re-observation that agrees with the stored edge on direction, seniority, age, and rank passes them, while one that contradicts any of those is still challenged. Prose drift in `details` no longer counts as contradiction, and `supporting_units` now counts the distinct units that have actually backed an edge instead of being reset to 1 on each accept.
+- A Vietnamese senior addressing a junior no longer settles for the peer pair. The seniority solver rewrote an *inverted* pair — a trainer calling his student `chị` — but left `tớ`/`cậu` alone, so the peer form denied the seniority just as plainly and went uncorrected for a whole book while the student's own lines were repaired. Both sides of the pair are now rewritten, to the gendered `anh`/`chị` when the speaker's gender is recorded and to the neutral `tôi` when it is not.
+- Addressing direction is no longer inferred from a social basis that names both roles. `trainer-trainee` says nothing about which end is speaking, and reading its senior cue alone marked every such pair junior-to-senior — pointing the repair the wrong way for the trainer's own lines. Direction now comes from the vocative, which is what the speaker calls the addressee and therefore describes the addressee alone, or from the relationship graph; free text carrying both roles supplies neither. A peer self-reference paired with `anh`/`chị`/`thầy`/`cô` is still corrected to `em`, because the pair's own second person already places the speaker below the addressee.
+- A structured pair that merely fails to apply a seniority the graph knows is now repaired instead of rejected. Rejecting it left the senior half of a relationship with no rule at all while the junior half kept one, so the two halves disagreed in every prompt. An actually inverted pair is still refused.
+- One character written two ways is now one character. A surname-first quotation (`Momozawa Tomio` beside `Tomio Momozawa`) or a hyphenated nickname (`Guri-ko` beside `Guriko`) registered a second identity, splitting that character's relationships, gender, and addressing rules in half — neither copy accumulating the evidence the other had. Node lookup now also matches a reordered or differently punctuated spelling, and addressing rules are stored under the registered name. Both fallbacks need every token of the name, so a partial reference such as `Momozawa` still resolves to nobody.
+- A Vietnamese speaker who is junior to the person they address now says `em` rather than `tôi`. A formality cue in the rule rewrote a peer `tớ`/`mình` to `tôi` before the addressing engine could promote it to the junior form, so a trainee speaking to her trainer came out sounding like a stranger. The rewrite is now skipped when the pair reads as junior to senior; a genuine peer pair is untouched.
+
+### Tests
+
+- Added coverage for the structured path repairing a senior-vocative pair before the write and leaving a plain peer pair alone, both asserted through the database and its markdown export.
+- Added coverage for an accepted edge surviving a later unmatched quote — asserted through to the addressing support the projection reads — and for a reversed seniority still being challenged.
+- Added coverage for the senior side of a pair being repaired with and without a known speaker gender, for a vocative settling the direction, for a two-sided social basis refusing to invent one, and for a reordered or hyphenated spelling resolving to the character already registered.
+- 1,595 passing. Characterization goldens byte-identical.
+
+## 1.18.1 - 2026-08-09
+
+The prompt budget introduced in 1.18.0 was off by default, so the ranking and the dynamic-state reserve it gates never ran.
+
+### Changed
+
+- `NOVEL_CONTEXT_PROMPT_MAX_TOKENS` now defaults to 3000 rather than 0. Ranking and the budget split only bite once there is a ceiling, so shipping the ceiling off meant the prompt grew with the book exactly as before. A crowded scene measured at roughly 1,650 tokens of rendered context, so 3000 leaves about twice that in headroom while still bounding the growth; the 40% dynamic reserve gives addressing around 4,800 characters of it. Passing 0 explicitly still means no ceiling.
+
+### Fixed
+
+- Rendering the context for a prompt no longer re-runs the whole normalization sweep on every chunk. The renderer normalizes the context it is handed, and normalizing deduplicates the cast by comparing every character against every other — work that belongs at a persistence boundary, where it runs once per context update, not once per chunk against content that has not changed. The name-key helpers underneath it derived their keys from scratch on every one of those comparisons. Both are memoized now: a 200-character cast rendered in 14.2 s per chunk and renders in 0.87 s.
+
+### Tests
+
+- Added coverage for the default ceiling applying when a caller passes nothing, and for an explicit 0 still meaning no ceiling.
+- 2,067 passing, one skipped, ten intentionally deselected. Characterization goldens byte-identical.
+
+## 1.18.0 - 2026-08-09
+
+Four faults in the novel-context architecture, all of them reaching the translation itself: a character's recorded gender, the pronouns used to address them, and when a relationship was true.
+
+### Added
+
+- Added `context_relationship_edge_history`, an append-only record of each state an edge has held and the chunk it started at, with `get_relationship_edges_as_of` to read the graph as it stood at a point in the book. An edge held exactly one current state per pair, with only a `last_chunk_index` to say when it was last seen, so "enemies until chapter 40, allies after" was not representable.
+- Added `Database.carry_over_structured_context`, which seeds a new job's structured tables from the newest earlier job on the same context file, remapping node ids so copied edges point at the new job's own rows.
+- Added `NOVEL_CONTEXT_CONSOLIDATION_MAX_DROP_PERCENT`, the share of the cast a single consolidation pass may remove before the pass is rejected outright. Default 34; 0 disables the ceiling.
+- Added `src/utils/novel_context/retrieval.py`, which ranks context entries by how hard the current chunk points at them and splits the prompt budget between the lore and the dynamic state. Added `NOVEL_CONTEXT_GENDER_ROSTER_MAX` (default 40; 0 disables) and `NOVEL_CONTEXT_DYNAMIC_BUDGET_PERCENT` (default 40).
+
+### Fixed
+
+- The consolidation pass no longer changes a recorded gender on its own say-so. `merge_new_lore` treats a recorded specific gender as authoritative — changing one needs an explicit `CORRECTION:` marker and proof from the source text — and consolidation ran outside that gate while only being meant to reword and dedup descriptions. In a language with gendered address, one flipped label misgenders that character for the rest of the book. Recorded genders are put back and each reversal is named in the change log.
+- The consolidation pass no longer silently loses characters. Pruning non-character entries is the point, so individual removals stand, but losing more than the configured share of the cast in one pass is a truncated or malformed response rather than pruning: the whole pass is rejected and the previous lore kept. A false rejection costs one skipped dedup; a false acceptance costs a character permanently, and with it the gender every later chunk needs to pick pronouns. Characters folded into another under an accepted identity link are not counted as lost, a single removal is always allowed, and whatever is dropped is always named.
+- A rule locked in the UI now reaches every chunk a refine pass replays. Refinement reads stored context snapshots and nothing else, and the structured export only ever rewrote the newest snapshot, so a locked rule reached the last chunk and no other. Model-learned rules still stay where they were observed — address shifts as a story progresses, and back-dating chapter 200's forms onto chapter 5 would be a lie about chapter 5 — but a lock is a decision about the whole book, so it alone is forced onto every snapshot.
+- A new volume on the same book no longer starts from a lossy markdown round trip. The context file is per novel while every structured table is keyed by job, and the export keeps only the rendered line: locks, confidence, provenance, evidence and conflicts were all dropped. A rule locked in volume 1 arrived in volume 2 unlocked, at default confidence, and free for the model's first guess to overwrite. Carrying is skipped when the target already has structured state, so a resumed or re-run job is never overwritten.
+- Snapshots of earlier chunks are rebuilt with the relationship graph of their own moment rather than the latest one.
+- The prompt no longer carries the whole cast into every chunk. The pinned gender roster named every character in the book with a recorded gender, so it grew with the book rather than with the chunk; it is now ranked by relevance and capped.
+- Under a prompt budget, context entries were kept in file order and sections filled in render order, so the cast discovered first won regardless of who the chapter was about, and the addressing section — rendered last — was starved by characters who were not in the scene. Entries are now ordered by how hard the chunk points at them, ranking is stable so equally relevant entries keep file order, and the dynamic state holds a budget floor the lore cannot spend.
+- Whatever a prompt budget leaves out is now logged instead of being cut silently.
+
+### Tests
+
+- Added coverage for the consolidation guards: half the cast rejected, an in-ceiling prune kept and named, a flipped gender and a gender dropped to Unspecified both reverted, a reworded description accepted, an identity-link merge not counted as a drop, and the ceiling table itself.
+- Added coverage for the locked-rule overlay and for the export reaching every snapshot rather than the newest, for structured state arriving in the next volume still locked and with its confidence and provenance intact, and for relationship history recording only actual changes, answering with the state in force at a chunk, and not back-dating an edge that did not exist yet.
+- Added coverage for the retrieval ranking: a named character outranking a merely described one, an on-stage character outranking one the chunk ignores, stable order within one score, the roster cap and its off switch, the character a chunk is about surviving a tight budget from the bottom of the file, addressing surviving a sixty-name cast, and the drop report firing.
+- 2,065 passing, one skipped, ten intentionally deselected. Characterization goldens byte-identical.
+
+## 1.17.0 - 2026-08-09
+
+The three items 1.16.0 deferred, all of them about a failure the user could not see.
+
+### Added
+
+- Added `src/utils/atomic_replace.py`, one replace that allows for a destination another program is holding open.
+
+### Changed
+
+- Every atomic file replace now goes through `replace_atomically`: the novel-context save, the editor-retry rebuild, and the refinement output promotion. `os.replace` is atomic on both platforms, but on Windows it fails outright whenever anything else has the destination open — a context file left open in an editor, an antivirus scanner, the search indexer, a preview pane. POSIX has no equivalent, so the failure was invisible on the platform the code was written on and routine on the platform it ships to. These holds are short, so a bounded retry turns a lost save into a pause of a few hundred milliseconds; a destination held for the whole window still raises, now naming the cause instead of surfacing as a bare `WinError`.
+- A context session takes its update function as a constructor argument. The three call sites resolved it by name through the package on every call, so the dependency was a string and the only way to substitute it was to patch the package. Anyone holding a session can now hand it a different updater outright, and the single remaining late lookup — the default, kept so the existing pipeline tests still reach a session built several layers down — is in one place and says why it is there.
+
+### Fixed
+
+- A novel-context update that produces nothing now reports it where the user is looking. Both failure exits — an empty model response and a raised exception — went to the server log and stopped, while the job log went on reporting the context as committed. A context file that stayed empty therefore had no stated cause, which is how a context window too small for the update prompt hid for an entire release. The report names the parse status and carries the raised cause.
+- The sequential-refinement context update now passes its log callback through, so its failures reach the job log rather than only the terminal. The other two call sites already did.
+
+### Tests
+
+- Added coverage for the replace: a clear destination replaced on the first attempt, a hold of two attempts waited out under both sharing-violation error numbers, a destination held for the whole window raising with the cause named, and a full disk raised on the first attempt rather than retried six times.
+- Added coverage for the failure report on both exits, for the raised cause reaching the report, for a session accepting an injected updater, and for the default updater not arriving bound as a method — a plain dataclass default would have eaten its first argument.
+- 2,017 passing, one skipped, ten intentionally deselected. Characterization goldens byte-identical.
+
+## 1.16.0 - 2026-08-08
+
+### Added
+
+- Added `src/persistence/schema.py` as the single owner of every table, additive migration, and index, applied through one `apply_schema` entry point.
+- Added `src/api/job_callbacks.py`, which owns the seam between the engine's plain callbacks and the web layer's socket, state manager, and checkpoint store.
+- Added a `lint` job to the test workflow running the `check-ast`, `check-yaml`, `isort`, `trailing-whitespace`, and `end-of-file-fixer` pre-commit hooks on every pull request. The last three were already configured but had never been enforced, so the tree had drifted away from all of them.
+- Added `src/core/common/resume_context.py`, which reads the context state a resumed job starts from. Both the generic translator and the plain-text pipeline resume the same way and each had that logic written out inline.
+- Added upper version bounds for the eight previously unbounded runtime requirements so an upstream breaking release cannot silently break a tagged build.
+
+### Changed
+
+- Split `src/utils/novel_context.py` into a package of seventeen cohesive modules. All sixty-three previously importable names, including the private helpers that other packages depend on, are re-exported unchanged.
+- Split the 2,879-line translation blueprint factory into one registration module per route domain: lifecycle, context, addressing, relationships, narrator, editor, and maintenance. Every URL rule, method set, and endpoint name is unchanged.
+- Moved the editor pre-flight and reflection prompt composition out of the reflection pass and into `src/core/editor/preflight.py` and `src/core/editor/prompting.py`.
+- Repository facades are now built once per database instead of allocated on every property access.
+- Moved the job, chunk, checkpoint, and editor SQL off the database god class and into `JobRepository` and `EditorRepository`, which now own it. The database keeps a same-named delegating method for each, so every call site is unaffected. Context and narrator SQL stay on the facade for now.
+- Split the schema work into the table and column sweep and the data-repair passes that follow it. A file already stamped with the current `PRAGMA user_version` skips the sweep, which is the expensive half and is re-run by five modules that each construct their own database. First construction takes about 124 ms and later ones about 1 ms. The repairs always run, because they fix rows rather than shapes.
+- Extracted the checkpoint restore decision out of `generic_translator.translate` into `_restore_or_start_job`, bringing that function from 1,494 to 1,283 lines and `translate_paragraphs_plain` from 979 to 960.
+- Sorted imports across the tree in a single pass so the newly enforced `isort` check starts from a clean state.
+- Cleaned trailing whitespace in forty-two files and file endings in seventeen, for the same reason.
+- Documented in `docs/ARCHITECTURE.md` what the repositories now own and what they still forward, and how the schema stamp decides which half of the schema work runs.
+- Gave a context update one return value. `update_novel_context_chunk` filled its three caller-owned dictionaries at twelve points across three exits, and a filled-but-empty dictionary could not say whether the update found nothing or failed outright. The outcome is now built once as a value and published in one place. The public signature and the three-tuple it returns are unchanged.
+- Moved `_is_valid_glossary_term` from `src/core/translator.py` to `src/utils/novel_context/glossary.py`, where the rest of the glossary rules live. It is a pure string predicate with no engine dependency, and the context session needed it, which had `src/utils` importing from `src/core`. It is re-exported from its old home.
+- Declared the `RefinementContextTracker` attributes derived in `__post_init__` as real dataclass fields, so half the tracker's state is no longer invisible to `repr`, equality, and type checking.
+- Lifted two layers out of the 2,331-line `characters.py`, bringing it to 1,607: `name_keys.py` for naming, key derivation, and name comparison, and `character_facts.py` for the fact list a character value carries. Neither reaches back. The rest of the module is genuinely mutually recursive through `_normalize_character_value` and stays where it is. Every moved name is re-exported from its old home, so no call site changed.
+
+### Fixed
+
+- Fixed the README download buttons. The Windows link pointed at an asset name that has never been published and returned 404, and both macOS links pointed at the upstream repository rather than this fork.
+- Fixed job upload directories being deleted for jobs the database kept. The cleanup cutoff was computed in local time and compared against UTC timestamps, so at positive UTC offsets it destroyed uploads for retained jobs and made them unresumable. The directory removal is now driven by the identifiers the database reports as actually deleted.
+- Fixed a SQLite connection leak of one connection and file handle per translation job, each of which runs on its own thread. Connections are now tracked across threads and released together, matching the fix already present in the glossary store.
+- Fixed completed jobs never leaving process memory, where each retained its configuration, statistics, and up to one thousand log lines for the lifetime of the process.
+- Fixed a lost-update race on the job log list, which was read, mutated, and written back outside the state lock instead of using the existing atomic append.
+- Capped concurrent translation job threads through the new `MAX_CONCURRENT_JOBS` setting, which previously had no bound.
+- Stopped tracking the built executable and the two release archives, which are already published as release assets and were re-committed on every release. History is intentionally preserved, so existing clones stay valid.
+- Removed ten one-off scripts written against specific books, none of which had any inbound reference.
+- Fixed accumulated dialogue speaker state being discarded whenever a context update failed. Both failure paths fill the attribution sink with an empty result, and the session read that as "this chunk had no speakers" rather than "the update produced nothing", so it cleared the speaker map. The condition was also inverted with respect to the risk: a chunk with no dialogue kept its state, while a chunk dense with dialogue, which is the one whose update is most likely to fail, lost it.
+- Fixed the context gating switch leaking between concurrent jobs. Opening a context session applied the job's `bypass_context_gating` option by assigning to the process-wide setting, so a second job could switch off another job's protection against model-guessed character genders mid-run, and the last job's choice stayed behind for every job afterwards. The override is now scoped to the job's own flow.
+- Fixed two jobs sharing one context file being able to corrupt it. Saving staged through a fixed `.tmp` name with no lock, so simultaneous writers wrote into the same staging file and the surviving document could be a blend of both. Each writer now stages through its own file, and writers to the same path are serialized.
+- Fixed two jobs sharing one context file discarding each other's entire run. Making a single write atomic was not enough: a session reads the file once when it opens and writes the whole document back after every chunk, so whichever job saved last replaced everything the other had learned. A save now re-reads under the same lock that guards the write, and when the file has moved since the session read it, the two documents are reconciled through the same merge the translation pipeline already applies to model output. A save over an untouched file is still the plain write it always was, which is the single-job case and therefore almost every case.
+- Removed a dead write in `update_novel_context_chunk`, which published the addressing candidates once in the middle of the successful path and again at its end. There is no return between the two, so the first was always overwritten before any caller could observe it.
+- Fixed the background context resync running twice. The call that awaited the result shared a `try` with the event-loop acquisition, so an error raised by the resync itself was mistaken for a missing loop and the whole pass, database writes included, was replayed.
+- Reported five failures that were previously discarded in silence. An EPUB chapter that fails to parse during the refine pre-count shifts the chunk indices every later file is snapshotted under. A failed per-unit lore reload, in both translation loops, leaves drafting against the previous unit's context. A failed editor pre-flight leaves proper names out of the protected set, so the editor is free to rewrite them. And a relationship node overwrote stored aliases it could not parse with only the incoming set, which makes a character stop being recognized mid-book. All five still continue past the failure on purpose, but now say what was lost.
+- Fixed the requested context window never reaching the LLM client for TXT and SRT jobs. It was written into the adapter configuration, which only sizes chunks, and left out of the configuration the client is built from, so every job ran at whatever `OLLAMA_NUM_CTX` happened to be. On a small window this also skipped every novel-context update, because the update prompt is larger than a translation prompt: the context file stayed empty while the job log still reported the context as committed.
+- Fixed the re-sync Cancel button rendering the raw key `translation:context_cancel_btn`, which existed in no locale file. It now uses `common:cancel`, which is already translated in all seven.
+
+### Tests
+
+- Added a regression asserting the caller's context window reaches the LLM client, which fails against the previous code because the key is absent entirely.
+- Added regression coverage for the cleanup timezone bug under a non-UTC local zone, cross-thread connection release, completed-job eviction, atomic log appends, and the concurrency cap.
+- Added structural gates that fail on drift: a snapshot of the `novel_context` public surface, a snapshot of the translation blueprint's URL map, and schema ownership, idempotence, and repository caching checks.
+- Added a digest of the schema DDL that fails unless `SCHEMA_VERSION` is bumped alongside it, so a new column cannot ship to a stamped database that will skip it.
+- Added tests that the moved SQL is reached directly rather than through the forwarding fallback, and that context and narrator calls still forward.
+- Added a regression asserting the context resync coroutine runs exactly once, which fails against the previous code with a count of two.
+- Added coverage for resume-context precedence, including the case where the resume index is reported although no snapshot was found for it.
+- Added coverage for the three novel-context state leaks: a failed update carrying the previous speaker state forward, the gating override staying on its own thread and never writing back to the shared configuration, and concurrent writers to one context file each staging through their own temporary.
+- Added coverage for context-file reconciliation: two sessions opened against one file keeping both their findings, a session adopting what it merged so its next chunk does not re-propose superseded state, and an unreadable file still saving rather than turning a rare concurrency case into a common failure.
+- Added a layering gate asserting that `name_keys` imports nothing but `constants`, that `character_facts` adds only `name_keys`, and that neither imports `characters` — a single import in the wrong direction would restore the cycle the split removed.
+- Passed the complete automated suite with 2,007 tests passing, one skipped, and ten intentionally deselected integration cases, with the characterization goldens byte-identical throughout the refactor.
+
+### Deferred
+
+- `generic_translator.translate` is decomposed only in part. The checkpoint restore and the resume-context reading came out, but the remaining bulk is seven nested functions that read enclosing locals rebound while the run proceeds. Turning those into parameters is a rewrite of the control flow, and the characterization goldens can prove a move correct in a way they cannot prove a rewrite correct, so this release stops there.
+- Context and narrator SQL still lives on the database facade rather than in its repository.
+
+## 1.15.1 - 2026-07-15
+
+### Added
+
+- Added configurable automatic repair after a threshold of review-required chunks, with a default threshold of three and a zero setting for phase-boundary-only repair.
+- Added mandatory final review-repair checks before refinement and after refinement, with persisted batch progress and one effective-output rebuild at the phase boundary.
+- Added live terminal and reactive UI activity for queued, pausing, running, per-item, rebuilding, cancelling, completed, and resume states.
+
+### Changed
+
+- Successful review-repair batches now resume jobs that were running before the safe pause. Jobs that were already paused remain paused, failed batches do not resume, and narrator repair continues to stay paused intentionally.
+- Automatic threshold repair runs at safe unit boundaries without exposing the job as manually paused, and applies independently to translation and refinement phases.
+- The automatic threshold is stored in profiles and local preferences, accepted throughout the translation request pipeline, and localized across all seven supported UI languages.
+
+### Fixed
+
+- Fixed individual editor retries silently omitting the requested phase and repair-batch cancellation referencing an undefined phase value.
+- Fixed completed repair work appearing idle because batch activity was absent from terminal output, persisted job logs, WebSocket updates, and refreshed diagnostics.
+- Fixed latest repair-batch lookup ambiguity when multiple batches share a timestamp.
+
+### Tests
+
+- Added automatic threshold, phase-boundary, output-rebuild, live activity, auto-resume, persistence, request-contract, profile-validation, and locale-reactivity regressions.
+- Passed the complete automated suite with 1,935 tests passing, one skipped, and ten intentionally deselected integration cases.
+
+## 1.15.0 - 2026-07-15
+
+### Added
+
+- Added persistent bulk repair batches for review-required and narrator-stale units, including safe pause coordination, cancellation, restart recovery, sequential processing, and effective-phase output rebuilding.
+- Added actionable current-review diagnostics with sanitized reason codes, bounded problem details, retryability, phase, and attempt counts, plus reactive bulk-repair controls across all seven supported locales.
+- Added persistent refinement passes and unit results with exact checkpoint alignment, interruption-safe resume, atomic promotion, and effective-phase reconstruction for TXT, EPUB, DOCX, and SRT.
+- Added shared unit prompt context preparation for translation, refinement, automatic repair, manual retry, and narrator repair, together with source-memory and prompt-component telemetry.
+
+### Changed
+
+- Editor repair now preserves structured issue seeds, applies deterministic replacements first, and runs up to three bounded focused repairs before considering a full audit. Repeated no-progress responses and non-retryable provider failures stop early.
+- Manual and narrator repairs now target the promoted effective phase, preventing refined output from being replaced by first-pass checkpoints.
+- Narrator backfill now audits completed units and processes only proven conformance violations while leaving active jobs paused after bulk repair.
+- Review counters now represent each unit's latest effective state instead of historical attempts. Successful retries leave history intact while removing the unit from the current review queue.
+- Retained `NOVEL_CONTEXT_SOURCE_MEMORY_CHARS` with its 6000-character default because source-analysis memory is independent from selective translation-context injection.
+
+### Fixed
+
+- Prevented retry routes from discarding unresolved editor issues and launching unnecessarily large full audits.
+- Prevented structured-format refinement failures from retaining fallback text while reporting zero failed units.
+- Prevented partial refinement output from replacing phase-one output before a complete pass is atomically promoted.
+- Rejected consolidation protocol labels such as `CORRECTION` as generated character or alias names, prohibited identity merges based only on duplicate descriptions, and preserved unsupported candidates for review.
+- Required direct lexical evidence for addressing rules so an indirect mention of another character cannot establish the declared addressee's form.
+- Reset source-analysis memory at explicit scene boundaries while preserving continuity within a source unit and across skipped analyzer intervals.
+
+### Tests
+
+- Added retry, latest-state diagnostics, bulk repair persistence, narrator accounting, consolidation evidence, source-memory boundaries, refinement promotion, effective-phase rebuilding, structured-format failure reporting, DOCX reconstruction, and locale parity regressions.
+- Passed the complete automated suite with 1,927 tests passing, one skipped, and ten intentionally deselected integration cases.
+
+## 1.15.0-beta.48 - 2026-07-14
+
+### Added
+
+- Added per-stage editor prompt composition diagnostics, complete source and draft hashes, request counts, largest-request totals, and cumulative token totals while preserving the existing cumulative database fields.
+- Added reactive frontend diagnostics for largest request, request count, request stages, and cumulative usage across all seven supported locales.
+
+### Changed
+
+- Selective contract-v5 context retrieval now runs even when no prompt budget is configured. The typed prompt bundle is the sole structured-context injection and includes relevant participants, accepted relationships, active addressing, glossary entities, narrator policy, and nearby scene evidence without duplicating legacy Markdown state.
+- Compacted and generalized the editor contract while retaining the complete filtered source and draft in the initial audit. Prompt budgets remain optional provider-capacity safeguards rather than context-selection switches.
+- Replaced proportional narrator alignment with offset-preserving discourse mapping. Exact narrative mismatches are patched deterministically, while dialogue, thoughts, letters, and ambiguous alignments remain advisory.
+- Locator correction now sends only invalid issues and bounded candidate neighborhoods. Unresolved local issues preserve the best valid draft for review instead of triggering a full-chunk rewrite.
+- Manual editor retries now reuse the previous unresolved local-edit contract in a focused request instead of repeating the complete audit. If the corrected locator still cannot be applied, the manual run receives one additional bounded local-patch correction without permitting a full-chunk rewrite.
+
+### Fixed
+
+- Fixed misleading 40k-plus editor figures by distinguishing the largest individual request from cumulative multi-request usage.
+- Deduplicated exact narrator findings and excluded already repairable narrator observations from model prompts.
+- Prevented contract-v5 relationships, addressing rules, and narrator policy from being injected through both typed SQLite projections and legacy Markdown context.
+- Fixed manual retries appearing to leave the original diagnostic unchanged. The latest run is now shown by default with its phase, while immutable earlier runs are grouped under collapsible history.
+- Fixed retry-produced unresolved issue metadata being discarded from the checkpoint, which prevented a later retry from targeting the prior failure.
+
+### Tests
+
+- Added regressions for budget-independent selective retrieval, authoritative v5 prompt bundles, complete-input hashes, focused locator retries, exact narrator patching, legacy diagnostics compatibility, and synchronized locale interpolation.
+- Added manual-retry regressions for persisted issue seeds, focused prompts that exclude the complete chunk, one bounded local-patch follow-up, and latest-versus-history diagnostics rendering.
+
+## 1.15.0-beta.47 - 2026-07-14
+
+### Added
+
+- Added a language-profile social-evidence resolver that stores conversational hierarchy, institutional rank, and chronological age independently. Explicit senior and junior forms now create grounded directed relationships without treating neutral honorifics as hierarchy.
+- Added automatic Vietnamese `em/anh` and `em/chị` reconciliation when accepted hierarchy and gender evidence make a target pair safe, while preserving explicit source vocatives.
+- Added typed context-analysis and prompt-bundle contracts, shared source-unit preparation across text and checkpointed XHTML pipelines, and narrow job, editor, context, and narrator repository interfaces behind the compatible `Database` facade.
+- Added evidence fingerprints, observation counts, resolution state, and last-seen timestamps through an additive v4-to-v5 migration. Unsupported observations remain auditable but stay outside translation prompts until reconciled.
+- Added optional provider-capacity editor windows with adjacent read-only context and one optional configured larger-model escalation, both disabled by default. The complete filtered unit remains the default and has no application-level token ceiling.
+
+### Changed
+
+- New jobs default to context contract v5. Source facts are committed before drafting, while structurally valid target output receives deterministic synchronization without repeating the full lore and relationship analysis request.
+- Prompt retrieval now includes every grounded dialogue participant, source-mentioned known characters, accepted one-hop relationships, active addressing rules, narrator policy, nearby source text, and relevant selective lore instead of unrelated accumulated candidates.
+- Exact local editor failures preserve the best valid draft after one locator retry. Unsupported model-only locators remain non-blocking diagnostics, deterministic failures require review, and full-chunk rewriting is reserved for structural, completeness, or cross-cutting defects.
+
+### Fixed
+
+- Fixed hierarchy evidence being recognized in dialogue attribution but never persisted as a relationship or addressing rule.
+- Fixed partial local patches losing `review_required` metadata on return.
+- Protected complete glossary and entity spans so names such as `Lord Axe` do not trigger standalone social-title residue or weapon classification.
+- Kept execution status independent from editorial quality across the new editor compatibility boundary.
+
+### Tests
+
+- Added generalized Japanese, Korean, Chinese, and English hierarchy regressions; neutral-honorific, ambiguous-evidence, reverse-direction, reconciliation, evidence-deduplication, v4 migration, prompt-filtering, full-participant retrieval, bounded-window, optional-escalation, and editor-metadata coverage.
+
+## 1.15.0-beta.46 - 2026-07-14
+
+### Added
+
+- Added independent execution and quality states for translation units and jobs. Structurally valid drafts with unresolved editorial findings now complete as `review_required` instead of being counted as provider or translation failures.
+- Added persisted quality counters, API responses, and localized completion-card guidance across all seven UI locales.
+- Added architecture documentation for job outcomes, editor boundaries, checkpoint persistence, resume behavior, and future modularization.
+- Added a required pytest gate for pull requests and releases.
+
+### Fixed
+
+- Made inferred narrator defaults advisory while keeping explicit and locked narrator policies blocking.
+- Reduced narrator false positives by grounding target spans against aligned source narration and excluding dialogue, thoughts, and contextual Vietnamese third-person forms.
+- Preserved the original output path when resuming a job instead of creating a second filename.
+- Preserved structurally valid drafts when Senior Editor transport, schema, or non-blocking validation work is inconclusive, and stopped repair loops that repeat identical findings.
+- Reclassified valid drafts from older failed editor checkpoints during resume without modifying their translated text.
+- Built source release archives directly from tracked Git files so newly added modules cannot be omitted.
+
+### Tests
+
+- Added narrator policy, dialogue masking, contextual pronoun, job quality, checkpoint migration, and valid-draft preservation regressions.
+
+## 1.15.0-beta.45 - 2026-07-14
+
+### Fixed
+
+- Added a deterministic final narrator-conformance gate so source-grounded narration cannot publish a self-reference that conflicts with the effective narrator policy while dialogue, thoughts, letters, embedded stories, and ordinary subtitle dialogue remain isolated.
+- Replaced the single Senior Editor fallback with up to three bounded attempts for machine-verifiable failures. A repaired draft must pass independent conformance and structural validation; exhausted deterministic failures are preserved as blocked drafts instead of entering rebuilt output.
+- Added upgrade/resume auditing with content, profile, policy, and validator fingerprints. Only failing completed units are queued, exhausted fingerprints are not retried on every resume, and corrected batches rebuild output atomically before translation continues.
+- Added localized narrator-conformance and automatic-retry result notes to all seven frontend locales.
+
+### Tests
+
+- Added sanitized unit 12 and unit 13 regressions, retry convergence and exhaustion coverage, resume selection checks, and a 17-language by four-format narrator policy contract matrix.
+
+## 1.15.0-beta.44 - 2026-07-13
+
+### Added
+
+- **Senior Editor Result Notes**:
+  Every persisted Senior Editor run now includes a localized explanatory note
+  in the diagnostics UI. Notes distinguish clean passes, warning-only passes,
+  local repairs, LLM repairs, review-required drafts, provider failures, and
+  deterministic blocks, with reason codes retained for detailed diagnosis.
+- **Provisional Addressing Visibility**:
+  Evidence-bearing addressing candidates that are not safe for prompt use are
+  now shown as provisional in the structured context UI instead of appearing
+  active or disappearing from the audit trail.
+
+### Fixed
+
+- **Partial Vocative Evidence Activating a Complete Vietnamese Pair**:
+  A directly evidenced vocative can no longer validate an unrelated
+  self-reference, second-person pronoun, social basis, and durable scope as one
+  atomic rule. Unsupported Vietnamese pairs remain provisional, and durable
+  peer pairs require relationship support or observations from two distinct
+  units.
+- **Special Week and Silence Suzuka Addressing Regression**:
+  The source form `Suzuka-san` no longer promotes the unsupported
+  `tớ → Suzuka-san` target pair or the uncorroborated `peer` basis. Existing
+  unlocked contract-v3 copies are automatically reclassified as provisional
+  during database migration.
+
+## 1.15.0-beta.43 - 2026-07-13
+
+### Added
+
+- **Native Narrator Policies for All Supported Languages**:
+  Added evidence-gated explicit, pro-drop, omission-preferred, and
+  persona-required narrator policies for all 17 target languages. The same
+  lifecycle now runs through TXT, EPUB, SRT, and DOCX translation paths.
+- **Transparent Relationship Decisions**:
+  Relationship graph responses and the context interface now expose provisional
+  state, evidence tier, reason code, supporting units, match kind, and validator
+  version instead of a generic heuristic explanation.
+
+### Changed
+
+- **Retryable Narrator Bootstrap and Automatic Backfill**:
+  Ambiguous bootstrap attempts retry at 2, 4, 8, and 12 completed units and
+  every four units afterward. Voice evidence is persisted only against final
+  repaired output, and newly activated profiles queue localized Senior Editor
+  corrections for earlier completed units before job cleanup.
+- **Relationship Reasoning Contract v2**:
+  Social relationship type, age, rank, and conversational hierarchy are
+  independent dimensions. Missing evidence, ambiguous aliases, and judge
+  disagreement remain provisional; only deterministic contradictions are
+  quarantined.
+
+### Fixed
+
+- **Narrator Profile Never Appearing After an Ambiguous First Attempt**:
+  Bootstrap claims now include a completed-unit boundary and contract version,
+  so an inconclusive two-unit sample no longer blocks analysis after additional
+  chunks finish.
+- **False Relationship Quarantines**:
+  Addressing mirrors no longer participate in semantic reverse validation,
+  symmetric relationships can coexist with unequal rank or age, inverse roles
+  are canonicalized from consistent evidence, and Unicode punctuation variants
+  retain auditable source offsets.
+- **Concurrent GitHub Release Publication**:
+  Windows and macOS builds now feed one release publisher, which verifies the
+  complete asset set and generates SHA-256 checksums before publishing.
+
+## 1.15.0-beta.42 - 2026-07-13
+
+### Added
+
+- **Structured Cross-Language Narrator Voice**:
+  Added evidence-backed narrator profiles, observations, transitions, conflicts,
+  historical chunk scoping, manual locks, and language-specific voice dimensions
+  for all 17 supported target languages. Draft translation, Senior Editor audit,
+  retry, and refinement now consume the profile effective at the current chunk.
+- **Narrator Voice Context Interface**:
+  Added localized profile editing, locking, evidence visibility, and transition
+  conflict resolution to the context viewer in all seven interface locales.
+
+### Changed
+
+- **Evidence Instead of Pronoun Counts**:
+  Removed the Vietnamese pronoun-majority hint. Narrator state now requires exact
+  source and target evidence from at least two agreeing narrative segments with
+  at least 0.90 confidence. Dialogue addressing cannot override narrator state.
+- **Timeline-Safe Refinement and Resync**:
+  Refinement reads the original chunk's historical narrator profile without
+  mutating narrator history. Context re-sync quarantines downstream inferred
+  narrator state atomically while preserving locked manual profiles.
+
+### Fixed
+
+- **Gemini Senior Editor Schema Fallback**:
+  Gemini structured-output complexity rejections that return only a generic
+  `INVALID_ARGUMENT` response now activate the existing tagged-JSON fallback.
+  Reflection continues without weakening the narrator voice contract, while
+  ordinary non-structured Gemini request errors remain terminal.
+- **Cross-Chapter Narrator Drift**:
+  First-person narration such as Apollo Rainbow's Vietnamese `tôi` remains
+  isolated from dialogue-specific `tớ/cậu`, while supported chapter, scene, and
+  explicit narrator transitions remain possible.
+- **Senior Editor Settings Save Action**:
+  The Senior Editor provider, model, and separate API-key fields now enable both
+  `.env` save actions, with a directly accessible save button in the Senior
+  Editor section.
+
+## 1.15.0-beta.41 - 2026-07-13
+
+### Fixed
+
+- **Senior Editor Retry During Translation**:
+  Retrying an eligible Senior Editor result now requests a safe pause when the
+  same translation is active, waits for the current chunk boundary, performs
+  the editor-only retry, and automatically resumes from the checkpoint. A
+  different active translation still prevents the retry.
+- **Vietnamese Narrator Pronoun Drift**:
+  Senior Editor audit, repair, and manual retry prompts now receive a compact
+  narrator-voice baseline derived from prior completed chunks. Pair-specific
+  dialogue addressing such as `tớ/cậu` can no longer silently override an
+  established first-person narration style such as `tôi` across chapters.
+
+## 1.15.0-beta.40 - 2026-07-13
+
+### Fixed
+
+- **Senior Editor Model Persistence**:
+  The dedicated Senior Editor provider and model now survive asynchronous model
+  list refreshes, page reloads, and application restarts. Explicit settings saves
+  persist both values to `.env`, while temporary loading options can no longer
+  overwrite the selected model with an empty value.
+
+## 1.15.0-beta.39 - 2026-07-13
+
+### Added
+
+- **Immediate Senior Editor Retry**:
+  Editor diagnostics now start an editor-only retry immediately, expose queued,
+  running, and terminal states in the interface, preserve the best checkpointed
+  draft, and rebuild the translated output after a validated retry.
+- **Addressing Coverage Diagnostics**:
+  High-confidence dialogue attribution now checks that direct second-person and
+  named-address pairs produce a structured addressing candidate. One bounded
+  targeted retry fills omissions and records any remaining coverage gap.
+
+### Fixed
+
+- **Senior Editor Review Inflation**:
+  Minor, optional, no-op, and review-only observations are persisted as warnings
+  without forcing human review. Only unresolved material defects now produce a
+  review-required outcome, while validated local and full-chunk repairs remain
+  independently classified.
+- **Addressing Evidence Matching**:
+  Source evidence accepts equivalent straight and typographic quotation marks and
+  ellipsis forms while preserving dialogue boundaries. Audit logs now distinguish
+  a missing source form from an evidence-quote mismatch.
+
+## 1.15.0-beta.38 - 2026-07-12
+
+### Added
+
+- **Segment-Based Senior Editor Repairs**:
+  The `editor-issue-v5` contract gives each draft segment a stable identifier, so
+  repeated text can be corrected locally without ambiguous global quote matching.
+  Concise terminal state logs now report audit, locator, local-patch, fallback,
+  review-preserved, and hard-blocked outcomes.
+- **Context Preview Guidance**:
+  Global lore, directed addressing, relationship evolution, editor diagnostics,
+  and raw context views now explain their source of truth and effect on later chunks
+  in all seven interface locales.
+
+### Fixed
+
+- **Senior Editor Review Reliability**:
+  Safe local fixes are preserved before one bounded full-chunk fallback. A valid
+  draft with unresolved editorial findings remains review-required instead of
+  becoming a failed translation, and editor-only retries use a separate checkpoint
+  state rather than forcing full retranslation.
+- **Unsupported Addressing Rules**:
+  Indirect references can no longer create durable speaker-to-listener addressing
+  rules. Existing unlocked contract-v2 rules without exact spoken evidence are
+  quarantined, kept in the audit trail, and excluded from prompts and context exports.
+
+## 1.15.0-beta.37 - 2026-07-12
+
+### Added
+
+- **Senior Editor Model Selection on Job Resume**:
+  Added support for overriding/selecting the Senior Editor model, provider, custom endpoint,
+  and API key when resuming a paused translation job. The override panel now displays
+  a dedicated model picker for the Senior Editor if reflection mode was enabled in the original job.
+
+## 1.15.0-beta.36 - 2026-07-12
+
+### Fixed
+
+- **Capitalization Validation Bug**:
+  Fixed an issue where local replacement validation flagged false validation errors
+  (e.g., `replacement_not_applied_locally` and `replacement_missing_locally`)
+  for edits that only corrected capitalization, spacing, or accents. Case-only corrections
+  are now validated case-sensitively using case-preserved NFKC-normalized strings.
+
+- **Senior Editor Retry Context**:
+  Improved retry reliability in `locator_retry` and `reflection_parse_retry` stages
+  by including the model's previous critique response directly in the prompt. This ensures
+  the LLM knows exactly which issue IDs and quotes were generated in the first turn
+  when correcting ambiguous locators or malformed JSON payloads.
+
+## 1.15.0-beta.35 - 2026-07-12
+
+### Fixed
+
+- **Senior Editor Outcome Reporting**:
+  Successful local and LLM repairs now persist with their exact outcomes.
+  Review-required runs are reported separately from hard failures, and legacy
+  beta.32-beta.34 outcome values remain readable.
+
+- **Malformed Issue Isolation**:
+  Invalid replacement spans and ambiguous locators are corrected by issue ID
+  before repair. Valid sibling fixes are preserved, malformed local edits never
+  enter an impossible full rewrite, and minor or low-confidence observations
+  remain review evidence.
+
+- **Structured Output Reliability**:
+  Native-schema requests use a pure JSON prompt while explicit schema rejection
+  uses a tagged fallback. Transport, authentication, quota, and empty-response
+  failures no longer trigger duplicate unstructured requests.
+
+- **Cross-Provider Truncation Recovery**:
+  Finish reasons from Gemini, OpenAI-compatible providers, OpenRouter, Ollama,
+  LiteLLM, Mistral, DeepSeek, and Poe now share one truncation signal for bounded
+  adaptive Senior Editor retries.
+
+### Added
+
+- **Actionable Editor Contract**:
+  The `editor-issue-v4` contract distinguishes exact local replacements,
+  semantic rewrites, and review-only evidence while remaining compatible with
+  older responses.
+
+- **Detailed Safe Diagnostics**:
+  Editor diagnostics include result state, resolved and unresolved issue counts,
+  recovered truncations, provider finish state, and sanitized per-attempt data
+  without prompts, credentials, complete responses, or book excerpts.
+
+## 1.15.0-beta.34 - 2026-07-12
+
+### Added
+
+- **Model-Aware Reasoning Controls**:
+  Draft and Senior Editor settings now expose only the reasoning modes supported
+  by the selected Gemini, Ollama, official OpenAI, or OpenRouter model. Unknown
+  and OpenAI-compatible endpoints retain the provider default without sending
+  speculative parameters.
+
+- **Senior Editor Output Allowance**:
+  Editor output can use an automatic allowance, a fixed allowance, a reported
+  model maximum, or a bounded custom value. A truncated editor response receives
+  one adaptive retry with a larger output allowance and lower reasoning effort.
+
+- **Reasoning Diagnostics**:
+  Provider-reported thinking and total token counts are stored with editor runs
+  and displayed in diagnostics. Existing databases receive the new columns
+  through the normal startup migration.
+
+### Fixed
+
+- **Gemini MAX_TOKENS Recovery**:
+  Gemini 3 Flash Senior Editor calls default to minimal thinking and preserve
+  more of the response budget for JSON output. A `MAX_TOKENS` response no longer
+  immediately fails the chunk when a safe larger retry is available.
+
+- **Generation Settings Across Workflows**:
+  Profiles, normal jobs, batch jobs, samples, quick tests, and resumed jobs now
+  carry the same draft and editor reasoning configuration without persisting
+  credentials.
+
+### Tests
+
+- Added provider payload, capability classification, adaptive truncation retry,
+  token accounting, profile persistence, and database migration regressions.
+
+## 1.15.0-beta.33 - 2026-07-12
+
+### Fixed
+
+- **Gemini Senior Editor Structured Output**:
+  Gemini now receives the Senior Editor contract through its JSON Schema field
+  instead of the narrower OpenAPI schema field, preventing nested
+  `additionalProperties` constraints from causing HTTP 400 responses.
+
+- **Structured Output Fallback Classification**:
+  Deterministic schema rejections fall back once and are cached per editor
+  provider and model. Timeouts, empty responses, and unrelated request errors
+  no longer disable native structured output for the rest of the process.
+
+- **Gemini Client Error Logging**:
+  Non-retryable HTTP errors are reported as immediately rejected requests
+  instead of displaying a misleading transient attempt counter.
+
+### Tests
+
+- Added regressions for Gemini JSON Schema payloads, nested property ordering,
+  schema immutability, deterministic rejection handling, and capability-cache
+  behavior after empty responses.
+
+## 1.15.0-beta.32 - 2026-07-11
+
+### Added
+
+- **Independent Senior Editor Credentials**:
+  A separately selected Senior Editor provider now displays its own reactive
+  API-key control while continuing to use the provider's standard `.env`
+  variable. Draft and editor requests resolve independent provider endpoints,
+  credentials, and clients without persisting secrets.
+
+- **Checkpoint Database Maintenance**:
+  Startup safely removes checkpoint rows whose parent jobs were already
+  deleted. An idle-only maintenance action creates a timestamped backup,
+  checks integrity, truncates the WAL, and compacts the database.
+
+### Fixed
+
+- **Cross-Provider Editor Routing**:
+  OpenAI-compatible Senior Editors no longer inherit an Ollama or draft-cloud
+  endpoint, NVIDIA NIM credentials reach every file path, and repair output is
+  extracted through the selected editor client. An identical draft/editor
+  provider and model still reuse one client.
+
+- **False Senior Editor Repair Failures**:
+  No-op replacements are review evidence instead of rewrite requests, valid
+  issues survive partially incomplete contracts, locally applied edits are not
+  checked against stale locators, and only blocking source residue rejects a
+  repair. Diagnostics now distinguish local repair, LLM repair, review,
+  blocking, and transport outcomes.
+
+- **Orphaned Checkpoint Growth**:
+  SQLite foreign keys are enabled on every connection, while manual and aged
+  job deletion also remove checkpoint children explicitly for compatibility
+  with legacy databases that had foreign keys disabled.
+
+### Tests
+
+- Added cross-provider runtime, NIM credential, local-patch rebasing, no-op
+  issue, non-blocking residue, orphan cleanup, explicit deletion, backup, and
+  compaction regressions, plus seven-locale editor credential coverage.
+
+## 1.15.0-beta.31 - 2026-07-11
+
+### Added
+
+- **Classified Senior Editor Diagnostics**:
+  Every editor run and attempt now records a local outcome, stable failure
+  class, model metadata, token usage, parse status, bounded evidence excerpts,
+  and retry history. A reactive diagnostics view exposes review-required units
+  and queues editor-only retries without storing complete prompts or book text.
+
+- **Cross-Provider Senior Editor**:
+  Translation, batch, resume, quick-test, and refinement configuration can use
+  a separate Senior Editor provider and model. Empty selections inherit the
+  translation model, credentials remain environment-backed, and separate
+  clients prevent model changes from racing translation workers.
+
+- **Editor Issue Contract v3**:
+  Structured reflection now includes stable issue IDs, confidence, unique
+  contextual draft locators, exact replacements, and a twelve-issue limit.
+  Native JSON schema output is used where supported with an audited tagged-JSON
+  compatibility fallback.
+
+### Fixed
+
+- **Packaged `.env` Initialization**:
+  The executable now resolves one explicit `TranslateBook_Data` configuration
+  root before importing the application. Provider, model, endpoints, reflection
+  defaults, and masked key status load from `.env` without stale browser or
+  inherited process values hiding the configured provider.
+
+- **Senior Editor Model Selection**:
+  Senior Editor controls now appear only when reflection is enabled and use the
+  same searchable provider-backed model inventory as draft translation. Empty
+  selections continue to inherit the draft provider and model, with credentials
+  remaining centralized in `.env`.
+
+- **Settings Guidance and Reactivity**:
+  Previously unexplained provider, endpoint, API-key, model, context, editor,
+  and notification controls now include concise help text that updates live
+  across all seven interface locales.
+
+- **False Senior Editor Failures**:
+  Ambiguous locators are corrected before repair, exact non-overlapping edits
+  are applied locally, and validation checks the selected occurrence rather
+  than global word counts. A valid draft is preserved for review when only LLM
+  judgment remains uncertain; deterministic residue remains a hard gate.
+
+- **Ignored Editor Generation Controls**:
+  Per-request temperature, output limits, finish reasons, blocked status, and
+  truncation metadata now pass through the shared LLM client and providers.
+  Contract and repair retries therefore run at the requested deterministic
+  temperature instead of silently inheriting translation settings.
+
+- **Language-Biased Residue Detection**:
+  Protected names, aliases, glossary terms, markup, URLs, and preserved terms
+  are interval-masked before scanning. Social-address residue is sourced from
+  language profiles, while uncertain same-script copied phrases are review
+  evidence rather than automatic blockers.
+
+- **Editor, Context, and Refinement Recovery**:
+  Editor-failed drafts retain structured checkpoint diagnostics, relationship
+  evidence supports canonical inverse direction, addressing and relationship
+  state is manually editable, resync activation is staged atomically, and
+  refine-after/refine-only paths share the structured Senior Editor runner.
+
+### Tests
+
+- Added provider-option, diagnostics lifecycle, unique-locator, local-patch,
+  draft-preservation, multilingual residue, atomic resync, relationship,
+  addressing, refinement, adapter, and seven-locale reactivity regressions.
+
+## 1.15.0-beta.30 - 2026-07-10
+
+### Added
+
+- **Evidence-Backed Addressing Contract v2**:
+  New jobs now capture exact source address forms, target pronouns and
+  vocatives, register, social basis, scope, dialogue turn, confidence, and
+  provenance as typed deltas. Source forms are stored as evidence rather than
+  character aliases, and legacy jobs retain the contract-v1 markdown parser.
+
+- **Multi-Hop Social Seniority**:
+  Relationship reasoning now reconciles type, relative age, rank, hierarchy,
+  intimacy, and register across paths of up to three edges. Strong unique
+  derivations are projected into prompts, including Vietnamese senior/junior
+  guidance, while close competing paths are quarantined and audited.
+
+- **Addressing Resolution Diagnostics**:
+  Added pair-resolution and derived-seniority endpoints with current rules,
+  evidence, derivation paths, confidence, conflicts, and rejection reasons.
+
+- **Senior Editor Issue Contract v2**:
+  Editor output now separates exact local `draft_replacement` corrections from
+  durable `glossary_update` entries. Legacy `term_replacement` remains a
+  compatibility alias.
+
+### Fixed
+
+- **Addressing State Corruption**:
+  Addressing imports are delta-only and idempotent, invalid register text is
+  normalized, empty source forms export as `unknown`, multiple observed source
+  forms are preserved, and untranslated generic vocatives such as `Brother`
+  are rejected for Vietnamese output.
+
+- **Relationship Seniority Errors**:
+  Internally inconsistent parent, sibling, age, hierarchy, and institutional
+  rank claims are quarantined. Relationship resolution no longer trusts the
+  first matching edge and supports explicit situational source overrides
+  without replacing durable or locked facts.
+
+- **Untranslated Source Residue**:
+  A language-aware deterministic gate detects high-confidence source residue
+  across Latin, CJK, Hangul, RTL, and Thai scripts while protecting names,
+  markup, placeholders, brands, and approved terms. Major unresolved editor
+  issues now fail contract-v2 chunks instead of committing an unverified draft.
+
+- **Atomic Context Commits**:
+  Addressing and relationship candidates commit together only after translation,
+  editor, and adapter validation succeeds. Failed, empty, or invalid chunks roll
+  back staged context state and cannot influence later prompts.
+
+- **Stable Context Preview**:
+  The Current Addressing pane now reads live structured DB state, uses stable tab
+  identifiers, and remains visible when empty or temporarily unavailable.
+  Relationship Evolution and both Raw View structural headings remain visible,
+  with all new UI text reactive across seven locales.
+
+### Tests
+
+- Added regressions for addressing source evidence, empty forms, register
+  corruption, idempotency, atomic rollback, `Brother` residue, preserved
+  `Gram`, multilingual residue, batched LLM judging, multi-hop sibling
+  seniority, inconsistent hierarchy quarantine, stable tabs, and reactive i18n.
+
+## 1.15.0-beta.29 - 2026-07-10
+
+### Added
+
+- **Relationship Reasoning Engine**:
+  Added a typed relationship graph with evidence, conflicts, locks, quarantine,
+  audit history, markdown synchronization, DB-addressing projection, and
+  scene-aware prompt projection. Project mode is enabled by default for beta
+  testing; shadow and off modes remain available.
+
+- **Structured Relationship LLM Contract**:
+  Context-analysis LLMs now return evidence-bearing relationship candidates in
+  a strict JSON block. Malformed candidate JSON retries once and then becomes
+  an auditable quarantine instead of silently changing persistent state.
+
+- **Relationship Graph Diagnostics API**:
+  Added internal beta routes for graph nodes and edges, conflicts, pair audit,
+  edge locks, quarantine, and deletion without breaking existing addressing
+  routes.
+
+- **Addressing Rule Deletion Path**:
+  Added internal and REST deletion support for bad directed-addressing rules,
+  with audit entries so users can trace and remove incorrect pair state.
+
+### Fixed
+
+- **Directed Addressing Merge Safety**:
+  Tightened DB-addressing merges so Vietnamese rules with unspecified
+  self-reference are rejected, new speaker-addressee pairs require trusted
+  context or evidence, local dialogue attribution can reject reversed pairs,
+  reverse-pair hierarchy is cross-checked, and sudden register jumps are
+  blocked unless supported by trusted evidence.
+
+- **Failed Chunk State Leakage**:
+  Staged context-update DB-addressing imports until translation succeeds, so
+  empty or failed chunks cannot export questionable newly imported addressing
+  state back into later prompt context.
+
+- **Relationship State Leakage**:
+  Staged relationship candidates until successful adapter validation and kept
+  failed chunk snapshots on the last accepted graph state.
+
+- **Relationship and Addressing Cross-Checks**:
+  Cross-checked Vietnamese directed-address hierarchy against accepted graph
+  seniority, quarantined incompatible unlocked historical rules, and preserved
+  locked user addressing as the final override.
+
+- **Object Alias Contamination**:
+  Prevented weapons, swords, artifacts, items, skills, spells, abilities, and
+  other non-character terminology from entering character identity alias
+  links. Object-to-object terminology remains glossary/object data instead of
+  character identity state.
+
+- **Progress Log Duplication and Preview Updates**:
+  Updated progress logging so callback-driven web logs are not duplicated by
+  terminal fanout, while structured preview payloads remain untruncated for
+  the UI and older two-argument callbacks remain compatible.
+
+### Tests
+
+- Added regressions for Vietnamese unspecified addressing rejection,
+  reversed-dialogue pair rejection, compatible reverse-pair preservation,
+  untrusted register-jump rejection, markdown delete directives, sword/object
+  alias rejection, valid character alias preservation, and progress logging
+  callback behavior.
+
+## 1.15.0-beta.28 - 2026-07-09
+
+### Added
+
+- **Shared Language Profiles & Script-Aware Matching**:
+  Added internal language profiles and shared text matching helpers for
+  Latin, CJK, Hangul, RTL, Thai/no-space, and unknown/custom languages.
+  Unknown languages now use a neutral fallback instead of inheriting
+  Vietnamese-specific addressing behavior.
+
+- **DB-Backed Directed Addressing Prompt Bridge**:
+  Added markdown-to-DB import, context-update import, DB-to-markdown export,
+  prompt projection, lock-aware merge handling, and active-character filtering
+  for directed speaker-addressee address rules. DB rules now take precedence
+  over markdown addressing rows for the same directed pair while markdown
+  remains the human-editable compatibility layer.
+
+- **Terminal-Visible Pipeline Logging**:
+  Added a safe progress logging helper used by translation, refinement,
+  subtitle, glossary, DB-addressing, reflection, and checkpoint paths. The
+  helper supports callbacks with or without structured `data` and avoids
+  dumping full book content or secrets into logs.
+
+### Fixed
+
+- **Senior Editor Reflection Safety**:
+  Fixed crashes when reflection callbacks only accept `(event, message)`.
+  Malformed Senior Editor JSON now retries once with a strict JSON contract
+  and is logged as a parse failure instead of silently becoming `no_issues`.
+  Reflection repairs are accepted only after adapter validation passes for
+  generic units, EPUB/XHTML placeholders, and subtitle markers.
+
+- **Prompt Layer Consistency**:
+  Consolidated directed-addressing prompt injection across translation,
+  refinement, subtitle translation, and subtitle refinement prompts. Repair
+  prompts now receive the same active context, glossary, dialogue attribution,
+  and structured addressing projection as reflection prompts.
+
+- **Alias, Character, and Glossary Matching**:
+  Replaced unsafe substring activation with exact normalized aliases,
+  Latin/RTL word boundaries, and exact CJK/Hangul/no-space matching. This
+  prevents partial matches such as `Tom` activating `Tomio Momozawa` and
+  keeps similar names such as `Alex` and `Alles` separate.
+
+- **Chapter-Aware Chunking & Reconstruction**:
+  Added shared decorative separator detection for divider-only lines such as
+  `===`, `----`, `***`, and `___`. TXT and plain-mode chunking now keep
+  separators attached to neighboring content without standalone translation
+  units, HTML/XHTML chapter mode can detect paragraph-encoded chapter labels
+  through the shared detector, and TXT reconstruction preserves paragraph
+  spacing across chunk boundaries.
+
+- **Reflection and Runtime Configuration**:
+  Normal web-start requests now preserve `prompt_options.reflection_mode`
+  consistently, while the backend only falls back to
+  `ENABLE_CHUNK_REFLECTION` when the prompt option is omitted. Obsolete web
+  settings for `USE_LLM_SANITIZER` / `useLlmSanitizer` were removed.
+
+### Tests
+
+- Added regressions for reflection callback compatibility, malformed JSON
+  handling, repair validation, DB-addressing import/export/locks/projection,
+  unknown-language neutrality, script-aware matching, decorative separators,
+  HTML/XHTML chapter labels, TXT spacing, frontend reflection settings, and
+  stale sanitizer removal.
+- Full pytest suite: all 1,631 selected tests pass, with 1 skipped and 10
+  deselected.
+
+## 1.15.0-beta.27 - 2026-07-07
+
+### Fixed
+
+- **Vietnamese Parent-Child & Sibling Addressing Repairs**:
+  Repaired address-rule generation logic in `UniversalAddressingEngine` to
+  correctly map vocatives and self/second-person pronouns for family
+  relationships (e.g. `con → cha` instead of `con → anh` when a son
+  addresses his father, and `con → mẹ` instead of `con → cậu` for
+  mothers).
+
+- **Similar-Name Character Conflation Prevention**:
+  Inserted explicit warning structures into `SOURCE_ANALYSIS_SYSTEM_PROMPT`,
+  `CONSOLIDATION_SYSTEM_PROMPT`, and `UPDATE_SYSTEM_PROMPT` in
+  `novel_context.py`, as well as translation and editor critique prompt
+  generation steps in `prompts.py`, instructing the LLM to never merge or
+  conflate distinct characters with similar names (e.g. "Alles" vs "Alex").
+
+### Tests
+
+- Added unit tests verifying parent-child and sibling Vietnamese addressing
+  repairs in `UniversalAddressingEngine`.
+- Re-aligned outdated test assertions (removed deprecated arithmetic
+  formality-distance scoring, updated mock critique assertions to match
+  source-target inverted swapping).
+- Regenerated characterization test baselines (`refine_docx.json`,
+  `refine_epub.json`, `translate_refine_epub.json`).
+- Full pytest suite: all 1,609 unit, integration, and characterization tests
+  pass.
+
+## 1.15.0-beta.26 - 2026-07-06
+
+### Fixed
+
+- **Multi-Language Inverted Glossary Term Canonicalization & Deduplication**:
+  - Added script-agnostic `_has_non_ascii_target_script()` and `_is_inverted_target_to_source_glossary_pair()` in `src/utils/novel_context.py` to detect target-to-source term inversions across all supported target languages (`vi`, `fr`, `es`, `de`, `zh-CN`, `ja`, `ko`).
+  - Added Layer 1 inverse key matching in `merge_new_lore()` and `_normalize_glossary_entries()` to collapse reversed candidate entries into existing source glossary terms (e.g. `- huấn luyện viên: Trainer` or `- entraîneur: Trainer` into `- Trainer: Huấn luyện viên`).
+  - Updated `extract_term_replacements_from_critique()` in `src/core/translator.py` and `register_editor_terms()` in `NovelContextSession` to canonicalize inverted pairs extracted during Senior Editor reflection passes before saving.
+  - Added unit tests in `tests/unit/test_novel_context.py` verifying multi-language diacritics detection, lore normalization, and editor term registration.
+
+## 1.15.0-beta.25 - 2026-07-06
+
+### Added
+
+- **Cost-Effective Hybrid LLM Chapter Boundary Detection**:
+  - Added `verify_chapter_boundary_with_llm` fallback in `src/core/chunking/chapter_detector.py` to classify ambiguous short standalone headers (`Side Story 4`, `Intermezzo`) when deterministic regexes are uncertain.
+  - Maintains $0 cost for standard headings while ensuring 100% boundary accuracy for web novel formats across any language.
+
+- **Situational & Temporary Addressing Protection**:
+  - Added `is_situational: bool` and `scope` attributes to `AddressingUpdateDelta` in `src/utils/context_schema.py`.
+  - Added `is_situational_context()` helper and updated `ContextMergeEngine` and `render_addressing_projection` to isolate temporary roleplay scenes (e.g. butler/maid café, disguises, acting) from overwriting durable baseline character relationships.
+  - Enhanced Senior Editor reflection prompt (`src/prompts/prompts.py`) with `ADDRESSEE SHIFT ACCURACY`, `UNMOTIVATED PRONOUN SHIFTS`, and `SITUATIONAL / ROLEPLAY SCENE ISOLATION` audit rules.
+
+### Changed
+
+- **Multi-Language Universal Engine & Pure LLM Authority**:
+  - Refactored `novel_context.py` to delegate dynamic addressing line repairs directly to `UniversalAddressingEngine`.
+  - Removed arithmetic formality distance math (`calculate_formality_distance`) from `UniversalAddressingEngine`, giving 100% authority to Pure LLM + Senior Editor reflection.
+  - Removed dead formality maps and unreferenced legacy stub functions.
+
+- **Multi-Language Prompt Projection & Active Character Selection**:
+  - Upgraded `_select_relevant_character_profiles()` and `render_addressing_projection()` in `src/utils/context_projection.py` to resolve dictionary keys, CJK source names, and spoken aliases.
+  - Enforced 100% English prompt metadata (`### DIRECTED ADDRESSING RULES:`, `[SITUATIONAL CONTEXT: Active in this scene only]`, `[FORBIDDEN: ...]`) universally across all target languages (`AGENTS.md` compliant).
+  - Guarded `_sanitize_vietnamese_dynamic_state()` to skip for non-Vietnamese target languages.
+
+## 1.15.0-beta.24 - 2026-07-06
+
+### Fixed
+
+- **Senior Editor Glossary Term Validation & Sentence Filtering**:
+  - Added `_is_valid_glossary_term()` validation in `src/core/translator.py` and `src/utils/novel_context.py`.
+  - Filters out full dialogue line replacements, conversational exclamations, and sentences containing dialogue punctuation (`?`, `!`, `!?`, `...`, `…`, `;`, `\n`) from term extraction.
+  - Prevents full dialogue quotes from being registered as global glossary terms in `[GLOSSARY]`.
+  - Fixed `None` handling for `target_language` and `source_language` across prompt generation helpers (`src/prompts/prompts.py`, `src/prompts/examples/helpers.py`, `src/prompts/examples/placeholder_examples.py`).
+
+## 1.15.0-beta.23 - 2026-07-06
+
+### Fixed
+
+- **Language-Agnostic Addressee vs. Speaker Alignment Guidance**:
+  - Added explicit `ADDRESSEE VS SPEAKER ALIGNMENT` audit rules to `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`).
+  - Parameterized `addressee_examples` across all supported languages (Vietnamese, Japanese, Chinese, Korean, French, Spanish, German, and General).
+  - Instructs the Senior Editor that vocatives, direct address forms, and second-person pronouns in spoken dialogue refer to the listener (addressee), NOT the speaker, preventing false gender mismatch flags when a speaker uses a gendered address term matching the listener.
+
+## 1.15.0-beta.22 - 2026-07-06
+
+### Fixed
+
+- **Self-Proving Title-Name Identity Link Proof Validation**:
+  - Refined `_source_identity_link_proof_status()` in `src/utils/novel_context.py` to recognize title/alias mappings that explicitly incorporate target character name tokens (e.g. `"director akikawa yahoi"` $\rightarrow$ `"Yahoi Akikawa"`, `"trainer toujou"` $\rightarrow$ `"Toujou"`, `"momozawa trainer"` $\rightarrow$ `"Tomio Momozawa"`).
+  - Automatically approves self-proving title-name aliases when they uniquely match a candidate character, preventing false `Skipped unsafe identity link` warning logs while maintaining strict proof gating for generic title aliases.
+
+## 1.15.0-beta.21 - 2026-07-06
+
+### Added
+
+- **Senior Editor Dynamic Term Memory & Context Sync**:
+  - Implemented `extract_term_replacements_from_critique()` in `src/core/translator.py` to parse explicit term standardization orders (e.g. `Change all instances of "X" to "Y"`, `Replace "X" with "Y"`, `"X" -> "Y"`) from Senior Editor critiques.
+  - Added `register_editor_terms()` to `NovelContextSession` in `src/utils/novel_context.py` to dynamically persist Senior Editor term decisions directly into `global_lore` (under `[GLOSSARY]`) and `prompt_options["glossary_terms"]`.
+  - Wired `context_session` term registration into `run_chunk_reflection_pass()` and added automatic `sync_translated_output()` invocation upon unit completion in `generic_translator.py` and `xhtml_translator.py`.
+  - Ensures term standardization choices made by Senior Editor in chunk $N$ immediately propagate into Pass 1 and Pass 2 prompts for all subsequent chunks ($N+1, N+2...$), eliminating inter-chunk terminology contradictions.
+
+## 1.15.0-beta.20 - 2026-07-06
+
+### Fixed
+
+- **Language-Agnostic Dialogue Stuttering Guidance**:
+  - Parameterized `stutter_example` in `_get_language_specific_prompt_guidance()` (`src/prompts/prompts.py`) across all supported languages (Vietnamese, Japanese, Chinese, Korean, French, Spanish, German, and General).
+  - Ensures dialogue stuttering and speech disfluency prompt examples are target-language tailored without hardcoding Vietnamese examples in non-Vietnamese translation prompts.
+
+## 1.15.0-beta.19 - 2026-07-06
+
+### Fixed
+
+- **Dialogue Stuttering & Speech Disfluency Protection**:
+  - Added explicit protection for dialogue stuttering, hesitations, and vocal quirks (e.g. `"Wh-what..."` $\rightarrow$ `"Gì-gì..."`, `"S-sorry..."` $\rightarrow$ `"X-xin lỗi..."`) in Step 4 (`REGISTER HARMONY & NATURALNESS`) and `STRICT OUTPUT CONTRACT` of `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`).
+  - Forbids Senior Editor from flagging source dialogue stuttering as a "register error" or over-correcting flustered speech into overly-smooth, flattened sentences.
+
+## 1.15.0-beta.18 - 2026-07-06
+
+### Fixed
+
+- **Concise Proper Name & Academy Title Preservation**:
+  - Updated `generate_prompt()` (`src/prompts/prompts.py`) under `TRANSLATION PRINCIPLES` to instruct Pass 1 drafting LLMs to preserve concise proper names (e.g. `"Học viện Tracen"`) and forbid over-expanding them into long descriptive paraphrases (e.g. *"Học viện Đào tạo Mã nương Nhật Bản"*).
+  - Updated `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) under Step 0 (`EXPLICIT SOURCE INTENT & TARGET LOCALIZATION`) to explicitly audit proper names and academy titles for over-expansion, forcing Pass 2 Senior Editor to flag over-expanded terms as actionable audit defects and auto-repair them back to concise proper nouns.
+
+## 1.15.0-beta.17 - 2026-07-06
+
+### Fixed
+
+- **Senior Editor Positive Commentary Suppression & Actionable Critique Filtering**:
+  - Added `_filter_actionable_critiques()` in `src/core/translator.py` to automatically filter out positive validation notes (e.g. *"this is correct"*, *"well-handled"*, *"is valid"*) from Senior Editor critiques.
+  - Updated `STRICT OUTPUT CONTRACT` in `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) to instruct the LLM to output `NO_ISSUES` cleanly when all audit steps pass and suppress commentary on rules that require no repair.
+  - Updated `run_chunk_reflection_pass()` to skip the Repair LLM pass when no actionable defect bullet points exist, preventing false-positive over-corrections and reducing unnecessary API token usage.
+
+## 1.15.0-beta.16 - 2026-07-06
+
+### Added
+
+- **Multi-Language Tailored Senior Editor Prompt Guidance**: Added `_get_language_specific_prompt_guidance()` in `src/prompts/prompts.py`. Dynamically provides native prompt examples and audit rules for **Vietnamese**, **Japanese**, **Chinese**, **Korean**, **French**, **Spanish**, and **German**, ensuring every target language receives native linguistic guidance without cross-language prompt bleed.
+
+## 1.15.0-beta.15 - 2026-07-06
+
+### Fixed
+
+- **Internal Monologue & Emotional Mental Thought Guidance**: Refined `monologue_guidance` in `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) to explicitly distinguish standard self-reflection (`mình` / `tôi`) from emotional mental thoughts directed at a character (e.g. `"Em yêu anh..."`, `"Tớ nhớ cậu..."`), ensuring intimate address pairs in emotional thoughts/monologue are never falsely flagged as pronoun bleed.
+
+## 1.15.0-beta.14 - 2026-07-06
+
+### Fixed
+
+- **Language-Agnostic Senior Editor Prompting**: Parameterized prompt examples in `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) based on `target_language`. When translating to non-Vietnamese targets (e.g. French, Spanish, German, Japanese, Chinese, Korean), prompt rules dynamically render language-agnostic localization and pronoun examples rather than hardcoded Vietnamese terms.
+
+## 1.15.0-beta.13 - 2026-07-06
+
+### Fixed
+
+- **Senior Editor Misflag Audit & Vietnamese Internal Monologue Guidance ('mình')**: Refined `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) across all 4 audit steps:
+  - **Step 1**: Excluded natural target localization and smooth sentence flow from being misflagged as dropped text.
+  - **Step 2**: Recommended `'mình'` as the preferred natural choice for Vietnamese internal monologue self-reflection, preventing false pronoun bleed flags.
+  - **Step 4**: Protected intentional emotional/attitude shifts in dialogue from being misflagged as register errors.
+
+## 1.15.0-beta.12 - 2026-07-06
+
+### Fixed
+
+- **Senior Editor Internal Monologue Pronoun Bleed Protection**: Updated Step 2 in `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) to explicitly protect internal monologue, character thoughts (e.g. `"Liệu em có thắng..."`), and 1st-person POV self-references from being falsely flagged as pronoun bleed errors by the Senior Editor critic.
+
+## 1.15.0-beta.11 - 2026-07-06
+
+### Fixed
+
+- **Senior Editor Spoken Nickname Negative Constraints**: Reinforced Rule 0, Step 3, `STRICT OUTPUT CONTRACT`, and prompt section headers in `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) with explicit negative constraints to prohibit overcorrecting explicit spoken source text nicknames (e.g. `"Spe-chan"`, `"Maruzensky-chan"`) to default background lore relationship nicknames (e.g. `"Special"`, `"Maru-senpai"`).
+
+## 1.15.0-beta.10 - 2026-07-06
+
+### Added
+
+- **Senior Editor Critique TL;DR Log Summarizer**: Added `format_critique_tldr()` to `src/core/translator.py` to automatically parse and condense multi-line Senior Editor critique feedback into clean single-line summaries (e.g. `• Line dropped... | • Pronoun bleed... | (+2 more)`) for real-time log callbacks.
+
+### Fixed
+
+- **Senior Editor Explicit Spoken Name & Nickname Primacy**: Updated Rule 0 and Step 3 in `generate_chunk_reflection_prompt()` (`src/prompts/prompts.py`) to explicitly prohibit the 2-pass Senior Editor critic from replacing explicit source text names, nicknames, or honorific suffixes (e.g. `"Maruzensky-chan"`) with default background lore relationship nicknames (e.g. `"Maru-senpai"`). Ensures spoken source text names take 100% absolute primacy over background lore defaults.
+
+## 1.15.0-beta.9 - 2026-07-06
+
+### Fixed
+
+- **UI Layout Fix (2-Pass Reflection Engine Help Text)**: Corrected element association in `translation_interface.html` so that `#enableReflection` displays `settings:enable_chunk_reflection_help` ("Runs a 2-pass Senior Translation Editor reflection pass after each chunk..."), separating it from `#novelContextSelect` help text (`settings:novel_context_help`).
+
+## 1.15.0-beta.8 - 2026-07-06
+
+### Added
+
+- **Glossary & Custom Instructions Dynamic Context Integration**: Updated `update_novel_context_chunk()`, `UPDATE_USER_PROMPT_TEMPLATE`, and `SOURCE_ANALYSIS_USER_PROMPT_TEMPLATE` in `novel_context.py` to accept and render `# CUSTOM INSTRUCTIONS & STYLE GUIDELINES:` and `# ACTIVE PROJECT GLOSSARY:`. Prevents dynamic context extraction from proposing relationship or term updates that contradict active project glossaries or custom style guidelines.
+- **EPUB / DOCX 2-Pass Senior Editor Reflection**: Integrated `run_chunk_reflection_pass()` into `xhtml_translator.py` when `reflection_mode` is enabled, extending 2-pass Senior Editor refinement to EPUB/DOCX books while maintaining HTML placeholder integrity.
+
+## 1.15.0-beta.7 - 2026-07-06
+
+### Changed & Streamlined
+
+- **Streamlined Dynamic Context Pipeline**: Streamlined `_sanitize_vietnamese_dynamic_state()` to eliminate redundant micro-regex heuristics (`_repair_vietnamese_addressing_block`) and duplicate LLM double-sanitization loops, consolidating context quality assurance into Selective Character Profile Gating and the 2-Pass Senior Translation Editor.
+
+### Removed
+
+- **Obsolete `USE_LLM_SANITIZER` Setting & Auto-Migration**: Completely removed the obsolete `USE_LLM_SANITIZER` / `use_llm_sanitizer` flag from Web UI templates, JavaScript settings managers, backend API routes, and all 7 i18n locale files (`en`, `fr`, `es`, `de`, `zh-CN`, `ja`, `ko`). Added `cleanup_legacy_env_flags()` in `env_helper.py` to automatically detect and delete legacy `USE_LLM_SANITIZER` lines from `.env` and `.env.example` on startup.
+
+## 1.15.0-beta.6 - 2026-07-06
+
+### Fixed
+
+- **Senior Editor Output Context Feed-Forward**: Fixed `generic_translator.py` and `NovelContextSession` to pass the final translated & refined chunk (`translated_chunk=result`) into `update_novel_context_chunk()`, ensuring Senior Editor repairs and dialogue updates persist directly into `context.txt` and SQLite database checkpoints.
+
+## 1.15.0-beta.5 - 2026-07-06
+
+### Added
+
+- **Refined Multi-Language Rule 0 (Target Language Localization)**: Updated Rule 0 in `generate_chunk_reflection_prompt()` to enforce natural target language syntax and word order across all 8 supported target languages (e.g. in Vietnamese: translate English `"Momozawa Trainer"` -> `"Huấn luyện viên Momozawa"`, in Japanese `"桃沢トレーナー"`), ensuring explicit character names are preserved without forcing literal unlocalized English word order.
+
+### Changed
+
+- **Streamlined Context Pipeline**: Removed redundant micro-LLM verification calls (`verify_addressing_delta_with_llm()`) to eliminate extra API latency and token spend per chunk, relying on Selective Character Profile Gating and the 2-Pass Senior Editor for high-performance quality review.
+
+## 1.15.0-beta.4 - 2026-07-05
+
+### Added
+
+- **Explicit Source Text Primacy Rule**: Added Rule 0 to Senior Editor reflection and lore verification prompts (`generate_chunk_reflection_prompt()` and `verify_addressing_delta_with_llm()`), strictly forbidding the Senior Editor and Context Sanitizer from overwriting explicit spoken names or terms present in the source text dialogue with background lore defaults.
+
+### Fixed
+
+- **Chunk 95 SQLite Database Repair**: Fixed translated text for Chunk 95 in `F:\TranslateBook_Data\data\jobs.db` (`checkpoint_chunks` table), restoring `"Tomio, anh không ở lại sao?"` to match the explicit source text (`"Tomio, you’re not staying?"`).
+
+## 1.15.0-beta.3 - 2026-07-05
+
+### Added
+
+- **Selective Character Profile Gating**: Added `_select_relevant_character_profiles()` in `novel_context.py` to filter character profiles down to ONLY active characters present in the current scene/chunk text before feeding them into prompt summaries or LLM agent requests, preventing prompt context bloat.
+- **LLM Lore-Verification Agent**: Added `verify_addressing_delta_with_llm()` to evaluate proposed addressing deltas when they conflict with established rules using a targeted micro-LLM prompt, distinguishing genuine story shifts (disguises, arguments) from extraction hallucinations.
+- **Dialogue Self-Consistency Check with High-Confidence Safety Gate**: Added `cross_check_addressing_with_dialogue()` to cross-check extracted addressing rules against actual spoken dialogue in translated text, auto-correcting extracted rules only when speaker attribution confidence is high ($\ge 0.8$) and the spoken quote contains an explicit pronoun.
+
+### Fixed
+
+- **Volatile Register Jump Protection**: Added `_is_vietnamese_unstable_register_jump()` to prevent dynamic context extractions from unprompted jumping from stable anchored pronouns (`anh`, `chị`, `em`, `thầy`, `cô`, `tớ`, `tôi`, `sếp`) to volatile/archaic pronouns (`ta`, `ngươi`, `tao`, `mày`, `hắn`) unless accompanied by an explicit narrative attitude shift.
+
+
+## 1.15.0-beta.2 - 2026-07-05
+
+### Added
+
+- **Web UI & Configuration for Reflection Mode**: Added `enableReflection` checkbox under Prompt Options in the Web Interface, `ENABLE_CHUNK_REFLECTION=false` setting in `.env.example`, and `ENABLE_CHUNK_REFLECTION` reloadable export in `src/config.py`. Hooked `run_chunk_reflection_pass()` into `generic_translator.py`'s unit translation loop to execute the 2-pass Senior Editor quality review when enabled.
+- **Web UI & Configuration for LLM Context Sanitizer Agent**: Added `useLlmSanitizer` checkbox under Prompt Options in the Web Interface, `USE_LLM_SANITIZER=false` setting in `.env.example`, and `USE_LLM_SANITIZER` reloadable export in `src/config.py`. Hooked `sanitize_addressing_with_llm()` into dynamic state sanitization in `novel_context.py`.
+- **7-Language i18n Localization**: Added `enable_reflection_label` and `use_llm_sanitizer_label` across all 7 supported UI locales (`en`, `fr`, `es`, `de`, `zh-CN`, `ja`, `ko`).
+- **Auto-Update `.env.example` on Upgrade**: `launcher.py` now always refreshes `TranslateBook_Data/.env.example` from the bundled template on every launch, ensuring the reference documentation is always up to date.
+- **Auto-Populate Missing `.env` Settings**: Added `ensure_env_defaults()` in `env_helper.py` — on startup, any newly introduced configuration keys (e.g. `ENABLE_CHUNK_REFLECTION`, `USE_LLM_SANITIZER`) are automatically appended to the user's existing `.env` file with safe defaults, without overwriting existing values or API keys.
+- **Resume Inherits Current UI Settings**: The resume endpoint (`/api/resume`) and frontend now merge `prompt_options` overrides (reflection mode, LLM sanitizer) from the current UI state into resumed jobs. Legacy checkpoints that lack these settings automatically adopt whatever is toggled in the UI at resume time.
+
+### Fixed
+
+- **Execution & Log Visibility**: Fixed backend integration so reflection review logs (`reflection_start`, `reflection_critique`, `repair_applied`) and sanitizer logs (`novel_context_sanitized`) are emitted live to the Web UI log console and terminal stdout.
+
+
+## 1.15.0-beta.1 - 2026-07-05
+
+### Added
+
+- **2-Pass Chunk Reflection & Repair Engine**: Added optional LLM Senior Translation Editor reflection pass (`generate_chunk_reflection_prompt` and `generate_chunk_repair_prompt`), evaluating draft chunks for line-by-line fidelity, narrative vs. dialogue pronoun isolation, gender alignment, and register harmony before updating context memory.
+- **LLM Context Sanitizer Agent**: Added `sanitize_addressing_with_llm()` in `novel_context.py` to normalize relationship addressing forms with safe Python fallback ("Do No Harm" architecture).
+- **Dialogue Pronoun Isolation Guardrail**: Added explicit prompt instructions preventing dialogue self-references (`em`, `chú`, `con`) from leaking into general non-dialogue story narration (`tôi`).
+- **Incompatible Register Alignment Repairs**: Expanded `_HARMONIOUS_ALIGNMENT_MAP` in `UniversalAddressingEngine` to automatically repair hybrid register pairs like `tôi - ngươi` $\rightarrow$ `ta - ngươi`, `tớ - ngươi` $\rightarrow$ `ta - ngươi`, and `tớ - mày` $\rightarrow$ `tao - mày`.
+
+### Fixed
+
+- **WebSocket Reconnection & Auto-Resume**: Fixed WebSocket state synchronization on reconnect by invoking `reconcileStateWithServer()` when the socket re-establishes connection. Ongoing translations resume progress tracking immediately, and jobs completed or failed while offline properly render completion cards and trigger queue progression.
+
+
+## 1.14.54 - 2026-07-05
+
+### Fixed
+
+- **Character Gender Cross-Validation**: `UniversalAddressingEngine.validate_and_repair_pair()` now cross-validates target pronouns against character profile gender metadata (`character_genders`), preventing false male pronoun defaults (`anh`) for female addressees and repairing gender pronoun mismatches across all gender pairings (Female-Female, Male-Male, Female-Male, Male-Female).
+- **Addressing Operator & Hierarchy Guardrails**: Enhanced `_repair_vietnamese_addressing_line` and `_repair_vietnamese_addressing_block` in `novel_context.py` to convert invalid bidirectional (`↔`) asymmetric pronoun rules into directional (`→`) entries, clean stray markdown formatting, and prevent generic senior/junior relationships from falsely triggering trainer-trainee hierarchy logic.
+
+## 1.14.53 - 2026-07-05
+
+### Fixed
+
+- **Senior/Junior Academy Addressing Repairs**: Added `senior`, `senpai`, `tiền bối`, and `senior/junior` hierarchy context cues to `_VIETNAMESE_INCOMPATIBLE_ADDRESSING_REPAIRS` in `novel_context.py`, repairing incompatible `tôi/tớ` self-references into `em` when a junior student addresses older female/male seniors (`chị`/`anh`).
+- **Context File Data Cleanup**: Cleaned up addressing entries in `F:/TranslateBook_Data/Novel_Contexts/I_Want_to_Be_a_Fluffy__Airheaded_Gray_Umamusume_and_Trick_My_Trainer___Vietnamese__context.txt` (Apollo Rainbow addressing senior girls Maruzensky, Silence Suzuka, Symboli Rudolf now correctly uses `em` - `chị` and Tomio Momozawa uses `em` - `anh`).
+
+## 1.14.52 - 2026-07-05
+
+### Added
+
+- **Addressing Negative Constraints Directive**: Added `get_forbidden_pronouns` in `UniversalAddressingEngine` and updated `context_projection.py` to inject explicit negative constraints (`[CẤM DÙNG: ...]`) into translation system prompts.
+- **Post-Translation Addressing Auditor**: Added `audit_addressing_violations` in `UniversalAddressingEngine` to detect dialogue turns violating active pair pronoun rules without extra LLM API overhead.
+
+### Fixed
+
+- **Cross-Directional Pair Hierarchy Repair**: Enhanced `_repair_vietnamese_addressing_block` in `novel_context.py` to cross-reference reverse addressing pairs (e.g. Trainee addressing Trainer as peer `cậu` while Trainer addresses Trainee as `em`), automatically repairing hierarchy mismatches across context blocks.
+
+### Tests
+
+- Added unit test coverage `test_forbidden_pronouns_and_auditing` in `test_universal_addressing_engine.py` and `test_cross_directional_addressing_block_repair` in `test_novel_context.py`.
+
+## 1.14.51 - 2026-07-05
+
+### Added
+
+- **Directed Addressing Context Architecture**: Re-architected Vietnamese addressing context tracking into a DB-backed **Directed Addressing State Machine** with SQLite relational tables (`context_entities`, `context_addressing_rules`, `context_audit_logs`).
+- **Structured LLM Addressing Extraction**: Added `extract_addressing_deltas_from_text` to parse structured JSON deltas directly from LLM output while filtering out group/crowd dialogue.
+- **Deterministic Merge Policy Engine**: Implemented `ContextMergeEngine` enforcing User Lock overrides, configurable confidence thresholding (`ADDRESSING_MERGE_CONFIDENCE_THRESHOLD`, default `0.80`), register stability rules, and real-time SocketIO log events (`addressing_merged`, `addressing_rejected`).
+- **Read-Only Context Projection & Markdown Tables**: Created `context_projection.py` to render active DB rules into clean, non-mutable system prompt guidelines and formatted Markdown table views (`convert_addressing_text_to_markdown_table`).
+- **Universal Multi-Language Addressing Constraint Engine**: Introduced `UniversalAddressingEngine` (`src/utils/universal_addressing_engine.py`) providing high-performance O(1) table-driven intra-pair incompatibility filtering, register alignment, and social hierarchy constraint solving across Vietnamese, Japanese, Korean, Chinese, French, and English.
+- **Trainee-to-Trainer Hierarchy Repair**: Added automatic repair in `_repair_vietnamese_addressing_details` to catch and correct peer pronoun mismatches when a trainee addresses a senior trainer (replacing invalid `cậu` with senior title/vocative).
+- **Addressing Audit Trail & REST APIs**: Exposed `/api/translations/<id>/addressing-rules`, `/api/translations/<id>/addressing-audit-log`, and `/api/translations/<id>/addressing-rules/lock` endpoints for UI integration.
+
+### Tests
+
+- Added comprehensive unit test coverage (`test_directed_addressing_engine.py`) and novel integration test (`test_novel_addressing_integration.py`).
+
+## 1.14.50 - 2026-07-04
+
+
+### Fixed
+
+- **POV-aware novel context selection:** Canonicalized dialogue speaker aliases before selecting POV context and stopped first-person POV filtering from hiding explicit character-pair or quoted-address matches.
+- **Vietnamese addressing cleanup:** Narrowed possessive `second-person pronoun` cleanup so only known title heads such as `huấn luyện viên của Apollo Rainbow` are shortened, while uncertain possessive phrases remain unchanged. Vietnamese prompts now state that proven kinship, age, seniority, family, rank, and teacher/student hierarchy override name/title fallback.
+- **Vietnamese second-person addressing:** Repaired source names, nicknames, and honorific calls that leaked into `second-person pronoun` fields by converting them to Vietnamese address-pair terms when supported by relationship/gender evidence, while preserving the source call in `vocative/address form`.
+- **Vietnamese addressing persistence:** Added a relationship-driven fallback that seeds Vietnamese addressing forms from stored relationship/profile evidence when the addressing section is empty, preventing relationship-only context saves from leaving `## CURRENT ADDRESSING FORMS` blank.
+- **Vietnamese peer register default:** Adjusted peer/classmate/roommate/friendly-rival addressing fallback and prompt guidance to prefer `tớ/cậu` by default, while preserving `mình/cậu` when established character voice or stored context supports it.
+- **Vietnamese non-peer intimacy repair:** Prevented high-intimacy trainer, mentor, senior, and professional relationships from using peer self-references such as `mình` or `tớ`; these are repaired to `tôi` while preserving the appropriate second-person form and vocative, without forcing reciprocal addressing from the reverse direction alone.
+- **Vietnamese kinship addressing stability:** Prevented established directional kinship/hierarchy pairs such as `em/anh` from being overwritten by weaker neutralized updates such as `tôi/anh` when no attitude-shift evidence is present.
+- **Vietnamese peer and trainer addressing:** Repaired default peer-level `mình/cậu` updates to `tớ/cậu` unless an established soft/self-reflective voice is explicit, and prevented trainer-to-trainee entries from addressing the junior trainee as a senior form such as `chị`.
+- **Context resume source-of-truth:** Normal translation resume now keeps the edited context file as the source of truth when it already contains dynamic state entries, instead of letting an older checkpoint snapshot overwrite manual context fixes. Snapshot restore remains available for empty contexts and explicit snapshot-first flows.
+- **External context files:** Preserved existing absolute `.txt` context paths so contexts kept outside the default `Novel_Contexts` directory are not silently redirected to a same-named managed file.
+- **Glossary compound handling:** Added glossary prompt guidance for compound source phrases, preserving required glossary translations exactly while translating surrounding meaningful words naturally unless a longer glossary entry overrides them.
+- **NER glossary suggestions:** NER term suggestions now receive a small related subset of the existing glossary, selected by exact source matches or shared meaningful keywords, so new compound terms can reuse established translations without injecting the full glossary. Obvious untranslated fragments in suggested compound targets are repaired only when the raw source component is still present.
+- **Save & Re-sync feedback:** The context editor Save & Re-sync button now remains clickable while editing and reports when there are no context changes to save, instead of becoming a silent disabled button.
+
+### Tests
+
+- Added regression coverage for canonical dialogue speaker aliases, first-person context selection, explicit relationship matches, conservative Vietnamese possessive addressing cleanup, Vietnamese second-person source-name repair, non-peer intimacy repair, directional kinship-pair stability, peer `tớ/cậu` default repair, trainer-to-trainee hierarchy repair, edited-context-over-stale-snapshot resume behavior, relationship-seeded Vietnamese addressing with the default `tớ/cậu` peer register, external context path preservation, compound glossary guidance, related-glossary NER hints and repair, and Save & Re-sync no-change feedback.
+
+## 1.14.48 - 2026-07-03
+
+### Fixed
+
+- **Context-driven Vietnamese addressing guardrails:** Refined prompt style guardrails for Vietnamese translation targets to enforce strict adherence to actual relationship context, intimacy, and character dynamics rather than defaulting to generic fantasy/archaic address pairs (`ta-nàng`, `ta-ngươi`). Separated Korean vs Japanese honorific suffix rules (converting raw Korean `-ssi`/`-nim` into natural Vietnamese while allowing Japanese light novel suffixes like `-sama`/`-senpai`).
+- **Addressing line auto-formatting & persistence:** Enhanced novel context parsing (`_repair_vietnamese_addressing_line` and `_has_complete_vietnamese_addressing_details`) to auto-format simple 2-part addressing lines (such as `tớ - cậu`) into canonical 3-part format, preventing the `## CURRENT ADDRESSING FORMS` section from being cleared during context updates.
+- **Live context reload & UI button disabled states:** Added real-time disk context re-loading in `xhtml_translator` and `generic_translator` before translating each chunk/unit to immediately reflect edited Global Lore/Glossary entries without requiring job restarts. Added disabled styling and interaction locks for context re-sync UI buttons.
+- **Immediate Save & Re-sync interrupt visual feedback:** Added immediate UI status badge updates (`Re-sync: pausing`), instant button loading/disable locks, and active WebSocket log emissions when requesting context re-sync during an active translation job so the user is immediately informed that the system is waiting for the current chunk to finish before interrupting and propagating updated context.
+
+## 1.14.46 - 2026-07-03
+
+### Added
+
+- **Japanese & Korean target language style guardrails:** Added dedicated style guardrails to prompt generation for Japanese (`JAPANESE STYLE GUARDRAILS`) and Korean (`KOREAN STYLE GUARDRAILS`) target languages, enforcing preservation of honorific suffixes/titles (`-sama`, `-senpai`, `-san`, `-kun`, `-chan`, `-dono`, `-ssi`, `-nim`, `sunbae`, `oppa`, `unnie`, `hyung`, `noona`) and speech/politeness registers (`Desu/Masu` vs `Tameguchi`, `Jondaetmal` vs `Banmal`).
+
+## 1.14.45 - 2026-07-03
+
+### Fixed
+
+- **Vietnamese addressing filter resilience:** Added flexible Regex field extraction for LLM key variations (`self-reference`, `xưng`, `second-person pronoun`, `gọi`, `vocative/address form`, `danh xưng`).
+- **Expanded Eastern & extended family cues:** Expanded kinship and status cue dictionaries with Eastern fantasy, xianxia, wuxia, and extended family terms (`sư huynh`, `sư tỷ`, `sư đệ`, `sư phụ`, `sư tôn`, `tông chủ`, `trưởng lão`, `thiếu gia`, `tiểu thư`, `bác`, `chú`, `dì`, `thím`, `dượng`).
+- **Attitude shift & workplace title exemptions:** Preserved intentional sarcasm / attitude shift registers (`mỉa mai`, `châm biếm`, `thù địch`) without forcing kinship repairs, and exempted formal workplace/professional titles (`chủ tịch`, `giám đốc`, `quản gia`, `bác sĩ`, `luật sư`, `thanh tra`, `giáo sư`) from generic neutral downgrade filters.
+
+## 1.14.44 - 2026-07-03
+
+### Fixed
+
+- **Save & Re-sync button reactivity:** Fixed issue where context snapshot re-sync could only be triggered once due to chunk selection value resets, missing global anchor fallbacks, and unreleased button lock states on error.
+- **Context Preview header layout:** Added flex wrapping to the Context Preview header flex containers so action buttons and controls wrap cleanly instead of overflowing off-screen on smaller viewports.
+
+## 1.14.43 - 2026-07-03
+
+### Fixed
+
+- **Vietnamese novel-context addressing:** Repaired incompatible kinship pairs such as `tớ/chị` into coherent family-register forms and blocked generic downgrades like `tôi/cô` when existing context proves a sibling, seniority, royal, or title-based relationship.
+- **Selective context injection:** Prompt context selection now includes addressing rows when the source form or dialogue metadata references the pair, so entries such as `Aster Evans → Ellen Evans: "Sis"` are not dropped from translation/refinement prompts.
+- **Skipped-chunk source memory:** Novel context sessions now retain source text from chunks skipped by the update interval, giving later context updates the evidence needed for relationship and addressing corrections without extra LLM calls.
+- **Dialogue continuity:** Scene-local dialogue state now survives narration-only chunks and context re-sync passes instead of being cleared when no new dialogue turns are detected.
+- **Novel context snapshot resume:** Decoded resume snapshots now return canonical dynamic state text, preventing legacy dynamic-only snapshots from leaking malformed sections into later context views.
+- **Sample prompt context loading:** Sample generation now normalizes novel context filenames before loading them, matching the safer web/API-managed context-file behavior used by translation routes.
+
+### Tests
+
+- Added regression coverage for Vietnamese addressing repair, dialogue-driven context selection, skipped source memory, narration-only dialogue carryover, and canonical snapshot decoding.
+
+## 1.14.42 - 2026-07-03
+
+### Fixed
+
+- **Novel context addressing auto-formatting:** Added auto-sanitization for unquoted/2-part dynamic addressing entries into canonical 3-part format (`- Speaker → Addressee: "Alias" | "details" | reason`).
+- **Addressing field completeness validation:** Strengthened `_has_complete_vietnamese_addressing_details` to verify that all three addressing fields (`self-reference`, `second-person pronoun`, `vocative/address form`) are non-empty.
+
+## 1.14.41 - 2026-07-03
+
+### Fixed
+
+- **Vietnamese register addressing:** Enforced coherent register rules for Vietnamese dynamic addressing deltas, rejecting mismatched pronoun pairs such as `tôi` paired with contemptuous `ngươi`.
+- **Release title naming:** Release workflows now set GitHub Release titles directly to tag names (`v1.14.41`), omitting the `TranslateBooksWithLLMs` prefix.
+
+## 1.14.40 - 2026-07-03
+
+
+### Fixed
+
+- **Context identity consolidation:** Character consolidation can now preserve
+  source-proven identity links when it merges stable labels, forms, disguises,
+  codenames, or masked identities into a retained canonical character.
+- **Focused identity evidence:** Consolidation receives only identity-relevant
+  dynamic relationship lines instead of the full relationship state, reducing
+  prompt noise while still catching far-apart alias evidence.
+- **Context snapshot identity repair:** Resume/refine snapshots now keep merged
+  identity aliases such as transformed forms and source-side labels from
+  reappearing as separate canonical characters.
+
+## 1.14.39 - 2026-07-02
+
+### Fixed
+
+- **Paused context re-sync recovery:** Saved translation cards now expose unfinished context re-sync state, convert stale background runs back to a resumable paused state, and route recovery through Resume Re-sync instead of normal translation resume.
+- **Context re-sync safety guard:** Normal translation resume now refuses to start while a context re-sync is still running, pausing, or paused, preventing stale context snapshots from being skipped.
+- **Context re-sync progress logs:** Checkpoint-only Resume Re-sync jobs now restore enough in-memory state to stream progress logs and status updates while saved snapshots are being propagated.
+- **Saved-card context re-sync refresh:** Saved translation cards now keep polling while a context re-sync is running, so the badge and action button update when the background job completes.
+- **Saved-card context re-sync auto-resume:** Resume Re-sync now preserves the pending translation auto-resume follow-up after the re-sync completes.
+- **Saved-job failure badges:** Saved translation cards now recompute failed chunk counts from checkpoint rows, so the warning badge disappears after a previously failed chunk is retried successfully.
+
+## 1.14.38 - 2026-07-02
+
+### Fixed
+
+- **Relationship-based addressing:** Novel context prompts now store richer social basis, scope, and reason details for address forms, and translation prompts use those facts for direct address and indirect references across target languages.
+- **Short-name context selection:** Prompt context selection now matches distinctive short forms of romanized full names and avoids leaking unrelated one-sided relationship rows.
+- **Vietnamese address pairs:** Vietnamese prompt guidance now treats address as a paired social system, covering examples such as `em-cô`, `em-thầy`, `tớ-cậu`, `bố/mẹ-con`, title-only, name-only, and neutral forms without treating the list as exhaustive.
+- **Non-character magic terms:** Named magic circles, artifacts, rewards, and similar terms are filtered out of Characters & Genders while preserved as glossary terminology.
+- **Non-character organization terms:** Companies, organizations, factions, family houses, and similar proper nouns are pruned from Characters & Genders and left as glossary terminology when useful.
+- **Identity-link diagnostics:** Unsafe identity-link skips now log the exact rejection reason, while explicit appositive and `aka`-style source evidence can safely prove stable aliases.
+
+## 1.14.37 - 2026-07-01
+
+### Added
+
+- **Add New Content jobs:** Saved translations can now start a separate continuation job from an updated source file, reusing only the matching completed prefix and translating unfinished, changed, or newly added content into a new output file.
+- **Continuation progress logs:** Continuation jobs now log when prefix comparison starts and how many existing units were reused before translation begins.
+- **New-chapter-only context carryover:** When an Add New Content source contains only new chapters and no old prefix matches, the job now starts its novel context from the previous job's latest saved context snapshot.
+
+### Fixed
+
+- **Context timeline leakage:** Historical chunk context views now show their exact saved snapshot instead of mixing in future global lore, while explicit Global context edits still use the latest book-wide lore.
+- **Completed-job continuation bases:** Completed checkpoints now remain visible in the saved translations list as Add New Content bases, with normal Resume disabled for already-complete jobs.
+- **Windows venv setup:** `setup-and-update.bat` now uses an existing `venv\Scripts\python.exe` when available and falls back to `python` or `py -3` for first-time setup.
+
+## 1.14.36 - 2026-07-01
+
+### Fixed
+
+- **Kinship-based gender inference:** Added automatic gender inference from kinship nouns (e.g. "father of Shigure Aya" -> Male; "mother of Toda Hitona" -> Female) in character details and names during context normalization.
+- **Kinship-based consolidation merging:** Generic kinship role characters (like "Shigure Father") are now correctly merged into matching proper-named characters (like "Shigure Soichiro") during the consolidation pass, preferring proper names as the canonical keys.
+
+## 1.14.35 - 2026-07-01
+
+### Fixed
+
+- **Source-name identity memory:** Stable Chinese, Japanese, and Korean source addressing forms already present in dynamic context now become trusted character aliases during context merging, preventing later chunks from reintroducing pinyin, romaji, or revised-romanization duplicate characters such as `Tuo Ping`.
+- **CJK/Korean romanization guardrails:** Context-update prompts now explicitly reuse existing canonical romanized character names instead of inventing new romanized variants, while keeping romanization suggestions in glossary entries.
+
+## 1.14.34 - 2026-07-01
+
+### Fixed
+
+- **Unicode novel-context filenames:** Auto-created novel context filenames now preserve Unicode letters and numbers, so source titles in Chinese, Japanese, Korean, and other scripts no longer collapse into underscores.
+- **Name alias consistency:** Novel-context glossary entries that point to an existing character now also act as identity aliases during context merging, preventing source-name variants from becoming duplicate character entries.
+- **CJK/Korean source-name variants:** Han full-name glossary entries now infer the common final two-character short form, and three-syllable Hangul names infer the two-syllable given-name form when the glossary target resolves to one known character.
+- **Address suffix aliases:** Romanized address forms such as `Akane-san`, `Takuhei-kun`, and `Kim Min-su-ssi` now merge into the base character entry instead of creating separate durable characters.
+
+## 1.14.33 - 2026-07-01
+
+### Fixed
+
+- **EPUB refine-after topology:** Chapter-aware EPUB refine-after now uses EPUB spine/content files as refinement units, preserving the stable chapter/file topology instead of re-chunking the translated EPUB into a different number of refinement requests.
+- **Legacy checkpoint compatibility:** This avoids trusting old over-split EPUB checkpoint rows for refinement call count, so projects completed before the chapter-splitting fix do not inherit the old `1020`-chunk topology during refinement.
+
+## 1.14.32 - 2026-07-01
+
+### Fixed
+
+- **Refinement phase start freeze:** Refinement no longer streams the full novel context payload to the browser when loading global lore for phase 2, preventing large context files from freezing the UI/socket before the first refinement request.
+- **EPUB refinement progress:** EPUB refine-after now emits progress per refinement chunk instead of only after each XHTML file, preventing phase 2 from looking frozen during slow or multi-chunk files.
+
+## 1.14.31 - 2026-06-30
+
+### Fixed
+
+- **Global context edit cost:** Saving changes from the Global context tab now propagates the edited global lore through saved snapshots without replaying every later chunk through the LLM, as long as the dynamic state was unchanged.
+- **Timeline safety:** Dynamic-state edits still use the existing forward LLM replay, and global-only propagation falls back to LLM replay when a later chunk has no saved dynamic snapshot to preserve.
+- **Pause/resume consistency:** Context resync checkpoints now remember whether the run is global-lore propagation or timeline replay, so paused jobs resume with the same behavior.
+
+## 1.14.30 - 2026-06-30
+
+### Fixed
+
+- **Chapter-aware chunking false positives:** Generic chapter detection no longer treats English prose such as `That's why I...`, `But I...`, `If I...`, `I...`, or `It's been 1 year.` as repeated generic chapter headings. This prevents chapter-aware mode from splitting normal prose into many tiny translation units.
+- **Shared file-type coverage:** The fix applies through the shared chapter detector used by TXT, EPUB Plain Text Mode, and DOCX Plain Text Mode, while preserving known multilingual headings and safe generic numbered headings.
+
+## 1.14.29 - 2026-06-30
+
+### Fixed
+
+- **Live chunk-budget refresh:** New web translation jobs now reload `.env` before resolving `MAX_TOKENS_PER_CHUNK` when the UI does not send an explicit per-job value, preventing stale server defaults from silently controlling chunk size.
+- **Chunk-budget observability:** EPUB HTML and plain-text translation logs now include the source-token budget used when creating translation units, making unexpected chunk counts easier to diagnose immediately.
+
+## 1.14.28 - 2026-06-30
+
+### Fixed
+
+- **Seria name variant canonicalization:** Relationship and addressing context now resolves compact spacing variants such as `Seria Bladi Demonkill` and one-edit typo variants such as `Seria Blady Demonkill` to `Seria Bladi Demon Kill` when the match is unique.
+- **Composite relationship party normalization:** Dynamic context now canonicalizes character names inside composite parties such as `Kim Si-hu & Seria Bladi Demonkill`.
+- **Vietnamese first-person consistency:** Translation and refinement prompts now include Vietnamese style guardrails that prefer consistent serious-literary `tôi` narration over accidental switches to casual `mình`.
+
+## 1.14.27 - 2026-06-30
+
+### Fixed
+
+- **Singular/plural character alias merge:** Near-identical singular/plural entity names such as `Death God` and `Death Gods` now merge only when their descriptions substantially overlap, and the plural form is persisted as an alias.
+- **Plural group safety:** Weakly related plural groups remain separate, preventing broad plural normalization from merging background groups into named individuals.
+
+## 1.14.26 - 2026-06-30
+
+### Fixed
+
+- **Deduplicated context logs:** Removed duplicate context-change emissions caused by the core context logger/print path and the UI progress callback both reporting the same event.
+- **Safer dialogue carry-over:** Dialogue speaker state now persists only from current high-confidence dialogue turns. Empty, malformed, or uncertain dialogue attribution clears the carried state instead of silently reusing a previous chunk's speaker.
+- **Weaker dialogue continuity prompt:** Context-update prompts now treat previous scene speaker state as a weak hint only, requiring local source evidence before assigning a speaker.
+
+## 1.14.25 - 2026-06-29
+
+### Fixed
+
+- **Restored legacy novel-context update prompts:** Reverted lore updates from full JSON objects back to the stricter legacy `[NEW_CHARACTERS]`, `[IDENTITY_LINKS]`, `[NEW_GLOSSARY]`, and `[DYNAMIC_STATE]` blocks because JSON-shaped character objects made bad semantic facts easier to merge.
+- **Role-only character quarantine:** Prevented transferable roles and address terms such as `Summoner`, `Summoner-nim`, `NPC`, and `Player Character` from being admitted or updated as durable characters unless a source-proven identity link maps them to a canonical person.
+- **Safer prompt and dynamic context views:** Existing role-like character pollution is no longer injected into selective context prompts or used as a dynamic-state relationship party, without silently deleting user context files.
+- **Preserved durable resync controls:** Kept the v1.4.25 pause/resume/status UI and checkpoint persistence for context resync.
+
+## 1.4.25 - 2026-06-29
+
+### Added
+
+- **Durable context resync controls:** Added background API routes and UI buttons to manually trigger and inspect progress of context resynchronization across translation checkpoints.
+- **Structured JSON-based context updates:** Replaced plaintext key-value prompts with structured JSON instructions for `new_characters`, `identity_links`, `new_glossary`, and `dynamic_state`, supporting both camelCase/snake_case and map/list output formats from the LLM.
+- **Safeguard for unproven character merges:** Added checks to reject identity links attempting to merge distinct named characters (e.g., merging Alice and Bob) if both already exist with detailed lore descriptions, protecting against hallucinated aliases.
+- **Durable dynamic state deltas:** Enabled partial update support for relationships and addressing forms, where omitted fields remain stored indefinitely, and explicit `DELETE` operations can prune stale entries.
+
+## 1.4.24 - 2026-06-29
+
+### Fixed
+
+- **Context resync scene key reset:** Fixed a bug during context resync where chapter boundaries were not detected due to missing `chapter_index` in EPUB database checkpoints. We added a fallback check for `scene_key` inside the `dialogue_attribution` dictionary to correctly reset dialogue speaker tracking at chapter transitions across all formats.
+- **EPUB chapter index persistence:** Updated the EPUB translation pipeline to write `chapter_index` to the root of `chunk_data` in the SQLite checkpoint database, aligning it with other formats.
+
+## 1.4.23 - 2026-06-29
+
+### Added
+
+- **Multi-language explicit identity links:** Explicit `[IDENTITY_LINKS]` and `[CHARACTER ALIASES]` now accept physical aliases like "boy", "girl", "child", "man", "woman" and their equivalents in any language (e.g. "소년", "garçon", "cậu bé"). When a link is explicitly established, it bypasses the unstable-alias safeguard to merge the character cards. The background safeguard still protects against automatic/incidental mapping of these words.
+
+## 1.4.22 - 2026-06-29
+
+### Fixed
+
+- **Model/Provider override on resume:** Fixed a bug where switching models or providers when resuming a paused translation did not persist to the checkpoint database and in-memory translation status. This caused the UI to show the original model and reverted the job back to the original model if paused/resumed again.
+
+## 1.4.21 - 2026-06-29
+
+### Fixed
+
+- **Concept/Hallucination filtering in Novel Context:** Extended character recognition logic to automatically detect and discard abstract concepts, personifications, hallucinations, metaphors, or inanimate objects (e.g. "Death" as a personified concept) from the character list based on their description.
+- **Spurious delete key handling:** Fixed parsing of `DELETE` bullet points when the LLM outputs command bullet lines out of sequence (e.g., `- DELETE:` or `- DELETE: <name>`), preventing them from being added to the character list as a character named "DELETE".
+
+## 1.4.20 - 2026-06-28
+
+
+### Added
+
+- **LLM context consolidation pass**: after every N context chunk updates (default: 5, configurable via `NOVEL_CONTEXT_CONSOLIDATION_INTERVAL` in `.env`), an LLM call rewrites the `## CHARACTERS & GENDERS` section to merge duplicate or redundant character descriptions that the deterministic heuristic merge layer misses. This fixes issues such as the same character receiving near-identical descriptions with slightly different wording across chunks (e.g., "protagonist of the game Glory of Victory, a soldier who seeks revenge" appended after an identical entry). Set `NOVEL_CONTEXT_CONSOLIDATION_INTERVAL=0` to disable.
+- Added `BYPASS_CONTEXT_GATING` checkbox to the Web UI Novel Context settings panel. The toggle lets users enable or disable context validation per-job from the UI. The state is persisted to profiles and `.env` via the Settings panel and updates reactively across all 7 supported UI languages.
+
+## 1.4.19 - 2026-06-28
+
+
+### Added
+
+- New configuration setting `BYPASS_CONTEXT_GATING` (default: `True`) to bypass deterministic English pronoun regex checks on source text. This allows the translation pipeline to directly trust LLM-identified character genders, aliases, and corrections, resolving context degradation issues during translation of non-English novels.
+
+## 1.4.18 - 2026-06-25
+
+### Fixed
+
+- Novel context now gates new or corrective character genders against
+  deterministic source evidence before merging them into durable lore. This
+  prevents early chunks from saving nearby pronouns from another character as a
+  character's gender, such as storing Kim Ji-an as female when chunk 1 does not
+  prove that.
+
+## 1.4.17 - 2026-06-25
+
+### Fixed
+
+- Novel context no longer accepts bare narrative-role labels such as
+  `Protagonist`, `Hero`, or `Main Character` as canonical character names or
+  identity links. This prevents in-story uses of "protagonist" from merging the
+  main character into a different named character.
+- Factions, nations, companies, and one-off advertisement/job labels are now
+  filtered out of `CHARACTERS & GENDERS` instead of being stored as people.
+- Novel context now rejects bare romantic/family labels such as `Lover` or
+  `Ex-girlfriend` as durable identity aliases, and drops relationship rows that
+  collapse to the same character after alias resolution.
+- Source-side relationship clauses such as `Kim Ji-an's ex-girlfriend cheated
+  on him` can repair Kim Ji-an's gender from direct pronoun evidence without
+  treating the existence of an ex-girlfriend as gender proof by itself.
+- Reincarnation cleanup now prevents the original human identity from absorbing
+  the gender of the current reincarnated body while still allowing the current
+  named form to be repaired from source-proven body evidence.
+
+## 1.4.16 - 2026-06-25
+
+### Fixed
+
+- Generated compact `.env` files now include
+  `NOVEL_CONTEXT_SOURCE_MEMORY_CHARS`, matching `.env.example`, the docs, and
+  the runtime default.
+
+## 1.4.15 - 2026-06-25
+
+### Improved
+
+- Novel context source analysis now receives a bounded rolling memory of
+  previous source chunks via `NOVEL_CONTEXT_SOURCE_MEMORY_CHARS`, helping it
+  resolve identities and genders that are split across chunk boundaries.
+
+### Fixed
+
+- Work titles such as games, novels, or series are no longer persisted in
+  `CHARACTERS & GENDERS` when the model describes them as non-character works.
+- Reincarnation context can now repair a stale target identity gender when one
+  context entry stores the current-form gender and the dynamic state links that
+  source identity to the current named form.
+
+## 1.4.14 - 2026-06-24
+
+This stable release hardens the source-derived novel context architecture
+around failed chunks, resume, re-sync, refinement, and prompt assembly.
+
+### Improved
+
+- Novel context is now injected into the dynamic user prompt instead of the
+  system prompt. This keeps provider-side system-prompt caching stable while
+  still giving each translation/refinement request the relevant book memory.
+- Oversized novel context is rendered through a relevance selector that keeps
+  matching characters, aliases, glossary terms, addressing forms, and dormant
+  relationships for the current unit instead of blindly sending the whole file.
+- New `.env` knobs control context prompt size and source-context update
+  cadence: `NOVEL_CONTEXT_PROMPT_MAX_TOKENS` and
+  `NOVEL_CONTEXT_UPDATE_INTERVAL`.
+- Original glossary rules remain hard requirements. Novel-context glossary or
+  terminology entries are treated as discovered hints, and the prompt now
+  explicitly says `# GLOSSARY - REQUIRED TRANSLATIONS` wins on conflict.
+- The glossary preview UI now describes the block as being inserted into the
+  translation prompt, matching the actual architecture.
+- Context analysis prompts now explicitly tell the LLM to correct stale stored
+  gender when the latest source proves the current named form's gender, and to
+  avoid saving prompt/control labels as character facts.
+- Context analysis now treats descriptor-only labels such as `Protagonist of X`
+  or `character from X` as merge-only hints instead of durable character names.
+- Narrative-role phrases such as `Protagonist of X` can still resolve
+  addressing and relationship rows to the named character without being saved
+  as noisy aliases.
+- Context analysis now tells the LLM to omit numbered/background casualties and
+  generic staff labels unless they are source-named, recurring, or needed for a
+  durable addressing/relationship choice.
+- Chapter-aware translation help now explains that short chapters are not
+  merged together, so request count can be higher than normal chunking while
+  preserving chapter/refinement alignment.
+
+### Fixed
+
+- Deferred failed-chunk retries no longer re-run source context analysis for
+  the same chunk, preventing duplicated character, glossary, dialogue, or
+  relationship updates.
+- Failed-chunk retries now preserve the original per-chunk source-context
+  snapshot instead of overwriting it with later/final context.
+- Resume now restores the latest available source-context snapshot, including
+  snapshots from failed or partial chunks, while keeping failed translation
+  output retryable.
+- Failed chunks with source-context snapshots are now visible in the context
+  selector and can be edited/re-synced like completed source snapshots.
+- EPUB resume now restores source context from the latest processed snapshot
+  instead of rewinding to the chunk before the first failed translation.
+- Plain-text mode now carries source-context snapshots from failed or partial
+  previous units into later files/chapters.
+- Generic TXT/SRT retry paths preserve the failed unit's original
+  source-context snapshot when a same-run deferred retry succeeds.
+- Generated `.env` files are now compact and practical instead of copying the
+  full commented `.env.example` reference. New private configs still include
+  current knobs such as `NOVEL_CONTEXT_PROMPT_MAX_TOKENS` and
+  `NOVEL_CONTEXT_UPDATE_INTERVAL`.
+- GitHub release workflow metadata now uses the current tag name and publishes
+  stable releases instead of the stale `1.4.12` prerelease label.
+- GitHub release notes now use only the current changelog section and unwrap
+  source hard line breaks so the release page does not show awkward manual
+  newlines.
+- Source-proven pronoun evidence such as `Eric suspected Valentine ... her
+  identity` can now repair a stale character gender without incorrectly
+  flipping the sentence subject.
+- Character profiles now discard context prompt/control fragments such as
+  `current rank and title` or `title/nickname for Eric` instead of persisting
+  them as lore.
+- Internal correction reasons such as `source pronoun evidence` and
+  `reincarnated current form` are no longer saved as character descriptions.
+- Descriptor-only role entries now merge into the named character when a shared
+  source-work role proves the identity, without renaming the character to the
+  descriptor.
+- Scene-local aliases such as `the girl`, `the protagonist`, or `user` are no
+  longer persisted as character aliases.
+- Ruler/title descriptions such as `ruler of the Empire; Emperor, ruler of the
+  Empire` now compact into one concise title fact.
+- Incidental numbered/background roles such as wounded soldiers and generic
+  one-off doctors are filtered out of durable global lore, while recurring or
+  source-named generic roles remain preserved.
+- Legacy context normalization now also removes relationship/addressing rows
+  that point only at discarded background characters, while preserving arbitrary
+  dormant relationships for any number of chunks.
+
+### Safety and compatibility
+
+- Refinement still ignores failed or partial translated-output rows, so source
+  facts can help later chapters without treating untranslated fallback text as
+  final translation.
+- Context re-sync walks failed or partial source chunks for global context, but
+  their translation status remains unchanged and retryable.
+- The hard glossary remains independent from source-derived novel context, so
+  existing glossary databases and NER/imported glossary terms keep their
+  priority.
+
+### Validation
+
+- Full automated validation passed: 1,422 passed, 1 skipped, 10 deselected.
+- Windows executable built and smoke-tested locally: `/`, English settings
+  locale JSON, and translation batch JavaScript all returned HTTP 200. A fresh
+  first-run folder generated the compact `.env` with the current context knobs.
+
+## 1.4.13 - 2026-06-23
+
+This stable release makes refinement consume the final canonical lore while
+preserving scene-local history, and turns context re-sync into an actionable
+correction workflow instead of a context-only update.
+
+### Improved
+
+- Character identity is now represented by a shared canonical alias registry.
+  Source-proven titles, ranks, nicknames, and multilingual aliases resolve to
+  the same character across global lore, relationship/addressing state,
+  dialogue attribution, translation, re-sync, resume, and refinement.
+- Context analysis now emits explicit identity links only when the source
+  establishes stable identity; ambiguous or transferable bare ranks remain
+  separate instead of being merged by role similarity.
+- Saved dialogue maps and scene speaker state are re-canonicalized against the
+  latest identity registry before prompt injection.
+- Every refinement unit now receives the final book-wide character identities,
+  source-proven genders, and glossary terminology.
+- Historical addressing forms, relationship evolution, and dialogue
+  attribution remain mapped to the appropriate translation unit, preventing
+  later relationship state from leaking into early chapters.
+- Refinement prompts explicitly prevent later-discovered global facts from
+  being added, foreshadowed, or revealed before they appear locally.
+- Background context re-sync can reuse API credentials from the live job and
+  waits according to the configured request timeout when pausing active work.
+- Addressing forms and relationship evolution now use a durable keyed registry:
+  LLM responses provide only deltas, omitted pairs remain stored for any number
+  of chunks, and matching participant pairs update deterministically.
+
+### Fixed
+
+- Character profiles no longer retain explanations such as `Gender confirmed
+  by source text ...`; durable profiles store only the normalized result.
+- Context-analysis prompts explicitly reject gender-neutral words such as
+  `spouse`, military rank, occupation, or role context as new gender evidence.
+- Direct gendered descriptions retained in metadata, such as `a blonde-haired
+  girl`, now promote an earlier `Unspecified` entry deterministically.
+- A source-proven title identity such as `Lieutenant Colonel` → `Eric` now
+  merges duplicate character entries and rewrites relationship, addressing,
+  and dialogue references to the canonical name.
+- Malformed character entries with embedded contradictory gender fragments,
+  such as `Male, ...; Female, ...`, are collapsed into one canonical gender
+  and concise cumulative description.
+- Bare role entries are now folded into a named character when exactly one
+  named entry already carries that role as its own title; ambiguous shared
+  roles remain separate unless there is an explicit identity link.
+- Reincarnated/transformed characters now keep the gender of the current
+  named form rather than the previous body, and raw source evidence can repair
+  this before context is saved for any supported file type.
+- Raw source coreference such as `the Lieutenant Colonel's office` followed by
+  `Eric` now supplements missed model identity links in the shared context
+  updater, so the fix applies to TXT, EPUB, SRT, DOCX, and chapter mode.
+- Direct-address title dialogue such as `"Lieutenant Colonel."` followed by
+  Eric replying or acting now also supplements missed identity links.
+- Context-analysis prompts now explicitly preserve source-language title or
+  alias surface forms in identity links when non-English source text proves
+  the mapping.
+- Auto-updated source context now remains available even when the chunk's
+  translation output fails, so later chapters can still use discovered
+  character, gender, glossary, relationship, and dialogue facts.
+- Failed TXT/SRT units, plain-text chunks, and EPUB/XHTML chunks now receive a
+  deferred automatic retry before final output is reconstructed.
+- Failed chunks remain marked retryable until their translation succeeds;
+  source-context snapshots may advance, but source-language fallback text is
+  never treated as a completed translation.
+- Refinement context mapping ignores failed or partial translated-output rows,
+  while background re-sync still walks their source text so global context is
+  not weakened by a translation failure.
+- The context editor now reports a visible localized error when Save &
+  Re-sync cannot start because no editable snapshot, job, or global anchor is
+  available.
+- Context re-sync no longer crashes with `AttributeError: 'int' object has no
+  attribute 'value'` when recording a numeric context revision.
+- The context editor now exposes a dedicated book-wide `Global Context` view.
+  Editing global characters, genders, glossary, or terminology automatically
+  anchors re-sync at the first available historical snapshot; users no longer
+  need to select an arbitrary chunk for global corrections.
+- Early refinement units could retain incomplete character or glossary lore
+  even after later source text established the canonical facts.
+- Re-syncing context during or after refinement could update snapshots without
+  correcting the already-produced final translation.
+- Selecting an early context snapshot in the editor displayed its obsolete
+  character, gender, and glossary lore instead of combining current global
+  lore with that chunk's historical relationship state.
+- Saving an edited historical snapshot temporarily replaced the browser's
+  cached `Latest state` view with the selected chunk.
+- Re-sync during refinement now invalidates the old result, repairs subsequent
+  snapshots, and runs one fresh corrective refinement from the preserved
+  first-pass translation.
+- Corrective refinement replaces the intended final file across TXT, SRT,
+  EPUB, and DOCX instead of creating a duplicate or refining an already-refined
+  file.
+- Characters disappearing for many unrelated chunks could lose their saved
+  addressing forms when the context model returned a complete-looking dynamic
+  section containing only currently active relationships.
+
+### Safety and compatibility
+
+- The first-pass translation is retained with the checkpoint only for jobs
+  using refine-after mode and is removed when the checkpoint is deleted.
+- Context and refinement revisions are persisted so failed or interrupted
+  corrective passes remain visibly stale rather than being marked current.
+- Durable addressing or relationship entries can be removed only through an
+  explicit `DELETE` delta; model omission is never interpreted as deletion.
+- Refinement replays legacy snapshots cumulatively, recovering dormant
+  relationships omitted by old batch snapshots without leaking final
+  end-of-book dynamic state into early chapters.
+- Gender remains `Unspecified` without source evidence. Character names are not
+  treated as calibrated gender probabilities because multilingual,
+  transliterated, unisex, title-based, and fictional names make that inference
+  unsafe as global lore.
+
+### Validation
+
+- 1,405 selected automated tests passed.
+- Windows executable startup and local UI smoke tests passed.
+
+## 1.4.12 - 2026-06-23
+
+This stable release promotes the global-context experiment after hardening
+translation, refinement, resume, profile, and context behavior across TXT,
+SRT, EPUB, and DOCX workflows.
+
+### Added
+
+- Source-first global novel context with canonical characters, genders,
+  glossary terms, addressing forms, and relationship evolution.
+- Chapter-aware translation mode with language-independent structural
+  detection and safe subdivision of oversized chapters.
+- Hidden dialogue speaker/addressee attribution for ambiguous conversations,
+  including checkpoint persistence and refinement reuse when units align.
+- Save/load translation profiles and detailed per-step context, translation,
+  re-sync, and refinement logs.
+
+### Improved
+
+- Character identity consolidation now merges title-only aliases into named
+  characters while preserving distinct named monarchs.
+- `Unspecified` genders are promoted when later source evidence directly proves
+  a specific gender, without weakening protection against unsupported flips.
+- Character descriptions are normalized into concise cumulative facts instead
+  of repeatedly appending duplicate roles.
+- Context metadata remains English and canonical when switching translation
+  models, providers, target languages, or importing a profile for continuation
+  chapters.
+- Profiles restore glossary, custom-instruction, and novel-context selections
+  only after their asynchronous option lists are ready.
+- Stable releases are compared correctly against prerelease versions, and the
+  update checker now targets this repository.
+
+### Fixed
+
+- Resuming with another model could feed stale, unnormalized snapshot lore to
+  context analysis.
+- Existing `Unspecified` entries could reject later `Male` or `Female` evidence
+  unless the model emitted an exact correction marker.
+- Title/name aliases such as `Emperor` and `Serena Augusta` could remain
+  duplicated.
+- Direct evidence retained inside a description, such as a character mourning
+  `his brother`, was not recovered when the model still returned
+  `Unspecified`.
+- Profile loading could silently lose the selected context, custom
+  instructions, or glossary because of startup timing.
+- Failed EPUB and DOCX chunks are retained as failed and retried rather than
+  appearing as completed untranslated content.
+- EPUB resume accounting, cloud API resume, context re-sync, locale-reactive
+  context controls, and refine-after context alignment regressions.
+
+### Safety and compatibility
+
+- Profiles never import old translation IDs, resume indices, context
+  snapshots, or dialogue state into a new file.
+- New jobs continue to read the current `MAX_TOKENS_PER_CHUNK` value from
+  `.env`; profiles do not freeze the previous job's chunk budget.
+- Speaker attribution remains hidden metadata and is never written into the
+  translated output or editable novel-context file.
+
+### Validation
+
+- 1,368 selected automated tests passed.
+- Windows executable startup and local UI smoke tests passed.
+
+## 1.4.12-context-experiment.2 - 2026-06-23
+
+This prerelease adds hidden, scene-local dialogue speaker attribution to the
+source-first context architecture.
+
+### Added
+
+- Dialogue-turn detection for multilingual quotation marks, dialogue dashes,
+  subtitle markers, and short unlabelled conversational line sequences.
+- Speaker and addressee inference inside the existing source-context LLM call,
+  avoiding a second API request per translation unit.
+- Compact progress logs showing identified, assigned, and uncertain dialogue
+  turns after context analysis.
+- Stable dialogue-turn identities and checkpoint persistence for resume,
+  context re-sync, and refine-after workflows.
+
+### Improved
+
+- Translation and refinement prompts can use high-confidence speaker metadata
+  for pronouns, addressing forms, register, and character voice.
+- Speaker state carries across adjacent units and resets at chapter boundaries.
+- TXT, SRT, EPUB, and DOCX refinement reuse speaker maps only when translation
+  and refinement units align exactly; otherwise refinement performs fresh
+  monolingual context analysis.
+
+### Safety
+
+- Speaker attribution remains hidden working metadata and is never written to
+  novel-context files, the context editor, profiles, or translated output.
+- Only canonical characters already present in novel lore are accepted.
+- Unknown names and assignments below the confidence threshold remain
+  uncertain and are not injected into translation prompts.
+
+### Validation
+
+- 1,356 selected automated tests passed.
+- Windows executable startup smoke test passed and reported the expected
+  prerelease version.
+
+## 1.4.12-context-experiment.1 - 2026-06-23
+
+This prerelease contains the global-context architecture experiment and its
+resume, refinement, and checkpoint reliability fixes.
+
+### Added
+
+- Source-first novel context analysis for TXT, SRT, EPUB, and DOCX workflows.
+- Structured global lore, glossary, current addressing forms, and relationship
+  evolution sections.
+- Chapter-aware translation mode with language-independent structural
+  detection and safe subdivision of oversized chapters.
+- Save/load translation profiles.
+- Per-step UI logs for translation, context updates, context re-sync, and
+  refinement.
+- Exact translation-unit reuse for refine-after workflows when checkpoint
+  drafts match the translated output.
+
+### Improved
+
+- Character alias normalization and duplicate removal.
+- Gender handling now avoids unsupported guesses, preserves established facts,
+  and accepts explicit source-backed corrections.
+- Relationship arrows are normalized to plain Unicode instead of LaTeX.
+- Context snapshot selection uses actual persisted checkpoint indices.
+- Cloud-provider credentials are restored safely for manual resume and
+  context-triggered auto-resume.
+- `MAX_TOKENS_PER_CHUNK` values above 1,000 are honored, including values
+  loaded from `.env`.
+- EPUB resume progress is counted from untouched source XHTML, preventing
+  translated-language tokenization from changing totals or shifting context
+  indices.
+
+### Fixed
+
+- EPUB client-creation failures could be reported as successful translations.
+- EPUB and DOCX Phase-3 fallbacks could preserve source-language chunks while
+  marking them completed.
+- Failed EPUB and DOCX chunks are now stored as failed and retried on resume,
+  including non-contiguous failures before later successful chunks.
+- EPUB processing no longer advances beyond an incomplete chapter/file, so the
+  resume pointer cannot skip untranslated content.
+- Partial-file progress is restored without counting failed chunks as complete.
+- Context re-sync no longer loses cloud API credentials during auto-resume.
+- Locale-sensitive context controls refresh immediately when the UI language
+  changes.
+
+### Validation
+
+- 1,348 selected automated tests passed.
+- Windows executable startup smoke test passed.
+
+### Known limitation
+
+- Jobs falsely marked completed by an older build can only be resumed if their
+  checkpoint was retained. Otherwise, start a new translation for the affected
+  file.

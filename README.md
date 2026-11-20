@@ -18,7 +18,18 @@ A desktop app that translates **books**, **subtitles**, and **documents** with A
 
 [<img width="867" height="861" alt="image" src="https://github.com/user-attachments/assets/3efcb2a4-e1f0-4d18-ac90-1068a694a2da">](https://github.com/user-attachments/assets/3efcb2a4-e1f0-4d18-ac90-1068a694a2da)
 
-> **[Translation Quality Benchmarks](https://github.com/hydropix/TranslateBooksWithLLMs/wiki)** - Find the best model for your target language.
+> **[Translation Quality Benchmarks](https://github.com/hydropix/TranslateBooksWithLLMs/wiki)** (upstream project) - Find the best model for your target language.
+
+## About this fork
+
+This is a fork of [hydropix/TranslateBooksWithLLMs](https://github.com/hydropix/TranslateBooksWithLLMs), whose author built the translator, the format pipelines and the benchmarks; credit for all of that is theirs. The fork adds what long novels need to stay consistent from the first chapter to the last:
+
+- **Novel context.** Characters, genders, aliases, a glossary, directed forms of address and a relationship graph are extracted from the source as the book is translated, stored per job, and given to each chunk as the part of that context its scene needs.
+- **Language packs.** Rules that only make sense for one target language, such as Vietnamese pronoun hierarchy, live in their own pack instead of in the generic engine. Vietnamese is the first pack.
+- **Senior Editor.** An optional second model reviews each chunk against the source and repairs omissions, pronoun leaks and register mismatches with exact, located edits.
+- **Cost presets.** `economy`, `balanced` and `quality` decide how many of those extra LLM calls a chunk may cost, and every job reports its calls per chunk when it ends.
+
+The fork versions independently of upstream from 2.0.0 on. Report problems with it on [this fork's issue tracker](https://github.com/windfox1243/TranslateBooksWithLLMs---RAG-context/issues), not upstream's.
 
 ---
 

@@ -2,11 +2,33 @@
 
 Instructions for Claude Code when working in this repo.
 
+This is the main instruction file for every coding agent; `AGENTS.md` points
+here.
+
+## Orientation
+
+This repository is a fork of
+[hydropix/TranslateBooksWithLLMs](https://github.com/hydropix/TranslateBooksWithLLMs).
+On top of the upstream translator it adds a persistent novel context
+(characters, genders, glossary, directed addressing and a relationship graph
+kept in SQLite), target-language packs (Vietnamese first), a Senior Editor
+review-and-repair pass, and cost presets with a per-job LLM call report.
+
+Read `docs/ARCHITECTURE.md` before changing the pipeline. It names the package
+that owns each concern: the shared per-unit context lifecycle in
+`src/core/context/`, editor stages in `src/core/editor/`, language-specific
+rules in `src/languages/`, and the call ledger in `src/core/llm/call_ledger.py`.
+Language-specific behavior belongs in a language pack, never in a generic
+module behind a hard-coded language name.
+
+When porting a change from upstream, take it only if the fork has no equal or
+better solution already, and say in the PR which upstream commit it came from.
+
 ## Language policy
 
 Everything that lives on GitHub must be written in English: code, identifiers, code comments, docstrings, commit messages, PR titles and descriptions, issue text, documentation files (README, CLAUDE.md, etc.), and user-facing strings in committed files.
 
-Replies to the user in chat may follow the language the user writes in (typically French), but any artifact that ends up committed to the repo must be English-only. If the user asks for a comment, doc, or commit message in another language, push back and write it in English.
+Replies to the user in chat may follow the language the user writes in (Vietnamese for this fork), but any artifact that ends up committed to the repo must be English-only. If the user asks for a comment, doc, or commit message in another language, push back and write it in English.
 
 ## Security rules — API keys and secrets
 
@@ -59,3 +81,21 @@ Every user-facing string in the web frontend (`src/web/templates/`, `src/web/sta
 No ad-hoc test or debug scripts at the repo root. The patterns `check_*.py`, `test_*.py`, `debug_*.py`, `scratch_*.py`, `tmp_*.py` at the root are gitignored — this is intentional.
 
 The real entrypoints at the root are `translate.py`, `translation_api.py`, `launcher.py`. Real tests live under `tests/` (pytest) or `tests/standalone/` (manual scripts). If an ad-hoc script becomes useful long-term, move it into `tests/standalone/` or `scripts/` before committing it.
+
+## Workflow
+
+- Every change goes through a pull request into `main`; CI (lint, pytest,
+  Docker build) runs only on pull requests, so a direct push is untested.
+- Commit messages follow Conventional Commits (`feat:`, `fix:`, `refactor:`,
+  `docs:`, `chore:`, `test:`), with an optional scope such as `fix(epub):`.
+- Never commit build output (`*.exe`, `*.zip`, `build/dist`, `release/`) or a
+  `.env`; release binaries are attached to GitHub releases by CI.
+- Tests go under `tests/unit/` (or `tests/integration/` when they need a live
+  server). `tests/characterization/` holds golden outputs: regenerate them
+  with `UPDATE_CHARACTERIZATION=1` only for an intended behavior change, and
+  say so in the PR.
+- The fork versions independently of upstream from 2.0.0 on: bump the major
+  version for breaking changes to stored jobs or settings, the minor for new
+  features, the patch for fixes. `CHANGELOG.md` records user-visible changes
+  only, one short entry each; older entries live in
+  `docs/changelog-archive.md`.
