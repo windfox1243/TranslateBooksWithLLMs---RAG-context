@@ -1,3 +1,5 @@
+import pytest
+
 from scripts.extract_release_notes import extract_release_notes
 
 
@@ -28,3 +30,35 @@ intro paragraph.
     assert "wrapped onto another source line" in notes
     assert "wrapped\nintro" not in notes
     assert "wrapped\n  onto" not in notes
+
+
+_PRERELEASE_CHANGELOG = """# Changelog
+
+## 2.0.0 - Unreleased
+
+- Release candidate notes.
+
+## 1.18.6 - 2026-08-17
+
+- Older release note.
+"""
+
+
+def test_prerelease_tag_uses_the_section_of_the_release_it_leads_to():
+    notes = extract_release_notes(_PRERELEASE_CHANGELOG, "v2.0.0-rc.1")
+    assert "Release candidate notes." in notes
+    assert "Older release note." not in notes
+
+
+def test_an_exact_prerelease_section_still_wins():
+    changelog = _PRERELEASE_CHANGELOG.replace(
+        "## 2.0.0 - Unreleased", "## 2.0.0-rc.1 - 2026-11-20\n\n- Exact.\n\n## 2.0.0 - Unreleased",
+    )
+    notes = extract_release_notes(changelog, "v2.0.0-rc.1")
+    assert "Exact." in notes
+    assert "Release candidate notes." not in notes
+
+
+def test_missing_stable_section_is_still_an_error():
+    with pytest.raises(ValueError):
+        extract_release_notes(_PRERELEASE_CHANGELOG, "v2.1.0")
