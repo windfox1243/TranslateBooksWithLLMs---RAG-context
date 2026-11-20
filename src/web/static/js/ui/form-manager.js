@@ -166,6 +166,16 @@ export const FormManager = {
             });
         }
 
+        // Choosing a cost preset sets the Senior Editor checkbox to match;
+        // the user can still change the checkbox afterwards. Balanced leaves
+        // it alone. The preset's other settings are applied by the server.
+        const costPreset = DomHelpers.getElement('costPreset');
+        if (costPreset) {
+            costPreset.addEventListener('change', () => {
+                FormManager.applyCostPresetToEditor(costPreset.value);
+            });
+        }
+
         // Auto-update context checkbox changes
         const autoUpdateContext = DomHelpers.getElement('autoUpdateContext');
         if (autoUpdateContext) {
@@ -304,6 +314,21 @@ export const FormManager = {
 
         // Update state
         StateManager.setState('ui.isActivityLogOpen', !isHidden);
+    },
+
+    /**
+     * Match the Senior Editor checkbox to a cost preset the user just chose.
+     * Economy turns it off, quality turns it on, balanced leaves it alone.
+     * Dispatching 'change' lets the editor options and autosave react.
+     * @param {string} preset - economy, balanced or quality
+     */
+    applyCostPresetToEditor(preset) {
+        const checkbox = DomHelpers.getElement('enableReflection');
+        if (!checkbox) return;
+        const wanted = { economy: false, quality: true }[preset];
+        if (wanted === undefined || checkbox.checked === wanted) return;
+        checkbox.checked = wanted;
+        checkbox.dispatchEvent(new Event('change'));
     },
 
     /**
@@ -492,6 +517,10 @@ export const FormManager = {
                 if (bypassContextGatingCheckbox) {
                     bypassContextGatingCheckbox.checked = config.bypass_context_gating;
                 }
+            }
+
+            if (typeof config.cost_preset === 'string' && config.cost_preset) {
+                DomHelpers.setValue('costPreset', config.cost_preset);
             }
 
             // Enable 2-pass chunk reflection (runtime behavior default)
@@ -884,6 +913,7 @@ export const FormManager = {
                 auto_update_context: DomHelpers.getElement('autoUpdateContext')?.checked || false,
                 bypass_context_gating: DomHelpers.getElement('bypassContextGating')?.checked || false,
                 reflection_mode: DomHelpers.getElement('enableReflection')?.checked || false,
+                cost_preset: DomHelpers.getValue('costPreset') || 'balanced',
                 editor_provider: DomHelpers.getElement('enableReflection')?.checked
                     ? (DomHelpers.getValue('editorProvider') || '')
                     : '',
@@ -1091,7 +1121,8 @@ window.loadSelectedProfile = async function() {
             ttsFormat: data.tts_format,
             ttsBitrate: data.tts_bitrate,
             outputFilenamePattern: data.output_filename_pattern,
-            autoReviewRepairThreshold: data.auto_review_repair_threshold
+            autoReviewRepairThreshold: data.auto_review_repair_threshold,
+            costPreset: data.cost_preset
         };
         Object.entries(valueFields).forEach(([id, value]) => {
             if (value !== undefined) DomHelpers.setValue(id, String(value));
@@ -1132,6 +1163,7 @@ window.promptSaveProfile = async function() {
         auto_update_context: !!formData.prompt_options?.auto_update_context,
         bypass_context_gating: !!formData.prompt_options?.bypass_context_gating,
         reflection_mode: !!formData.prompt_options?.reflection_mode,
+        cost_preset: formData.prompt_options?.cost_preset || 'balanced',
         editor_provider: formData.prompt_options?.editor_provider || '',
         editor_model: formData.prompt_options?.editor_model || '',
         draft_thinking_level: formData.prompt_options?.draft_thinking_level || 'auto',

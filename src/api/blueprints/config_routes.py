@@ -70,12 +70,21 @@ from src import __version__
 from src.api.api_keys import resolve_api_key as _resolve_api_key
 from src.api.services.endpoint_validator import EndpointValidator
 from src.config import reload_config
+from src.core.cost_presets import DEFAULT_COST_PRESET, normalize_cost_preset
 from src.core.llm.base import normalize_api_keys
 
 # Setup logger for this module
 logger = logging.getLogger('config_routes')
 if _config.DEBUG_MODE:
     logger.setLevel(logging.DEBUG)
+
+
+def _configured_cost_preset() -> str:
+    """COST_PRESET as the web UI should show it (unknown values read as balanced)."""
+    return (
+        normalize_cost_preset(getattr(_config, 'COST_PRESET', ''))
+        or DEFAULT_COST_PRESET
+    )
 
 
 def create_config_blueprint(server_session_id=None):
@@ -264,6 +273,7 @@ def create_config_blueprint(server_session_id=None):
             "disable_auto_pause": str(_config.DISABLE_AUTO_PAUSE).strip().lower() == 'true',
             "bypass_context_gating": bool(_config.BYPASS_CONTEXT_GATING),
             "enable_chunk_reflection": str(_config.ENABLE_CHUNK_REFLECTION).strip().lower() == 'true',
+            "cost_preset": _configured_cost_preset(),
             "editor_provider": _config.EDITOR_PROVIDER or "",
             "editor_model": _config.EDITOR_MODEL or "",
             # Webhook notifications: secrets in the URL and header values are
@@ -1055,6 +1065,7 @@ def create_config_blueprint(server_session_id=None):
             'NOTIFY_ON_INTERRUPTION',
             'NOTIFY_TIMEOUT_SECONDS',
             'ENABLE_CHUNK_REFLECTION',
+            'COST_PRESET',
             'EDITOR_PROVIDER',
             'EDITOR_MODEL'
         }
@@ -1085,6 +1096,10 @@ def create_config_blueprint(server_session_id=None):
                         except (TypeError, ValueError):
                             continue
                         safe_value = str(max(1, min(_config.MAX_PARALLEL_TRANSLATIONS, n)))
+                    elif key == 'COST_PRESET':
+                        safe_value = normalize_cost_preset(safe_value)
+                        if safe_value is None:
+                            continue
                     updates[key] = safe_value
 
             if not updates:
@@ -1224,6 +1239,7 @@ def create_config_blueprint(server_session_id=None):
             "ollama_api_endpoint": _config.OLLAMA_API_ENDPOINT or "",
             "openai_api_endpoint": _config.OPENAI_API_ENDPOINT or "",
             "enable_chunk_reflection": str(_config.ENABLE_CHUNK_REFLECTION).lower() == 'true',
+            "cost_preset": _configured_cost_preset(),
             "editor_provider": _config.EDITOR_PROVIDER or "",
             "editor_model": _config.EDITOR_MODEL or "",
         })
