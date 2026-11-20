@@ -27,7 +27,7 @@ from .rtl_support import LANGUAGE_NAME_TO_CODE as _RTL_NAME_TO_CODE
 # Comprehensive map: keys are lower-case language names, values are IANA
 # primary language subtags (BCP 47 / RFC 5646). Validated against
 # https://www.iana.org/assignments/language-subtag-registry — see
-# tests/test_lang_codes_bcp47.py for the conformance checks.
+# tests/unit/test_lang_codes_bcp47.py for the conformance checks.
 #
 # All entries are ISO 639-1 (2-letter) codes except where no 639-1 exists
 # (e.g. Filipino -> "fil", which is ISO 639-2/3 but registered in IANA).

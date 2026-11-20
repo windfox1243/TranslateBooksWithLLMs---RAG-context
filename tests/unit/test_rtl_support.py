@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.core.epub.rtl_support import (
     RTL_LANGUAGES,

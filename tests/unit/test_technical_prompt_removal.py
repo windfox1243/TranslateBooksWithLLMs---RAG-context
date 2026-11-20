@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.prompts.prompts import (
     TECHNICAL_CONTENT_SECTION,
@@ -107,7 +107,7 @@ def test_rationale_documentation():
     """Test that the code documents why the section is not added."""
 
     # Read the source code to verify documentation
-    source_file = Path(__file__).parent.parent / "src" / "prompts" / "prompts.py"
+    source_file = Path(__file__).parent.parent.parent / "src" / "prompts" / "prompts.py"
     source_code = source_file.read_text(encoding='utf-8')
 
     # Verify that there's a comment explaining why the section is not added
