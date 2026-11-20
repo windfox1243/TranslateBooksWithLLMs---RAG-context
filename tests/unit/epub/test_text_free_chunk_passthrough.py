@@ -251,7 +251,7 @@ def _deterministic_llm_client(call_log):
 @pytest.fixture
 def temp_checkpoint_manager(tmp_path):
     """Checkpoint manager with isolated storage (same pattern as
-    tests/test_xhtml_chunk_interruption.py)."""
+    tests/unit/test_xhtml_chunk_interruption.py)."""
     manager = CheckpointManager(db_path=str(tmp_path / "test_jobs.db"))
     manager.uploads_dir = tmp_path / "uploads"
     manager.uploads_dir.mkdir(parents=True, exist_ok=True)

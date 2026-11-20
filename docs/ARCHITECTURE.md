@@ -44,9 +44,33 @@ discarding useful translations while retaining an explicit review queue.
 - `src/core/jobs/`: format-independent outcome contracts.
 - `src/core/editor/`: public editor contracts and narrator conformance policy.
   Callers should import editor types from this package rather than depending on
-  internal translator implementation details.
+  internal translator implementation details. The reflection pass in
+  `translator.py` delegates its request plumbing and its retry loops here:
+  `requests.py` (`EditorRequestSession`: request budget, truncation retry,
+  attempt records), `full_repair.py` (bounded full-chunk repair),
+  `locator_retry.py` (focused retry for edits that could not be located) and
+  `contract_retry.py` (re-ask and salvage for a malformed editor answer).
 - `src/core/context/`: typed source-analysis results, relevant prompt bundles,
   generalized social-evidence normalization, and pair-level reconciliation.
+  It also owns the per-unit context lifecycle that every format pipeline
+  shares, so the TXT/SRT, plain-text and EPUB loops cannot drift apart again:
+  `analyze_unit_context` (source analysis before the draft),
+  `attach_draft_prompt_context` (the scene-relevant view the draft sees),
+  `commit_pending_context` and `save_committed_context` (persisting what the
+  unit established, in order).
+- `src/languages/`: target-language packs. `addressing_rules.py` defines the
+  `AddressingRules` hooks the universal addressing engine calls; a language
+  that needs more than the profile table (Vietnamese pronoun hierarchy, for
+  one) supplies them from its own package. `src/languages/vietnamese/` holds
+  the pronoun tables, engine rules, context-repair rules and prompt guidance
+  that used to be hard-coded in generic modules. Generic code asks
+  `language_profiles.is_target_language()` instead of comparing names.
+- `src/core/cost_presets.py` and `src/core/llm/call_ledger.py`: the cost preset
+  (economy / balanced / quality) is resolved into prompt options when a job
+  starts; every request through `LLMClient.make_request` is counted in the
+  running job's ledger, labelled by purpose with `@llm_purpose`, and
+  `translate_file` logs the calls per chunk when the job ends. Code that adds a
+  new kind of LLM call should give it a purpose so the report stays honest.
 - `src/core/adapters/`: converts format-specific content to and from units.
 - `src/core/common/`, `src/core/epub/`, `src/core/subtitle_translator.py`:
   orchestration and structural validation for each format.
@@ -93,7 +117,9 @@ validation accepts it. It must not silently create a second output filename.
 
 SQLite is authoritative for active addressing and relationship state. Markdown
 dynamic sections remain import/export surfaces for older jobs and human review.
-Contract-v5 source analysis stores accepted facts before drafting the current
+Every job runs the single current context contract
+(`ADDRESSING_CONTRACT_VERSION`); older version numbers stored in a job are
+ignored. Source analysis stores accepted facts before drafting the current
 unit. Evidence that is ambiguous, incomplete, or unsupported remains retained
 with an open resolution state, but prompt projection reads only accepted edges
 and active rules. Pair-level reconciliation runs after new evidence, accepted
@@ -114,9 +140,9 @@ before model repair. Full-unit review is the default after relevant-context
 retrieval, with no application-level token ceiling or default windowing. The
 initial audit always receives the complete filtered source and draft; hashes in
 the request diagnostics prove that neither was truncated. Selective retrieval
-is always active for contract v5, even when no optional provider-capacity budget
+is always active, even when no optional provider-capacity budget
 is configured, and the typed prompt bundle is the only structured-context
-injection for that contract.
+injection.
 
 Narrator validation uses paragraph and line offsets plus dialogue, thought, and
 letter masking instead of proportional sentence alignment. Conclusive locked or

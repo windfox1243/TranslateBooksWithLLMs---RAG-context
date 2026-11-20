@@ -39,7 +39,7 @@ from pathlib import Path
 import pytest
 from lxml import html as lhtml
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 LOCALES_DIR = ROOT / "src" / "web" / "static" / "locales"
 TEMPLATE = ROOT / "src" / "web" / "templates" / "translation_interface.html"
 JS_DIR = ROOT / "src" / "web" / "static" / "js"

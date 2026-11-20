@@ -504,7 +504,7 @@ UNIT_VALIDATION_RETRIES = int(os.getenv('UNIT_VALIDATION_RETRIES', '2'))
 # The attribution is non-intrusive and placed at the end of files. Thank you for your support!
 ATTRIBUTION_ENABLED = os.getenv('ATTRIBUTION_ENABLED', os.getenv('SIGNATURE_ENABLED', 'true')).lower() == 'true'
 GENERATOR_NAME = "TranslateBook with LLM (TBL)"
-GENERATOR_SOURCE = "https://github.com/hydropix/TranslateBookWithLLM"
+GENERATOR_SOURCE = "https://github.com/windfox1243/TranslateBooksWithLLMs---RAG-context"
 METADATA_VERSION = "1.0"
 
 # Default languages from environment (optional)

@@ -12,7 +12,7 @@ These tests cover:
   3. The directory walker that processes every XHTML/HTML file in an extracted
      EPUB tree.
 
-Run:  pytest tests/test_epub_xhtml_lang_attributes.py -v
+Run:  pytest tests/unit/test_epub_xhtml_lang_attributes.py -v
 """
 from __future__ import annotations
 
@@ -309,5 +309,5 @@ def test_end_to_end_repackaged_epub_has_correct_lang(tmp_path: Path):
 
 
 if __name__ == "__main__":
-    # Allow `python tests/test_epub_xhtml_lang_attributes.py` for quick local runs.
+    # Allow `python tests/unit/test_epub_xhtml_lang_attributes.py` for quick local runs.
     raise SystemExit(pytest.main([__file__, "-v"]))

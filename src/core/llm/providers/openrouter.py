@@ -412,7 +412,7 @@ class OpenRouterProvider(LLMProvider):
             headers = {
                 "Authorization": f"Bearer {current_key}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "https://github.com/hydropix/TranslateBookWithLLM",
+                "HTTP-Referer": "https://github.com/windfox1243/TranslateBooksWithLLMs---RAG-context",
                 "X-Title": "TranslateBookWithLLM",
             }
             try:
