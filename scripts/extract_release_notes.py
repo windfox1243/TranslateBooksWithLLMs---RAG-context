@@ -93,12 +93,21 @@ def extract_release_notes_raw(changelog_text: str, tag_name: str) -> str:
     if not version:
         raise ValueError("Release tag is empty.")
 
-    heading = re.compile(rf"^##\s+v?{re.escape(version)}(?:\s+-|\s*$)")
     lines = changelog_text.splitlines()
-    start = next(
-        (index for index, line in enumerate(lines) if heading.match(line)),
-        None,
-    )
+
+    def find_section(wanted: str) -> int | None:
+        heading = re.compile(rf"^##\s+v?{re.escape(wanted)}(?:\s+-|\s*$)")
+        return next(
+            (index for index, line in enumerate(lines) if heading.match(line)),
+            None,
+        )
+
+    start = find_section(version)
+    # A prerelease (2.0.0-rc.1) ships the notes of the release it leads up
+    # to, so release candidates do not each need their own changelog entry.
+    base_version = re.split(r"[-+]", version, maxsplit=1)[0]
+    if start is None and base_version != version:
+        start = find_section(base_version)
     if start is None:
         raise ValueError(f"No changelog section found for {tag_name}.")
 
