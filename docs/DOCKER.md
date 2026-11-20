@@ -266,8 +266,8 @@ If you need to build a custom image:
 
 ```bash
 # Clone the repository
-git clone https://github.com/hydropix/TranslateBookWithLLM.git
-cd TranslateBookWithLLM
+git clone https://github.com/windfox1243/TranslateBooksWithLLMs---RAG-context.git
+cd TranslateBooksWithLLMs---RAG-context
 
 # Build the image
 docker build -f deployment/Dockerfile -t my-custom-translator .
@@ -315,4 +315,4 @@ The project uses GitHub Actions to automatically build and publish Docker images
 For issues related to Docker deployment:
 1. Check this documentation
 2. Review container logs
-3. Open an issue at: https://github.com/hydropix/TranslateBookWithLLM/issues
+3. Open an issue at: https://github.com/windfox1243/TranslateBooksWithLLMs---RAG-context/issues

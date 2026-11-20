@@ -103,9 +103,9 @@ jobs:
 
         ## Links
 
-        - Full Documentation: https://github.com/hydropix/TranslateBooksWithLLMs
-        - Model Benchmarks: https://github.com/hydropix/TranslateBooksWithLLMs/wiki
-        - Report Issues: https://github.com/hydropix/TranslateBooksWithLLMs/issues
+        - Full Documentation: https://github.com/windfox1243/TranslateBooksWithLLMs---RAG-context
+        - Model Benchmarks (upstream project): https://github.com/hydropix/TranslateBooksWithLLMs/wiki
+        - Report Issues: https://github.com/windfox1243/TranslateBooksWithLLMs---RAG-context/issues
         - OpenRouter Models: https://openrouter.ai/models
         "@
 
