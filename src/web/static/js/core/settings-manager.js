@@ -133,6 +133,7 @@ export const SettingsManager = {
             { id: 'plainTextMode', event: 'change' },
             { id: 'chapterMode', event: 'change' },
             { id: 'enableReflection', event: 'change' },
+            { id: 'costPreset', event: 'change' },
             { id: 'editorProvider', event: 'change' },
             { id: 'editorModel', event: 'change' },
             { id: 'autoReviewRepairThreshold', event: 'input' },
@@ -166,6 +167,7 @@ export const SettingsManager = {
             { id: 'disableAutoPause', event: 'change' },
             { id: 'bypassContextGating', event: 'change' },
             { id: 'enableReflection', event: 'change' },
+            { id: 'costPreset', event: 'change' },
             { id: 'editorProvider', event: 'change' },
             { id: 'editorModel', event: 'change' },
             { id: 'editorApiKey', event: 'input' },
@@ -362,6 +364,11 @@ export const SettingsManager = {
                 enableReflectionCheckbox.checked = prefs.enableReflection;
             }
         }
+        if (typeof prefs.costPreset === 'string' && prefs.costPreset) {
+            // Set without a change event: the saved Senior Editor choice was
+            // restored above and must not be overwritten by the preset.
+            DomHelpers.setValue('costPreset', prefs.costPreset);
+        }
         if (prefs.editorProvider !== undefined || prefs.editorModel !== undefined) {
             window.__pendingEditorSelection = {
                 provider: prefs.editorProvider || '',
@@ -462,6 +469,7 @@ export const SettingsManager = {
             plainTextMode: plainTextModeCheckbox ? plainTextModeCheckbox.checked : false,
             chapterMode: chapterModeCheckbox ? chapterModeCheckbox.checked : false,
             enableReflection: enableReflectionCheckbox ? enableReflectionCheckbox.checked : false,
+            costPreset: DomHelpers.getValue('costPreset') || 'balanced',
             editorProvider: (
                 DomHelpers.getElement('editorProvider')?.dataset?.persistedValue
                 ?? DomHelpers.getValue('editorProvider')
@@ -575,6 +583,7 @@ export const SettingsManager = {
             // Save chunk reflection flag (runtime behavior default)
             const enableReflectionCheckbox = DomHelpers.getElement('enableReflection');
             envSettings['ENABLE_CHUNK_REFLECTION'] = (enableReflectionCheckbox && enableReflectionCheckbox.checked) ? 'true' : 'false';
+            envSettings['COST_PRESET'] = DomHelpers.getValue('costPreset') || 'balanced';
             envSettings['EDITOR_PROVIDER'] = (
                 DomHelpers.getElement('editorProvider')?.dataset?.persistedValue
                 ?? DomHelpers.getValue('editorProvider')

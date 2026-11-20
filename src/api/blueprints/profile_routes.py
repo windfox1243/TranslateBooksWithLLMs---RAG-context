@@ -40,6 +40,7 @@ STRING_FIELDS = {
     "draft_thinking_level": 20,
     "editor_thinking_level": 20,
     "editor_max_output_tokens": 20,
+    "cost_preset": 20,
 }
 BOOLEAN_FIELDS = {
     "bilingual_output",
@@ -146,6 +147,14 @@ def _normalize_profile(data) -> dict:
         if not minimum <= value <= maximum:
             raise ValueError(f"{field} must be between {minimum} and {maximum}")
         normalized[field] = value
+
+    if "cost_preset" in normalized:
+        from src.core.cost_presets import normalize_cost_preset
+
+        preset = normalize_cost_preset(normalized["cost_preset"])
+        if preset is None:
+            raise ValueError("cost_preset is invalid")
+        normalized["cost_preset"] = preset
 
     allowed_thinking = {
         "auto", "off", "on", "minimal", "low", "medium", "high", "dynamic",

@@ -1212,6 +1212,19 @@
                             </label>
                         </div>
                         <small class="setting-help" data-i18n="settings:bypass_context_gating_help">High risk: accepts model-proposed context changes without normal deterministic validation.</small>
+                        <div class="form-group" style="margin-bottom: 0; margin-top: 12px;">
+                            <label for="costPreset" data-i18n="settings:cost_preset_label" style="font-size: 0.8125rem; color: var(--text-dark); margin-bottom: 5px; display: block;">
+                                Cost preset
+                            </label>
+                            <div class="neu-inset-light">
+                                <select id="costPreset" class="form-control" style="margin-bottom: 0;">
+                                    <option value="economy" data-i18n="settings:cost_preset_economy">Economy</option>
+                                    <option value="balanced" data-i18n="settings:cost_preset_balanced" selected>Balanced</option>
+                                    <option value="quality" data-i18n="settings:cost_preset_quality">Quality</option>
+                                </select>
+                            </div>
+                            <small class="setting-help" data-i18n="settings:cost_preset_help">Economy analyzes context every 3rd chunk and skips lore consolidation, the relationship judge and the Senior Editor. Quality analyzes every chunk and turns the Senior Editor on. Balanced keeps each setting as configured. Choosing a preset sets the Senior Editor checkbox below, which you can still change. Each job logs its LLM calls per chunk when it ends.</small>
+                        </div>
                         <div style="display: flex; align-items: center; gap: 8px; margin-top: 12px;">
                             <input type="checkbox" id="enableReflection" style="width: 16px; height: 16px; margin: 0; cursor: pointer;">
                             <label for="enableReflection" data-i18n="settings:enable_reflection_label" style="font-size: 0.8125rem; color: var(--text-dark); cursor: pointer; margin-bottom: 0;">
