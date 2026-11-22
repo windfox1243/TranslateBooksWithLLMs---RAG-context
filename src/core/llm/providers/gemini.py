@@ -29,8 +29,13 @@ from ..base import (
     LLMResponse,
     terminal_provider_failure,
 )
-from ..exceptions import ContextOverflowError, StructuredOutputSchemaError
+from ..exceptions import (
+    ContextOverflowError,
+    RateLimitError,
+    StructuredOutputSchemaError,
+)
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
+from ..utils.error_classification import is_context_overflow_error
 
 # Four harm categories returned by the Gemini API. By default Gemini blocks
 # anything at MEDIUM and above on all four, which strips a significant portion
@@ -468,9 +473,8 @@ class GeminiProvider(LLMProvider):
                         )
 
                     # Detect context overflow errors (Gemini uses "RESOURCE_EXHAUSTED" or token limits)
-                    context_overflow_keywords = ["resource_exhausted", "token limit", "input too long",
-                                                  "maximum input", "context length", "too many tokens"]
-                    if any(keyword in error_message.lower() for keyword in context_overflow_keywords):
+                    status_code = e.response.status_code if e.response is not None else None
+                    if is_context_overflow_error(error_message, status_code, extra_keywords=("resource_exhausted",)):
                         raise ContextOverflowError(f"Gemini context overflow: {error_message}")
 
                     # Client errors (404 model retired, 400/401/403) won't recover
@@ -501,6 +505,10 @@ class GeminiProvider(LLMProvider):
                     return terminal_provider_failure(
                         generation_options, "transport", e.response.status_code
                     )
+            except (RateLimitError, ContextOverflowError):
+                # Must reach the pipeline: a rate-limit pause or a chunk split,
+                # never a retried-then-failed chunk. (Ported from upstream 2b0a431f.)
+                raise
             except Exception as e:
                     print(f"Gemini API Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
                     attempt += 1

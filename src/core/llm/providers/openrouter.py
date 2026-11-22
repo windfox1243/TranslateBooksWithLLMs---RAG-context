@@ -33,8 +33,25 @@ from ..base import (
     LLMResponse,
     terminal_provider_failure,
 )
-from ..exceptions import ContextOverflowError, StructuredOutputSchemaError
+from ..exceptions import (
+    ContextOverflowError,
+    RateLimitError,
+    StructuredOutputSchemaError,
+)
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
+from ..utils.error_classification import is_context_overflow_error
+
+
+def _status_from_error_code(code) -> Optional[int]:
+    """The HTTP-style status in an OpenRouter body error's ``code``, if any."""
+    status: Optional[int] = None
+    if isinstance(code, int) and not isinstance(code, bool):
+        status = code
+    elif isinstance(code, str) and code.strip().isdigit():
+        status = int(code.strip())
+    if status is not None and not 400 <= status <= 599:
+        return None
+    return status
 
 
 class OpenRouterProvider(LLMProvider):
@@ -455,6 +472,44 @@ class OpenRouterProvider(LLMProvider):
 
                 result = response.json()
 
+                # OpenRouter answers 200 as soon as the upstream accepts the
+                # request, so a later failure arrives in the body: an error
+                # object with no choices, or a choice that ended with
+                # finish_reason "error". error.code carries the HTTP-style
+                # status; classify like that status and never return the
+                # partial text. (Ported from upstream ede8d0b0.)
+                body_error = result.get("error") if isinstance(result, dict) else None
+                choices = (result.get("choices") or []) if isinstance(result, dict) else []
+                if isinstance(body_error, dict):
+                    finish = (choices[0] or {}).get("finish_reason") if choices else None
+                    if not choices or finish == "error":
+                        status = _status_from_error_code(body_error.get("code"))
+                        message = body_error.get("message") or str(body_error)[:300]
+                        print(f"[OpenRouter] WARN: provider error in an HTTP 200 answer "
+                              f"(code {status}): {message}")
+                        if status == 429:
+                            rate_limit_events += 1
+                            await handle_rate_limit(
+                                self._key_pool, current_key, {},
+                                rate_limit_events, MAX_TRANSLATION_ATTEMPTS,
+                            )
+                            continue
+                        if status is not None and not is_retryable_http_status(status):
+                            return terminal_provider_failure(
+                                generation_options,
+                                "provider_auth" if status in {401, 403}
+                                else "provider_quota" if status == 402
+                                else "transport",
+                                status,
+                            )
+                        attempt += 1
+                        if attempt < MAX_TRANSLATION_ATTEMPTS:
+                            await asyncio.sleep(2)
+                            continue
+                        return terminal_provider_failure(
+                            generation_options, "transport", status,
+                        )
+
                 if "choices" not in result or len(result["choices"]) == 0:
                     print(f"[OpenRouter] WARN: Unexpected response format: {result}")
                     return terminal_provider_failure(
@@ -579,10 +634,8 @@ class OpenRouterProvider(LLMProvider):
                     print(f"OpenRouter API HTTP Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
                     print(f"Response details: Status {e.response.status_code}, Body: {error_body}...")
 
-                context_overflow_keywords = ["context_length", "maximum context", "token limit",
-                                              "too many tokens", "reduce the length", "max_tokens",
-                                              "context window", "exceeds"]
-                if any(keyword in error_message.lower() for keyword in context_overflow_keywords):
+                status_code = e.response.status_code if e.response is not None else None
+                if is_context_overflow_error(error_message, status_code):
                     raise ContextOverflowError(f"OpenRouter context overflow: {error_message}")
 
                 # Client errors (404 model, 401 key, 402 credits, 400) won't
@@ -612,6 +665,10 @@ class OpenRouterProvider(LLMProvider):
                     await asyncio.sleep(2)
                     continue
                 return terminal_provider_failure(generation_options, "transport")
+            except (RateLimitError, ContextOverflowError):
+                # Must reach the pipeline: a rate-limit pause or a chunk split,
+                # never a retried-then-failed chunk. (Ported from upstream 2b0a431f.)
+                raise
             except Exception as e:
                 print(f"OpenRouter API Unknown Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
                 attempt += 1

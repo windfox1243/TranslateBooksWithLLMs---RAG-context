@@ -26,8 +26,9 @@ from ..base import (
     LLMResponse,
     terminal_provider_failure,
 )
-from ..exceptions import ContextOverflowError
+from ..exceptions import ContextOverflowError, RateLimitError
 from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
+from ..utils.error_classification import is_context_overflow_error
 
 
 class DeepSeekProvider(LLMProvider):
@@ -317,12 +318,8 @@ class DeepSeekProvider(LLMProvider):
                     print(f"DeepSeek API HTTP Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
                     print(f"Response details: Status {e.response.status_code}, Body: {error_body}...")
 
-                context_overflow_keywords = [
-                    "context_length", "maximum context", "token limit",
-                    "too many tokens", "reduce the length", "max_tokens",
-                    "context window", "exceeds"
-                ]
-                if any(keyword in error_message.lower() for keyword in context_overflow_keywords):
+                status_code = e.response.status_code if e.response is not None else None
+                if is_context_overflow_error(error_message, status_code):
                     raise ContextOverflowError(f"DeepSeek context overflow: {error_message}")
 
                 # Client errors (404 model, 401 key, 402 credits, 400) won't
@@ -346,6 +343,10 @@ class DeepSeekProvider(LLMProvider):
                     continue
                 return terminal_provider_failure(generation_options, "transport")
 
+            except (RateLimitError, ContextOverflowError):
+                # Must reach the pipeline: a rate-limit pause or a chunk split,
+                # never a retried-then-failed chunk. (Ported from upstream 2b0a431f.)
+                raise
             except Exception as e:
                 print(f"DeepSeek API Unknown Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
                 attempt += 1

@@ -19,9 +19,24 @@ from ..base import (
     LLMResponse,
     terminal_provider_failure,
 )
-from ..exceptions import ContextOverflowError, StructuredOutputSchemaError
-from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
+from ..exceptions import (
+    ContextOverflowError,
+    RateLimitError,
+    StructuredOutputSchemaError,
+)
+from ..rate_limit_handler import (
+    compute_wait_time,
+    handle_rate_limit,
+    is_retryable_http_status,
+)
 from ..utils.context_detection import ContextDetector
+from ..utils.error_classification import is_context_overflow_error
+
+# Upper bound, in seconds, for one wait taken from a server rate-limit hint
+# when there is no key pool to rotate. A longer hint is not slept in full: the
+# request is retried after this cap, and once the attempts are spent the
+# RateLimitError carries the full hint so the pipeline can pause instead.
+MAX_HINTED_RETRY_WAIT = 60
 
 
 class OpenAICompatibleProvider(LLMProvider):
@@ -33,6 +48,7 @@ class OpenAICompatibleProvider(LLMProvider):
                  provider_name: str = "openai-compatible"):
         # Skip pool creation if no key (local servers like llama.cpp don't need one)
         super().__init__(model, api_keys=api_key, provider_name=provider_name)
+        self._provider_name = provider_name
         self.api_endpoint = self._normalize_endpoint(api_endpoint)
         self.context_window = context_window
         self.log_callback = log_callback
@@ -293,10 +309,8 @@ class OpenAICompatibleProvider(LLMProvider):
                     ) from e
 
                 # Detect context overflow errors
-                context_overflow_keywords = ["context_length", "maximum context", "token limit",
-                                              "too many tokens", "reduce the length", "max_tokens",
-                                              "context", "truncate", "length", "too long"]
-                if any(keyword in error_message.lower() for keyword in context_overflow_keywords):
+                status_code = e.response.status_code if e.response is not None else None
+                if is_context_overflow_error(error_message, status_code):
                     RED = '\033[91m'
                     YELLOW = '\033[93m'
                     RESET = '\033[0m'
@@ -352,6 +366,29 @@ class OpenAICompatibleProvider(LLMProvider):
                     )
 
                 attempt += 1
+                # A 429 without a key pool to rotate (local or keyless server).
+                # Ported from upstream ede8d0b0 and 2b0a431f.
+                if e.response is not None and e.response.status_code == 429:
+                    hint = compute_wait_time(e.response.headers, attempt)
+                    if attempt >= MAX_TRANSLATION_ATTEMPTS:
+                        # Still limited after every retry: pause the job
+                        # (checkpoint) instead of failing the chunk. The full
+                        # hint travels with the error so the pause can honour it.
+                        raise RateLimitError(
+                            f"{self._provider_name} rate limit persisted after "
+                            f"{attempt} attempt(s): {error_message}",
+                            retry_after=hint,
+                            provider=self._provider_name,
+                        )
+                    # Honour the server's Retry-After / X-RateLimit-Reset hint,
+                    # capped per try, instead of the fixed short backoff.
+                    hinted = any(h in e.response.headers for h in (
+                        "Retry-After", "retry-after", "X-RateLimit-Reset", "x-ratelimit-reset"))
+                    delay = min(hint, MAX_HINTED_RETRY_WAIT) if hinted else 2
+                    if self.log_callback:
+                        self.log_callback("llm_retry", f"   Rate limited; retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                    continue
                 if attempt < MAX_TRANSLATION_ATTEMPTS:
                     if self.log_callback:
                         self.log_callback("llm_retry", f"   Retrying in 2 seconds...")
@@ -407,6 +444,10 @@ class OpenAICompatibleProvider(LLMProvider):
                     print(f"{RED}❌ All retry attempts exhausted. Translation failed.{RESET}")
 
                 return terminal_provider_failure(generation_options, "transport")
+            except (RateLimitError, ContextOverflowError):
+                # Must reach the pipeline: a rate-limit pause or a chunk split,
+                # never a retried-then-failed chunk. (Ported from upstream 2b0a431f.)
+                raise
             except Exception as e:
                 RED = '\033[91m'
                 YELLOW = '\033[93m'
