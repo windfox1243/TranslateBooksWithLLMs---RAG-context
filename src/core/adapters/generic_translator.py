@@ -357,6 +357,8 @@ class GenericTranslator:
         Returns:
             True if translation completed successfully, False otherwise
         """
+        llm_client = None
+        editor_llm_client = None
         try:
             prompt_options = llm_kwargs.setdefault('prompt_options', {})
             if not isinstance(prompt_options, dict):
@@ -1327,6 +1329,16 @@ class GenericTranslator:
                 await self.adapter.cleanup()
             except Exception:
                 pass
+            # Each client owns an httpx connection pool and the server runs
+            # many jobs in one process, so close them on every exit path. The
+            # editor client is the draft client when the models match.
+            # (Ported from upstream 3c053bdc.)
+            for client in {id(c): c for c in (llm_client, editor_llm_client) if c}.values():
+                if hasattr(client, 'close'):
+                    try:
+                        await client.close()
+                    except Exception:
+                        pass
 
     def __repr__(self) -> str:
         return (

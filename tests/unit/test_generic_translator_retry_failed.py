@@ -408,3 +408,34 @@ async def test_resume_reuses_failed_unit_source_context_without_reanalysis(
     )
     assert retried_chunk["status"] == "completed"
     assert (retried_chunk["chunk_data"] or {}).get("context_snapshot")
+
+
+@pytest.mark.asyncio
+async def test_job_closes_its_llm_clients_on_every_exit(tmp_path, cm, monkeypatch):
+    """Each client owns a connection pool; a long-running server must not
+    leak one per TXT/SRT job. (Ported from upstream 3c053bdc.)"""
+    closed = []
+
+    class ClosingClient(FakeLLMClient):
+        async def close(self):
+            closed.append(self)
+
+    calls = []
+    _patch_llm(monkeypatch, set(), calls)
+    monkeypatch.setattr(llm_client_module, "LLMClient", ClosingClient)
+    # runtime binds the name at import, which an earlier test may have done.
+    monkeypatch.setattr("src.core.llm.runtime.LLMClient", ClosingClient)
+    assert await _run(FakeAdapter(tmp_path), cm) is True
+    assert len(closed) == 1  # draft and editor share one client here
+
+    closed.clear()
+
+    async def exploding_request(**kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(translator_module, "generate_translation_request", exploding_request)
+    other = GenericTranslator(adapter=FakeAdapter(tmp_path), checkpoint_manager=cm,
+                              translation_id="job-2")
+    await other.translate(source_language="English", target_language="French",
+                          model_name="fake-model", llm_provider="ollama")
+    assert len(closed) == 1

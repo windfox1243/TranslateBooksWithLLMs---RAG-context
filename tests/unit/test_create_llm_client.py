@@ -17,7 +17,10 @@ from src.core.llm.providers.openai import OpenAICompatibleProvider
 from src.core.llm.providers.openrouter import OpenRouterProvider
 from src.core.llm.providers.poe import PoeProvider
 from src.core.llm_client import (
-    SUPPORTED_CLIENT_PROVIDERS, LLMClient, create_llm_client, default_client,
+    SUPPORTED_CLIENT_PROVIDERS,
+    LLMClient,
+    create_llm_client,
+    default_client,
 )
 
 FAKE_KEY = "YOUR_API_KEY_HERE"
