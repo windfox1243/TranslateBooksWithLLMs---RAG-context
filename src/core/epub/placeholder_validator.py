@@ -7,8 +7,6 @@ This module provides unified validation logic for placeholder integrity checks.
 import re
 from typing import Dict, List, Tuple
 
-from .exceptions import PlaceholderValidationError
-
 
 class PlaceholderValidator:
     """Validates placeholder integrity in translated text."""
@@ -50,8 +48,6 @@ class PlaceholderValidator:
             Tuple of (is_valid, error_message)
             error_message is empty string if valid
 
-        Raises:
-            PlaceholderValidationError: If validation fails (optional behavior)
         """
         # Extract placeholder pattern (e.g., "[id", "]")
         if not expected_tag_map:

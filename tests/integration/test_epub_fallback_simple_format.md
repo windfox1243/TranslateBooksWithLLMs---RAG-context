@@ -18,16 +18,9 @@ Use a small EPUB without brackets in the text. You can create one or use an exis
 
 ### Step 2: Force the Fallback
 
-To force the untranslated fallback to trigger, you have two options:
-
-**Option A: Temporarily modify configuration**
-```python
-# In src/config.py, temporarily set:
-MAX_PLACEHOLDER_CORRECTION_ATTEMPTS = 0
-```
-
-**Option B: Use an LLM known to remove placeholders**
-Use a smaller model or configure the LLM to be more aggressive in its translations.
+There is no LLM placeholder-correction phase: a chunk whose placeholders the
+model loses goes straight to the fallback. To make that happen, use an LLM known
+to drop placeholders (a smaller model, or more aggressive settings).
 
 ### Step 3: Execute Translation
 
@@ -93,7 +86,6 @@ Check the console output for:
 ## Troubleshooting
 
 **If fallback doesn't trigger:**
-- Set `MAX_PLACEHOLDER_CORRECTION_ATTEMPTS = 0` in [src/config.py](../../src/config.py)
 - Use a less capable LLM model
 - Use a longer text chunk
 
@@ -101,14 +93,6 @@ Check the console output for:
 - Check that the original EPUB has no `[` characters in text
 - Verify `detect_placeholder_format_in_text()` is being called
 - Check logs for format detection messages
-
-## Cleanup
-
-After testing, remember to restore original settings:
-```python
-# In src/config.py, restore:
-MAX_PLACEHOLDER_CORRECTION_ATTEMPTS = 3  # or original value
-```
 
 ## Test Status
 
