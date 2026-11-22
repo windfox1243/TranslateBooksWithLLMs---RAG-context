@@ -380,6 +380,9 @@ class EditorRequestSession:
                 response.structured_output_fallback = True
             except Exception:
                 pass
+        # The retry repeats the request that was cut off, which here is the
+        # tagged fallback: the schema-mode prompt without its schema would
+        # ask for a contract nothing enforces.
         return await self._retry_truncated(
             response,
             None,
@@ -388,8 +391,8 @@ class EditorRequestSession:
             max_output_tokens=max_output_tokens,
             active_client=active_client,
             active_model=active_model,
-            active_prompt=active_prompt,
-            active_system_prompt=active_system_prompt,
+            active_prompt=fallback_prompt or prompt,
+            active_system_prompt=fallback_system_prompt or system_prompt,
         )
 
     async def _retry_truncated(
