@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
+from src.utils.security import is_within_directory
+
 # DOS device names reserved by Windows (mirrors ntpath._reserved_names as of
 # Python 3.13). PureWindowsPath.is_reserved() was deprecated in 3.13 and
 # removed in 3.15, and its replacement only exists on 3.13+, so the check is
@@ -105,16 +107,7 @@ class PathValidator:
         string startswith, which would treat '/uploads-evil' as inside
         '/uploads'.
         """
-        try:
-            path_resolved = Path(path).resolve()
-            dir_resolved = Path(directory).resolve()
-        except OSError:
-            return False
-        try:
-            path_resolved.relative_to(dir_resolved)
-            return True
-        except ValueError:
-            return False
+        return is_within_directory(path, directory)
 
     @staticmethod
     def validate_upload_path(
