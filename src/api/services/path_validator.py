@@ -5,11 +5,95 @@ import os
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
+# DOS device names reserved by Windows (mirrors ntpath._reserved_names as of
+# Python 3.13). PureWindowsPath.is_reserved() was deprecated in 3.13 and
+# removed in 3.15, and its replacement only exists on 3.13+, so the check is
+# spelled out here.
+_WINDOWS_DEVICE_NAMES = frozenset(
+    {'CON', 'PRN', 'AUX', 'NUL', 'CONIN$', 'CONOUT$'}
+    | {f'COM{c}' for c in '123456789¹²³'}
+    | {f'LPT{c}' for c in '123456789¹²³'}
+)
+
+
+def is_windows_device_name(name: str) -> bool:
+    """True when `name`'s stem is a DOS device name ('CON', 'NUL.txt', ...)."""
+    return name.partition('.')[0].rstrip(' ').upper() in _WINDOWS_DEVICE_NAMES
+
 
 class PathValidator:
     """Validates file paths and names for security"""
 
     MAX_FILENAME_LENGTH = 255
+
+    # Extensions a translation job may write: the document types uploads
+    # accept (SecureFileHandler.ALLOWED_EXTENSIONS). Any other requested
+    # extension gets '.txt' appended, so a job can never drop an executable
+    # ('.bat', '.exe', '.hta', ...) into the output directory.
+    OUTPUT_EXTENSIONS = frozenset({
+        '.txt', '.epub', '.srt', '.docx',
+        '.text', '.log', '.md', '.markdown', '.rst', '.asc',
+        '.csv', '.json', '.xml', '.html', '.htm', '.yaml', '.yml',
+    })
+
+    # Files the open action may hand to the OS default application:
+    # translated documents and TTS audio only. Types whose default handler
+    # can run active content (HTML in a browser, CSV formulas in a
+    # spreadsheet, ...) are left out on purpose.
+    OPENABLE_EXTENSIONS = frozenset({
+        '.txt', '.text', '.md', '.markdown', '.rst', '.log', '.asc',
+        '.srt', '.epub', '.docx',
+        '.opus', '.mp3', '.wav', '.ogg',
+    })
+
+    @staticmethod
+    def safe_output_filename(requested: Optional[str]) -> Optional[str]:
+        """Reduce a client-supplied output filename to a safe bare name.
+
+        Directory components (either separator, a drive prefix) are dropped,
+        so '../../x.txt' or an absolute path become 'x.txt'. Characters
+        Windows refuses become '_' (':' would otherwise write into an NTFS
+        alternate data stream), a device name gets a '_' prefix, and a name
+        whose extension is not in OUTPUT_EXTENSIONS gets '.txt' appended.
+        Returns None when nothing usable remains.
+        """
+        if not isinstance(requested, str):
+            return None
+        name = requested.replace('\\', '/').rsplit('/', 1)[-1]
+        if len(name) >= 2 and name[1] == ':':
+            name = name[2:]
+        name = ''.join('_' if (c in '<>:"|?*' or ord(c) < 32) else c for c in name)
+        name = name.strip().strip('.').strip()
+        if not name:
+            return None
+        if is_windows_device_name(name):
+            name = f"_{name}"
+        if Path(name).suffix.lower() not in PathValidator.OUTPUT_EXTENSIONS:
+            name = f"{name}.txt"
+        if len(name) > PathValidator.MAX_FILENAME_LENGTH:
+            stem, suffix = os.path.splitext(name)
+            name = stem[:PathValidator.MAX_FILENAME_LENGTH - len(suffix)] + suffix
+        return name
+
+    @staticmethod
+    def resolve_output_file(output_dir: Union[str, Path], requested: Optional[str]) -> Path:
+        """Return the path inside `output_dir` a job may write `requested` to.
+
+        Raises ValueError when the name is unusable or would escape the
+        directory (defence in depth on top of safe_output_filename).
+        """
+        name = PathValidator.safe_output_filename(requested)
+        if name is None:
+            raise ValueError("Invalid output filename")
+        candidate = Path(output_dir) / name
+        if not PathValidator.is_within_directory(candidate, output_dir):
+            raise ValueError("Output filename resolves outside the output directory")
+        return candidate
+
+    @staticmethod
+    def is_openable(path: Union[str, Path]) -> bool:
+        """True when `path` has a document/audio extension safe to open."""
+        return Path(path).suffix.lower() in PathValidator.OPENABLE_EXTENSIONS
 
     @staticmethod
     def is_within_directory(path: Union[str, Path], directory: Union[str, Path]) -> bool:

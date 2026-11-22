@@ -28,6 +28,7 @@ from src.utils.unified_logger import LogType, setup_web_logger
 
 from .completion_status import classify_completion
 from .job_callbacks import build_job_callbacks
+from .services.path_validator import PathValidator
 from .websocket import emit_update
 
 # Caps how many translation jobs execute concurrently; see _get_job_slots().
@@ -242,18 +243,18 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             # configured filename is the original job output, so claim that
             # exact path once and persist it below instead of creating another
             # numbered sibling.
-            output_filepath_on_server = os.path.abspath(os.path.join(
-                output_dir,
-                config['output_filename'],
+            output_filepath_on_server = os.path.abspath(str(
+                PathValidator.resolve_output_file(output_dir, config['output_filename'])
             ))
             os.makedirs(
                 os.path.dirname(output_filepath_on_server),
                 exist_ok=True,
             )
         else:
-            tentative_output_path = os.path.join(
-                output_dir,
-                config['output_filename'],
+            # The name comes from the client: resolve_output_file keeps it a
+            # bare document filename inside output_dir or raises ValueError.
+            tentative_output_path = str(
+                PathValidator.resolve_output_file(output_dir, config['output_filename'])
             )
             output_filepath_on_server = get_unique_output_path(
                 tentative_output_path

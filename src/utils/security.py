@@ -91,6 +91,16 @@ def _is_within(base: Union[str, Path], target: Union[str, Path]) -> bool:
         return False
 
 
+
+def is_within_directory(path: Union[str, Path], directory: Union[str, Path]) -> bool:
+    """True when `path` resolves inside `directory` (symlinks followed).
+
+    The one containment check for code outside src/api; never compare
+    resolved paths with str.startswith.
+    """
+    return _is_within(directory, path)
+
+
 def safe_extract_zip(zip_ref: zipfile.ZipFile, destination: Union[str, Path]) -> None:
     """
     Extract a ZIP archive into `destination`, refusing any escaping entry.

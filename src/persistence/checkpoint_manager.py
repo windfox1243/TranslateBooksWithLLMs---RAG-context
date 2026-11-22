@@ -1111,7 +1111,9 @@ class CheckpointManager:
         states_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate safe filename (replace / and \ with _)
-        safe_filename = file_href.replace('/', '_').replace('\\', '_')
+        # ':' too: a drive prefix ('C:') would make pathlib read the name as
+        # drive-relative and drop the state directory in front of it.
+        safe_filename = file_href.replace('/', '_').replace('\\', '_').replace(':', '_')
         state_file = states_dir / f"{safe_filename}.json"
 
         # Update timestamp
@@ -1186,7 +1188,9 @@ class CheckpointManager:
         from src.core.epub.xhtml_translation_state import XHTMLTranslationState
 
         states_dir = self.uploads_dir / translation_id / "xhtml_states"
-        safe_filename = file_href.replace('/', '_').replace('\\', '_')
+        # ':' too: a drive prefix ('C:') would make pathlib read the name as
+        # drive-relative and drop the state directory in front of it.
+        safe_filename = file_href.replace('/', '_').replace('\\', '_').replace(':', '_')
         state_file = states_dir / f"{safe_filename}.json"
 
         if not state_file.exists():
@@ -1242,7 +1246,9 @@ class CheckpointManager:
             True if deleted successfully or file didn't exist
         """
         states_dir = self.uploads_dir / translation_id / "xhtml_states"
-        safe_filename = file_href.replace('/', '_').replace('\\', '_')
+        # ':' too: a drive prefix ('C:') would make pathlib read the name as
+        # drive-relative and drop the state directory in front of it.
+        safe_filename = file_href.replace('/', '_').replace('\\', '_').replace(':', '_')
         state_file = states_dir / f"{safe_filename}.json"
 
         if state_file.exists():
