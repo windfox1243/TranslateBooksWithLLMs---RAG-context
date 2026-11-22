@@ -99,6 +99,97 @@ def _get_job_slots():
     return _job_slots
 
 
+# Set in prompt_options once the preset text has been resolved into the config.
+CUSTOM_INSTRUCTIONS_SNAPSHOT_FLAG = 'custom_instructions_snapshot'
+
+
+def snapshot_custom_instructions(config, log_callback):
+    """Resolve the selected custom-instruction preset into the job config, once.
+
+    The text goes into ``prompt_options['custom_instructions']`` /
+    ``['refinement_instructions']`` with a flag, so a resume reuses it instead
+    of re-reading the file: editing or deleting the preset mid-book must not
+    change the instructions for the rest of that book (the glossary is
+    snapshotted for the same reason). Called before ``start_job`` so the
+    snapshot is persisted with the job; a config without the flag (a job
+    created before snapshots existed) is resolved from disk as before.
+    (Ported from upstream f76b64e1.)
+    """
+    prompt_options = config.get('prompt_options')
+    if not isinstance(prompt_options, dict):
+        prompt_options = {}
+        config['prompt_options'] = prompt_options
+    if prompt_options.get(CUSTOM_INSTRUCTIONS_SNAPSHOT_FLAG):
+        return
+
+    custom_instruction_file = prompt_options.get('custom_instruction_file', '')
+
+    translation_instructions = None
+    refinement_instructions = None
+
+    if custom_instruction_file:
+        from src.config import CUSTOM_INSTRUCTIONS_DIR
+        custom_instructions_dir = CUSTOM_INSTRUCTIONS_DIR
+
+        if not is_safe_filename(custom_instruction_file):
+            log_callback(
+                "custom_instructions_invalid",
+                f"⚠️ Custom instructions file name '{custom_instruction_file}' is invalid "
+                f"(allowed: alphanumeric, underscore, hyphen, dot; must end in .txt, .yaml, or .yml). "
+                f"Translation will proceed without it."
+            )
+        else:
+            try:
+                loaded = load_custom_instructions(
+                    custom_instruction_file, custom_instructions_dir
+                )
+                translation_instructions = loaded.get('translation')
+                refinement_instructions = loaded.get('refinement')
+
+                if translation_instructions or refinement_instructions:
+                    phases = []
+                    if translation_instructions:
+                        phases.append('translation')
+                    if refinement_instructions:
+                        phases.append('refinement')
+                    log_callback(
+                        "custom_instructions",
+                        f"📝 Loaded custom instructions: {custom_instruction_file} "
+                        f"(phases: {', '.join(phases)})"
+                    )
+                else:
+                    log_callback(
+                        "custom_instructions_empty",
+                        f"⚠️ Custom instructions file '{custom_instruction_file}' is empty. "
+                        f"Translation will proceed without it."
+                    )
+            except FileNotFoundError:
+                log_callback(
+                    "custom_instructions_missing",
+                    f"⚠️ Custom instructions file '{custom_instruction_file}' was selected "
+                    f"but not found in {custom_instructions_dir}. Translation will proceed "
+                    f"without it."
+                )
+            except (ValueError, Exception) as e:
+                log_callback(
+                    "custom_instructions_error",
+                    f"⚠️ Failed to load custom instructions '{custom_instruction_file}': {e}. "
+                    f"Translation will proceed without it."
+                )
+
+    # Inject phase-specific custom instructions into prompt_options
+    if translation_instructions or refinement_instructions:
+        if 'prompt_options' not in config:
+            config['prompt_options'] = {}
+        if translation_instructions:
+            config['prompt_options']['custom_instructions'] = translation_instructions
+        if refinement_instructions:
+            config['prompt_options']['refinement_instructions'] = refinement_instructions
+
+    if (custom_instruction_file or '').strip():
+        prompt_options[CUSTOM_INSTRUCTIONS_SNAPSHOT_FLAG] = True
+
+
 def _mark_job_error_in_db(state_manager, translation_id, checkpoint_manager=None):
     """Record a terminal 'error' status for the job in SQLite, never raising.
 
@@ -243,6 +334,11 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
                 # Non-fatal: log later once the logger is wired in.
                 config.setdefault('prompt_options', {})['glossary_load_error'] = str(e)
 
+    if not is_resume:
+        # Resolve the preset text now, so start_job persists it with the job
+        # and every resume reuses the same instructions.
+        snapshot_custom_instructions(config, _log_message_callback)
+
     # Created below for inline-text jobs; removed in the `finally` on every
     # exit path, not only on success.
     temp_txt_file_path = None
@@ -378,70 +474,9 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
             _log_message_callback("error_no_path", f"❌ {config['file_type'].upper()} translation requires a file path from upload.")
             raise Exception(f"{config['file_type'].upper()} translation requires a file_path.")
 
-        # Read custom instruction file if specified
-        custom_instruction_file = config.get('prompt_options', {}).get('custom_instruction_file', '')
-
-        translation_instructions = None
-        refinement_instructions = None
-
-        if custom_instruction_file:
-            from src.config import CUSTOM_INSTRUCTIONS_DIR
-            custom_instructions_dir = CUSTOM_INSTRUCTIONS_DIR
-
-            if not is_safe_filename(custom_instruction_file):
-                _log_message_callback(
-                    "custom_instructions_invalid",
-                    f"⚠️ Custom instructions file name '{custom_instruction_file}' is invalid "
-                    f"(allowed: alphanumeric, underscore, hyphen, dot; must end in .txt, .yaml, or .yml). "
-                    f"Translation will proceed without it."
-                )
-            else:
-                try:
-                    loaded = load_custom_instructions(
-                        custom_instruction_file, custom_instructions_dir
-                    )
-                    translation_instructions = loaded.get('translation')
-                    refinement_instructions = loaded.get('refinement')
-
-                    if translation_instructions or refinement_instructions:
-                        phases = []
-                        if translation_instructions:
-                            phases.append('translation')
-                        if refinement_instructions:
-                            phases.append('refinement')
-                        _log_message_callback(
-                            "custom_instructions",
-                            f"📝 Loaded custom instructions: {custom_instruction_file} "
-                            f"(phases: {', '.join(phases)})"
-                        )
-                    else:
-                        _log_message_callback(
-                            "custom_instructions_empty",
-                            f"⚠️ Custom instructions file '{custom_instruction_file}' is empty. "
-                            f"Translation will proceed without it."
-                        )
-                except FileNotFoundError:
-                    _log_message_callback(
-                        "custom_instructions_missing",
-                        f"⚠️ Custom instructions file '{custom_instruction_file}' was selected "
-                        f"but not found in {custom_instructions_dir}. Translation will proceed "
-                        f"without it."
-                    )
-                except (ValueError, Exception) as e:
-                    _log_message_callback(
-                        "custom_instructions_error",
-                        f"⚠️ Failed to load custom instructions '{custom_instruction_file}': {e}. "
-                        f"Translation will proceed without it."
-                    )
-
-        # Inject phase-specific custom instructions into prompt_options
-        if translation_instructions or refinement_instructions:
-            if 'prompt_options' not in config:
-                config['prompt_options'] = {}
-            if translation_instructions:
-                config['prompt_options']['custom_instructions'] = translation_instructions
-            if refinement_instructions:
-                config['prompt_options']['refinement_instructions'] = refinement_instructions
+        # No-op when the preset was snapshotted at job creation; only a job
+        # persisted before snapshots existed re-reads the file.
+        snapshot_custom_instructions(config, _log_message_callback)
 
         # Surface glossary load result (snapshot was taken earlier, before start_job).
         glossary_terms_snapshot = config.get('prompt_options', {}).get('glossary_terms')
