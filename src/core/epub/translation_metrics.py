@@ -293,6 +293,7 @@ class TranslationMetrics:
         return {
             "total_chunks": effective_total_chunks,
             "completed_chunks": effective_completed,
+            "processed_chunks": self.processed_chunks,
             "successful_first_try": self.successful_first_try,
             "successful_after_retry": self.successful_after_retry,
             "fallback_used": self.fallback_used,

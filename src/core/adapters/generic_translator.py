@@ -279,6 +279,7 @@ class GenericTranslator:
                     'total_chunks': total_units,
                     'completed_chunks': len(restored_completed),
                     'failed_chunks': remaining_failed,
+                    'processed_chunks': len(restored_completed) + remaining_failed,
                     'review_required_chunks': sum(
                         1 for c in checkpoint_data.get('chunks', [])
                         if (c.get('chunk_data') or {}).get('quality_status')
@@ -405,7 +406,8 @@ class GenericTranslator:
                 stats_callback({
                     'total_chunks': total_units,
                     'completed_chunks': 0,
-                    'failed_chunks': 0
+                    'failed_chunks': 0,
+                    'processed_chunks': 0,
                 })
 
             # 3. Check for checkpoint and resume
@@ -979,7 +981,8 @@ class GenericTranslator:
                     stats_callback({
                         'total_chunks': total_units,
                         'completed_chunks': completed_count,
-                        'failed_chunks': failed_count
+                        'failed_chunks': failed_count,
+                        'processed_chunks': completed_count + failed_count
                     })
 
             def _commit_pending_context(i):
@@ -1138,6 +1141,7 @@ class GenericTranslator:
                                 'total_chunks': total_units,
                                 'completed_chunks': completed_count,
                                 'failed_chunks': failed_count,
+                                'processed_chunks': completed_count + failed_count,
                                 'review_required_chunks': len(review_required_indices),
                             })
 
@@ -1259,6 +1263,7 @@ class GenericTranslator:
                             'total_chunks': total_units,
                             'completed_chunks': completed_count,
                             'failed_chunks': failed_count,
+                            'processed_chunks': completed_count + failed_count,
                             'review_required_chunks': len(review_required_indices),
                         })
                     if log_callback:
