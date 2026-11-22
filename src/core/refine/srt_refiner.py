@@ -134,16 +134,22 @@ async def refine_srt_file(
     }
     subtitle_positions = {id(sub): idx for idx, sub in enumerate(subtitles)}
 
-    llm_client = create_llm_client(
-        llm_provider, gemini_api_key, cli_api_endpoint, model_name,
-        openai_api_key=openai_api_key,
-        openrouter_api_key=openrouter_api_key,
-        mistral_api_key=mistral_api_key,
-        deepseek_api_key=deepseek_api_key,
-        poe_api_key=poe_api_key,
-        nim_api_key=nim_api_key,
-        log_callback=log_callback,
-    )
+    try:
+        llm_client = create_llm_client(
+            llm_provider, gemini_api_key, cli_api_endpoint, model_name,
+            openai_api_key=openai_api_key,
+            openrouter_api_key=openrouter_api_key,
+            mistral_api_key=mistral_api_key,
+            deepseek_api_key=deepseek_api_key,
+            poe_api_key=poe_api_key,
+            nim_api_key=nim_api_key,
+            log_callback=log_callback,
+        )
+    except Exception as e:
+        if log_callback:
+            log_callback("srt_refine_client_failed",
+                         f"❌ Could not create the LLM client for '{llm_provider}': {e}")
+        return False
 
     # Fixed-count grouping for refine (no char cap): every block sent to
     # the LLM has the same shape, which keeps [N] marker accounting

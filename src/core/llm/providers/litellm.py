@@ -28,17 +28,12 @@ from ..base import (
     LLMResponse,
     terminal_provider_failure,
 )
-from ..exceptions import ContextOverflowError
-from ..rate_limit_handler import is_retryable_http_status
+from ..exceptions import ContextOverflowError, RateLimitError
+from ..rate_limit_handler import is_retryable_http_status, wait_for_request_slot
+from ..utils.error_classification import is_context_overflow_error
 
 # Substrings that mark a provider-side context/length overflow, surfaced as
 # ContextOverflowError so the chunking layer can react (shrink and retry).
-_CONTEXT_OVERFLOW_KEYWORDS = (
-    "context_length", "maximum context", "token limit",
-    "too many tokens", "reduce the length", "max_tokens",
-    "context window", "exceeds", "context window exceeded",
-)
-
 # LiteLLM exception qualnames worth retrying with backoff (transient).
 _TRANSIENT_EXCEPTIONS = (
     "litellm.exceptions.RateLimitError",
@@ -169,6 +164,9 @@ class LiteLLMProvider(LLMProvider):
             }
 
         for attempt in range(MAX_TRANSLATION_ATTEMPTS):
+            # REQUEST_INTERVAL pacing, before a key is picked: every attempt
+            # counts against a requests-per-minute quota.
+            await wait_for_request_slot(self.provider_name)
             try:
                 response = await litellm.acompletion(
                     model=self.model,
@@ -201,9 +199,10 @@ class LiteLLMProvider(LLMProvider):
 
             except Exception as e:
                 qualnames = _qualnames(e)
-                error_str = str(e).lower()
+                status = getattr(e, "status_code", None)
                 if (_CONTEXT_WINDOW_EXCEPTION in qualnames
-                        or any(kw in error_str for kw in _CONTEXT_OVERFLOW_KEYWORDS)):
+                        or is_context_overflow_error(
+                            str(e), status if isinstance(status, int) else None)):
                     raise ContextOverflowError(f"LiteLLM context overflow: {e}") from e
 
                 # Auth, bad request, unknown model, ... won't recover on retry:
@@ -229,6 +228,14 @@ class LiteLLMProvider(LLMProvider):
                     f"{MAX_TRANSLATION_ATTEMPTS}): {e}"
                 )
                 if is_last:
+                    if qualname == "litellm.exceptions.RateLimitError":
+                        # Credentials come from the environment, so there is no
+                        # key pool to rotate: pause the job (checkpoint) instead
+                        # of failing the chunk. (Ported from upstream 2b0a431f.)
+                        raise RateLimitError(
+                            f"LiteLLM rate limit persisted after {attempt + 1} attempt(s): {e}",
+                            provider="litellm",
+                        ) from e
                     return terminal_provider_failure(generation_options, "transport")
 
                 if qualname in _TRANSIENT_EXCEPTIONS:

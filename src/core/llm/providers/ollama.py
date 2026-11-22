@@ -36,11 +36,12 @@ from ..exceptions import (
     RepetitionLoopError,
     StructuredOutputSchemaError,
 )
-from ..rate_limit_handler import compute_wait_time
+from ..rate_limit_handler import compute_wait_time, wait_for_request_slot
 from ..thinking.behavior import ThinkingBehavior, _model_matches_pattern
 from ..thinking.cache import get_thinking_cache
 from ..thinking.detection import detect_repetition_loop
 from ..utils.context_detection import ContextDetector
+from ..utils.error_classification import is_context_overflow_error
 
 
 class OllamaProvider(LLMProvider):
@@ -48,7 +49,7 @@ class OllamaProvider(LLMProvider):
 
     def __init__(self, api_endpoint: str = API_ENDPOINT, model: str = DEFAULT_MODEL,
                  context_window: int = OLLAMA_NUM_CTX, log_callback: Optional[Callable] = None):
-        super().__init__(model)
+        super().__init__(model, provider_name="ollama")
         # Convert /api/generate endpoint to /api/chat for proper think support
         self.api_endpoint = api_endpoint.replace('/api/generate', '/api/chat')
         self.context_window = context_window
@@ -329,6 +330,9 @@ class OllamaProvider(LLMProvider):
 
         client = await self._get_client()
         for attempt in range(MAX_TRANSLATION_ATTEMPTS):
+            # REQUEST_INTERVAL pacing, before a key is picked: every attempt
+            # counts against a requests-per-minute quota.
+            await wait_for_request_slot(self.provider_name)
             try:
                 # Use streaming to monitor tokens in real-time
                 content_chunks = []
@@ -585,7 +589,11 @@ class OllamaProvider(LLMProvider):
                     # Ollama reports failures as {"error": "..."}; fall back to the
                     # raw body when the server answers with plain text or HTML.
                     try:
-                        error_message = e.response.json().get("error") or str(e)
+                        error = e.response.json().get("error")
+                        # OpenAI-style gateways nest it: {"error": {"message": ...}}
+                        if isinstance(error, dict):
+                            error = error.get("message")
+                        error_message = str(error or e)
                     except Exception:
                         try:
                             error_message = e.response.text.strip() or str(e)
@@ -633,8 +641,8 @@ class OllamaProvider(LLMProvider):
                         "Ollama endpoint rejected the output schema."
                     ) from e
 
-                if any(keyword in error_message.lower()
-                       for keyword in ["context", "truncate", "length", "too long"]):
+                status_code = e.response.status_code if e.response is not None else None
+                if is_context_overflow_error(error_message, status_code):
                     if self.log_callback:
                         self.log_callback("llm_context_overflow",
                             f"{RED}❌ Context size exceeded!{RESET}\n"
@@ -677,7 +685,7 @@ class OllamaProvider(LLMProvider):
                     generation_options, "transport",
                     e.response.status_code if e.response else None,
                 )
-            except (RepetitionLoopError, ContextOverflowError):
+            except (RepetitionLoopError, ContextOverflowError, RateLimitError):
                 # These errors should propagate up for handling by translator
                 raise
             except json.JSONDecodeError as e:

@@ -25,8 +25,13 @@ from ..base import (
     LLMResponse,
     terminal_provider_failure,
 )
-from ..exceptions import ContextOverflowError
-from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
+from ..exceptions import ContextOverflowError, RateLimitError
+from ..rate_limit_handler import (
+    handle_rate_limit,
+    is_retryable_http_status,
+    wait_for_request_slot,
+)
+from ..utils.error_classification import is_context_overflow_error
 
 
 class MistralProvider(LLMProvider):
@@ -234,6 +239,9 @@ class MistralProvider(LLMProvider):
         attempt = 0
         rate_limit_events = 0
         while attempt < MAX_TRANSLATION_ATTEMPTS:
+            # REQUEST_INTERVAL pacing, before a key is picked: every attempt
+            # counts against a requests-per-minute quota.
+            await wait_for_request_slot(self.provider_name)
             current_key = await self._key_pool.acquire()
             headers = {
                 "Authorization": f"Bearer {current_key}",
@@ -313,12 +321,8 @@ class MistralProvider(LLMProvider):
                     print(f"Response details: Status {e.response.status_code}, Body: {error_body}...")
 
                 # Detect context overflow errors
-                context_overflow_keywords = [
-                    "context_length", "maximum context", "token limit",
-                    "too many tokens", "reduce the length", "max_tokens",
-                    "context window", "exceeds"
-                ]
-                if any(keyword in error_message.lower() for keyword in context_overflow_keywords):
+                status_code = e.response.status_code if e.response is not None else None
+                if is_context_overflow_error(error_message, status_code):
                     raise ContextOverflowError(f"Mistral context overflow: {error_message}")
 
                 # Client errors (404 model, 401 key, 402 credits, 400) won't
@@ -342,6 +346,10 @@ class MistralProvider(LLMProvider):
                     continue
                 return terminal_provider_failure(generation_options, "transport")
 
+            except (RateLimitError, ContextOverflowError):
+                # Must reach the pipeline: a rate-limit pause or a chunk split,
+                # never a retried-then-failed chunk. (Ported from upstream 2b0a431f.)
+                raise
             except Exception as e:
                 print(f"Mistral API Unknown Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
                 attempt += 1

@@ -14,6 +14,9 @@ Features:
 
 import asyncio
 import json
+import threading
+import time
+import weakref
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import httpx
@@ -30,8 +33,29 @@ from ..base import (
     LLMResponse,
     terminal_provider_failure,
 )
-from ..exceptions import ContextOverflowError, StructuredOutputSchemaError
-from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
+from ..exceptions import (
+    ContextOverflowError,
+    RateLimitError,
+    StructuredOutputSchemaError,
+)
+from ..rate_limit_handler import (
+    handle_rate_limit,
+    is_retryable_http_status,
+    wait_for_request_slot,
+)
+from ..utils.error_classification import is_context_overflow_error
+
+
+def _status_from_error_code(code) -> Optional[int]:
+    """The HTTP-style status in an OpenRouter body error's ``code``, if any."""
+    status: Optional[int] = None
+    if isinstance(code, int) and not isinstance(code, bool):
+        status = code
+    elif isinstance(code, str) and code.strip().isdigit():
+        status = int(code.strip())
+    if status is not None and not 400 <= status <= 599:
+        return None
+    return status
 
 
 class OpenRouterProvider(LLMProvider):
@@ -107,9 +131,16 @@ class OpenRouterProvider(LLMProvider):
     REASONING_EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 
     # Model catalog entries, fetched once per process: {model_id: model_dict}
+    # A failed fetch is retried after this many seconds.
+    CATALOG_RETRY_SECONDS = 300
     _model_catalog: Optional[Dict[str, Dict[str, Any]]] = None
-    _model_catalog_failed = False
-    _model_catalog_lock: Optional[asyncio.Lock] = None
+    # monotonic time of the last failed fetch; retried after CATALOG_RETRY_SECONDS
+    _model_catalog_failed_at: Optional[float] = None
+    # One asyncio.Lock per event loop: each web job runs on its own loop, and a
+    # lock is bound to the loop that first waits on it, so a single class-level
+    # lock failed for every job after the first. Guarded by a thread lock.
+    _model_catalog_loop_locks: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+    _model_catalog_state_lock = threading.Lock()
     # Resolved override per model: {model_id: reasoning dict, or {} for none}
     _reasoning_overrides: Dict[str, Dict[str, Any]] = {}
 
@@ -134,27 +165,34 @@ class OpenRouterProvider(LLMProvider):
         self.disable_thinking = disable_thinking
         self._warned_reasoning_tokens = False
 
+    @staticmethod
+    def _catalog_failed_recently() -> bool:
+        """True while a failed catalog fetch is too recent to retry.
+
+        A transient failure must not disable the overrides for the life of
+        the process (reasoning would stay on, and billed, for every job).
+        """
+        failed_at = OpenRouterProvider._model_catalog_failed_at
+        return (failed_at is not None
+                and time.monotonic() - failed_at < OpenRouterProvider.CATALOG_RETRY_SECONDS)
+
     async def _load_model_catalog(self) -> Optional[Dict[str, Dict[str, Any]]]:
         """
         Fetch OpenRouter's model catalog (reasoning metadata included).
 
         Fetched once per process and cached class-side. Returns None when the
-        catalog is unreachable, which means "unknown" and not "no models".
+        catalog is unreachable, which means "unknown" and not "no models";
+        the fetch is retried once CATALOG_RETRY_SECONDS have passed.
         """
         if OpenRouterProvider._model_catalog is not None:
             return OpenRouterProvider._model_catalog
-        if OpenRouterProvider._model_catalog_failed:
+        if OpenRouterProvider._catalog_failed_recently():
             return None
 
-        # Safe to create here without a double-check race: no await between the
-        # test and the assignment, so the event loop cannot interleave.
-        if OpenRouterProvider._model_catalog_lock is None:
-            OpenRouterProvider._model_catalog_lock = asyncio.Lock()
-
-        async with OpenRouterProvider._model_catalog_lock:
+        async with OpenRouterProvider._catalog_lock_for_running_loop():
             if OpenRouterProvider._model_catalog is not None:
                 return OpenRouterProvider._model_catalog
-            if OpenRouterProvider._model_catalog_failed:
+            if OpenRouterProvider._catalog_failed_recently():
                 return None
             try:
                 client = await self._get_client()
@@ -164,6 +202,7 @@ class OpenRouterProvider(LLMProvider):
                     timeout=30
                 )
                 response.raise_for_status()
+                OpenRouterProvider._model_catalog_failed_at = None
                 OpenRouterProvider._model_catalog = {
                     m["id"]: m for m in response.json().get("data", []) if m.get("id")
                 }
@@ -171,8 +210,19 @@ class OpenRouterProvider(LLMProvider):
             except Exception as e:
                 print(f"[OpenRouter] WARN: could not read the model catalog ({e}); "
                       f"reasoning stays at the model default")
-                OpenRouterProvider._model_catalog_failed = True
+                OpenRouterProvider._model_catalog_failed_at = time.monotonic()
                 return None
+
+    @staticmethod
+    def _catalog_lock_for_running_loop() -> asyncio.Lock:
+        """The catalog fetch lock of the event loop running this coroutine."""
+        loop = asyncio.get_running_loop()
+        with OpenRouterProvider._model_catalog_state_lock:
+            lock = OpenRouterProvider._model_catalog_loop_locks.get(loop)
+            if lock is None:
+                lock = asyncio.Lock()
+                OpenRouterProvider._model_catalog_loop_locks[loop] = lock
+            return lock
 
     def _pick_reasoning_override(self, model_info: Dict[str, Any]) -> Dict[str, Any]:
         """Map a model's catalog entry to the `reasoning` value translation wants."""
@@ -408,6 +458,9 @@ class OpenRouterProvider(LLMProvider):
         attempt = 0
         rate_limit_events = 0
         while attempt < MAX_TRANSLATION_ATTEMPTS:
+            # REQUEST_INTERVAL pacing, before a key is picked: every attempt
+            # counts against a requests-per-minute quota.
+            await wait_for_request_slot(self.provider_name)
             current_key = await self._key_pool.acquire()
             headers = {
                 "Authorization": f"Bearer {current_key}",
@@ -425,6 +478,44 @@ class OpenRouterProvider(LLMProvider):
                 response.raise_for_status()
 
                 result = response.json()
+
+                # OpenRouter answers 200 as soon as the upstream accepts the
+                # request, so a later failure arrives in the body: an error
+                # object with no choices, or a choice that ended with
+                # finish_reason "error". error.code carries the HTTP-style
+                # status; classify like that status and never return the
+                # partial text. (Ported from upstream ede8d0b0.)
+                body_error = result.get("error") if isinstance(result, dict) else None
+                choices = (result.get("choices") or []) if isinstance(result, dict) else []
+                if isinstance(body_error, dict):
+                    finish = (choices[0] or {}).get("finish_reason") if choices else None
+                    if not choices or finish == "error":
+                        status = _status_from_error_code(body_error.get("code"))
+                        message = body_error.get("message") or str(body_error)[:300]
+                        print(f"[OpenRouter] WARN: provider error in an HTTP 200 answer "
+                              f"(code {status}): {message}")
+                        if status == 429:
+                            rate_limit_events += 1
+                            await handle_rate_limit(
+                                self._key_pool, current_key, {},
+                                rate_limit_events, MAX_TRANSLATION_ATTEMPTS,
+                            )
+                            continue
+                        if status is not None and not is_retryable_http_status(status):
+                            return terminal_provider_failure(
+                                generation_options,
+                                "provider_auth" if status in {401, 403}
+                                else "provider_quota" if status == 402
+                                else "transport",
+                                status,
+                            )
+                        attempt += 1
+                        if attempt < MAX_TRANSLATION_ATTEMPTS:
+                            await asyncio.sleep(2)
+                            continue
+                        return terminal_provider_failure(
+                            generation_options, "transport", status,
+                        )
 
                 if "choices" not in result or len(result["choices"]) == 0:
                     print(f"[OpenRouter] WARN: Unexpected response format: {result}")
@@ -550,10 +641,8 @@ class OpenRouterProvider(LLMProvider):
                     print(f"OpenRouter API HTTP Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
                     print(f"Response details: Status {e.response.status_code}, Body: {error_body}...")
 
-                context_overflow_keywords = ["context_length", "maximum context", "token limit",
-                                              "too many tokens", "reduce the length", "max_tokens",
-                                              "context window", "exceeds"]
-                if any(keyword in error_message.lower() for keyword in context_overflow_keywords):
+                status_code = e.response.status_code if e.response is not None else None
+                if is_context_overflow_error(error_message, status_code):
                     raise ContextOverflowError(f"OpenRouter context overflow: {error_message}")
 
                 # Client errors (404 model, 401 key, 402 credits, 400) won't
@@ -583,6 +672,10 @@ class OpenRouterProvider(LLMProvider):
                     await asyncio.sleep(2)
                     continue
                 return terminal_provider_failure(generation_options, "transport")
+            except (RateLimitError, ContextOverflowError):
+                # Must reach the pipeline: a rate-limit pause or a chunk split,
+                # never a retried-then-failed chunk. (Ported from upstream 2b0a431f.)
+                raise
             except Exception as e:
                 print(f"OpenRouter API Unknown Error (attempt {attempt + 1}/{MAX_TRANSLATION_ATTEMPTS}): {e}")
                 attempt += 1
