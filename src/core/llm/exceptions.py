@@ -67,3 +67,14 @@ class RateLimitError(Exception):
         super().__init__(message)
         self.retry_after = retry_after
         self.provider = provider
+
+
+class LLMClientConfigError(ValueError):
+    """
+    Raised when an LLM client cannot be built from the given configuration:
+    unknown provider name, or a cloud provider with no usable API key
+    (neither passed in nor found in the environment).
+
+    Subclasses ValueError, which the provider factory already raises for the
+    same conditions, so existing `except ValueError` handlers keep working.
+    """

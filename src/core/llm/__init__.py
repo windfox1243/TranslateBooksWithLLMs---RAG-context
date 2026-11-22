@@ -21,7 +21,12 @@ Example usage:
 from .base import LLMGenerationOptions, LLMProvider, LLMResponse
 
 # Exceptions
-from .exceptions import ContextOverflowError, RateLimitError, RepetitionLoopError
+from .exceptions import (
+    ContextOverflowError,
+    LLMClientConfigError,
+    RateLimitError,
+    RepetitionLoopError,
+)
 
 # Factory
 from .factory import create_llm_provider
@@ -53,6 +58,7 @@ __all__ = [
     'ContextOverflowError',
     'RepetitionLoopError',
     'RateLimitError',
+    'LLMClientConfigError',
 
     # Base
     'LLMProvider',
