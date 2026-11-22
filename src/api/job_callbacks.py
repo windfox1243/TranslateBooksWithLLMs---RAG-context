@@ -40,6 +40,24 @@ class JobCallbacks:
     openrouter_cost_callback: Callable[..., Any]
 
 
+# Longest string kept per field of a stored log entry's data.
+# (Ported from upstream ed9a8c14.)
+_STORED_LOG_FIELD_MAX_CHARS = 2000
+
+
+def _compact_log_entry(log_entry):
+    """Return a copy of ``log_entry`` with long data strings truncated."""
+    data = log_entry.get('data') if isinstance(log_entry, dict) else None
+    if not isinstance(data, dict):
+        return log_entry
+    compact = {}
+    for key, value in data.items():
+        if isinstance(value, str) and len(value) > _STORED_LOG_FIELD_MAX_CHARS:
+            value = value[:_STORED_LOG_FIELD_MAX_CHARS] + ' [...]'
+        compact[key] = value
+    return {**log_entry, 'data': compact}
+
+
 def build_job_callbacks(
     translation_id: str,
     config: dict,
@@ -65,9 +83,11 @@ def build_job_callbacks(
         """Callback for storing logs.
 
         Uses the atomic append so concurrent workers can't drop each other's
-        entries the way a get-mutate-set round trip does.
+        entries the way a get-mutate-set round trip does. The stored copy has
+        long data strings truncated: LLM request/response entries carry whole
+        prompts and responses, which the live view already received in full.
         """
-        state_manager.append_log(translation_id, log_entry)
+        state_manager.append_log(translation_id, _compact_log_entry(log_entry))
 
     logger = setup_web_logger(web_callback, storage_callback)
 
