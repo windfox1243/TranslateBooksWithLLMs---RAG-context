@@ -118,6 +118,25 @@ def _mark_job_error_in_db(state_manager, translation_id, checkpoint_manager=None
 
 
 def run_translation_async_wrapper(translation_id, config, state_manager, output_dir, socketio):
+    """Run one job's worker, holding its worker-registry entry until it exits.
+
+    The registry keeps a second worker off this job for as long as this thread
+    lives, including the wait for a job slot and an auto-resume sleep after a
+    rate limit. The resume route claims the entry before starting us; a fresh
+    job is recorded here. (Ported from upstream d0bc2a3b.)
+    """
+    mark_active = getattr(state_manager, 'mark_worker_active', None)
+    if mark_active is not None:
+        mark_active(translation_id)
+    try:
+        _run_translation_worker(translation_id, config, state_manager, output_dir, socketio)
+    finally:
+        release = getattr(state_manager, 'release_worker', None)
+        if release is not None:
+            release(translation_id)
+
+
+def _run_translation_worker(translation_id, config, state_manager, output_dir, socketio):
     """
     Wrapper for running translation in async context
 

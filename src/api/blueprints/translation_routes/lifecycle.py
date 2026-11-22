@@ -323,7 +323,32 @@ def register(bp, deps, shared):
         return jsonify({"resumable_jobs": resumable_jobs})
     @bp.route('/api/resume/<translation_id>', methods=['POST'])
     def resume_translation_job_endpoint(translation_id):
-        """Resume a paused or interrupted translation job"""
+        """Resume a paused or interrupted translation job.
+
+        The job is reserved for one worker before anything else happens and
+        released again on every path that does not start the worker: without
+        it, a double click (or a manual resume while the job sleeps before an
+        auto-resume) ran two workers on one checkpoint.
+        (Ported from upstream d0bc2a3b.)
+        """
+        claim = getattr(state_manager, 'try_claim_worker', None)
+        if claim is not None and not claim(translation_id):
+            return jsonify({
+                "error": "Cannot resume: this translation is already running",
+                "message": "A worker is already processing this translation "
+                           "(possibly waiting to auto-resume after a rate limit).",
+            }), 409
+
+        outcome = {'started': False}
+        try:
+            return _resume_claimed_job(translation_id, outcome)
+        finally:
+            if not outcome['started'] and claim is not None:
+                state_manager.release_worker(translation_id)
+
+    def _resume_claimed_job(translation_id, outcome):
+        """Body of the resume route; sets outcome['started'] once the worker
+        has been started (it then owns the claim)."""
         # Check if there are any active translations
         active_error = _active_translation_conflict(state_manager)
         if active_error is not None:
@@ -413,6 +438,7 @@ def register(bp, deps, shared):
 
         # Start the translation job (the wrapper will inject dependencies)
         start_translation_job(translation_id, config)
+        outcome['started'] = True
 
         return jsonify({
             "translation_id": translation_id,

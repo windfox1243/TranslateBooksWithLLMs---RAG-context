@@ -626,7 +626,12 @@ def _active_translation_conflict(
     active_translations = []
     for tid, tdata in state_manager.get_all_translations().items():
         status = tdata.get('status')
-        if status in ['running', 'queued'] and tid != ignore_translation_id:
+        # A 'rate_limited' job that is not interrupted still has a worker
+        # asleep before its auto-resume, so it counts as active.
+        if (
+            status in ['running', 'queued']
+            or (status == 'rate_limited' and not tdata.get('interrupted'))
+        ) and tid != ignore_translation_id:
             active_translations.append({
                 'id': tid,
                 'status': status,
