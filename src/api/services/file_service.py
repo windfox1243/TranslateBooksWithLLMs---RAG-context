@@ -108,6 +108,12 @@ class FileService:
                 # It's likely a temp file pattern
                 return False
 
+        # The refine-after pass writes '.<stem>.refining<ext>' next to the
+        # output and swaps it in when done; it is a working file, not a
+        # result. (Adapted from upstream f1082051.)
+        if filename.startswith('.') and '.refining' in filename:
+            return False
+
         return True
 
     def _get_file_info(self, file_path: Path, is_upload: bool = False) -> Dict:
