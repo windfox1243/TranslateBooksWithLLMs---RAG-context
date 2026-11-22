@@ -1,7 +1,10 @@
 """The custom-instruction preset is read once per job (ported from upstream f76b64e1)."""
 
 import src.config as config_module
-from src.api.handlers import CUSTOM_INSTRUCTIONS_SNAPSHOT_FLAG, snapshot_custom_instructions
+from src.api.handlers import (
+    CUSTOM_INSTRUCTIONS_SNAPSHOT_FLAG,
+    snapshot_custom_instructions,
+)
 
 
 def test_preset_text_is_frozen_when_the_job_starts(tmp_path, monkeypatch):

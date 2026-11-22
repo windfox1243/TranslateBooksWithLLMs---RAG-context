@@ -75,6 +75,49 @@ def sanitize_config_secrets(config: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def is_process_alive(pid: Optional[int]) -> bool:
+    """Best-effort check that a process with this PID is running.
+
+    Never sends a signal on Windows: os.kill(pid, 0) there delivers
+    CTRL_C_EVENT instead of probing, so the Win32 API is queried directly.
+    A PID can be reused after its process exits, so a True answer may
+    occasionally be a false positive; callers only use it to *skip* work.
+    """
+    if not pid or pid <= 0:
+        return False
+    if os.name == 'nt':
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        process_query_limited_information = 0x1000
+        still_active = 259
+        handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+        if not handle:
+            # Access denied means the process exists but belongs to someone else.
+            return ctypes.get_last_error() == 5
+        try:
+            exit_code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == still_active
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
 class Database:
     """
     Manages SQLite database for translation job checkpoints.
@@ -203,7 +246,8 @@ class Database:
         translation_id: str,
         file_type: str,
         config: Dict[str, Any],
-        server_session_id: Optional[str] = None
+        server_session_id: Optional[str] = None,
+        owner_pid: Optional[int] = None,
     ) -> bool:
         """Create a new translation job record."""
         return self.jobs.create_job(
@@ -211,6 +255,7 @@ class Database:
             file_type,
             config,
             server_session_id,
+            owner_pid=owner_pid,
         )
 
     def update_job_progress(
@@ -446,18 +491,31 @@ class Database:
                 conn = self._get_connection()
                 cursor = conn.cursor()
 
-                # Reset jobs that are 'running' but from a different session
-                # (or have no session_id, meaning they're from before this feature)
+                # Candidates: 'running' rows from a different session (or with
+                # no session_id: legacy rows and CLI jobs). A row owned by
+                # another process that is still alive (a CLI run, a second
+                # server) is left alone. (Ported from upstream e4efe87d.)
                 cursor.execute("""
-                    UPDATE translation_jobs
-                    SET status = 'interrupted',
-                        updated_at = CURRENT_TIMESTAMP,
-                        paused_at = CURRENT_TIMESTAMP
+                    SELECT translation_id, owner_pid FROM translation_jobs
                     WHERE status = 'running'
                     AND (server_session_id IS NULL OR server_session_id != ?)
                 """, (current_session_id,))
+                own_pid = os.getpid()
+                stale_ids = [
+                    row[0] for row in cursor.fetchall()
+                    if not (row[1] and row[1] != own_pid and is_process_alive(row[1]))
+                ]
 
-                affected_rows = cursor.rowcount
+                affected_rows = 0
+                for translation_id in stale_ids:
+                    cursor.execute("""
+                        UPDATE translation_jobs
+                        SET status = 'interrupted',
+                            updated_at = CURRENT_TIMESTAMP,
+                            paused_at = CURRENT_TIMESTAMP
+                        WHERE translation_id = ? AND status = 'running'
+                    """, (translation_id,))
+                    affected_rows += cursor.rowcount
                 conn.commit()
                 return affected_rows
             except Exception as e:
