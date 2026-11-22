@@ -15,6 +15,7 @@ ensure_utf8_stdio()
 # Reduce verbosity of httpx (avoid showing 400 errors during model detection)
 logging.getLogger('httpx').setLevel(logging.WARNING)
 
+import sys
 import time
 import uuid
 
@@ -46,6 +47,33 @@ from src.tts.tts_config import (
 from src.utils.file_utils import generate_tts_for_translation, get_unique_output_path
 from src.utils.notifier import EVENT_FAILURE, EVENT_SUCCESS, notify
 from src.utils.unified_logger import LogType, setup_cli_logger
+
+
+def _exit_unless_succeeded(success, args, start_time, logger):
+    """Exit with status 1 when the job did not fully succeed.
+
+    The adapters return False for a failed or partial run; the CLI used to
+    log "Completed Successfully", notify success and exit 0 regardless.
+    (Ported from upstream f4bbbfea.)
+    """
+    if success is True:
+        return
+    logger.error(
+        "Translation did not complete: the job failed or finished partially. "
+        "Run it again to retry the failed chunks.",
+        LogType.ERROR_DETAIL,
+        {'input_file': args.input, 'output_file': args.output},
+    )
+    notify(EVENT_FAILURE, {
+        'file': args.input,
+        'output': args.output,
+        'duration_seconds': time.time() - start_time,
+        'provider': args.provider,
+        'model': args.model,
+        'error': 'failed or partial result',
+    })
+    sys.exit(1)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -258,7 +286,7 @@ if __name__ == "__main__":
         translation_id = f"cli_{uuid.uuid4().hex[:8]}"
 
         if args.refine_only:
-            asyncio.run(refine_file(
+            success = asyncio.run(refine_file(
                 input_filepath=args.input,
                 output_filepath=args.output,
                 target_language=args.target_lang,
@@ -279,12 +307,13 @@ if __name__ == "__main__":
                 nim_api_key=args.nim_api_key,
                 prompt_options=prompt_options,
             ))
+            _exit_unless_succeeded(success, args, start_time, logger)
             logger.info("Refine-Only Completed Successfully", LogType.TRANSLATION_END, {
                 'output_file': args.output,
                 'mode': 'refine-only',
             })
         else:
-            asyncio.run(translate_file(
+            success = asyncio.run(translate_file(
                 input_filepath=args.input,
                 output_filepath=args.output,
                 source_language=args.source_lang,
@@ -307,6 +336,7 @@ if __name__ == "__main__":
                 prompt_options=prompt_options,
                 parallel_workers=args.parallel
             ))
+            _exit_unless_succeeded(success, args, start_time, logger)
 
             logger.info("Translation Completed Successfully", LogType.TRANSLATION_END, {
                 'output_file': args.output
@@ -365,3 +395,4 @@ if __name__ == "__main__":
             'model': args.model,
             'error': str(e),
         })
+        sys.exit(1)
