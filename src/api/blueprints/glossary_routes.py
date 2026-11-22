@@ -20,8 +20,6 @@ from urllib.parse import quote
 from flask import Blueprint, Response, jsonify, request
 from lxml import etree
 
-from src.api.api_keys import provider_env_var, resolve_api_key
-from src.api.services.endpoint_validator import EndpointValidator
 from src.core.glossary import (
     Glossary,
     GlossaryStore,
@@ -873,26 +871,20 @@ def create_glossary_blueprint(store: Optional[GlossaryStore] = None):
             model = data.get('model') or _config.DEFAULT_MODEL
             api_endpoint = data.get('api_endpoint') or _config.API_ENDPOINT
 
-            ok, endpoint_error = EndpointValidator.validate(api_endpoint)
-            if not ok:
-                return jsonify({"error": endpoint_error}), 400
+            # Shared guard: the endpoint must be allowed, and an endpoint the
+            # request chose must bring its own key. Refusing (not dropping the
+            # key) matters here, because the provider factory re-fills an
+            # empty key from .env for openai and nim. The comparison is
+            # against this provider's own default, not Ollama's.
+            # (Ported from upstream 8621ea30.)
+            from src.api.services.credential_guard import guard_request_credentials
 
-            # The frontend sends the '__USE_ENV__' sentinel (or nothing) when the
-            # key field is empty but a key is configured in .env; resolve_api_key
-            # turns that back into the real, possibly multi-key, env value.
-            # A caller-chosen endpoint gets no .env key: the stored credential
-            # must never travel to a host the request picked.
-            requested_endpoint = (api_endpoint or '').strip().rstrip('/')
-            is_endpoint_override = bool(requested_endpoint) and requested_endpoint != (
-                _config.API_ENDPOINT or ''
-            ).strip().rstrip('/')
-            env_var = provider_env_var(provider_type)
-            api_key = resolve_api_key(
-                data.get('api_key'),
-                env_var,
-                getattr(_config, env_var, '') if env_var else '',
-                allow_env_fallback=not is_endpoint_override,
-            ) or None
+            api_key, rejection = guard_request_credentials(
+                provider_type, api_endpoint, data.get('api_key'),
+            )
+            if rejection is not None:
+                return jsonify({"error": rejection.message}), 400
+            api_key = api_key or None
 
             try:
                 provider = create_llm_provider(

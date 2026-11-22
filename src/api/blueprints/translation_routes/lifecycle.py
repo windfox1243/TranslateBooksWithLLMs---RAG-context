@@ -62,6 +62,13 @@ def register(bp, deps, shared):
                 else:
                     return jsonify({"error": f"Missing or empty field: {field}"}), 400
 
+        # The output name is joined to the server's output directory: keep
+        # only a bare filename with a document extension, never a path.
+        # (Ported from upstream 2c698d80.)
+        output_filename = PathValidator.safe_output_filename(data['output_filename'])
+        if output_filename is None:
+            return jsonify({"error": "Invalid output_filename"}), 400
+
         # Generate unique translation ID
         translation_id = f"trans_{int(time.time() * 1000)}"
 
@@ -123,7 +130,7 @@ def register(bp, deps, shared):
             'max_attempts': int(data.get('max_attempts', 2)),
             'retry_delay': int(data.get('retry_delay', 2)),
             'parallel_workers': _clamp_parallel_workers(data.get('parallel_workers')),
-            'output_filename': data['output_filename'],
+            'output_filename': output_filename,
             'llm_provider': data.get('llm_provider', 'ollama'),
             'gemini_api_key': _resolve_api_key(data.get('gemini_api_key'), 'GEMINI_API_KEY'),
             'openai_api_key': _resolve_api_key(data.get('openai_api_key'), 'OPENAI_API_KEY'),
@@ -460,9 +467,11 @@ def register(bp, deps, shared):
             'file_path': str(safe_path),
             'preserved_input_path': str(safe_path),
             'input_filename': data.get('input_filename') or safe_path.name,
-            'output_filename': _continued_output_filename(
-                data.get('output_filename') or base_config.get('output_filename')
-            ),
+            'output_filename': PathValidator.safe_output_filename(
+                _continued_output_filename(
+                    data.get('output_filename') or base_config.get('output_filename')
+                )
+            ) or 'continued_translation.txt',
             'file_type': base_file_type,
             'resume_from_index': 0,
             'is_resume': False,

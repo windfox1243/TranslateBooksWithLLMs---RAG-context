@@ -2,10 +2,13 @@
 Configuration and health check routes
 """
 import asyncio
+import errno
 import logging
 import os
 import re
 import sys
+import tempfile
+import threading
 import time
 from pathlib import Path
 from urllib.parse import urlparse
@@ -77,6 +80,56 @@ from src.core.llm.base import normalize_api_keys
 logger = logging.getLogger('config_routes')
 if _config.DEBUG_MODE:
     logger.setLevel(logging.DEBUG)
+
+# Serialises read-modify-write cycles on .env (POST /api/settings): two
+# concurrent saves must not interleave and drop each other's keys.
+_ENV_FILE_LOCK = threading.Lock()
+
+
+def _atomic_write_lines(env_path: Path, lines) -> None:
+    """Replace ``env_path`` with ``lines`` atomically.
+
+    Writes a temporary file in the same directory, then os.replace()s it in,
+    so a crash or a full disk mid-write can never leave a truncated .env (it
+    holds every API key). The original file mode is kept. Ported from
+    upstream a6459822.
+    """
+    parent = env_path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode='w', encoding='utf-8', dir=parent, prefix='.env-',
+            suffix='.tmp', delete=False,
+        ) as tmp:
+            tmp_path = tmp.name
+            tmp.writelines(lines)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        if env_path.exists():
+            try:
+                os.chmod(tmp_path, env_path.stat().st_mode & 0o777)
+            except OSError:
+                pass
+        try:
+            os.replace(tmp_path, env_path)
+        except OSError as exc:
+            # A .env bind-mounted as a single file (Docker) cannot be replaced
+            # by rename. Rewrite it in place instead: the content is complete
+            # in memory and the lock still serialises writers; only the crash
+            # atomicity is lost.
+            if exc.errno not in (errno.EBUSY, errno.EXDEV):
+                raise
+            with open(env_path, 'w', encoding='utf-8') as f:
+                f.writelines(lines)
+        else:
+            tmp_path = None
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 def _configured_cost_preset() -> str:
@@ -971,11 +1024,14 @@ def create_config_blueprint(server_session_id=None):
             True if successful, False otherwise
         """
         env_path = _get_env_file_path()
+        with _ENV_FILE_LOCK:
+            new_lines = _render_env_lines(env_path, updates)
+            _atomic_write_lines(env_path, new_lines)
+        return True
 
-        # Read existing content or start fresh
+    def _render_env_lines(env_path: Path, updates: dict) -> list:
+        """Return the .env lines with ``updates`` applied (reads, never writes)."""
         existing_lines = []
-        file_is_new = not env_path.exists()
-
         if env_path.exists():
             with open(env_path, 'r', encoding='utf-8') as f:
                 existing_lines = f.readlines()
@@ -1019,11 +1075,7 @@ def create_config_blueprint(server_session_id=None):
                 formatted = _format_env_value(key, value)
                 new_lines.append(f"{key}={formatted}\n")
 
-        # Write back
-        with open(env_path, 'w', encoding='utf-8') as f:
-            f.writelines(new_lines)
-
-        return True
+        return new_lines
 
     @bp.route('/api/settings', methods=['POST'])
     def save_settings():
@@ -1104,6 +1156,31 @@ def create_config_blueprint(server_session_id=None):
 
             if not updates:
                 return jsonify({"error": "No valid settings to save"}), 400
+
+            # A saved endpoint becomes the server default, which the stored
+            # key then follows on every later request. Apply the same guard as
+            # a per-request endpoint: it must be allowed, and moving the
+            # default to another host needs that host's key in the same save
+            # (unless no key is stored). Ported from upstream 8621ea30.
+            from src.api.services.credential_guard import guard_request_credentials
+
+            for setting, provider in (('OLLAMA_API_ENDPOINT', 'ollama'),
+                                      ('OPENAI_API_ENDPOINT', 'openai')):
+                new_endpoint = updates.get(setting)
+                if not new_endpoint:
+                    continue
+                _key, rejection = guard_request_credentials(
+                    provider, new_endpoint,
+                    updates.get(f'{provider.upper()}_API_KEY'),
+                    default_endpoint=getattr(_config, setting, '') or '',
+                )
+                if rejection is not None:
+                    logger.warning("Rejected %s in settings: %s", setting, rejection.message)
+                    return jsonify({
+                        "error": rejection.message,
+                        "error_code": "endpoint_rejected",
+                        "fields": [setting],
+                    }), 400
 
             # The UI shows masked webhook secrets. Restore the stored value for
             # parts left masked, but only while the destination is unchanged:

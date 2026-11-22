@@ -69,7 +69,7 @@ import { SampleManager } from './sample/sample-manager.js';
 // ========================================
 // i18n
 // ========================================
-import { initI18n, applyToDOM, t } from './i18n/i18n.js';
+import { initI18n, applyToDOM, t, i18nSpan } from './i18n/i18n.js';
 import { UiLocaleControl } from './i18n/settings-control.js';
 
 // ========================================
@@ -146,18 +146,16 @@ function handleTtsUpdate(data) {
             if (ttsStatusText) {
                 if (isFFmpegError) {
                     ttsStatusText.innerHTML = `
-                        <span style="color: #ef4444;">❌ ${t('tts:ffmpeg_required')}</span>
+                        <span style="color: #ef4444;">❌ ${i18nSpan('tts:ffmpeg_required')}</span>
                         <div style="margin-top: 10px;">
                             <button id="installFFmpegBtn" class="btn btn-primary" style="margin-right: 10px;" onclick="window.installFFmpeg()">
                                 <span class="material-symbols-outlined" style="font-size: 18px; vertical-align: middle;">download</span>
-                                ${t('tts:ffmpeg_install')}
+                                ${i18nSpan('tts:ffmpeg_install')}
                             </button>
-                            <a href="https://ffmpeg.org/download.html" target="_blank" class="btn btn-secondary" style="text-decoration: none;">
-                                ${t('tts:ffmpeg_manual')}
-                            </a>
+                            ${ffmpegManualLink()}
                         </div>
                         <p style="margin-top: 8px; font-size: 0.8rem; color: var(--text-secondary);">
-                            ${t('tts:ffmpeg_restart_hint')}
+                            ${i18nSpan('tts:ffmpeg_restart_hint')}
                         </p>
                     `;
                 } else {
@@ -169,8 +167,17 @@ function handleTtsUpdate(data) {
     }
 }
 
+/** Link to the FFmpeg download page, shown when the automatic install is not an option. */
+function ffmpegManualLink() {
+    return `<a href="https://ffmpeg.org/download.html" target="_blank" rel="noopener" class="btn btn-secondary" style="text-decoration: none;">${i18nSpan('tts:ffmpeg_manual')}</a>`;
+}
+
 /**
- * Install FFmpeg via winget (Windows)
+ * Install FFmpeg via winget (Windows).
+ *
+ * Server text (result.message, result.error, exception messages) is escaped
+ * before it reaches innerHTML: i18next runs with escapeValue: false.
+ * Ported from upstream ada95ac9.
  */
 window.installFFmpeg = async function() {
     const btn = document.getElementById('installFFmpegBtn');
@@ -180,9 +187,19 @@ window.installFFmpeg = async function() {
         btn.disabled = true;
         btn.innerHTML = `
             <span class="material-symbols-outlined rotating" style="font-size: 18px; vertical-align: middle;">sync</span>
-            ${t('tts:ffmpeg_installing')}
+            ${i18nSpan('tts:ffmpeg_installing')}
         `;
     }
+
+    const renderFailure = (key, error) => {
+        if (!ttsStatusText) return;
+        ttsStatusText.innerHTML = `
+            <span style="color: #ef4444;">❌ ${i18nSpan(key, { error: String(error ?? '') })}</span>
+            <div style="margin-top: 10px;">
+                ${ffmpegManualLink()}
+            </div>
+        `;
+    };
 
     try {
         const response = await fetch('/api/tts/ffmpeg/install', { method: 'POST' });
@@ -191,37 +208,19 @@ window.installFFmpeg = async function() {
         if (result.success) {
             if (ttsStatusText) {
                 ttsStatusText.innerHTML = `
-                    <span style="color: #22c55e;">✅ ${result.message}</span>
+                    <span style="color: #22c55e;">✅ ${DomHelpers.escapeHtml(result.message || '')}</span>
                     <p style="margin-top: 8px; font-size: 0.8rem; color: var(--text-secondary);">
-                        ${t('tts:ffmpeg_restart_needed')}
+                        ${i18nSpan('tts:ffmpeg_restart_needed')}
                     </p>
                 `;
             }
             MessageLogger.addLog(t('tts:ffmpeg_installed_log'));
         } else {
-            if (ttsStatusText) {
-                ttsStatusText.innerHTML = `
-                    <span style="color: #ef4444;">❌ ${t('tts:ffmpeg_install_failed', { error: result.error })}</span>
-                    <div style="margin-top: 10px;">
-                        <a href="https://ffmpeg.org/download.html" target="_blank" class="btn btn-secondary" style="text-decoration: none;">
-                            ${t('tts:ffmpeg_manual')}
-                        </a>
-                    </div>
-                `;
-            }
+            renderFailure('tts:ffmpeg_install_failed', result.error);
             MessageLogger.addLog(t('tts:ffmpeg_install_failed_log', { error: result.error }));
         }
     } catch (err) {
-        if (ttsStatusText) {
-            ttsStatusText.innerHTML = `
-                <span style="color: #ef4444;">❌ ${t('tts:ffmpeg_install_error', { error: err.message })}</span>
-                <div style="margin-top: 10px;">
-                    <a href="https://ffmpeg.org/download.html" target="_blank" class="btn btn-secondary" style="text-decoration: none;">
-                        ${t('tts:ffmpeg_manual')}
-                    </a>
-                </div>
-            `;
-        }
+        renderFailure('tts:ffmpeg_install_error', err.message);
         MessageLogger.addLog(t('tts:ffmpeg_install_error_log', { error: err.message }));
     }
 }
