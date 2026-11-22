@@ -10,7 +10,7 @@ import { ApiClient } from '../core/api-client.js';
 import { MessageLogger } from '../ui/message-logger.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
 import { ProgressManager } from './progress-manager.js';
-import { t, getCurrentLocale, applyToDOM } from '../i18n/i18n.js';
+import { t, tHtml, getCurrentLocale, applyToDOM } from '../i18n/i18n.js';
 import { createProviderModelPicker } from '../providers/provider-model-picker.js';
 import { EditorModelManager } from '../providers/editor-model-manager.js';
 
@@ -66,11 +66,11 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
     const canResumeResync = !hasActiveTranslation && ['paused', 'pause_requested'].includes(resyncStatus);
     const canResume = canResumeTranslation || canResumeResync;
 
-    const failedBadgeLabel = t('translation:job_card_failed_badge', { count: failedChunks });
+    const failedBadgeLabel = tHtml('translation:job_card_failed_badge', { count: failedChunks });
     const failedStatusBadge = isPartial
-        ? `<span style="display: inline-block; margin-left: 8px; padding: 2px 8px; font-size: 11px; font-weight: 600; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px;" title="${t('translation:job_card_partial_title', { count: failedChunks })}">${failedBadgeLabel}</span>`
+        ? `<span style="display: inline-block; margin-left: 8px; padding: 2px 8px; font-size: 11px; font-weight: 600; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px;" title="${tHtml('translation:job_card_partial_title', { count: failedChunks })}">${failedBadgeLabel}</span>`
         : (failedChunks > 0
-            ? `<span style="display: inline-block; margin-left: 8px; padding: 2px 8px; font-size: 11px; font-weight: 600; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px;" title="${t('translation:job_card_failed_title', { count: failedChunks })}">${failedBadgeLabel}</span>`
+            ? `<span style="display: inline-block; margin-left: 8px; padding: 2px 8px; font-size: 11px; font-weight: 600; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px;" title="${tHtml('translation:job_card_failed_title', { count: failedChunks })}">${failedBadgeLabel}</span>`
             : '');
     const resyncStatusKey = {
         running: 'translation:context_resync_status_running',
@@ -104,7 +104,13 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
     const displayNameFormatted = displayName.charAt(0).toUpperCase() + displayName.slice(1);
 
     const idValue = inputHash || job.translation_id.replace('trans_', '');
-    const typeIdLine = t('translation:job_card_type_id', { type: fileType, id: idValue });
+    const typeIdLine = tHtml('translation:job_card_type_id', { type: fileType, id: idValue });
+    // The id is a server value: HTML-escape it for attributes, and JSON-encode
+    // it first where it lands inside an inline-handler JS string literal.
+    // (Ported from upstream 05434707.)
+    const safeTid = DomHelpers.escapeHtml(job.translation_id);
+    const jsTid = DomHelpers.escapeHtml(JSON.stringify(String(job.translation_id)));
+    const safePercent = Number(progressPercent) || 0;
     const isResyncRunning = ['running', 'pause_requested'].includes(resyncStatus);
     const isResyncPaused = resyncStatus === 'paused';
 
@@ -119,16 +125,16 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
         : t('translation:resume_btn_title');
 
     let primaryButtonText = t('translation:job_card_resume_btn');
-    let primaryButtonAttrs = `class="btn btn-primary" onclick="resumeJob('${job.translation_id}')"`;
+    let primaryButtonAttrs = `class="btn btn-primary" onclick="resumeJob(${jsTid})"`;
     let primaryCanResume = canResume;
 
     if (isResyncRunning) {
         primaryButtonText = t('translation:context_pause_resync_btn');
-        primaryButtonAttrs = `class="btn btn-secondary pause-resync-job" data-tid="${job.translation_id}" ${resyncStatus === 'pause_requested' ? 'disabled' : ''}`;
+        primaryButtonAttrs = `class="btn btn-secondary pause-resync-job" data-tid="${safeTid}" ${resyncStatus === 'pause_requested' ? 'disabled' : ''}`;
         primaryCanResume = true;
     } else if (isResyncPaused) {
         primaryButtonText = t('translation:context_resume_resync_btn');
-        primaryButtonAttrs = `class="btn btn-primary resume-resync-job" data-tid="${job.translation_id}"`;
+        primaryButtonAttrs = `class="btn btn-primary resume-resync-job" data-tid="${safeTid}"`;
         primaryCanResume = !hasActiveTranslation;
     }
 
@@ -166,17 +172,17 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
                         ${primaryButtonText}
                     </button>
                     <button class="btn btn-secondary continue-job-btn"
-                            data-tid="${job.translation_id}"
+                            data-tid="${safeTid}"
                             data-file-type="${DomHelpers.escapeHtml(job.file_type || 'txt')}"
                             title="${t('translation:add_new_content_title')}"
                             ${hasActiveTranslation || hasPendingResync ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
                         ${t('translation:add_new_content_btn')}
                     </button>
                     <input type="file" class="continue-job-file"
-                           data-tid="${job.translation_id}"
+                           data-tid="${safeTid}"
                            accept=".txt,.epub,.srt,.docx"
                            style="display: none;">
-                    <button class="btn btn-danger" onclick="deleteCheckpoint('${job.translation_id}')" title="${t('translation:job_card_delete_title')}">
+                    <button class="btn btn-danger" onclick="deleteCheckpoint(${jsTid})" title="${t('translation:job_card_delete_title')}">
                         ${t('translation:job_card_delete_btn')}
                     </button>
                 </div>
@@ -184,10 +190,10 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
 
             <div style="margin-bottom: 10px;">
                 <div style="display: flex; justify-content: space-between; font-size: 13px; color: #6b7280; margin-bottom: 5px;">
-                    <span>${t('translation:job_card_progress', { completed: completedChunks, total: totalChunks, percent: progressPercent })}</span>
+                    <span>${tHtml('translation:job_card_progress', { completed: completedChunks, total: totalChunks, percent: progressPercent })}</span>
                 </div>
                 <div style="width: 100%; background: #e5e7eb; border-radius: 4px; height: 8px; overflow: hidden;">
-                    <div style="width: ${progressPercent}%; background: #3b82f6; height: 100%; transition: width 0.3s;"></div>
+                    <div style="width: ${safePercent}%; background: #3b82f6; height: 100%; transition: width 0.3s;"></div>
                 </div>
             </div>
 
@@ -196,7 +202,7 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
                     <span>${t('translation:job_card_created', { date: createdDate })}</span>
                     <span>${t('translation:job_card_paused', { date: pausedDate })}</span>
                 </div>
-                <button class="resume-change-model" data-tid="${job.translation_id}"
+                <button class="resume-change-model" data-tid="${safeTid}"
                         title="${t('translation:resume_change_model_title')}"
                         ${canResume ? '' : 'disabled'}
                         style="display: inline-flex; align-items: center; gap: 4px; background: none; border: none; padding: 2px 4px; font-size: 12px; color: #3b82f6; cursor: pointer; white-space: nowrap;${canResume ? '' : ' opacity: 0.5; cursor: not-allowed;'}">
@@ -205,7 +211,7 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
                 </button>
             </div>
 
-            <div class="resume-override" data-tid="${job.translation_id}"
+            <div class="resume-override" data-tid="${safeTid}"
                  data-provider="${DomHelpers.escapeHtml(origProvider)}"
                  data-model="${DomHelpers.escapeHtml(origModel)}"
                  data-endpoint="${DomHelpers.escapeHtml(origEndpoint)}"
@@ -233,7 +239,7 @@ function formatJobCard(job, hasActiveTranslation, activeNames) {
                     ⚠️ <span data-i18n="translation:resume_style_warning">Switching model mid-book may cause a style break between the already-translated and remaining chunks.</span>
                 </div>
                 <div style="margin-top: 12px;">
-                    <button class="btn btn-primary resume-apply" data-tid="${job.translation_id}" data-resync="${hasPendingResync ? 'true' : 'false'}" data-i18n="${reflectionEnabled ? 'translation:resume_apply_with_editor_btn' : (hasPendingResync ? 'translation:context_resume_resync_btn' : 'translation:resume_apply_btn')}">
+                    <button class="btn btn-primary resume-apply" data-tid="${safeTid}" data-resync="${hasPendingResync ? 'true' : 'false'}" data-i18n="${reflectionEnabled ? 'translation:resume_apply_with_editor_btn' : (hasPendingResync ? 'translation:context_resume_resync_btn' : 'translation:resume_apply_btn')}">
                         Resume with this model
                     </button>
                 </div>
