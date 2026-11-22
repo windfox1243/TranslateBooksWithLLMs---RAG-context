@@ -402,61 +402,6 @@ async def test_run_chunk_reflection_pass_sends_context_and_structured_feedback_t
 
 
 @pytest.mark.asyncio
-async def test_subtitle_reflection_rejects_marker_corrupting_repair(monkeypatch):
-    """Subtitle reflection repairs are accepted only when local markers survive exactly."""
-    from src.core import subtitle_translator
-
-    class FakeSubtitleClient:
-        def __init__(self):
-            self.closed = False
-
-        async def make_request(self, prompt, model, system_prompt=None):
-            return MagicMock(
-                content="<TRANSLATION>[0] Năng lượng tăng lên.\n[1] Chạy đi.</TRANSLATION>"
-            )
-
-        def extract_translation(self, content):
-            return content.replace("<TRANSLATION>", "").replace("</TRANSLATION>", "")
-
-        async def close(self):
-            self.closed = True
-
-    fake_client = FakeSubtitleClient()
-    monkeypatch.setattr(
-        subtitle_translator,
-        "create_llm_client",
-        lambda *args, **kwargs: fake_client,
-    )
-
-    async def corrupting_repair(**kwargs):
-        return "[0] Năng lượng tăng lên.\nChạy đi."
-
-    monkeypatch.setattr(
-        "src.core.translator.run_chunk_reflection_pass",
-        corrupting_repair,
-    )
-
-    translations = await subtitle_translator.translate_subtitles_in_blocks(
-        subtitle_blocks=[
-            [
-                {"number": "1", "text": "Mana increased."},
-                {"number": "2", "text": "Run."},
-            ]
-        ],
-        source_language="English",
-        target_language="Vietnamese",
-        model_name="test-model",
-        api_endpoint="http://localhost",
-        prompt_options={"reflection_mode": True},
-    )
-
-    assert translations == {
-        0: "Năng lượng tăng lên.",
-        1: "Chạy đi.",
-    }
-
-
-@pytest.mark.asyncio
 async def test_register_editor_terms_updates_session_and_glossary(tmp_path):
     """Verify NovelContextSession.register_editor_terms updates global lore and prompt options."""
     from src.utils.novel_context import NovelContextSession

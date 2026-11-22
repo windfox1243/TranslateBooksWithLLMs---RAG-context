@@ -2,7 +2,6 @@
 
 import pytest
 
-from src.core.epub.exceptions import PlaceholderValidationError
 from src.core.epub.placeholder_validator import PlaceholderValidator
 
 
