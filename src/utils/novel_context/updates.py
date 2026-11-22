@@ -259,7 +259,6 @@ async def update_novel_context_chunk(
         relationship_candidate_raw = ""
         addressing_candidate_raw = ""
 
-        import re
         chars_match = re.search(
             r'\[NEW_CHARACTERS\]\s*(.*?)\s*'
             r'(?=\[IDENTITY_LINKS\]|\[NEW_GLOSSARY\]|\[DYNAMIC_STATE\]|$)',

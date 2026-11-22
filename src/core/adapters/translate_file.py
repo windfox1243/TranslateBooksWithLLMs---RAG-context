@@ -40,10 +40,17 @@ class _CompletedChunks:
         self.last = 0
 
     def observe(self, stats: Any) -> None:
-        if not isinstance(stats, dict) or "completed_chunks" not in stats:
+        # processed_chunks counts every chunk that reached an outcome, failed
+        # ones included, so the calls a failed chunk made are divided by a
+        # count that includes it. Pipelines differ in whether
+        # completed_chunks does, so it is only the fallback.
+        if not isinstance(stats, dict):
+            return
+        key = "processed_chunks" if "processed_chunks" in stats else "completed_chunks"
+        if key not in stats:
             return
         try:
-            completed = int(stats.get("completed_chunks") or 0)
+            completed = int(stats.get(key) or 0)
         except (TypeError, ValueError):
             return
         if self.first is None:

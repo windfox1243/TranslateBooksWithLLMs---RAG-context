@@ -189,3 +189,23 @@ async def test_job_wrapper_reports_even_when_the_job_fails():
     with pytest.raises(RuntimeError):
         await job(log_callback=lambda event, message, data=None: logs.append(event))
     assert "llm_call_summary" in logs
+
+
+@pytest.mark.asyncio
+async def test_failed_chunks_count_in_the_per_chunk_average():
+    client = _client()
+
+    async def job_with_a_failure(prompt_options=None, stats_callback=None, log_callback=None):
+        stats_callback({"completed_chunks": 0, "failed_chunks": 0, "processed_chunks": 0})
+        for _ in range(8):
+            await client.make_request("p")
+        # TXT/SRT report failed chunks outside completed_chunks.
+        stats_callback({"completed_chunks": 3, "failed_chunks": 1, "processed_chunks": 4})
+        return False
+
+    job = translate_file_module._with_cost_preset_and_call_report(job_with_a_failure)
+    logs = []
+    await job(log_callback=lambda event, message, data=None: logs.append((event, data)))
+    [data] = [d for e, d in logs if e == "llm_call_summary"]
+    assert data["llm_calls_chunks"] == 4
+    assert data["llm_calls_per_chunk"] == 2.0

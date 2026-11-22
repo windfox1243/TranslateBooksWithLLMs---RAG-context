@@ -9,7 +9,7 @@ becoming mutually recursive."""
 from __future__ import annotations
 
 import re
-from typing import List
+from typing import Any, Dict, List, Optional, Tuple
 
 from .constants import _NAME_TITLES, _UNIQUE_ROLE_TITLES
 from .name_keys import _clean_inline_text, _plain_key

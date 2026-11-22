@@ -416,11 +416,9 @@ def _kinship_identities_match(
         return False
 
     if parsed_first:
-        kinship_name, kinship_val = first_name, first_value
         target_name, target_val = second_name, second_value
         prefix, kinship = parsed_first
     else:
-        kinship_name, kinship_val = second_name, second_value
         target_name, target_val = first_name, first_value
         prefix, kinship = parsed_second
 

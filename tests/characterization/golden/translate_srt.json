@@ -7,31 +7,37 @@
     {
       "completed_chunks": 0,
       "failed_chunks": 0,
+      "processed_chunks": 0,
       "total_chunks": 5
     },
     {
       "completed_chunks": 1,
       "failed_chunks": 0,
+      "processed_chunks": 1,
       "total_chunks": 5
     },
     {
       "completed_chunks": 2,
       "failed_chunks": 0,
+      "processed_chunks": 2,
       "total_chunks": 5
     },
     {
       "completed_chunks": 3,
       "failed_chunks": 0,
+      "processed_chunks": 3,
       "total_chunks": 5
     },
     {
       "completed_chunks": 4,
       "failed_chunks": 0,
+      "processed_chunks": 4,
       "total_chunks": 5
     },
     {
       "completed_chunks": 5,
       "failed_chunks": 0,
+      "processed_chunks": 5,
       "total_chunks": 5
     }
   ]
