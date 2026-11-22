@@ -957,7 +957,6 @@ async def refine_chunks(
     """
     total_chunks = len(translated_chunks)
     refined_parts = []
-    last_refined_context = ""
     # Transient per-job state (e.g. glossary cap warning dedupe) — never persisted.
     runtime_state: dict = {}
 
@@ -1261,13 +1260,6 @@ async def refine_chunks(
                 refined_text = clean_translated_text(refined_text)
                 refined_parts.append(refined_text)
                 progress_tracker.mark_completed(i, chunk_elapsed)
-
-                # Update context for next chunk
-                words = refined_text.split()
-                if len(words) > 25:
-                    last_refined_context = " ".join(words[-25:])
-                else:
-                    last_refined_context = refined_text
                 if log_callback:
                     log_callback(
                         "refinement_chunk_complete",
@@ -1280,7 +1272,6 @@ async def refine_chunks(
                         f"Refinement failed for chunk {i+1}, keeping original translation")
                 refined_parts.append(draft_text)
                 progress_tracker.mark_failed(i)
-                last_refined_context = ""
 
             from src.core.refine.persistence import save_refinement_unit
             persisted_text = refined_text if refined_text is not None else draft_text
@@ -1945,7 +1936,6 @@ async def _run_chunk_reflection_pass_impl(
         target_language=target_language,
         log_callback=log_callback,
     )
-    editor_client = session.client
     editor_output_tokens = session.output_tokens
     recorder = session.recorder
     reflection_components = session.reflection_components
@@ -2049,8 +2039,6 @@ async def _run_chunk_reflection_pass_impl(
         prompt_options,
     )
     active_novel_context = prompts.active_novel_context
-    retry_seed_issues = prompts.retry_seed_issues
-    use_focused_manual_retry = prompts.use_focused_manual_retry
     reflection_pair = prompts.reflection_pair
     reflection_fallback_pair = prompts.reflection_fallback_pair
     reflection_components.update(prompts.components)

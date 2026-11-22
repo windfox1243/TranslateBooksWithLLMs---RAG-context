@@ -30,6 +30,8 @@ GUARDED_MODULES = [
     "src/core/context/analysis.py",
     "src/core/context/commit.py",
     "src/core/context/unit_pipeline.py",
+    "src/utils/novel_context/character_facts.py",
+    "src/core/chunking/chapter_detector.py",
 ]
 
 

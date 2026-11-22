@@ -262,17 +262,17 @@ def render_novel_context_for_prompt(
         ):
             selected_character_keys.add(_plain_key(target))
 
-    selected_characters, remaining_characters = _split_selected_entries(
+    selected_characters, _ = _split_selected_entries(
         character_entries,
         reference_text,
         selected_character_keys,
     )
-    selected_aliases, remaining_aliases = _split_selected_entries(
+    selected_aliases, _ = _split_selected_entries(
         alias_entries,
         reference_text,
         selected_character_keys,
     )
-    selected_glossary, remaining_glossary = _split_selected_entries(
+    selected_glossary, _ = _split_selected_entries(
         glossary_entries,
         reference_text,
     )
@@ -408,25 +408,13 @@ def render_novel_context_for_prompt(
                 for name, value in roster_entries
             ]
         )
-    remaining_character_lines = [
-        _format_character_line(name, value)
-        for name, value in remaining_characters
-    ]
     selected_alias_lines = [
         f"- {alias}: {target}"
         for alias, target in selected_aliases
     ]
-    remaining_alias_lines = [
-        f"- {alias}: {target}"
-        for alias, target in remaining_aliases
-    ]
     selected_glossary_lines = [
         f"- {name}: {value}"
         for name, value in selected_glossary
-    ]
-    remaining_glossary_lines = [
-        f"- {name}: {value}"
-        for name, value in remaining_glossary
     ]
 
     has_selection = any((

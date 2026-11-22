@@ -253,8 +253,6 @@ class EditorRepository(DatabaseRepository):
                 )
             )
             review_count = outcomes.get("review_required", 0)
-            degraded = outcomes.get("transport_failed", 0)
-            hard_failed = outcomes.get("blocked", 0)
             latest_by_unit: Dict[tuple, Dict[str, Any]] = {}
             for row in rows:
                 effective_phase = str(row.get("phase") or "translation")
