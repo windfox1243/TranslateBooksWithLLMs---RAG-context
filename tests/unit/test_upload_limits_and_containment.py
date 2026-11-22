@@ -14,7 +14,6 @@ from src.api.services.file_service import FileService
 from src.api.services.path_validator import PathValidator
 from src.utils.security import SecureFileHandler, SecurityError, is_within_directory
 
-
 # ---------------------------------------------------------------------------
 # MAX_CONTENT_LENGTH
 # ---------------------------------------------------------------------------

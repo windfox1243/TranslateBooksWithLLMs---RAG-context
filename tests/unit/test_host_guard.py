@@ -11,11 +11,7 @@ import pytest
 from flask import Flask
 from flask_socketio import SocketIO
 
-from src.api.host_guard import (
-    is_loopback_bind,
-    parse_host,
-    register_host_guard,
-)
+from src.api.host_guard import is_loopback_bind, parse_host, register_host_guard
 
 SOCKETIO_HANDSHAKE = '/socket.io/?EIO=4&transport=polling'
 

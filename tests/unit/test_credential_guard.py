@@ -12,8 +12,7 @@ import pytest
 from flask import Flask
 
 import src.config as _config
-from src.api.blueprints import config_routes
-from src.api.blueprints import sample_routes
+from src.api.blueprints import config_routes, sample_routes
 from src.api.blueprints.sample_routes import create_sample_blueprint
 from src.api.services import credential_guard as guard
 from src.api.services import endpoint_validator as _endpoint_validator
