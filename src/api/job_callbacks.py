@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from src.core.progress import snapshot_from_legacy_stats
-from src.utils.unified_logger import LogType, setup_web_logger
+from src.utils.unified_logger import LogType, create_job_logger
 
 from .websocket import emit_update
 
@@ -89,7 +89,10 @@ def build_job_callbacks(
         """
         state_manager.append_log(translation_id, _compact_log_entry(log_entry))
 
-    logger = setup_web_logger(web_callback, storage_callback)
+    # One logger per job: the shared logger swapped its callbacks on every
+    # setup, so a later job redirected an earlier job's log lines.
+    # (Ported from upstream 7f8c1091.)
+    logger = create_job_logger(web_callback, storage_callback)
 
     def _ui_step_metadata(message_key):
         """Mark user-visible workflow milestones for the activity log."""
