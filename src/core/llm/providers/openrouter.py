@@ -13,8 +13,10 @@ Features:
 """
 
 import asyncio
-import time
 import json
+import threading
+import time
+import weakref
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import httpx
@@ -113,7 +115,11 @@ class OpenRouterProvider(LLMProvider):
     _model_catalog: Optional[Dict[str, Dict[str, Any]]] = None
     # monotonic time of the last failed fetch; retried after CATALOG_RETRY_SECONDS
     _model_catalog_failed_at: Optional[float] = None
-    _model_catalog_lock: Optional[asyncio.Lock] = None
+    # One asyncio.Lock per event loop: each web job runs on its own loop, and a
+    # lock is bound to the loop that first waits on it, so a single class-level
+    # lock failed for every job after the first. Guarded by a thread lock.
+    _model_catalog_loop_locks: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+    _model_catalog_state_lock = threading.Lock()
     # Resolved override per model: {model_id: reasoning dict, or {} for none}
     _reasoning_overrides: Dict[str, Dict[str, Any]] = {}
 
@@ -162,12 +168,7 @@ class OpenRouterProvider(LLMProvider):
         if OpenRouterProvider._catalog_failed_recently():
             return None
 
-        # Safe to create here without a double-check race: no await between the
-        # test and the assignment, so the event loop cannot interleave.
-        if OpenRouterProvider._model_catalog_lock is None:
-            OpenRouterProvider._model_catalog_lock = asyncio.Lock()
-
-        async with OpenRouterProvider._model_catalog_lock:
+        async with OpenRouterProvider._catalog_lock_for_running_loop():
             if OpenRouterProvider._model_catalog is not None:
                 return OpenRouterProvider._model_catalog
             if OpenRouterProvider._catalog_failed_recently():
@@ -190,6 +191,17 @@ class OpenRouterProvider(LLMProvider):
                       f"reasoning stays at the model default")
                 OpenRouterProvider._model_catalog_failed_at = time.monotonic()
                 return None
+
+    @staticmethod
+    def _catalog_lock_for_running_loop() -> asyncio.Lock:
+        """The catalog fetch lock of the event loop running this coroutine."""
+        loop = asyncio.get_running_loop()
+        with OpenRouterProvider._model_catalog_state_lock:
+            lock = OpenRouterProvider._model_catalog_loop_locks.get(loop)
+            if lock is None:
+                lock = asyncio.Lock()
+                OpenRouterProvider._model_catalog_loop_locks[loop] = lock
+            return lock
 
     def _pick_reasoning_override(self, model_info: Dict[str, Any]) -> Dict[str, Any]:
         """Map a model's catalog entry to the `reasoning` value translation wants."""
