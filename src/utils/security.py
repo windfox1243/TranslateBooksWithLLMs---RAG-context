@@ -368,7 +368,7 @@ class SecureFileHandler:
             raise SecurityError("Path traversal attempt detected")
 
         return file_path.resolve()
-    
+
     def _validate_file_content(self, file_path: Path, original_filename: str) -> FileValidationResult:
         """Validate file content based on type"""
         warnings = []
