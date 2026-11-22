@@ -22,8 +22,9 @@ trying every key (issue #217).
 
 import asyncio
 import math
+import threading
 import time
-from typing import Callable, Mapping, Optional
+from typing import Callable, Dict, Mapping, Optional
 
 from .exceptions import RateLimitError
 from .key_pool import KeyPool
@@ -177,3 +178,31 @@ def _log(log_callback: Optional[Callable], event: str, message: str) -> None:
         except Exception:
             pass
     print(message)
+
+
+# Monotonic start time of the last request admitted per provider name. Web jobs
+# run on their own threads and event loops, hence a threading lock (held for
+# the check only, never across the sleep) rather than an asyncio one.
+_last_request_start: Dict[str, float] = {}
+_request_start_lock = threading.Lock()
+
+
+async def wait_for_request_slot(provider_name: str) -> None:
+    """Space request starts to ``provider_name`` by ``config.REQUEST_INTERVAL``.
+
+    Proactive counterpart of handle_rate_limit(): spacing the attempts this
+    process starts helps stay within a requests-per-minute quota. The slot is
+    claimed only once it is due, so a waiter cancelled mid-sleep leaves
+    nothing behind to delay the next request. (Ported from upstream dc2c76b9.)
+    """
+    from src import config
+
+    while (interval := config.REQUEST_INTERVAL) > 0:
+        with _request_start_lock:
+            now = time.monotonic()
+            last = _last_request_start.get(provider_name)
+            wait = 0.0 if last is None else last + interval - now
+            if wait <= 0:
+                _last_request_start[provider_name] = now
+                return
+        await asyncio.sleep(wait)

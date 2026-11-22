@@ -29,7 +29,7 @@ from ..base import (
     terminal_provider_failure,
 )
 from ..exceptions import ContextOverflowError, RateLimitError
-from ..rate_limit_handler import is_retryable_http_status
+from ..rate_limit_handler import is_retryable_http_status, wait_for_request_slot
 from ..utils.error_classification import is_context_overflow_error
 
 # Substrings that mark a provider-side context/length overflow, surfaced as
@@ -164,6 +164,9 @@ class LiteLLMProvider(LLMProvider):
             }
 
         for attempt in range(MAX_TRANSLATION_ATTEMPTS):
+            # REQUEST_INTERVAL pacing, before a key is picked: every attempt
+            # counts against a requests-per-minute quota.
+            await wait_for_request_slot(self.provider_name)
             try:
                 response = await litellm.acompletion(
                     model=self.model,

@@ -166,3 +166,34 @@ async def test_openrouter_error_inside_200_answer(body, expect):
             assert result is None or not getattr(result, "content", "")
     finally:
         await provider.close()
+
+
+@pytest.mark.asyncio
+async def test_rejected_thinking_params_are_not_sent_again(monkeypatch):
+    """A local server that answers 400 to chat_template_kwargs pays that once,
+    not once per chunk."""
+    import json
+
+    from src.core.llm.providers.openai import OpenAICompatibleProvider
+
+    monkeypatch.setattr(OpenAICompatibleProvider, "_thinking_params_rejected", set())
+    bodies = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        if "chat_template_kwargs" in body:
+            return httpx.Response(400, json={"error": "unknown field chat_template_kwargs"})
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "<TRANSLATION>ok</TRANSLATION>"},
+                         "finish_reason": "stop"}]})
+
+    endpoint = "http://localhost:8080/v1/chat/completions"
+    for _ in range(2):
+        provider = OpenAICompatibleProvider(api_endpoint=endpoint, model="local")
+        _attach_transport(provider, handler)
+        try:
+            await provider.generate("Translate this")
+        finally:
+            await provider.close()
+    assert ["chat_template_kwargs" in b for b in bodies] == [True, False, False]

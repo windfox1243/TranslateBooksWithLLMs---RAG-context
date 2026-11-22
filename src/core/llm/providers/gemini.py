@@ -34,7 +34,11 @@ from ..exceptions import (
     RateLimitError,
     StructuredOutputSchemaError,
 )
-from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
+from ..rate_limit_handler import (
+    handle_rate_limit,
+    is_retryable_http_status,
+    wait_for_request_slot,
+)
 from ..utils.error_classification import is_context_overflow_error
 
 # Four harm categories returned by the Gemini API. By default Gemini blocks
@@ -335,6 +339,9 @@ class GeminiProvider(LLMProvider):
         attempt = 0
         rate_limit_events = 0
         while attempt < MAX_TRANSLATION_ATTEMPTS:
+            # REQUEST_INTERVAL pacing, before a key is picked: every attempt
+            # counts against a requests-per-minute quota.
+            await wait_for_request_slot(self.provider_name)
             current_key = await self._key_pool.acquire()
             headers = {
                 "Content-Type": "application/json",

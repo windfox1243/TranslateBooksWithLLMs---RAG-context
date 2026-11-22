@@ -28,6 +28,7 @@ from ..rate_limit_handler import (
     compute_wait_time,
     handle_rate_limit,
     is_retryable_http_status,
+    wait_for_request_slot,
 )
 from ..utils.context_detection import ContextDetector
 from ..utils.error_classification import is_context_overflow_error
@@ -41,6 +42,11 @@ MAX_HINTED_RETRY_WAIT = 60
 
 class OpenAICompatibleProvider(LLMProvider):
     """OpenAI-compatible API provider (works with llama.cpp, LM Studio, vLLM, OpenAI, etc.)"""
+
+    # (endpoint, model) pairs whose server answered 400 to the thinking
+    # parameters. Remembered for the process, so a server that rejects them
+    # does not pay a failed request on every chunk. (After upstream bedd943d.)
+    _thinking_params_rejected: set = set()
 
     def __init__(self, api_endpoint: str, model: str,
                  api_key: Optional[Union[str, List[str]]] = None,
@@ -150,7 +156,12 @@ class OpenAICompatibleProvider(LLMProvider):
 
         # Only add thinking-disable params for local servers (llama.cpp, vLLM, LM Studio)
         # Skip for official OpenAI API and cloud providers (NVIDIA NIM, etc.)
-        if not self._is_official_openai_endpoint() and self._is_local_endpoint():
+        if (
+            not self._is_official_openai_endpoint()
+            and self._is_local_endpoint()
+            and (self.api_endpoint, self.model)
+            not in OpenAICompatibleProvider._thinking_params_rejected
+        ):
             # TabbyAPI and other engines reject boolean "thinking" at the root level.
             # We only pass enable_thinking via chat_template_kwargs to be safe.
             payload["chat_template_kwargs"] = {"enable_thinking": False}
@@ -161,6 +172,9 @@ class OpenAICompatibleProvider(LLMProvider):
         attempt = 0
         rate_limit_events = 0
         while attempt < MAX_TRANSLATION_ATTEMPTS:
+            # REQUEST_INTERVAL pacing, before a key is picked: every attempt
+            # counts against a requests-per-minute quota.
+            await wait_for_request_slot(self.provider_name)
             current_key = await self._key_pool.acquire() if self._key_pool else None
             headers = {"Content-Type": "application/json"}
             if current_key:
@@ -260,6 +274,9 @@ class OpenAICompatibleProvider(LLMProvider):
                             del payload[key]
                             removed_any = True
                     if removed_any:
+                        OpenAICompatibleProvider._thinking_params_rejected.add(
+                            (self.api_endpoint, self.model)
+                        )
                         if self.log_callback:
                             self.log_callback("llm_http_400_retry",
                                 "⚠️ Local LLM server rejected thinking/custom parameters (status 400). "

@@ -112,6 +112,7 @@ class LLMProvider(ABC):
                 error reports. Defaults to the empty string ("unknown" in logs).
         """
         self.model = model
+        self.provider_name = provider_name or "unknown"
         self._extractor = TranslationExtractor(TRANSLATE_TAG_IN, TRANSLATE_TAG_OUT)
         self._client = None
         self._key_pool: Optional[KeyPool] = None

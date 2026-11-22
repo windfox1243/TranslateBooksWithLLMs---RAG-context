@@ -384,6 +384,12 @@ if _max_retries_legacy and not os.getenv('MAX_TRANSLATION_ATTEMPTS'):
 else:
     MAX_TRANSLATION_ATTEMPTS = int(os.getenv('MAX_TRANSLATION_ATTEMPTS', '2'))
 
+# Minimum seconds between the starts of two LLM requests to the same provider,
+# shared by every job and parallel worker in this process. Use a bit above
+# 60 / RPM (e.g. 6.5 for a 10 RPM quota). Retries count as requests. 0 disables
+# the pacing.
+REQUEST_INTERVAL = max(0.0, float(os.getenv('REQUEST_INTERVAL', '0')))
+
 # Sampling temperature applied to cloud LLM providers (gemini, deepseek, mistral,
 # poe). Lower values favor consistent translations; higher values produce more
 # variation. Ollama is unaffected because it uses its own server-side defaults.

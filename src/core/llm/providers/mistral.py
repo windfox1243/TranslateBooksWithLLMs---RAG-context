@@ -26,7 +26,11 @@ from ..base import (
     terminal_provider_failure,
 )
 from ..exceptions import ContextOverflowError, RateLimitError
-from ..rate_limit_handler import handle_rate_limit, is_retryable_http_status
+from ..rate_limit_handler import (
+    handle_rate_limit,
+    is_retryable_http_status,
+    wait_for_request_slot,
+)
 from ..utils.error_classification import is_context_overflow_error
 
 
@@ -235,6 +239,9 @@ class MistralProvider(LLMProvider):
         attempt = 0
         rate_limit_events = 0
         while attempt < MAX_TRANSLATION_ATTEMPTS:
+            # REQUEST_INTERVAL pacing, before a key is picked: every attempt
+            # counts against a requests-per-minute quota.
+            await wait_for_request_slot(self.provider_name)
             current_key = await self._key_pool.acquire()
             headers = {
                 "Authorization": f"Bearer {current_key}",

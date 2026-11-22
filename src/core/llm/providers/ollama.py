@@ -36,7 +36,7 @@ from ..exceptions import (
     RepetitionLoopError,
     StructuredOutputSchemaError,
 )
-from ..rate_limit_handler import compute_wait_time
+from ..rate_limit_handler import compute_wait_time, wait_for_request_slot
 from ..thinking.behavior import ThinkingBehavior, _model_matches_pattern
 from ..thinking.cache import get_thinking_cache
 from ..thinking.detection import detect_repetition_loop
@@ -49,7 +49,7 @@ class OllamaProvider(LLMProvider):
 
     def __init__(self, api_endpoint: str = API_ENDPOINT, model: str = DEFAULT_MODEL,
                  context_window: int = OLLAMA_NUM_CTX, log_callback: Optional[Callable] = None):
-        super().__init__(model)
+        super().__init__(model, provider_name="ollama")
         # Convert /api/generate endpoint to /api/chat for proper think support
         self.api_endpoint = api_endpoint.replace('/api/generate', '/api/chat')
         self.context_window = context_window
@@ -330,6 +330,9 @@ class OllamaProvider(LLMProvider):
 
         client = await self._get_client()
         for attempt in range(MAX_TRANSLATION_ATTEMPTS):
+            # REQUEST_INTERVAL pacing, before a key is picked: every attempt
+            # counts against a requests-per-minute quota.
+            await wait_for_request_slot(self.provider_name)
             try:
                 # Use streaming to monitor tokens in real-time
                 content_chunks = []
