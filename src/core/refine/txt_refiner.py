@@ -80,7 +80,7 @@ async def refine_txt_file(
         if log_callback:
             log_callback("txt_empty_input", "Empty input file. Nothing to refine.")
         try:
-            async with aiofiles.open(output_filepath, 'w', encoding='utf-8') as f:
+            async with aiofiles.open(output_filepath, 'w', encoding='utf-8', newline='') as f:
                 await f.write("")
         except Exception:
             pass
@@ -288,7 +288,7 @@ async def refine_txt_file(
         final_text += footer
 
     try:
-        async with aiofiles.open(output_filepath, 'w', encoding='utf-8') as f:
+        async with aiofiles.open(output_filepath, 'w', encoding='utf-8', newline='') as f:
             await f.write(final_text)
         if log_callback:
             log_callback("refine_save_success", f"Refined output saved: '{output_filepath}'")
