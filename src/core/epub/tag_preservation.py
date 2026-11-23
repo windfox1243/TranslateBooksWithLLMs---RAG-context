@@ -17,7 +17,6 @@ from src.common.placeholder_format import PlaceholderFormat
 from .initial_letters import close_initial_letters, merge_initial_letters
 from .placeholder_validator import PlaceholderValidator
 
-
 # Numbering made only of digits and numbering punctuation, plus whitespace and
 # invisible Unicode characters. No letters at all: "1", "1.", "1.2", "1-", "(1)".
 _NUMERIC_NUMBERING_RE = re.compile(
