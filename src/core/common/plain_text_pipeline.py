@@ -47,6 +47,8 @@ from src.utils.relationship_sync import (
 
 PARAGRAPH_SEPARATOR = "\n\n"
 _RESPLIT_REGEX = re.compile(r"\n{2,}")
+# A blank line inside one source paragraph (code in a <pre> block).
+_INNER_BLANK_LINE_REGEX = re.compile(r"\n[ \t]*\n")
 _MARKUP_TAG_REGEX = re.compile(r"</?[A-Za-z][A-Za-z0-9]*(?:\s[^<>]*?)?/?>")
 
 
@@ -72,20 +74,22 @@ def _split_translated_back_to_paragraphs(translated_text: str) -> List[str]:
 def _reconcile_paragraph_counts(
     translated_paragraphs: List[str],
     expected_count: int,
-) -> List[str]:
+) -> List[Optional[str]]:
     """
     Best-effort alignment when the LLM merged or split paragraphs inside one
     segment. The blast radius is the segment, never the whole document.
 
     - translated == expected: return as-is
-    - translated < expected: pad with empty strings
+    - translated < expected: pad with None, which _reassemble resolves to the
+      source paragraph (an empty string would erase the paragraph)
+      (ported from upstream dde993ee)
     - translated > expected: merge surplus into the last slot
     """
     got = len(translated_paragraphs)
     if got == expected_count:
         return translated_paragraphs
     if got < expected_count:
-        return translated_paragraphs + [""] * (expected_count - got)
+        return translated_paragraphs + [None] * (expected_count - got)
     head = translated_paragraphs[:expected_count - 1]
     tail = " ".join(translated_paragraphs[expected_count - 1:])
     return head + [tail]
@@ -182,6 +186,25 @@ def build_plain_segments(
 
         tokens = chunker.count_tokens(text)
 
+        if (len(text_indices) == 1 and tokens <= chunker.max_tokens
+                and _INNER_BLANK_LINE_REGEX.search(text.strip())):
+            # A paragraph that itself holds blank lines (a <pre> block kept
+            # verbatim) cannot share a segment: the segment's answer is split
+            # on blank lines, so it would always break the paragraph count
+            # and lose its own blank lines. Alone in a 'partial' segment, its
+            # answer goes back into its single slot untouched.
+            # (Ported from upstream dde993ee.)
+            flush()
+            chapter_index, chapter_title = chapter_by_index.get(idx, (0, ""))
+            segments.append({
+                'indices': text_indices,
+                'text': text,
+                'partial': True,
+                'chapter_index': chapter_index,
+                'chapter_title': chapter_title,
+            })
+            continue
+
         if tokens > chunker.max_tokens:
             flush()
             if len(text_indices) > 1:
@@ -236,7 +259,8 @@ def _reassemble(
     Write each segment's translation back to the source indices it covers.
 
     Empty source slots keep their original (empty) value; pieces of an
-    oversized paragraph are concatenated in order into its single slot.
+    oversized paragraph are concatenated in order into its single slot. A slot
+    the model's answer did not cover keeps its source paragraph.
     """
     out: List[Optional[str]] = [None] * len(source_paragraphs)
     partial_pieces: Dict[int, List[str]] = {}
@@ -920,7 +944,12 @@ async def translate_paragraphs_plain(
                     stats.failed_chunks = len(failed_indices)
                 else:
                     quality_status = getattr(value, "quality_status", "passed")
-                    cleaned = clean_translated_text(value)
+                    if _INNER_BLANK_LINE_REGEX.search(main_content.strip()):
+                        # Verbatim block (see build_plain_segments): its
+                        # layout is the content, so no whitespace clean-up.
+                        cleaned = value.strip('\r\n')
+                    else:
+                        cleaned = clean_translated_text(value)
                     cleaned = strip_hallucinated_markup(
                         cleaned, chunks[i].get('main_content', ''))
                     cleaned = reattach_paragraph_closing_punctuation(
@@ -1058,7 +1087,10 @@ async def translate_paragraphs_plain(
                 continue
             elif value is not None:
                 quality_status = getattr(value, "quality_status", "passed")
-                cleaned = clean_translated_text(value)
+                if _INNER_BLANK_LINE_REGEX.search(main_content.strip()):
+                    cleaned = value.strip('\r\n')
+                else:
+                    cleaned = clean_translated_text(value)
                 cleaned = strip_hallucinated_markup(
                     cleaned, chunks[i].get('main_content', ''))
                 cleaned = reattach_paragraph_closing_punctuation(
