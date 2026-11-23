@@ -13,6 +13,7 @@
  * filters incoming events by the id it owns, so the two never collide.
  */
 
+import { describeApiError } from '../core/api-errors.js';
 import { ApiClient } from '../core/api-client.js';
 import { WebSocketManager } from '../core/websocket-manager.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
@@ -298,7 +299,7 @@ async function open(file) {
         }
     } catch (err) {
         console.error('[quick-test] run failed', err);
-        showError(t('translation:quicktest_error_run', { error: err.message || String(err) }));
+        showError(t('translation:quicktest_error_run', { error: describeApiError(err) }));
         setRunningUi(false);
     }
 }

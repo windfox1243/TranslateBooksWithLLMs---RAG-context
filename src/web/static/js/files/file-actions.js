@@ -6,6 +6,7 @@
  * Also provides a button factory so both surfaces render consistent buttons.
  */
 
+import { describeApiError } from '../core/api-errors.js';
 import { ApiClient } from '../core/api-client.js';
 import { MessageLogger } from '../ui/message-logger.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
@@ -51,7 +52,10 @@ export const FileActions = {
             await ApiClient.openLocalFile(filename);
             MessageLogger.addLog(t('files:open_log', { name: filename }));
         } catch (error) {
-            MessageLogger.showMessage(t('files:open_error', { error: error.message }), 'error');
+            MessageLogger.showMessage(
+                t('files:open_error', { error: describeApiError(error, { context: 'open' }) }),
+                'error'
+            );
         }
     },
 

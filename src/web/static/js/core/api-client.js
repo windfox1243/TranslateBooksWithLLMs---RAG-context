@@ -31,13 +31,19 @@ function withToken(url) {
  * Keeping only the label left users with an unactionable one-liner and nothing
  * in the logs (issue #263), so both parts are surfaced.
  *
+ * The thrown Error carries `status` (HTTP status), `code` (the body's
+ * `error_code`) and `body` (the parsed JSON body, or null when the body was
+ * not JSON) so callers can special-case statuses or read extra fields.
+ *
  * @param {Response} response - Fetch response
- * @returns {Promise<Object>} Parsed error data
+ * @returns {Promise<never>} Always throws
  */
 async function handleApiError(response) {
     let errorData;
+    let body = null;
     try {
-        errorData = await response.json();
+        body = await response.json();
+        errorData = body && typeof body === 'object' ? body : {};
     } catch {
         errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
     }
@@ -46,6 +52,8 @@ async function handleApiError(response) {
     const parts = [label, detail !== label ? detail : ''].filter(Boolean);
     const err = new Error(parts.join(' — ') || `Request failed with status ${response.status}`);
     err.code = errorData.error_code;
+    err.status = response.status;
+    err.body = body;
     throw err;
 }
 
