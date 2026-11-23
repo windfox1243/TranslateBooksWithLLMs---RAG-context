@@ -126,6 +126,10 @@ def _translate_txt(tmp_path):
     source.write_text(LONG_SOURCE, encoding="utf-8")
     output = tmp_path / "one_fr.txt"
     stats = {}
+    manager = CheckpointManager(db_path=str(tmp_path / "jobs.db"))
+    # Keep the job's input copy out of the repository's data/uploads.
+    manager.uploads_dir = tmp_path / "uploads"
+    manager.uploads_dir.mkdir(parents=True, exist_ok=True)
     cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
@@ -135,7 +139,7 @@ def _translate_txt(tmp_path):
             model_name="fake", llm_provider="poe", poe_api_key="UNUSED_FAKE_KEY",
             max_tokens_per_chunk=400, context_window=4096, auto_adjust_context=False,
             stats_callback=stats.update,
-            checkpoint_manager=CheckpointManager(db_path=str(tmp_path / "jobs.db")),
+            checkpoint_manager=manager,
             translation_id="cli_tagged_answer",
         ))
     finally:
