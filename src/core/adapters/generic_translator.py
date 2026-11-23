@@ -1151,8 +1151,10 @@ class GenericTranslator:
                         )
                         if not save_success:
                             if log_callback:
+                                cause = getattr(self.adapter, 'last_error', None)
                                 log_callback("save_failed",
-                                    f"Failed to save translation for unit {unit.unit_id}")
+                                    f"Failed to save translation for unit {unit.unit_id}"
+                                    + (f": {cause}" if cause else ""))
                             _record_failure(i, unit, result)
                             next_index = i + 1
                             continue
