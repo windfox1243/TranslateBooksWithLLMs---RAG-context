@@ -4,6 +4,7 @@ Pre-existing on main (2ecce2d) and unchanged by the refactor: parse_srt reads
 the file as 'utf-8', so the first block starts with U+FEFF, "\ufeff1".isdigit()
 is False and cue 1 is silently skipped (translate, refine and term-fix all
 lose it from the output).
+(Ported from upstream d52e4c38.)
 """
 import asyncio
 
