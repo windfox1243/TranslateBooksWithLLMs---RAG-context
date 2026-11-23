@@ -3,7 +3,7 @@
 User-visible changes only, one short entry each. Entries for 1.x releases are
 in [docs/changelog-archive.md](docs/changelog-archive.md).
 
-## 2.0.0 - Unreleased
+## 2.0.0 - 2026-11-23
 
 The fork now versions independently of upstream. Its git history was
 rewritten to drop committed binaries, so clones made before 2.0.0 must be
