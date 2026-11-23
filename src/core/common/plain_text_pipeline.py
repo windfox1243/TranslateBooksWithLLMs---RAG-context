@@ -15,6 +15,10 @@ Used by the EPUB and DOCX adapters when prompt_options['plain_text_mode'] is Tru
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from src.common.cjk_punctuation import (
+    PARAGRAPH_BREAK_PATTERN,
+    reattach_closing_punctuation,
+)
 from src.core.chunking.decorative_separator import is_decorative_separator
 from src.core.chunking.token_chunker import TokenChunker
 from src.core.common.parallel import aclosing, iter_ordered_concurrent
@@ -253,6 +257,19 @@ def _reassemble(
         slot if slot is not None else source_paragraphs[i]
         for i, slot in enumerate(out)
     ]
+
+
+def reattach_paragraph_closing_punctuation(translated: str, source: str) -> str:
+    """Move CJK closing punctuation that opens a paragraph back to the one before.
+
+    A model that answers "こんにちは\\n\\n。お元気ですか？" puts the "。" of the
+    first paragraph at the start of the second one once the blob is split on
+    blank lines. Full-width closing punctuation never opens a paragraph (see
+    src/common/cjk_punctuation.py), so it is moved back before the break. A
+    source with a paragraph that does start with such a mark disarms it.
+    (Ported from upstream c7a7acc0.)
+    """
+    return reattach_closing_punctuation(translated, PARAGRAPH_BREAK_PATTERN, source)
 
 
 async def translate_paragraphs_plain(
@@ -905,6 +922,8 @@ async def translate_paragraphs_plain(
                     cleaned = clean_translated_text(value)
                     cleaned = strip_hallucinated_markup(
                         cleaned, chunks[i].get('main_content', ''))
+                    cleaned = reattach_paragraph_closing_punctuation(
+                        cleaned, chunks[i].get('main_content', ''))
                     translated_parts[i] = cleaned
                     completed_translations_by_index[
                         global_chunk_offset + i
@@ -1022,6 +1041,8 @@ async def translate_paragraphs_plain(
                 quality_status = getattr(value, "quality_status", "passed")
                 cleaned = clean_translated_text(value)
                 cleaned = strip_hallucinated_markup(
+                    cleaned, chunks[i].get('main_content', ''))
+                cleaned = reattach_paragraph_closing_punctuation(
                     cleaned, chunks[i].get('main_content', ''))
                 translated_parts[i] = cleaned
                 chunk_succeeded = True

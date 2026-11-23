@@ -42,6 +42,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from lxml import etree
 
+from src.common.cjk_punctuation import reattach_closing_punctuation
+from src.common.placeholder_format import PlaceholderFormat
 from src.config import (
     ADAPTIVE_CONTEXT_INITIAL_THINKING,
     PLACEHOLDER_PATTERN,
@@ -215,6 +217,54 @@ def _should_hide_structured_refinement_placeholders(
     return STRUCTURED_REFINEMENT_HIDE_PLACEHOLDERS
 
 
+# Tags that never end a block (an inline run). Anything else that closes or
+# self-closes (</p>, </li>, <br/>) ends the text before it.
+_INLINE_TAG_NAMES = frozenset({
+    'a', 'abbr', 'b', 'bdi', 'bdo', 'big', 'cite', 'code', 'data', 'del',
+    'dfn', 'em', 'font', 'i', 'ins', 'kbd', 'label', 'mark', 'q', 'rp', 'rt',
+    'ruby', 's', 'samp', 'small', 'span', 'strike', 'strong', 'sub', 'sup',
+    'time', 'tt', 'u', 'var', 'wbr',
+})
+_TAG_RE = re.compile(r"<[^<>]+>")
+_TAG_NAME_RE = re.compile(r'^<\s*/?\s*([A-Za-z][\w:.-]*)')
+
+
+def _ends_block(markup: str) -> bool:
+    """True when ``markup`` closes a block or breaks a line (</p>, </li>, <br/>)."""
+    for tag in _TAG_RE.findall(markup):
+        if not (tag.startswith("</") or tag.endswith("/>")):
+            continue
+        match = _TAG_NAME_RE.match(tag)
+        if not match:
+            return True
+        name = match.group(1).lower().split(':')[-1]
+        if name not in _INLINE_TAG_NAMES:
+            return True
+    return False
+
+
+def reattach_block_closing_punctuation(source: str, translated: str,
+                                       local_tag_map: Dict[str, str]) -> str:
+    """Pull full-width closing punctuation back inside the block it ends.
+
+    A reply such as "[id0]こんにちは[id1]。[id2]" (``[id1]`` = ``</p><p>``) renders the
+    "。" at the start of the next paragraph. Any run of placeholders holding a
+    block end that is directly followed by CJK closing punctuation gets that
+    punctuation moved before it. A chunk whose source itself starts a block
+    with such punctuation is left alone (see ``reattach_closing_punctuation``).
+    (Ported from upstream c7a7acc0.)
+    """
+    block_placeholders = [ph for ph, markup in local_tag_map.items() if _ends_block(markup)]
+    if not block_placeholders:
+        return translated
+    fmt = PlaceholderFormat.from_config()
+    any_placeholder = rf"{re.escape(fmt.prefix)}\d+{re.escape(fmt.suffix)}"
+    block = "|".join(re.escape(ph) for ph in block_placeholders)
+    # The whole run of adjacent placeholders around the block end ("</em></p><p>").
+    boundary = rf"(?:{any_placeholder})*?(?:{block})(?:{any_placeholder})*"
+    return reattach_closing_punctuation(translated, boundary, source)
+
+
 async def translate_chunk_with_fallback(
     chunk_text: str,
     local_tag_map: Dict[str, str],
@@ -370,7 +420,10 @@ async def translate_chunk_with_fallback(
 
             quality_status = getattr(translated, "quality_status", "passed")
             editor_validation = getattr(translated, "editor_validation", None)
-            result = placeholder_mgr.restore_to_global(translated, global_indices)
+            result = placeholder_mgr.restore_to_global(
+                reattach_block_closing_punctuation(chunk_text, translated, local_tag_map),
+                global_indices,
+            )
             stats.record_processed()  # Mark chunk as fully processed
             if quality_status == "review_required":
                 stats.review_required_chunks += 1
@@ -452,7 +505,11 @@ async def translate_chunk_with_fallback(
                     log_callback("phase2_warning", "⚠️ Note: Proportional repositioning may cause minor layout imperfections")
 
                 # 6. Restore global indices and return
-                result = placeholder_mgr.restore_to_global(result_with_placeholders, global_indices)
+                result = placeholder_mgr.restore_to_global(
+                    reattach_block_closing_punctuation(
+                        chunk_text, result_with_placeholders, local_tag_map),
+                    global_indices,
+                )
                 stats.record_processed()  # Mark chunk as fully processed
                 return _ChunkTranslationOutcome(result, succeeded=True)
             else:

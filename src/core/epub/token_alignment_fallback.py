@@ -14,6 +14,8 @@ Phase 2 of the multi-phase fallback system:
 import re
 from typing import List, Tuple
 
+from src.common.cjk_punctuation import skip_closing_punctuation
+
 
 class TokenAlignmentFallback:
     """
@@ -221,9 +223,9 @@ class TokenAlignmentFallback:
         # Word boundary characters (space, punctuation, CJK punctuation)
         boundaries = ' \t\n\r.,;:!?\u3001\u3002\uff0c\uff1a\uff1f\uff01'
 
-        # If already on boundary, return
+        # If already on boundary, return (after any closing mark run)
         if text[pos] in boundaries:
-            return pos
+            return skip_closing_punctuation(text, pos)
 
         # Search backward and forward for boundary
         left = pos
@@ -235,10 +237,14 @@ class TokenAlignmentFallback:
         while right < len(text) and text[right] not in boundaries:
             right += 1
 
-        # Return closest boundary
-        if pos - left <= right - pos:
-            return left
-        return right
+        # Return closest boundary. A full-width closing mark ("。", "？", "」")
+        # ends the text before it: the placeholder goes after it, otherwise a
+        # closing </p> lands before the "。" and the mark opens the next block.
+        # (Ported from upstream c7a7acc0.)
+        nearest = left if pos - left <= right - pos else right
+        if nearest > 0:
+            nearest = skip_closing_punctuation(text, nearest)
+        return nearest
 
     def _insert_placeholders_at_positions(
         self,
