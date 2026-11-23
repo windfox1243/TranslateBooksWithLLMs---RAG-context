@@ -358,6 +358,11 @@ class TestTranslateDocxFile:
         doc.save(input_path)
 
         output_path = os.path.join(temp_dir, 'translated_multi_para.docx')
+        # The text-survival guard rejects a reply far shorter than its source:
+        # answer the ten paragraphs with a reply of comparable length.
+        mock_llm_provider.translation_prefix = (
+            "[TRANSLATED] " + "Paragraphe traduit avec du contenu. " * 5
+        )
 
         result = await translate_docx_file(
             input_filepath=input_path,
