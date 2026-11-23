@@ -49,6 +49,7 @@ from .epub_translation_adapter import EpubTranslationAdapter
 from .html_utils import is_text_free_chunk
 from .lang_support import apply_target_language_to_xhtml_directory, get_language_code
 from .metadata_translator import translate_opf_metadata
+from .package_locator import find_opf_file
 from .rtl_support import apply_rtl_to_epub_directory, is_rtl_language
 
 
@@ -530,12 +531,8 @@ def _extract_epub(input_filepath: str, temp_dir: str, log_callback: Optional[Cal
 
 
 def _find_opf_file(temp_dir: str) -> Optional[str]:
-    """Find OPF file in extracted EPUB."""
-    for root_dir, _, files in os.walk(temp_dir):
-        for file in files:
-            if file.endswith('.opf'):
-                return os.path.join(root_dir, file)
-    return None
+    """Find the OPF file of an extracted EPUB (the one container.xml names)."""
+    return find_opf_file(temp_dir)
 
 
 def _resolve_content_path(opf_dir: str, content_href: str) -> str:

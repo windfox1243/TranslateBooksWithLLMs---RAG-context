@@ -904,12 +904,16 @@ def _iter_files(directory: str, suffixes: Tuple[str, ...]) -> List[str]:
 
 
 def _find_opf_path(temp_dir: str) -> Optional[str]:
-    """First `*.opf` found while walking `temp_dir`.
+    """The OPF this pass edits: the one META-INF/container.xml names.
 
-    Same approach as `rtl_support._apply_rtl_styles` / `_apply_ltr_reset`, which
-    inline this walk twice; it is not importable from there, so it is spelled out
-    once here.
+    The same file the translator and the RTL pass edit; the case-insensitive
+    walk stays as the fallback. (Ported from upstream 4c29abbb.)
     """
+    from .package_locator import opf_from_container
+
+    found = opf_from_container(temp_dir)
+    if found:
+        return found
     for root_dir, _dirs, files in os.walk(temp_dir):
         for name in files:
             if name.lower().endswith(".opf"):
