@@ -18,7 +18,7 @@ are summed across alternatives.
 from typing import Dict, List, Tuple
 
 from src.core.glossary.models import GlossaryConfig
-from src.utils.text_matching import glossary_term_occurrences
+from src.utils.text_matching import glossary_term_spans
 
 
 def _split_alternatives(source: str) -> List[str]:
@@ -35,19 +35,21 @@ def _max_alt_length(source: str) -> int:
     return max((len(a) for a in alts), default=0)
 
 
-def _count_alternative(
-    alt: str,
-    chunk: str,
-    case_sensitive: bool,
-    source_language: str = "",
-) -> int:
-    """Count occurrences of a single alternative form in the chunk."""
-    return glossary_term_occurrences(
-        alt,
-        chunk,
-        case_sensitive=case_sensitive,
-        language=source_language,
-    )
+def longest_non_overlapping(candidates: List[Tuple]) -> List[Tuple]:
+    """Keep non-overlapping (start, end, ...) matches.
+
+    On overlap the match that starts first wins; at the same start the longest
+    one wins. Returned in text order. (Ported from upstream 5cde6e57.)
+    """
+    ordered = sorted(candidates, key=lambda c: (c[0], -(c[1] - c[0])))
+    kept: List[Tuple] = []
+    last_end = -1
+    for cand in ordered:
+        if cand[0] < last_end:
+            continue
+        kept.append(cand)
+        last_end = cand[1]
+    return kept
 
 
 def filter_glossary(
@@ -82,23 +84,26 @@ def filter_glossary(
         reverse=True,
     )
 
-    matched: List[Tuple[str, str, int]] = []  # (source, target, occurrence_count)
-    for source, target in sorted_terms:
-        alternatives = _split_alternatives(source)
-        if not alternatives:
-            continue
+    # Every occurrence of every entry, then overlaps resolved to the longest
+    # match: a one-character CJK name must not fire inside a longer glossary
+    # term that contains it. (Ported from upstream 5cde6e57.)
+    candidates = []  # (start, end, entry_index)
+    for index, (source, _target) in enumerate(sorted_terms):
+        for alt in _split_alternatives(source):
+            for start, end in glossary_term_spans(
+                alt, chunk, case_sensitive=config.case_sensitive,
+                language=source_language,
+            ):
+                candidates.append((start, end, index))
+    counts: Dict[int, int] = {}
+    for _start, _end, index in longest_non_overlapping(candidates):
+        counts[index] = counts.get(index, 0) + 1
 
-        total_count = sum(
-            _count_alternative(
-                alt,
-                chunk,
-                config.case_sensitive,
-                source_language,
-            )
-            for alt in alternatives
-        )
-        if total_count > 0:
-            matched.append((source, target, total_count))
+    matched: List[Tuple[str, str, int]] = [  # (source, target, occurrence_count)
+        (source, target, counts[index])
+        for index, (source, target) in enumerate(sorted_terms)
+        if counts.get(index)
+    ]
 
     capped = False
     if config.max_entries and len(matched) > config.max_entries:
