@@ -29,7 +29,7 @@ from src.core.context.commit import commit_pending_context, save_committed_conte
 from src.core.epub.translation_metrics import TranslationMetrics
 from src.core.llm.exceptions import RateLimitError
 from src.core.post_processor import clean_translated_text
-from src.core.translator import generate_translation_request
+from src.core.translator import generate_translation_request, previous_context_tail
 from src.utils.db_addressing import (
     apply_db_addressing_to_session,
     sync_markdown_addressing_to_db,
@@ -595,6 +595,15 @@ async def translate_paragraphs_plain(
             file_type=str((prompt_options or {}).get("file_type") or "txt"),
         )
 
+    # Calls whose translation was taken from an untagged raw reply. Reported
+    # in the log (TranslationMetrics has no field for it yet).
+    # (Ported from upstream 36cf9e12.)
+    raw_fallback_calls = 0
+
+    def _count_raw_fallback():
+        nonlocal raw_fallback_calls
+        raw_fallback_calls += 1
+
     async def _translate_chunk(i, analyze_context=True):
         """Translate one chunk. Reads previous_translation_context only in
         sequential mode (parallel runs have no stable previous chunk)."""
@@ -716,6 +725,7 @@ async def translate_paragraphs_plain(
                 prompt_options=unit_prompt_options,
                 context_manager=context_manager,
                 placeholder_format=None,
+                on_raw_fallback=_count_raw_fallback,
             )
         if translated and (prompt_options or {}).get("reflection_mode"):
             from src.core.translator import (
@@ -891,10 +901,7 @@ async def translate_paragraphs_plain(
                             baseline_review_required + len(review_required_indices)
                         )
                     if sequential:
-                        words = cleaned.split()
-                        previous_translation_context = (
-                            " ".join(words[-25:]) if len(words) > 25 else cleaned
-                        )
+                        previous_translation_context = previous_context_tail(cleaned)
 
             if chunk_succeeded:
                 _commit_context_state(i)
@@ -913,6 +920,13 @@ async def translate_paragraphs_plain(
             if stats_callback:
                 stats_callback(stats.to_dict())
             processed += 1
+
+    if raw_fallback_calls and log_callback:
+        log_callback(
+            "raw_fallback_summary",
+            f"⚠️ {raw_fallback_calls} request(s) came back without translation tags "
+            "and were saved from the raw response - check those passages"
+        )
 
     if rate_limit_error is not None:
         # Keep source text for everything not yet translated, then propagate to

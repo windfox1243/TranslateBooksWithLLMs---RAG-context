@@ -437,7 +437,10 @@ class GenericTranslator:
 
             # 5. Create LLM client
             from src.core.llm.runtime import build_draft_and_editor_clients
-            from src.core.translator import generate_translation_request
+            from src.core.translator import (
+                generate_translation_request,
+                previous_context_tail,
+            )
 
             prompt_options = llm_kwargs.get('prompt_options', {})
             (
@@ -621,6 +624,10 @@ class GenericTranslator:
             last_context = ""
             failed_count = len(restored_failed)
             completed_count = len(restored_completed)
+            # Units whose translation was taken from an untagged raw reply:
+            # saved, but worth a look, so they are reported at the end.
+            # (Ported from upstream 36cf9e12.)
+            raw_fallback_units = set()
             failed_indices = set(restored_failed)
             review_required_indices = {
                 c['chunk_index'] for c in (checkpoint_data or {}).get('chunks', [])
@@ -846,7 +853,8 @@ class GenericTranslator:
                             model=model_name,
                             llm_client=llm_client,
                             log_callback=log_callback,
-                            prompt_options=unit_prompt_options
+                            prompt_options=unit_prompt_options,
+                            on_raw_fallback=lambda _i=i: raw_fallback_units.add(_i),
                         )
 
                     # API failure / empty result: existing failure semantics.
@@ -1149,11 +1157,7 @@ class GenericTranslator:
 
                         if sequential:
                             completed_translations_by_index[i] = translated_content
-                            last_context = (
-                                translated_content[-200:]
-                                if len(translated_content) > 200
-                                else translated_content
-                            )
+                            last_context = previous_context_tail(translated_content)
 
                         if log_callback:
                             log_callback("unit_complete",
@@ -1273,6 +1277,12 @@ class GenericTranslator:
                             "failed_unit_retry_success",
                             f"Failed unit {i+1}/{total_units} translated successfully on retry.",
                         )
+
+            if raw_fallback_units and log_callback:
+                log_callback("raw_fallback_summary",
+                    f"⚠️ {len(raw_fallback_units)} unit(s) came back without translation "
+                    f"tags and were saved from the raw response: "
+                    f"{sorted(k + 1 for k in raw_fallback_units)}. Check them in the output.")
 
             # 7. Reconstruct output file
             if log_callback:

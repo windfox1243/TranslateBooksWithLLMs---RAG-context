@@ -172,6 +172,118 @@ def _build_chunk_glossary_block(
     return build_glossary_block(filtered, term_metadata=metadata)
 
 
+# --- Raw-response fallback guards (plain-text mode) ---------------------------
+#
+# When the model drops the translation tags, plain-text mode falls back to the
+# raw reply. That reply can be a preamble, the model's reasoning or a refusal
+# rather than a translation, and saving it would silently replace the chunk.
+# (Ported from upstream 36cf9e12.)
+
+# "Here is the translation:", "Sure! Here's the French translation:" ...
+_RAW_PREAMBLE_RE = re.compile(
+    r"\A\s*(?:here(?:'s|\s+is|\s+are)|below\s+is|sure|certainly|okay|ok)\b"
+    r"[^\n:]{0,80}?\btranslat\w*[^\n:]{0,40}:[ \t]*\n?",
+    re.IGNORECASE,
+)
+_REFUSAL_OPENER_RE = re.compile(
+    r"\A\s*(?:I['’]?m\s+sorry|I\s+am\s+sorry|sorry\b|I\s+apologi[sz]e|"
+    r"I\s+can(?:not|['’]t)\b|I['’]?m\s+(?:not\s+able|unable)|I\s+am\s+(?:not\s+able|unable)|"
+    r"as\s+an\s+AI\b|unfortunately,?\s+I\b)",
+    re.IGNORECASE,
+)
+_REFUSAL_TOPIC_RE = re.compile(
+    r"translat|request|assist|help|content|comply|provide|policy|guidelines",
+    re.IGNORECASE,
+)
+# Weighted length bounds for target/source. CJK and Hangul characters carry
+# about two to three Latin characters of meaning, so they are weighted up to
+# keep CJK<->Latin pairs inside the bounds.
+RAW_FALLBACK_MIN_RATIO = 0.2
+RAW_FALLBACK_MAX_RATIO = 4.0
+RAW_FALLBACK_MIN_SOURCE_LENGTH = 40
+
+
+def _weighted_length(text: str) -> float:
+    """Length of `text` with CJK ideographs/kana weighted 3 and Hangul 2."""
+    total = 0.0
+    for ch in text:
+        if ch.isspace():
+            continue
+        cp = ord(ch)
+        if (0x3040 <= cp <= 0x30FF or 0x3400 <= cp <= 0x4DBF or 0x4E00 <= cp <= 0x9FFF
+                or 0xF900 <= cp <= 0xFAFF or 0x20000 <= cp <= 0x2FFFF):
+            total += 3
+        elif 0xAC00 <= cp <= 0xD7AF or 0x1100 <= cp <= 0x11FF:
+            total += 2
+        else:
+            total += 1
+    return total
+
+
+# Previous-translation context handed to the next chunk's prompt: at most
+# this many words, and at most this weighted length (CJK counts 3, Hangul 2),
+# so unspaced scripts get a bounded tail too instead of the whole chunk.
+PREVIOUS_CONTEXT_MAX_WORDS = 25
+PREVIOUS_CONTEXT_MAX_WEIGHTED_CHARS = 300
+
+
+def previous_context_tail(text: Optional[str]) -> str:
+    """The end of a translation, used as the next chunk's previous context.
+
+    The single policy for every pipeline: the last PREVIOUS_CONTEXT_MAX_WORDS
+    whitespace-separated words, further capped at
+    PREVIOUS_CONTEXT_MAX_WEIGHTED_CHARS. A Chinese or Japanese translation has
+    no spaces, so the word rule alone would pass the whole previous chunk.
+    (Ported from upstream 00fc9e33.)
+    """
+    text = text or ""
+    words = text.split()
+    tail = " ".join(words[-PREVIOUS_CONTEXT_MAX_WORDS:]) if len(words) > PREVIOUS_CONTEXT_MAX_WORDS else text
+    if _weighted_length(tail) <= PREVIOUS_CONTEXT_MAX_WEIGHTED_CHARS:
+        return tail
+    budget = PREVIOUS_CONTEXT_MAX_WEIGHTED_CHARS
+    start = len(tail)
+    while start > 0:
+        weight = _weighted_length(tail[start - 1])
+        if weight > budget:
+            break
+        budget -= weight
+        start -= 1
+    cut = tail[start:]
+    # Do not start in the middle of a word when the text has spaces.
+    if start > 0 and not tail[start - 1].isspace() and " " in cut:
+        cut = cut.split(" ", 1)[1]
+    return cut.lstrip()
+
+
+def strip_raw_preamble(raw: str) -> str:
+    """Drop a leading "Here is the translation:" line from an untagged reply."""
+    stripped = _RAW_PREAMBLE_RE.sub("", raw, count=1).strip()
+    return stripped or raw.strip()
+
+
+def raw_fallback_rejection_reason(raw: str, source: str) -> Optional[str]:
+    """Why an untagged raw reply cannot be saved as a translation, or None.
+
+    Rejects an empty reply, a refusal, and a reply whose length is wildly
+    off the source's (reasoning dumps, one-line answers). Short sources skip
+    the length test: their ratio says nothing.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return "empty response"
+    head = text[:300]
+    if (_REFUSAL_OPENER_RE.search(head) and _REFUSAL_TOPIC_RE.search(head)
+            and not _REFUSAL_OPENER_RE.search(source or "")):
+        return "the response looks like a refusal"
+    source_len = _weighted_length(source or "")
+    if source_len >= RAW_FALLBACK_MIN_SOURCE_LENGTH:
+        ratio = _weighted_length(text) / source_len
+        if ratio < RAW_FALLBACK_MIN_RATIO or ratio > RAW_FALLBACK_MAX_RATIO:
+            return f"its length is {ratio:.1f}x the source's"
+    return None
+
+
 def split_chunk_for_retry(main_content: str, target_ratio: float = 0.5) -> Tuple[str, str]:
     """
     Split a chunk into two parts for retry after context overflow.
@@ -183,11 +295,45 @@ def split_chunk_for_retry(main_content: str, target_ratio: float = 0.5) -> Tuple
         target_ratio: Target position for split (0.5 = middle)
 
     Returns:
-        Tuple of (first_half, second_half)
+        Tuple of (first_half, second_half), both stripped. Use
+        split_chunk_preserving_separator to also get the whitespace between them.
     """
-    if not main_content.strip():
-        return main_content, ""
+    first, _, second = split_chunk_preserving_separator(main_content, target_ratio)
+    return first, second
 
+
+def split_chunk_preserving_separator(
+    main_content: str, target_ratio: float = 0.5
+) -> Tuple[str, str, str]:
+    """
+    Split a chunk in two for a context-overflow retry, keeping the separator.
+
+    Returns (first, separator, second) with first + separator + second equal
+    to main_content minus its outer whitespace, so the two translations can be
+    joined back with the original separator (a space inside a paragraph, a
+    blank line between paragraphs) instead of reflowing the text. Whenever the
+    content holds more than one character of text, both parts are non-empty.
+    """
+    content = main_content.strip()
+    if not content:
+        return content, "", ""
+    pos = _split_position(content, target_ratio)
+    # A split at either edge would leave one side empty and lose nothing only
+    # by luck; force a real split so the overflow loop always makes progress.
+    if pos <= 0 or pos >= len(content):
+        pos = max(1, min(len(content) - 1, len(content) // 2))
+    first = content[:pos].rstrip()
+    second = content[pos:].lstrip()
+    if not first or not second:
+        # Whitespace on one side only: split in the middle of the text instead.
+        mid = max(1, len(content) // 2)
+        first, second = content[:mid].rstrip(), content[mid:].lstrip()
+    separator = content[len(first):len(content) - len(second)]
+    return first, separator, second
+
+
+def _split_position(main_content: str, target_ratio: float) -> int:
+    """Index in main_content where split_chunk_preserving_separator cuts."""
     lines = main_content.split('\n')
     if len(lines) <= 1:
         # For single line, split at sentence boundary or middle
@@ -207,7 +353,7 @@ def split_chunk_for_retry(main_content: str, target_ratio: float = 0.5) -> Tuple
                 if abs(actual_pos - target_pos) < abs(best_split - target_pos):
                     best_split = actual_pos
 
-        return main_content[:best_split].strip(), main_content[best_split:].strip()
+        return best_split
 
     # For multi-line content, split at line boundaries
     target_line = int(len(lines) * target_ratio)
@@ -220,13 +366,21 @@ def split_chunk_for_retry(main_content: str, target_ratio: float = 0.5) -> Tuple
             best_line = i + 1
             break
 
-    first_half = '\n'.join(lines[:best_line])
-    second_half = '\n'.join(lines[best_line:])
+    # Never cut before the first or after the last non-empty line.
+    non_empty = [k for k, line in enumerate(lines) if line.strip()]
+    if len(non_empty) >= 2:
+        best_line = max(non_empty[0] + 1, min(best_line, non_empty[-1]))
+    return len('\n'.join(lines[:best_line]))
 
-    return first_half.strip(), second_half.strip()
 
 
 
+
+def _join_split_translations(parts: List[Tuple[str, str]]) -> Optional[str]:
+    """Join (separator_before, translation) pieces back into one text."""
+    if not parts:
+        return None
+    return parts[0][1] + "".join(sep + text for sep, text in parts[1:])
 
 
 def _require_client(llm_client):
@@ -286,10 +440,22 @@ async def _make_llm_request_with_adaptive_context(
         Tuple of (translated_text or None, actual_content_translated, LLMResponse)
     """
     current_content = main_content
-    remaining_content = ""
-    all_translations = []
+    # Pieces still to translate after a context-overflow split, each with the
+    # source whitespace that separated it from the piece before it.
+    remaining: List[Tuple[str, str]] = []
+    current_sep = ""
+    # (separator_before, translation) per translated piece.
+    all_translations: List[Tuple[str, str]] = []
     reduction_attempt = 0
     last_response: Optional[LLMResponse] = None
+    used_raw_fallback = False
+
+    def _finish(combined):
+        # was_fallback must survive a later split request overwriting
+        # last_response, so it is applied once, on the response returned.
+        if used_raw_fallback and last_response is not None:
+            last_response.was_fallback = True
+        return combined, main_content, last_response
 
     while current_content.strip():
         try:
@@ -398,7 +564,7 @@ async def _make_llm_request_with_adaptive_context(
             translated_text = client.extract_translation(full_raw_response)
 
             if translated_text:
-                all_translations.append(translated_text)
+                all_translations.append((current_sep, translated_text))
             else:
                 # Extraction failed - tags not found or malformed
                 if log_callback:
@@ -425,14 +591,24 @@ async def _make_llm_request_with_adaptive_context(
                             "CRITICAL: Cannot use raw response for EPUB (would corrupt HTML structure)")
                     return None, main_content, last_response
 
-                # For plain text, try fallback to raw response (legacy behavior)
+                # For plain text, try fallback to raw response (legacy behavior),
+                # but only when the reply plausibly is a translation: a refusal,
+                # an empty reply or a reasoning dump must fail the chunk (so it
+                # is retried or marked untranslated) instead of replacing it.
                 if current_content not in full_raw_response:
+                    candidate = strip_raw_preamble(full_raw_response)
+                    rejection = raw_fallback_rejection_reason(candidate, current_content)
+                    if rejection:
+                        if log_callback:
+                            log_callback("raw_response_fallback_rejected",
+                                f"⚠️ Untagged response rejected ({rejection}). Chunk marked failed.")
+                        return None, main_content, last_response
                     if log_callback:
                         log_callback("using_raw_response_fallback",
-                            "Using raw response as fallback (plain text mode)")
-                    all_translations.append(full_raw_response.strip())
-                    if last_response:
-                        last_response.was_fallback = True
+                            "⚠️ Translation tags missing: using the raw response as the "
+                            "translation (plain text mode)")
+                    all_translations.append((current_sep, candidate))
+                    used_raw_fallback = True
                 else:
                     # Response contains input - this is an error
                     if log_callback:
@@ -441,19 +617,16 @@ async def _make_llm_request_with_adaptive_context(
                     return None, main_content, last_response
 
             # If we had remaining content from a previous split, translate it
-            if remaining_content.strip():
-                current_content = remaining_content
-                remaining_content = ""
+            if remaining:
+                current_sep, current_content = remaining.pop(0)
                 # Update context for continuity
                 if all_translations:
-                    words = all_translations[-1].split()
-                    previous_translation_context = " ".join(words[-25:]) if len(words) > 25 else all_translations[-1]
+                    previous_translation_context = previous_context_tail(all_translations[-1][1])
                 reduction_attempt = 0  # Reset for new content
                 continue
 
             # Success - combine all translations
-            combined = "\n".join(all_translations) if all_translations else None
-            return combined, main_content, last_response
+            return _finish(_join_split_translations(all_translations))
 
         except RepetitionLoopError as e:
             # Repetition loop detected - this typically happens with thinking models
@@ -512,9 +685,10 @@ async def _make_llm_request_with_adaptive_context(
                 tqdm.write(f"\n⚠️ Context overflow - reducing chunk (attempt {reduction_attempt})")
 
             # Split the content
-            first_part, second_part = split_chunk_for_retry(current_content, reduction_factor)
+            first_part, separator, second_part = split_chunk_preserving_separator(
+                current_content, reduction_factor)
 
-            if len(first_part) < MIN_CHUNK_CHARACTERS and not all_translations:
+            if not first_part or (len(first_part) < MIN_CHUNK_CHARACTERS and not all_translations):
                 # Can't reduce further without losing too much content
                 if log_callback:
                     log_callback("context_overflow_fatal",
@@ -522,12 +696,14 @@ async def _make_llm_request_with_adaptive_context(
                 return None, main_content, last_response
 
             current_content = first_part
-            # Accumulate remaining content for later
-            if second_part.strip():
-                remaining_content = second_part + ("\n" + remaining_content if remaining_content else "")
+            # The second part goes first in the queue: it precedes every piece
+            # already waiting there. Its separator travels with it, so the
+            # translations are joined back exactly as the source was.
+            if second_part:
+                remaining.insert(0, (separator, second_part))
 
     # Shouldn't reach here normally
-    return "\n".join(all_translations) if all_translations else None, main_content, last_response
+    return _finish(_join_split_translations(all_translations))
 
 
 # Legacy wrapper for backward compatibility
@@ -605,7 +781,8 @@ async def generate_translation_request(main_content, context_before, context_aft
                                        source_language=None, target_language=None, model=DEFAULT_MODEL,
                                        llm_client=None, log_callback=None, has_placeholders=False,
                                        prompt_options=None, context_manager: AdaptiveContextManager = None,
-                                       placeholder_format: Optional[Tuple[str, str]] = None):
+                                       placeholder_format: Optional[Tuple[str, str]] = None,
+                                       on_raw_fallback: Optional[Callable[[], None]] = None):
     """
     Generate translation request to LLM API with automatic context overflow handling.
 
@@ -624,6 +801,9 @@ async def generate_translation_request(main_content, context_before, context_aft
         context_manager (AdaptiveContextManager): Optional context manager for adaptive retry on overflow
         placeholder_format (Tuple[str, str]): Optional tuple of (prefix, suffix) for placeholders.
             e.g., ('[', ']') for [0] format or ('[[', ']]') for [[0]] format
+        on_raw_fallback (callable): Optional callable invoked (no arguments)
+            when the returned translation came from an untagged raw response,
+            so callers can count and report it.
 
     Returns:
         str: Translated text or None if failed
@@ -648,7 +828,7 @@ async def generate_translation_request(main_content, context_before, context_aft
     if context_manager:
         context_manager.begin_request()
     try:
-        translated_text, _, _ = await _make_llm_request_with_adaptive_context(
+        translated_text, _, last_response = await _make_llm_request_with_adaptive_context(
             main_content=main_content,
             context_before=context_before,
             context_after=context_after,
@@ -671,6 +851,13 @@ async def generate_translation_request(main_content, context_before, context_aft
         context_manager.abandon_request()
 
     if translated_text:
+        if on_raw_fallback and getattr(last_response, "was_fallback", False) is True:
+            try:
+                on_raw_fallback()
+            except Exception as count_error:
+                if log_callback:
+                    log_callback("raw_fallback_count_failed",
+                        f"Could not record the raw-response fallback: {count_error}")
         return await _retry_on_source_residue(
             translated_text,
             main_content=main_content,
@@ -828,6 +1015,16 @@ async def _refinement_request_attempt(
 
             full_raw_response = llm_response.content
 
+            # Same guards as the translation path. On each of them the caller
+            # keeps the draft: an empty, cut-off or unclosed answer saved as
+            # the refinement would erase or truncate the chunk.
+            # (Ported from upstream f813c65e.)
+            if not full_raw_response or not full_raw_response.strip():
+                if log_callback:
+                    log_callback("refinement_empty_response",
+                        "⚠️ Refinement returned an empty response. Keeping the draft.")
+                return None, llm_response
+
             # Log the response
             if log_callback:
                 emit_progress_log(
@@ -848,20 +1045,52 @@ async def _refinement_request_attempt(
                     },
                 )
 
+            if getattr(llm_response, "was_truncated", False) is True:
+                if log_callback:
+                    log_callback("refinement_output_truncated",
+                        f"⚠️ Refinement hit the output token limit "
+                        f"(finish_reason: {llm_response.finish_reason}). Keeping the draft.")
+                return None, llm_response
+
             # Extract refined text
             refined_text = client.extract_translation(full_raw_response)
 
-            if refined_text:
+            if refined_text and refined_text.strip():
                 return refined_text, llm_response
-            else:
-                # Fallback to raw response if no tags found
-                if draft_translation not in full_raw_response:
-                    return full_raw_response.strip(), llm_response
-                else:
+
+            stripped_response = full_raw_response.strip()
+            if (stripped_response.startswith(TRANSLATE_TAG_IN)
+                    and not stripped_response.endswith(TRANSLATE_TAG_OUT)):
+                if context_manager and context_manager.should_retry_with_larger_context(
+                        True, llm_response.context_used):
+                    context_manager.increase_context()
+                    continue  # Retry with larger context
+                if log_callback:
+                    log_callback("refinement_unclosed_tag",
+                        "⚠️ Refinement opened the translation tag but never closed it: "
+                        "the output was cut off. Keeping the draft.")
+                return None, llm_response
+            if TRANSLATE_TAG_IN in stripped_response and TRANSLATE_TAG_OUT in stripped_response:
+                # Tags present, nothing usable inside them.
+                if log_callback:
+                    log_callback("refinement_empty_response",
+                        "⚠️ Refinement returned empty translation tags. Keeping the draft.")
+                return None, llm_response
+
+            # Fallback to raw response if no tags found
+            if draft_translation not in full_raw_response:
+                candidate = strip_raw_preamble(full_raw_response)
+                rejection = raw_fallback_rejection_reason(candidate, draft_translation)
+                if rejection:
                     if log_callback:
-                        log_callback("refinement_warning",
-                            "WARNING: Refinement response contains input. Using original.")
+                        log_callback("refinement_fallback_rejected",
+                            f"⚠️ Untagged refinement rejected ({rejection}). Keeping the draft.")
                     return None, llm_response
+                return candidate, llm_response
+            if log_callback:
+                log_callback("refinement_warning",
+                    "WARNING: Refinement response contains input. Using original.")
+            return None, llm_response
 
         except RepetitionLoopError as e:
             # Repetition loop detected - try increasing context (double increase),
@@ -1280,6 +1509,11 @@ async def refine_chunks(
                 )
                 refinement_validation = getattr(refined_text, "editor_validation", None)
                 refined_text = clean_translated_text(refined_text)
+                if not refined_text.strip():
+                    # Never let an empty refinement erase the chunk.
+                    refined_text = None
+
+            if refined_text is not None:
                 refined_parts.append(refined_text)
                 progress_tracker.mark_completed(i, chunk_elapsed)
                 if log_callback:
