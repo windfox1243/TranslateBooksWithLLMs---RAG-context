@@ -8,7 +8,10 @@ Provides:
 - injector: build the glossary block injected into the user prompt
 """
 from src.core.glossary.filter import filter_glossary
-from src.core.glossary.injector import build_glossary_block
+from src.core.glossary.injector import (
+    build_glossary_block,
+    build_refinement_glossary_block,
+)
 from src.core.glossary.models import (
     BulkReplaceResult,
     Glossary,
@@ -26,6 +29,7 @@ __all__ = [
     "GlossaryStore",
     "filter_glossary",
     "build_glossary_block",
+    "build_refinement_glossary_block",
     "parse_ner_response",
     "suggest_terms",
 ]

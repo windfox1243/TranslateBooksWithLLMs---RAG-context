@@ -59,3 +59,53 @@ def build_glossary_block(
             lines.append(f"  - {display_source} -> {target}")
 
     return "\n".join(lines) + "\n"
+
+
+def build_refinement_glossary_block(
+    filtered_terms: Dict[str, str],
+    target_language: str = "",
+    term_metadata: Optional[Dict[str, Dict[str, str]]] = None,
+) -> str:
+    """
+    Render the glossary block for the refinement pass. Empty string if no terms.
+
+    The refinement input is the target-language draft, so the terms were
+    matched on their target forms, and the instruction is to keep those
+    renderings rather than to translate a source term.
+    (Ported from upstream df0de763.)
+
+    Args:
+        filtered_terms: {source: target} of the terms whose target form
+            appears in the draft.
+        target_language: present for symmetry with build_glossary_block.
+        term_metadata: optional {source: {category}} hints.
+    """
+    if not filtered_terms:
+        return ""
+
+    metadata = term_metadata or {}
+
+    lines = [
+        "# GLOSSARY - KEEP THESE EXACT FORMS",
+        "",
+        "MANDATORY: the draft uses the required glossary renderings listed below "
+        "(source term -> required rendering). Keep these exact forms while refining.",
+        "Do NOT replace them with a synonym, a different transliteration, or a "
+        "more familiar variant.",
+        "Bracketed hints after a rendering (e.g. [character]) describe the entity "
+        "type — never part of the text.",
+        "",
+    ]
+
+    for source, target in filtered_terms.items():
+        meta = metadata.get(source) or {}
+        category = (meta.get("category") or "").strip()
+        display_source = ", ".join(
+            a.strip() for a in source.split("|") if a.strip()
+        ) or source
+        if category:
+            lines.append(f"  - {display_source} -> {target}  [{category}]")
+        else:
+            lines.append(f"  - {display_source} -> {target}")
+
+    return "\n".join(lines) + "\n"

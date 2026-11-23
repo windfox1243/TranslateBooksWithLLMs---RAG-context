@@ -116,9 +116,16 @@ def _build_chunk_glossary_block(
     prompt_options: Optional[dict],
     log_callback=None,
     runtime_state: Optional[dict] = None,
+    match_target_forms: bool = False,
 ) -> str:
     """
     Filter the active glossary against the current chunk and render a prompt block.
+
+    With `match_target_forms`, the chunk is a target-language draft (the
+    refinement pass): the glossary's target renderings are matched instead of
+    its source terms, and the block is worded as "keep these exact forms".
+    Matching source keys against a ZH->VI draft would find nothing.
+    (Ported from upstream df0de763.)
 
     Reads `glossary_terms` (dict source -> target) and optional `glossary_config`
     (GlossaryConfig) from prompt_options. Returns "" when no glossary is active
@@ -139,6 +146,7 @@ def _build_chunk_glossary_block(
         from src.core.glossary import (
             GlossaryConfig,
             build_glossary_block,
+            build_refinement_glossary_block,
             filter_glossary,
         )
     except ImportError:
@@ -149,7 +157,21 @@ def _build_chunk_glossary_block(
             config.source_language = str(prompt_options.get("source_language") or "")
         except Exception:
             pass
-    filtered, capped = filter_glossary(chunk_content, terms, config)
+    if match_target_forms:
+        sources_by_target: Dict[str, List[str]] = {}
+        for source, target in terms.items():
+            if target and target.strip():
+                sources_by_target.setdefault(target.strip(), []).append(source)
+        matched_targets, capped = filter_glossary(
+            chunk_content, {t: t for t in sources_by_target}, config,
+        )
+        filtered = {
+            source: terms[source]
+            for target in matched_targets
+            for source in sources_by_target[target]
+        }
+    else:
+        filtered, capped = filter_glossary(chunk_content, terms, config)
 
     if runtime_state is None:
         runtime_state = {}
@@ -169,7 +191,8 @@ def _build_chunk_glossary_block(
         return ""
 
     metadata = prompt_options.get("glossary_term_metadata") or None
-    return build_glossary_block(filtered, term_metadata=metadata)
+    render = build_refinement_glossary_block if match_target_forms else build_glossary_block
+    return render(filtered, term_metadata=metadata)
 
 
 # --- Raw-response fallback guards (plain-text mode) ---------------------------
@@ -925,11 +948,12 @@ async def _refinement_request_attempt(
     # Extract refinement instructions from prompt_options
     refinement_instructions = prompt_options.get('refinement_instructions', '') if prompt_options else ''
 
-    # Filter the glossary against the DRAFT (target language) — terms that survived
-    # the first pass are the ones we want to keep stable through refinement.
+    # Filter the glossary against the DRAFT (target language), on the terms'
+    # target forms: the renderings that survived the first pass are the ones
+    # to keep stable through refinement.
     glossary_block = _build_chunk_glossary_block(
         draft_translation, prompt_options, log_callback=log_callback,
-        runtime_state=runtime_state,
+        runtime_state=runtime_state, match_target_forms=True,
     )
 
     # Inject historical/full context if provided.

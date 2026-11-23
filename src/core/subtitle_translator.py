@@ -164,9 +164,11 @@ async def refine_subtitle_translations(
             local_to_global[local_idx] = g_idx
 
         block_text_for_glossary = "\n".join(text for _, text in local_subtitle_tuples)
+        # The block holds translations: match the glossary on its target forms.
+        # (Ported from upstream c63963a3.)
         glossary_block = _build_chunk_glossary_block(
             block_text_for_glossary, prompt_options, log_callback=log_callback,
-            runtime_state=runtime_state,
+            runtime_state=runtime_state, match_target_forms=True,
         )
 
         block_refined: Dict[int, str] = {}
