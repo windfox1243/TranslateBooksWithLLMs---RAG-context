@@ -4,6 +4,7 @@ Body serialization for simplified EPUB processing
 This module handles extracting and replacing the content of <body> elements
 in XHTML documents, enabling full-document translation instead of per-element processing.
 """
+import html as _html
 import re
 from typing import Optional, Tuple
 
@@ -149,6 +150,41 @@ def extract_body_html(
 
 _OPS_NS = 'http://www.idpf.org/2007/ops'
 
+# Maximum share of visible text the re-parse of a translated body may lose.
+# lxml's recover mode silently drops content after a mis-nested or broken
+# tag; a parse that keeps less than this is treated as a failure instead of
+# erasing part of a chapter. A parse that needed recovery is held to a much
+# tighter bound than a clean one (which should lose nothing at all).
+# (Ported from upstream 72d129fb.)
+MAX_VISIBLE_TEXT_LOSS = 0.10
+MAX_VISIBLE_TEXT_LOSS_WITH_RECOVERY = 0.02
+
+_COMMENT_RE = re.compile(r'<!--.*?-->', re.DOTALL)
+_ANY_TAG_RE = re.compile(r'<[^>]*>')
+_WHITESPACE_RE = re.compile(r'\s+')
+
+
+def _visible_text_length(markup: str) -> int:
+    """Count non-whitespace characters of the text in a markup string."""
+    text = _ANY_TAG_RE.sub('', _COMMENT_RE.sub('', markup))
+    return len(_WHITESPACE_RE.sub('', _html.unescape(text)))
+
+
+def _parsed_text_length(element: etree._Element) -> int:
+    """Count non-whitespace characters of the text held by a parsed element."""
+    parts = []
+    for node in element.iter():
+        if not isinstance(node.tag, str):
+            # Comments and processing instructions: only their tail is text.
+            if node.tail:
+                parts.append(node.tail)
+            continue
+        if node.text:
+            parts.append(node.text)
+        if node is not element and node.tail:
+            parts.append(node.tail)
+    return len(_WHITESPACE_RE.sub('', ''.join(parts)))
+
 
 def replace_body_content(body_element: etree._Element, new_html: str) -> None:
     """
@@ -221,6 +257,21 @@ def replace_body_content(body_element: etree._Element, new_html: str) -> None:
                     original_error=e2,
                     content_preview=new_html[:200]
                 )
+
+    # Refuse a parse that lost a significant part of the visible text: a
+    # mis-nested restoration recovered by lxml can come back empty or
+    # truncated, and writing it would silently erase part of the chapter.
+    expected_len = _visible_text_length(new_html)
+    if expected_len:
+        parsed_len = _parsed_text_length(temp)
+        recovered = bool(parse_warnings) or parse_method != "XML"
+        max_loss = MAX_VISIBLE_TEXT_LOSS_WITH_RECOVERY if recovered else MAX_VISIBLE_TEXT_LOSS
+        if parsed_len < expected_len * (1 - max_loss):
+            raise XmlParsingError(
+                f"Re-parsed body lost visible text: {parsed_len}/{expected_len} "
+                f"characters kept [{parse_method}]",
+                content_preview=new_html[:200]
+            )
 
     # NOW clear the body (only after successful parsing)
     body_element.text = None

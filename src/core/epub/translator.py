@@ -49,6 +49,7 @@ from .epub_translation_adapter import EpubTranslationAdapter
 from .html_utils import is_text_free_chunk
 from .lang_support import apply_target_language_to_xhtml_directory, get_language_code
 from .metadata_translator import translate_opf_metadata
+from .package_locator import find_opf_file
 from .rtl_support import apply_rtl_to_epub_directory, is_rtl_language
 
 
@@ -530,12 +531,8 @@ def _extract_epub(input_filepath: str, temp_dir: str, log_callback: Optional[Cal
 
 
 def _find_opf_file(temp_dir: str) -> Optional[str]:
-    """Find OPF file in extracted EPUB."""
-    for root_dir, _, files in os.walk(temp_dir):
-        for file in files:
-            if file.endswith('.opf'):
-                return os.path.join(root_dir, file)
-    return None
+    """Find the OPF file of an extracted EPUB (the one container.xml names)."""
+    return find_opf_file(temp_dir)
 
 
 def _resolve_content_path(opf_dir: str, content_href: str) -> str:
@@ -1609,11 +1606,14 @@ def _get_translated_title_for_src(
         return None
 
     if fragment:
+        # A fragment names one place in the file: resolve it or keep the
+        # original label. Falling back to the file's first heading would give
+        # every section of a multi-section file the same label.
+        # (Ported from upstream 5efef0c5.)
         anchor = _find_element_by_id_or_name(doc_root, fragment)
-        if anchor is not None:
-            title = _extract_heading_text_near_anchor(anchor)
-            if title:
-                return title
+        if anchor is None:
+            return None
+        return _extract_heading_text_near_anchor(anchor)
 
     return _extract_first_heading_text(doc_root)
 
@@ -1750,14 +1750,64 @@ def _find_element_by_id_or_name(doc_root: etree._Element, fragment: str) -> Opti
     return None
 
 
+_HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
+
+
 def _extract_heading_text_near_anchor(anchor: etree._Element) -> Optional[str]:
+    """Heading text a TOC fragment points at, or None when unsure.
+
+    Resolution order:
+    1. the anchor is a heading, or sits inside one: that heading;
+    2. the anchor wraps a heading (``<section id="ch2"><h2>``): the first
+       heading it contains;
+    3. the anchor holds no text (``<a id="ch2"/><h2>``): the next heading in
+       document order, provided no other text comes before it;
+    otherwise None, so the caller keeps the original label instead of using a
+    whole section's text or an unrelated heading.
+    """
     current = anchor
     while current is not None:
-        if _local_name(current) in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+        if _local_name(current) in _HEADING_TAGS:
             return _normalized_element_text(current)
         current = current.getparent()
 
-    return _normalized_element_text(anchor)
+    for element in anchor.iterdescendants():
+        if _local_name(element) in _HEADING_TAGS:
+            return _normalized_element_text(element)
+
+    if _normalized_element_text(anchor):
+        return None
+
+    return _next_heading_text_after(anchor)
+
+
+def _document_events(element: etree._Element):
+    """Yield ("start", el) and ("text", str) events in document order."""
+    if not isinstance(element.tag, str):
+        return
+    yield ("start", element)
+    if element.text:
+        yield ("text", element.text)
+    for child in element:
+        yield from _document_events(child)
+        if child.tail:
+            yield ("text", child.tail)
+
+
+def _next_heading_text_after(anchor: etree._Element) -> Optional[str]:
+    """Text of the first heading after an empty anchor, if no text precedes it."""
+    root = anchor.getroottree().getroot()
+    seen_anchor = False
+    for kind, value in _document_events(root):
+        if not seen_anchor:
+            seen_anchor = kind == "start" and value is anchor
+            continue
+        if kind == "text":
+            if value.strip():
+                return None
+        elif _local_name(value) in _HEADING_TAGS:
+            return _normalized_element_text(value)
+    return None
 
 
 def _extract_first_heading_text(doc_root: etree._Element) -> Optional[str]:

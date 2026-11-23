@@ -2468,6 +2468,38 @@ async def _refine_epub_chunks(
     return refined_chunks
 
 
+def _mark_file_untranslated(
+    stats: TranslationMetrics,
+    chunk_count: int,
+    checkpoint_manager: Optional[Any],
+    translation_id: Optional[str],
+    file_href: Optional[str],
+    log_callback: Optional[Callable] = None,
+) -> None:
+    """Record that every chunk of a file is still owed.
+
+    Used when the translated chunks could not be written back into the body
+    (the body is left untouched, i.e. in the source language). The stats and
+    the persisted partial state both list every chunk as failed, so a resume
+    translates the file again. (Ported from upstream 72d129fb.)
+    """
+    stats.failed_chunks = max(stats.failed_chunks, chunk_count)
+    if not (checkpoint_manager and translation_id and file_href):
+        return
+    try:
+        state = checkpoint_manager.load_xhtml_partial_state(translation_id, file_href)
+    except Exception:
+        state = None
+    if state is None:
+        return
+    state.failed_chunk_indices = list(range(chunk_count))
+    try:
+        checkpoint_manager.save_xhtml_partial_state(translation_id, file_href, state)
+    except Exception as e:
+        _log_error(log_callback, "replace_body_state_error",
+                   f"Could not record the failed body replacement in the checkpoint: {e}")
+
+
 async def translate_xhtml_simplified(
     doc_root: etree._Element,
     source_language: str,
@@ -2805,6 +2837,13 @@ async def translate_xhtml_simplified(
 
     # 6. Replace body
     xml_success = _replace_body(body_element, final_html, log_callback)
+    if not xml_success:
+        # The body kept its source text, so every chunk of this file is still
+        # owed. Say so in the stats and the persisted state: otherwise they
+        # all read 'translated' and a resume would treat the file as done.
+        _mark_file_untranslated(
+            stats, len(chunks), checkpoint_manager, translation_id, file_href, log_callback
+        )
 
     # 7. Partial state deletion now handled in translator.py after save_epub_file
     # This ensures atomicity: state deleted ONLY after file is successfully saved
