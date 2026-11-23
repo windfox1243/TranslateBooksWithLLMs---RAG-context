@@ -78,11 +78,6 @@ import { UiLocaleControl } from './i18n/settings-control.js';
 // TTS Event Handler
 // ========================================
 
-/** Link to the FFmpeg download page, shown when the automatic install is not an option. */
-function ffmpegManualLink() {
-    return `<a href="https://ffmpeg.org/download.html" target="_blank" rel="noopener" class="btn btn-secondary" style="text-decoration: none;">${i18nSpan('tts:ffmpeg_manual')}</a>`;
-}
-
 /**
  * Handle TTS update events from WebSocket
  * @param {Object} data - TTS update data
