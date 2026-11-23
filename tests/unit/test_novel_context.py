@@ -4752,7 +4752,7 @@ async def test_plain_text_context_is_prepared_before_translation(monkeypatch, tm
     monkeypatch.setattr(src.config, "NOVEL_CONTEXTS_DIR", tmp_path)
     monkeypatch.setattr("src.utils.novel_context.update_novel_context_chunk", fake_update)
     monkeypatch.setattr(plain_text_pipeline, "generate_translation_request", fake_translate)
-    monkeypatch.setattr(plain_text_pipeline, "clean_translated_text", lambda value: value)
+    monkeypatch.setattr(plain_text_pipeline, "clean_translated_text", lambda value, **kw: value)
 
     checkpoint_manager = MagicMock()
     output, _, interrupted = await plain_text_pipeline.translate_paragraphs_plain(
@@ -4823,7 +4823,7 @@ async def test_plain_text_context_update_interval_skips_between_updates(
     monkeypatch.setattr(
         plain_text_pipeline,
         "clean_translated_text",
-        lambda value: value,
+        lambda value, **kw: value,
     )
 
     checkpoint_manager = MagicMock()
@@ -4891,7 +4891,7 @@ async def test_plain_text_retry_preserves_failed_chunk_context_snapshot(
     monkeypatch.setattr(
         plain_text_pipeline,
         "clean_translated_text",
-        lambda value: value,
+        lambda value, **kw: value,
     )
 
     checkpoint_manager = MagicMock()

@@ -915,7 +915,7 @@ async def translate_paragraphs_plain(
                     chunk_succeeded = True
                 elif kind == 'editor_failed':
                     preserved = getattr(value, "draft_translation", "")
-                    translated_parts[i] = clean_translated_text(preserved) or main_content
+                    translated_parts[i] = clean_translated_text(preserved, target_language=target_language) or main_content
                     review_required_indices.add(i)
                     stats.review_required_chunks = (
                         baseline_review_required + len(review_required_indices)
@@ -949,7 +949,7 @@ async def translate_paragraphs_plain(
                         # layout is the content, so no whitespace clean-up.
                         cleaned = value.strip('\r\n')
                     else:
-                        cleaned = clean_translated_text(value)
+                        cleaned = clean_translated_text(value, target_language=target_language)
                     cleaned = strip_hallucinated_markup(
                         cleaned, chunks[i].get('main_content', ''))
                     cleaned = reattach_paragraph_closing_punctuation(
@@ -1074,7 +1074,7 @@ async def translate_paragraphs_plain(
                 stats.failed_chunks = len(failed_indices)
             elif kind == 'editor_failed':
                 preserved = getattr(value, "draft_translation", "")
-                translated_parts[i] = clean_translated_text(preserved) or main_content
+                translated_parts[i] = clean_translated_text(preserved, target_language=target_language) or main_content
                 review_required_indices.add(i)
                 stats.review_required_chunks = (
                     baseline_review_required + len(review_required_indices)
@@ -1090,7 +1090,7 @@ async def translate_paragraphs_plain(
                 if _INNER_BLANK_LINE_REGEX.search(main_content.strip()):
                     cleaned = value.strip('\r\n')
                 else:
-                    cleaned = clean_translated_text(value)
+                    cleaned = clean_translated_text(value, target_language=target_language)
                 cleaned = strip_hallucinated_markup(
                     cleaned, chunks[i].get('main_content', ''))
                 cleaned = reattach_paragraph_closing_punctuation(
