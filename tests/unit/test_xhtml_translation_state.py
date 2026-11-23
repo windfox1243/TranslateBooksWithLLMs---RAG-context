@@ -386,3 +386,25 @@ def test_empty_state():
     data = state.to_dict()
     restored = XHTMLTranslationState.from_dict(data)
     assert restored.validate() is True
+
+
+def test_runtime_objects_in_prompt_options_do_not_break_serialization():
+    """EPUB jobs put the editor's LLM client into prompt_options; a partial
+    state holding it could not be written, so an interrupted EPUB file always
+    restarted from its first chunk."""
+    import json
+
+    class _Client:
+        pass
+
+    state = create_sample_state()
+    state.prompt_options = {
+        "temperature": 0.7,
+        "_editor_llm_client": _Client(),
+        "_checkpoint_db": object(),
+        "not_json": {1, 2},
+    }
+    data = state.to_dict()
+    json.dumps(data)
+    assert data["prompt_options"] == {"temperature": 0.7}
+    assert state.prompt_options["_editor_llm_client"] is not None

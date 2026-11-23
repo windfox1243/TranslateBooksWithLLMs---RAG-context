@@ -287,7 +287,7 @@ async def refine_srt_file(
     refined_srt = srt_processor.reconstruct_srt(refined_subs)
 
     try:
-        async with aiofiles.open(output_filepath, 'w', encoding='utf-8') as f:
+        async with aiofiles.open(output_filepath, 'w', encoding='utf-8', newline='') as f:
             await f.write(refined_srt)
         if log_callback:
             log_callback("srt_refine_done",
