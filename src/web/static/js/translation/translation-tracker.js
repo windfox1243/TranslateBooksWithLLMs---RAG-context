@@ -956,7 +956,10 @@ export const TranslationTracker = {
         }
 
         if (cost > 0 || totalTokens > 0) {
-            items.push(`$${cost.toFixed(4)} · ${totalTokens.toLocaleString()} tokens`);
+            items.push(t('translation:completion_cost_tokens', {
+                cost: `${stats.openrouter_cost_estimated ? '~' : ''}$${Number(cost).toFixed(4)}`,
+                tokens: Number(totalTokens).toLocaleString(),
+            }));
         }
 
         if (items.length === 0) return '';
