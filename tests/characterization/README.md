@@ -56,3 +56,14 @@ update:
 | EPUB **refine** updates once per file, not per chunk | `refine_epub` |
 
 See the deep-analysis report for the root causes behind each.
+
+## Hermetic environment
+
+`conftest.py` runs every test with `tmp_path` as the working directory (so
+nothing is written under the repository's `data/`) and pins the config knobs
+`src.config` reads from a local `.env` that shape the trace:
+`SRT_LINES_PER_BLOCK=10`, `PARALLEL_TRANSLATIONS=1`, and the DOCX/EPUB HTML
+chunk budget at the shipped `MAX_TOKENS_PER_CHUNK` default (450). DOCX/EPUB
+build their chunker from `TranslationConfig`'s import-time default and ignore
+the `max_tokens_per_chunk=60` the recorder passes, so before the pin a
+developer `.env` silently changed their chunk counts.

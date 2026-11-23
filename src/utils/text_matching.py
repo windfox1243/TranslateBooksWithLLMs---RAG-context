@@ -89,6 +89,29 @@ def active_label_matches_name(
     return len(active_tokens) == 1 and len(active) >= 3 and active in name_tokens
 
 
+def glossary_term_spans(
+    term: str,
+    chunk: str,
+    *,
+    case_sensitive: bool = False,
+    language: str | None = None,
+) -> list[tuple[int, int]]:
+    """(start, end) of each safe glossary term occurrence in a source chunk."""
+
+    if not term or not chunk:
+        return []
+    flags = 0 if case_sensitive else re.IGNORECASE
+    if has_cjk_or_hangul(term) or get_language_profile(language).match_policy.no_space_script:
+        pattern = re.escape(term)
+    elif has_rtl(term):
+        pattern = _rtl_boundary_pattern(term)
+    elif re.search(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]", term):
+        pattern = _latin_boundary_pattern(term)
+    else:
+        pattern = re.escape(term)
+    return [match.span() for match in re.finditer(pattern, chunk, flags)]
+
+
 def glossary_term_occurrences(
     term: str,
     chunk: str,
@@ -98,16 +121,6 @@ def glossary_term_occurrences(
 ) -> int:
     """Count safe glossary term occurrences in a source chunk."""
 
-    if not term or not chunk:
-        return 0
-    needle = term if case_sensitive else term.casefold()
-    haystack = chunk if case_sensitive else chunk.casefold()
-    if has_cjk_or_hangul(term) or get_language_profile(language).match_policy.no_space_script:
-        return haystack.count(needle)
-    if has_rtl(term):
-        flags = 0 if case_sensitive else re.IGNORECASE
-        return len(re.findall(_rtl_boundary_pattern(term), chunk, flags))
-    if re.search(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]", term):
-        flags = 0 if case_sensitive else re.IGNORECASE
-        return len(re.findall(_latin_boundary_pattern(term), chunk, flags))
-    return haystack.count(needle)
+    return len(glossary_term_spans(
+        term, chunk, case_sensitive=case_sensitive, language=language,
+    ))

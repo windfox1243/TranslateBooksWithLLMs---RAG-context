@@ -117,3 +117,16 @@ def sampler_spine_docs():
 def _no_request_pacing(monkeypatch):
     """Keep a developer's .env REQUEST_INTERVAL from slowing every LLM test."""
     monkeypatch.setattr("src.config.REQUEST_INTERVAL", 0.0)
+
+
+@pytest.fixture(autouse=True)
+def _private_uploads_dir(tmp_path_factory, monkeypatch):
+    """Keep every CheckpointManager's job folders out of the real data/uploads.
+
+    CheckpointManager reads src.config.UPLOADS_DIR when it is built, so a test
+    that creates jobs without its own uploads_dir used to leave folders such
+    as data/uploads/job or data/uploads/test_srt_001 in the working copy.
+    """
+    # A directory of its own, so tests that list their tmp_path see nothing extra.
+    uploads = tmp_path_factory.mktemp("uploads")
+    monkeypatch.setattr("src.config.UPLOADS_DIR", uploads)
