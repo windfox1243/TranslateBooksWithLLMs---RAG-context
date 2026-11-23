@@ -111,7 +111,7 @@ class TestPercentEncodedHrefs:
             ) as f:
                 f.write(XHTML_DOC)
 
-            total_chunks, chunks_per_file = await _precount_chunks(
+            total_chunks, chunks_per_file, *_ = await _precount_chunks(
                 content_files=["Chapter%201.xhtml"],
                 opf_dir=tmp,
                 max_tokens_per_chunk=500,
@@ -131,7 +131,7 @@ class TestPercentEncodedHrefs:
             ) as f:
                 f.write(XHTML_DOC)
 
-            total_chunks, chunks_per_file = await _precount_chunks(
+            total_chunks, chunks_per_file, *_ = await _precount_chunks(
                 content_files=["chapter1.xhtml"],
                 opf_dir=tmp,
                 max_tokens_per_chunk=500,

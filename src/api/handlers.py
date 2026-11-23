@@ -921,12 +921,23 @@ async def perform_actual_translation(translation_id, config, state_manager, outp
 
             if verdict.status == 'error':
                 # The translation loop ran to the end but produced no usable
-                # output file. Report it honestly instead of claiming success.
+                # output: no file, an empty file, or a file holding nothing
+                # but source text. Report it honestly instead of claiming success.
                 state_manager.set_translation_field(translation_id, 'status', 'error')
                 state_manager.set_translation_field(translation_id, 'error', verdict.error)
-                _log_message_callback("summary_error_no_output",
-                    f"❌ Translation finished without a usable output file in {elapsed_time:.2f}s"
-                    f"{stats_summary} — {verdict.error}")
+                if verdict.nothing_translated:
+                    state_manager.set_translation_field(
+                        translation_id, 'error_code', 'nothing_translated')
+                    _log_message_callback("summary_nothing_translated",
+                        f"❌ Translation failed: no chunk could be translated in {elapsed_time:.2f}s"
+                        f"{stats_summary} — checkpoint kept for retry")
+                    # The UI shows its own localized message; the job stays
+                    # resumable. (Ported from upstream bec5fe93.)
+                    final_status_payload['error_code'] = 'nothing_translated'
+                else:
+                    _log_message_callback("summary_error_no_output",
+                        f"❌ Translation finished without a usable output file in {elapsed_time:.2f}s"
+                        f"{stats_summary} — {verdict.error}")
                 final_status_payload['status'] = 'error'
                 final_status_payload['error'] = verdict.error
                 checkpoint_manager.mark_error(translation_id)

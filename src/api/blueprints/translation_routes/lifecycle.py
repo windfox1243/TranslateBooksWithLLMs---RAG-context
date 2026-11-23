@@ -269,6 +269,7 @@ def register(bp, deps, shared):
             "logs": job_data.get('logs', [])[-100:],
             "result_preview": "[Preview functionality removed. Download file to view content.]" if job_data.get('status') in ['completed', 'interrupted', 'partial'] else None,
             "error": job_data.get('error'),
+            "error_code": job_data.get('error_code'),
             "config": _strip_api_keys(dict(job_data['config'])) if job_data.get('config') else None,
             "output_filepath": job_data.get('output_filepath')
         })
