@@ -424,5 +424,17 @@
   "context_narrator_profile_summary": "{{key}} ({{identity}}) · Perspektive: {{pov}} · Bereich: {{scope}} · Konfidenz: {{confidence}} · Abschnitte: {{start}}–{{end}} · {{lock}}\n{{dimensions}}", "context_narrator_locked": "gesperrt", "context_narrator_unlocked": "entsperrt", "context_narrator_lock": "Sperren", "context_narrator_unlock": "Entsperren", "context_narrator_conflict": "Abschnitt {{chunk}}: {{reason}}", "context_narrator_accept": "Übergang akzeptieren", "context_narrator_reject": "Übergang ablehnen", "context_narrator_editor_title": "Erzählerstimmenprofil",
   "context_narrator_diagnostics": "Abgeschlossene Einheiten: {{completed}} · Analysen: {{attempts}} · nächster Versuch: {{next}} · ausstehende Korrekturen: {{pending}}", "context_relationship_summary": "{{source}} → {{target}}\n  {{type}} · {{hierarchy}} · {{scope}}\n  {{status}} · Beleg: {{evidence}} · Belegeinheiten: {{units}} · Grund: {{reason}}", "context_relationship_status_accepted": "Durch Quellbeleg akzeptiert", "context_relationship_status_provisional": "Wartet auf Bestätigung", "context_relationship_status_quarantined": "Wegen semantischen Widerspruchs isoliert", "context_relationship_status_unknown": "Unbekannter Prüfstatus",
   "context_narrator_field_narrator_key": "Erzählerschlüssel", "context_narrator_field_narrator_identity": "Erzähleridentität", "context_narrator_field_point_of_view": "Erzählperspektive", "context_narrator_field_self_reference": "Selbstbezeichnung", "context_narrator_field_formality": "Formalität / Höflichkeit", "context_narrator_field_speech_level": "Sprachebene", "context_narrator_field_gender": "Geschlecht", "context_narrator_field_number": "Numerus", "context_narrator_field_dialect": "Dialekt / Regionalregister", "context_narrator_field_tense": "Erzähltempus", "context_narrator_field_stylistic_markers": "Stilmerkmale (kommagetrennt)", "context_narrator_field_start_chunk_index": "Startabschnittsindex", "context_narrator_field_end_chunk_index": "Endabschnittsindex (leer für offen)",
-  "completion_cost_tokens": "{{cost}} · {{tokens}} Tokens"
+  "completion_cost_tokens": "{{cost}} · {{tokens}} Tokens",
+  "file_status_queued": "In Warteschlange",
+  "file_status_preparing": "Wird vorbereitet...",
+  "file_status_submitted": "Übermittelt",
+  "file_status_processing": "In Bearbeitung",
+  "file_status_completed": "Abgeschlossen",
+  "file_status_partial": "Teilweise",
+  "file_status_interrupted": "Unterbrochen",
+  "file_status_rate_limited": "Ratenlimit erreicht",
+  "file_status_error": "Fehler",
+  "file_status_missing_api_key": "Fehler: API-Schlüssel fehlt",
+  "file_status_path_error": "Pfadfehler",
+  "file_status_initiation_error": "Start fehlgeschlagen"
 }

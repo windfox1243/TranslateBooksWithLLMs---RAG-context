@@ -424,5 +424,17 @@
   "context_narrator_profile_summary": "{{key}} ({{identity}}) · 시점: {{pov}} · 범위: {{scope}} · 신뢰도: {{confidence}} · 청크: {{start}}–{{end}} · {{lock}}\n{{dimensions}}", "context_narrator_locked": "잠김", "context_narrator_unlocked": "잠기지 않음", "context_narrator_lock": "잠금", "context_narrator_unlock": "잠금 해제", "context_narrator_conflict": "청크 {{chunk}}: {{reason}}", "context_narrator_accept": "전환 수락", "context_narrator_reject": "전환 거부", "context_narrator_editor_title": "서술자 음성 프로필",
   "context_narrator_diagnostics": "완료 단위: {{completed}} · 분석 횟수: {{attempts}} · 다음 재시도: {{next}} · 백필 대기: {{pending}}", "context_relationship_summary": "{{source}} → {{target}}\n  {{type}} · {{hierarchy}} · {{scope}}\n  {{status}} · 근거: {{evidence}} · 지원 단위: {{units}} · 이유: {{reason}}", "context_relationship_status_accepted": "원문 근거로 승인됨", "context_relationship_status_provisional": "추가 근거 대기", "context_relationship_status_quarantined": "의미 모순으로 격리됨", "context_relationship_status_unknown": "알 수 없는 검증 상태",
   "context_narrator_field_narrator_key": "서술자 키", "context_narrator_field_narrator_identity": "서술자 정체", "context_narrator_field_point_of_view": "시점", "context_narrator_field_self_reference": "자칭", "context_narrator_field_formality": "격식 / 공손함", "context_narrator_field_speech_level": "말투 단계", "context_narrator_field_gender": "성별", "context_narrator_field_number": "수", "context_narrator_field_dialect": "방언 / 지역 어역", "context_narrator_field_tense": "서술 시제", "context_narrator_field_stylistic_markers": "문체 표지(쉼표로 구분)", "context_narrator_field_start_chunk_index": "시작 청크 인덱스", "context_narrator_field_end_chunk_index": "종료 청크 인덱스(계속되면 비움)",
-  "completion_cost_tokens": "{{cost}} · {{tokens}} 토큰"
+  "completion_cost_tokens": "{{cost}} · {{tokens}} 토큰",
+  "file_status_queued": "대기 중",
+  "file_status_preparing": "준비 중...",
+  "file_status_submitted": "제출됨",
+  "file_status_processing": "처리 중",
+  "file_status_completed": "완료",
+  "file_status_partial": "부분 완료",
+  "file_status_interrupted": "중단됨",
+  "file_status_rate_limited": "속도 제한됨",
+  "file_status_error": "오류",
+  "file_status_missing_api_key": "오류: API 키 없음",
+  "file_status_path_error": "경로 오류",
+  "file_status_initiation_error": "시작 실패"
 }
