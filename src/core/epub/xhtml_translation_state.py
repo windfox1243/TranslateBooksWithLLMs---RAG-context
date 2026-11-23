@@ -5,9 +5,34 @@ This module provides serializable state management for XHTML translation,
 enabling interruption and resume at the chunk level.
 """
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+
+
+def persistable_prompt_options(options: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The part of ``options`` that can be written into a JSON partial state.
+
+    The pipeline puts runtime objects into prompt_options (the editor's LLM
+    client, a checkpoint database handle), all under keys starting with "_".
+    Writing them made every XHTML partial-state save fail with "Object of
+    type LLMClient is not JSON serializable", so an interrupted EPUB file
+    could only restart from its first chunk. Those keys, and any other value
+    JSON cannot hold, are left out; a resumed run rebuilds them.
+    """
+    if options is None:
+        return None
+    kept = {}
+    for key, value in options.items():
+        if str(key).startswith("_"):
+            continue
+        try:
+            json.dumps(value)
+        except (TypeError, ValueError):
+            continue
+        kept[key] = value
+    return kept
 
 
 @dataclass
@@ -96,7 +121,7 @@ class XHTMLTranslationState:
             'original_body_html': self.original_body_html,
             'doc_metadata': self.doc_metadata,
             'stats': self.stats,
-            'prompt_options': self.prompt_options,
+            'prompt_options': persistable_prompt_options(self.prompt_options),
             'bilingual': self.bilingual,
             'original_chunks': self.original_chunks,
             'protect_technical': self.protect_technical,
