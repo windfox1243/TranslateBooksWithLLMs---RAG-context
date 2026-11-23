@@ -19,6 +19,7 @@ import { SettingsManager } from './core/settings-manager.js';
 // ========================================
 import { DomHelpers } from './ui/dom-helpers.js';
 import { MessageLogger } from './ui/message-logger.js';
+import { ModalStack } from './ui/modal-stack.js';
 import { FormManager } from './ui/form-manager.js';
 import { SettingsSummary } from './ui/settings-summary.js';
 import { NotificationsManager } from './ui/notifications-manager.js';
@@ -901,19 +902,17 @@ async function showTTSModal(filename, filepath) {
     });
 
     // Close handlers
-    const closeModal = () => modal.remove();
+    let releaseEscape = null;
+    const closeModal = () => {
+        modal.remove();
+        if (releaseEscape) releaseEscape();
+    };
+    releaseEscape = ModalStack.push(closeModal);
     closeBtn.addEventListener('click', closeModal);
     cancelBtn.addEventListener('click', closeModal);
     modal.addEventListener('click', (e) => {
         if (e.target === modal) closeModal();
     });
-    const handleEscape = (e) => {
-        if (e.key === 'Escape') {
-            closeModal();
-            document.removeEventListener('keydown', handleEscape);
-        }
-    };
-    document.addEventListener('keydown', handleEscape);
 
     // Generate audio
     generateBtn.addEventListener('click', async () => {

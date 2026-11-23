@@ -14,6 +14,7 @@
  */
 
 import { describeApiError } from '../core/api-errors.js';
+import { ModalStack } from '../ui/modal-stack.js';
 import { ApiClient } from '../core/api-client.js';
 import { WebSocketManager } from '../core/websocket-manager.js';
 import { DomHelpers } from '../ui/dom-helpers.js';
@@ -202,9 +203,13 @@ function handleSampleUpdate(payload) {
     }
 }
 
+// Release callback from ModalStack while the overlay is open.
+let releaseEscape = null;
+
 function openOverlay() {
     const overlay = $('quickTestModal');
     if (overlay) overlay.classList.remove('hidden');
+    if (!releaseEscape) releaseEscape = ModalStack.push(closeOverlay);
 }
 
 function closeOverlay() {
@@ -212,6 +217,10 @@ function closeOverlay() {
     const overlay = $('quickTestModal');
     if (overlay) overlay.classList.add('hidden');
     state.sampleId = null;
+    if (releaseEscape) {
+        releaseEscape();
+        releaseEscape = null;
+    }
 }
 
 async function stopRun() {
@@ -333,9 +342,6 @@ function wire() {
     // Click the dimmed backdrop (but not the panel) to dismiss.
     $('quickTestModal')?.addEventListener('click', (e) => {
         if (e.target === $('quickTestModal')) closeOverlay();
-    });
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && !$('quickTestModal')?.classList.contains('hidden')) closeOverlay();
     });
 }
 
