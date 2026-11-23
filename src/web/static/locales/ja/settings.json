@@ -270,5 +270,15 @@
   "provider_name_deepseek": "DeepSeek",
   "provider_name_poe": "Poe",
   "provider_name_nim": "NVIDIA NIM",
-  "model_context_tooltip": "コンテキスト: {{tokens}} トークン"
+  "model_context_tooltip": "コンテキスト: {{tokens}} トークン",
+  "provider_desc_local": "ローカル",
+  "provider_desc_multi": "マルチプロバイダー",
+  "provider_desc_cloud_api": "クラウド API",
+  "provider_desc_cloud": "クラウド",
+  "provider_desc_compatible": "互換",
+  "provider_desc_many_models": "200以上のモデル",
+  "model_limit_na": "なし",
+  "model_token_limits_tooltip": "入力: {{input}} トークン、出力: {{output}} トークン",
+  "model_label_price_per_request": "{{name}}（{{price}}/リクエスト）",
+  "model_label_price_per_million": "{{name}}（入力: {{input}}/M、出力: {{output}}/M）"
 }
