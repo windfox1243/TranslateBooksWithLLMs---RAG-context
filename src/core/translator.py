@@ -172,6 +172,82 @@ def _build_chunk_glossary_block(
     return build_glossary_block(filtered, term_metadata=metadata)
 
 
+# --- Raw-response fallback guards (plain-text mode) ---------------------------
+#
+# When the model drops the translation tags, plain-text mode falls back to the
+# raw reply. That reply can be a preamble, the model's reasoning or a refusal
+# rather than a translation, and saving it would silently replace the chunk.
+# (Ported from upstream 36cf9e12.)
+
+# "Here is the translation:", "Sure! Here's the French translation:" ...
+_RAW_PREAMBLE_RE = re.compile(
+    r"\A\s*(?:here(?:'s|\s+is|\s+are)|below\s+is|sure|certainly|okay|ok)\b"
+    r"[^\n:]{0,80}?\btranslat\w*[^\n:]{0,40}:[ \t]*\n?",
+    re.IGNORECASE,
+)
+_REFUSAL_OPENER_RE = re.compile(
+    r"\A\s*(?:I['’]?m\s+sorry|I\s+am\s+sorry|sorry\b|I\s+apologi[sz]e|"
+    r"I\s+can(?:not|['’]t)\b|I['’]?m\s+(?:not\s+able|unable)|I\s+am\s+(?:not\s+able|unable)|"
+    r"as\s+an\s+AI\b|unfortunately,?\s+I\b)",
+    re.IGNORECASE,
+)
+_REFUSAL_TOPIC_RE = re.compile(
+    r"translat|request|assist|help|content|comply|provide|policy|guidelines",
+    re.IGNORECASE,
+)
+# Weighted length bounds for target/source. CJK and Hangul characters carry
+# about two to three Latin characters of meaning, so they are weighted up to
+# keep CJK<->Latin pairs inside the bounds.
+RAW_FALLBACK_MIN_RATIO = 0.2
+RAW_FALLBACK_MAX_RATIO = 4.0
+RAW_FALLBACK_MIN_SOURCE_LENGTH = 40
+
+
+def _weighted_length(text: str) -> float:
+    """Length of `text` with CJK ideographs/kana weighted 3 and Hangul 2."""
+    total = 0.0
+    for ch in text:
+        if ch.isspace():
+            continue
+        cp = ord(ch)
+        if (0x3040 <= cp <= 0x30FF or 0x3400 <= cp <= 0x4DBF or 0x4E00 <= cp <= 0x9FFF
+                or 0xF900 <= cp <= 0xFAFF or 0x20000 <= cp <= 0x2FFFF):
+            total += 3
+        elif 0xAC00 <= cp <= 0xD7AF or 0x1100 <= cp <= 0x11FF:
+            total += 2
+        else:
+            total += 1
+    return total
+
+
+def strip_raw_preamble(raw: str) -> str:
+    """Drop a leading "Here is the translation:" line from an untagged reply."""
+    stripped = _RAW_PREAMBLE_RE.sub("", raw, count=1).strip()
+    return stripped or raw.strip()
+
+
+def raw_fallback_rejection_reason(raw: str, source: str) -> Optional[str]:
+    """Why an untagged raw reply cannot be saved as a translation, or None.
+
+    Rejects an empty reply, a refusal, and a reply whose length is wildly
+    off the source's (reasoning dumps, one-line answers). Short sources skip
+    the length test: their ratio says nothing.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return "empty response"
+    head = text[:300]
+    if (_REFUSAL_OPENER_RE.search(head) and _REFUSAL_TOPIC_RE.search(head)
+            and not _REFUSAL_OPENER_RE.search(source or "")):
+        return "the response looks like a refusal"
+    source_len = _weighted_length(source or "")
+    if source_len >= RAW_FALLBACK_MIN_SOURCE_LENGTH:
+        ratio = _weighted_length(text) / source_len
+        if ratio < RAW_FALLBACK_MIN_RATIO or ratio > RAW_FALLBACK_MAX_RATIO:
+            return f"its length is {ratio:.1f}x the source's"
+    return None
+
+
 def split_chunk_for_retry(main_content: str, target_ratio: float = 0.5) -> Tuple[str, str]:
     """
     Split a chunk into two parts for retry after context overflow.
@@ -290,6 +366,14 @@ async def _make_llm_request_with_adaptive_context(
     all_translations = []
     reduction_attempt = 0
     last_response: Optional[LLMResponse] = None
+    used_raw_fallback = False
+
+    def _finish(combined):
+        # was_fallback must survive a later split request overwriting
+        # last_response, so it is applied once, on the response returned.
+        if used_raw_fallback and last_response is not None:
+            last_response.was_fallback = True
+        return combined, main_content, last_response
 
     while current_content.strip():
         try:
@@ -425,14 +509,24 @@ async def _make_llm_request_with_adaptive_context(
                             "CRITICAL: Cannot use raw response for EPUB (would corrupt HTML structure)")
                     return None, main_content, last_response
 
-                # For plain text, try fallback to raw response (legacy behavior)
+                # For plain text, try fallback to raw response (legacy behavior),
+                # but only when the reply plausibly is a translation: a refusal,
+                # an empty reply or a reasoning dump must fail the chunk (so it
+                # is retried or marked untranslated) instead of replacing it.
                 if current_content not in full_raw_response:
+                    candidate = strip_raw_preamble(full_raw_response)
+                    rejection = raw_fallback_rejection_reason(candidate, current_content)
+                    if rejection:
+                        if log_callback:
+                            log_callback("raw_response_fallback_rejected",
+                                f"⚠️ Untagged response rejected ({rejection}). Chunk marked failed.")
+                        return None, main_content, last_response
                     if log_callback:
                         log_callback("using_raw_response_fallback",
-                            "Using raw response as fallback (plain text mode)")
-                    all_translations.append(full_raw_response.strip())
-                    if last_response:
-                        last_response.was_fallback = True
+                            "⚠️ Translation tags missing: using the raw response as the "
+                            "translation (plain text mode)")
+                    all_translations.append(candidate)
+                    used_raw_fallback = True
                 else:
                     # Response contains input - this is an error
                     if log_callback:
@@ -453,7 +547,7 @@ async def _make_llm_request_with_adaptive_context(
 
             # Success - combine all translations
             combined = "\n".join(all_translations) if all_translations else None
-            return combined, main_content, last_response
+            return _finish(combined)
 
         except RepetitionLoopError as e:
             # Repetition loop detected - this typically happens with thinking models
@@ -527,7 +621,7 @@ async def _make_llm_request_with_adaptive_context(
                 remaining_content = second_part + ("\n" + remaining_content if remaining_content else "")
 
     # Shouldn't reach here normally
-    return "\n".join(all_translations) if all_translations else None, main_content, last_response
+    return _finish("\n".join(all_translations) if all_translations else None)
 
 
 # Legacy wrapper for backward compatibility
@@ -605,7 +699,8 @@ async def generate_translation_request(main_content, context_before, context_aft
                                        source_language=None, target_language=None, model=DEFAULT_MODEL,
                                        llm_client=None, log_callback=None, has_placeholders=False,
                                        prompt_options=None, context_manager: AdaptiveContextManager = None,
-                                       placeholder_format: Optional[Tuple[str, str]] = None):
+                                       placeholder_format: Optional[Tuple[str, str]] = None,
+                                       on_raw_fallback: Optional[Callable[[], None]] = None):
     """
     Generate translation request to LLM API with automatic context overflow handling.
 
@@ -624,6 +719,9 @@ async def generate_translation_request(main_content, context_before, context_aft
         context_manager (AdaptiveContextManager): Optional context manager for adaptive retry on overflow
         placeholder_format (Tuple[str, str]): Optional tuple of (prefix, suffix) for placeholders.
             e.g., ('[', ']') for [0] format or ('[[', ']]') for [[0]] format
+        on_raw_fallback (callable): Optional callable invoked (no arguments)
+            when the returned translation came from an untagged raw response,
+            so callers can count and report it.
 
     Returns:
         str: Translated text or None if failed
@@ -648,7 +746,7 @@ async def generate_translation_request(main_content, context_before, context_aft
     if context_manager:
         context_manager.begin_request()
     try:
-        translated_text, _, _ = await _make_llm_request_with_adaptive_context(
+        translated_text, _, last_response = await _make_llm_request_with_adaptive_context(
             main_content=main_content,
             context_before=context_before,
             context_after=context_after,
@@ -671,6 +769,13 @@ async def generate_translation_request(main_content, context_before, context_aft
         context_manager.abandon_request()
 
     if translated_text:
+        if on_raw_fallback and getattr(last_response, "was_fallback", False) is True:
+            try:
+                on_raw_fallback()
+            except Exception as count_error:
+                if log_callback:
+                    log_callback("raw_fallback_count_failed",
+                        f"Could not record the raw-response fallback: {count_error}")
         return await _retry_on_source_residue(
             translated_text,
             main_content=main_content,
