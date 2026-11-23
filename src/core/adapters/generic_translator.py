@@ -7,7 +7,7 @@ through the FormatAdapter interface.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from src.core.common.resume_context import read_checkpoint_context
 from src.core.context.analysis import analyze_unit_context
@@ -77,6 +77,9 @@ class CheckpointRestore:
     completed_translations_by_index: Dict[int, str]
     checkpoint_data: Optional[Dict[str, Any]]
     continuation_context_seed: Optional[Dict[str, Any]]
+    # The units to translate: re-chunked with the job's own parameters when
+    # a resume found they changed since the job started.
+    units: List[Any]
 
 
 class _ValidationFailed:
@@ -158,6 +161,16 @@ class GenericTranslator:
         failed_editor_drafts_by_index = {}
         completed_translations_by_index = {}
         checkpoint_data = self.checkpoint_manager.load_checkpoint(self.translation_id)
+        if checkpoint_data:
+            # Re-chunk with the parameters the job was started with, so a
+            # chunk-size change between pause and resume cannot shift the
+            # indices the stored translations were written against.
+            # (Ported from upstream 82cb5801.)
+            units = await self._align_chunking_with_checkpoint(
+                checkpoint_data, units, log_callback
+            )
+            total_units = len(units)
+
         continuation_base_id = self.adapter.config.get('continuation_base_id')
         continuation_context_seed = None
         if continuation_base_id and checkpoint_data:
@@ -186,17 +199,35 @@ class GenericTranslator:
             from src.core.continuation import latest_context_seed
             continuation_context_seed = latest_context_seed(previous_chunks)
 
+        def _restorable_completed(data, report=False):
+            # A stored unit only counts when its source text still matches the
+            # unit at that index; anything else is translated again.
+            # (Ported from upstream 82cb5801.)
+            completed = set()
+            mismatched = 0
+            for c in data.get('chunks', []):
+                idx = c.get('chunk_index', -1)
+                if (c.get('status') != 'completed'
+                        or (c.get('chunk_data') or {}).get('editor_retry_pending')
+                        or not 0 <= idx < total_units):
+                    continue
+                stored_source = c.get('original_text')
+                if stored_source is not None and stored_source != units[idx].content:
+                    mismatched += 1
+                    continue
+                completed.add(idx)
+            if report and mismatched and log_callback:
+                log_callback("checkpoint_mismatch",
+                    f"⚠️ {mismatched} checkpointed unit(s) no longer match the source "
+                    f"text at their position - they will be translated again")
+            return completed
+
         if checkpoint_data:
             await self.adapter.resume_from_checkpoint(checkpoint_data)
             # Pending work is derived from per-chunk statuses, not from the
             # progress pointer: the pointer advances past failed units, so
             # resuming from it alone would skip them forever (issue #204).
-            restored_completed = {
-                c['chunk_index'] for c in checkpoint_data.get('chunks', [])
-                if c.get('status') == 'completed'
-                and not (c.get('chunk_data') or {}).get('editor_retry_pending')
-                and 0 <= c.get('chunk_index', -1) < total_units
-            }
+            restored_completed = _restorable_completed(checkpoint_data, report=True)
             failed_editor_drafts_by_index = {
                 c['chunk_index']: c.get('translated_text')
                 for c in checkpoint_data.get('chunks', [])
@@ -242,12 +273,7 @@ class GenericTranslator:
             checkpoint_data = self.checkpoint_manager.load_checkpoint(
                 self.translation_id
             )
-            restored_completed = {
-                c['chunk_index'] for c in checkpoint_data.get('chunks', [])
-                if c.get('status') == 'completed'
-                and not (c.get('chunk_data') or {}).get('editor_retry_pending')
-                and 0 <= c.get('chunk_index', -1) < total_units
-            }
+            restored_completed = _restorable_completed(checkpoint_data)
             remaining_failed = sum(
                 1 for c in checkpoint_data.get('chunks', [])
                 if c.get('status') != 'completed'
@@ -320,6 +346,7 @@ class GenericTranslator:
             completed_translations_by_index=completed_translations_by_index,
             checkpoint_data=checkpoint_data,
             continuation_context_seed=continuation_context_seed,
+            units=units,
         )
 
 
@@ -426,6 +453,9 @@ class GenericTranslator:
                 stats_callback=stats_callback,
                 llm_kwargs=llm_kwargs,
             )
+            # A resume may re-chunk the input with the job's own parameters.
+            units = restore.units
+            total_units = len(units)
             restored_completed = restore.completed_indices
             restored_failed = restore.failed_indices
             failed_editor_drafts_by_index = restore.failed_editor_drafts_by_index
@@ -621,6 +651,13 @@ class GenericTranslator:
             sequential = workers == 1
             max_validation_attempts = 1 + max(0, UNIT_VALIDATION_RETRIES)
 
+            # Acceptance of a well-tagged answer: a refusal, a cut-off or
+            # runaway answer, or the source copied back when the languages
+            # differ is rejected and retried like a validation failure, never
+            # saved as translated. (Ported from upstream fe17ae1c.)
+            from src.core import answer_acceptance
+            reject_echo = answer_acceptance.languages_differ(source_language, target_language)
+
             last_context = ""
             failed_count = len(restored_failed)
             completed_count = len(restored_completed)
@@ -664,7 +701,11 @@ class GenericTranslator:
                 Results failing adapter validation (e.g. SRT [N] markers
                 dropped by the LLM) are retried with a reinforced prompt up
                 to max_validation_attempts; after exhaustion the best-effort
-                content is returned wrapped in _ValidationFailed."""
+                content is returned wrapped in _ValidationFailed.
+
+                A rejected answer (refusal, cut off, runaway, source copied
+                back) is retried the same way; if the last attempt was still
+                rejected, the unit fails (None): nothing of it is saved."""
                 unit = units[i]
                 if log_callback:
                     log_callback("unit_start",
@@ -687,6 +728,7 @@ class GenericTranslator:
                 base_instructions = (prompt_options or {}).get('custom_instructions', '')
                 attempt_options = prompt_options
                 result = None
+                answer_rejected = False
 
                 should_analyze_context = (
                     analyze_context
@@ -861,6 +903,27 @@ class GenericTranslator:
                     if not result:
                         return result
 
+                    rejection = answer_acceptance.tagged_answer_problem(
+                        str(result), unit.content, reject_echo=reject_echo)
+                    if rejection:
+                        # The answer came back but was not a translation.
+                        answer_rejected = True
+                        feedback = f"answer rejected: {rejection}"
+                        if log_callback:
+                            log_callback("unit_answer_rejected",
+                                f"Unit {i+1}/{total_units}: {feedback} "
+                                f"(attempt {attempt+1}/{max_validation_attempts})")
+                        reinforced = self.adapter.get_rejection_retry_instructions(feedback)
+                        attempt_options = {
+                            **(prompt_options or {}),
+                            'custom_instructions': (
+                                f"{base_instructions}\n\n{reinforced}"
+                                if base_instructions else reinforced
+                            ),
+                        }
+                        continue
+                    answer_rejected = False
+
                     # Optional 2-pass Senior Translation Editor reflection & repair pass
                     if result and (prompt_options or {}).get("reflection_mode"):
                         from src.core.translator import (
@@ -921,6 +984,14 @@ class GenericTranslator:
                             if base_instructions else reinforced
                         ),
                     }
+
+                if answer_rejected:
+                    if log_callback:
+                        log_callback("unit_answer_rejected_exhausted",
+                            f"Unit {i+1}/{total_units}: every answer was rejected after "
+                            f"{max_validation_attempts} attempts — the unit keeps its "
+                            f"source text, is marked failed and will be retried on resume")
+                    return None
 
                 if log_callback:
                     log_callback("unit_validation_exhausted",
@@ -1110,8 +1181,10 @@ class GenericTranslator:
                         )
                         if not save_success:
                             if log_callback:
+                                cause = getattr(self.adapter, 'last_error', None)
                                 log_callback("save_failed",
-                                    f"Failed to save translation for unit {unit.unit_id}")
+                                    f"Failed to save translation for unit {unit.unit_id}"
+                                    + (f": {cause}" if cause else ""))
                             _record_failure(i, unit, result)
                             next_index = i + 1
                             continue
@@ -1349,6 +1422,33 @@ class GenericTranslator:
                         await client.close()
                     except Exception:
                         pass
+
+    # Adapter config keys that decide how the input is cut into units.
+    CHUNKING_CONFIG_KEYS = ('max_tokens_per_chunk', 'soft_limit_ratio', 'lines_per_block')
+
+    async def _align_chunking_with_checkpoint(self, checkpoint_data, units, log_callback):
+        """Re-prepare the adapter with the chunking parameters stored with the job.
+
+        The job config persisted at start_job holds the adapter config the
+        units were built with. When the current run was given different
+        values (e.g. a changed MAX_TOKENS_PER_CHUNK), the stored ones win,
+        exactly like plain_text_pipeline replays its stored segmentation.
+        """
+        stored = ((checkpoint_data.get('job') or {}).get('config') or {})
+        changed = {
+            key: stored[key] for key in self.CHUNKING_CONFIG_KEYS
+            if key in stored and stored[key] is not None
+            and stored[key] != self.adapter.config.get(key)
+        }
+        if not changed:
+            return units
+        if log_callback:
+            log_callback("checkpoint_chunking_restored",
+                f"Resuming with the chunking parameters the job was started with: {changed}")
+        self.adapter.config.update(changed)
+        if not await self.adapter.prepare_for_translation():
+            raise RuntimeError("Could not re-split the input with the checkpoint's chunking parameters")
+        return self.adapter.get_translation_units()
 
     def __repr__(self) -> str:
         return (

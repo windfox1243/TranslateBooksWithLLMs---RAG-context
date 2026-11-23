@@ -1508,7 +1508,8 @@ async def refine_chunks(
                     getattr(refined_text, "quality_status", "passed") or "passed"
                 )
                 refinement_validation = getattr(refined_text, "editor_validation", None)
-                refined_text = clean_translated_text(refined_text)
+                refined_text = clean_translated_text(
+                    refined_text, target_language=target_language)
                 if not refined_text.strip():
                     # Never let an empty refinement erase the chunk.
                     refined_text = None

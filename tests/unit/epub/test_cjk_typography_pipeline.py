@@ -43,6 +43,9 @@ async def _translate(input_path: Path, output_path: Path, monkeypatch, **overrid
 
     Returns the list of (event, message) pairs the pipeline logged.
     """
+    # The echo client answers in the source language, which the source-residue
+    # check would rightly flag: switch it off, this test is about wiring.
+    monkeypatch.setattr("src.config.SOURCE_RESIDUE_CHECK_ENABLED", False)
     monkeypatch.setattr(translator_module, "_create_llm_client", _stub_create_llm_client)
     _disable_attribution(monkeypatch)
 

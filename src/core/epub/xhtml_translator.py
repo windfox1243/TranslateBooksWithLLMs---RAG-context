@@ -42,6 +42,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from lxml import etree
 
+from src.common.cjk_punctuation import reattach_closing_punctuation
+from src.common.placeholder_format import PlaceholderFormat
 from src.config import (
     ADAPTIVE_CONTEXT_INITIAL_THINKING,
     PLACEHOLDER_PATTERN,
@@ -64,6 +66,7 @@ from src.utils.relationship_sync import (
 )
 from src.utils.unified_logger import LogLevel, LogType
 
+from ..common.source_residue import detect_blocking_residue, residue_log_message
 from ..context_optimizer import (
     CONTEXT_STEP,
     INITIAL_CONTEXT_SIZE,
@@ -78,6 +81,7 @@ from .html_chunker import HtmlChunker
 from .html_utils import is_text_free_chunk
 from .placeholder_validator import PlaceholderValidator
 from .tag_preservation import TagPreserver
+from .text_survival import text_survival_problem
 from .translation_metrics import TranslationMetrics
 
 
@@ -214,6 +218,75 @@ def _should_hide_structured_refinement_placeholders(
     return STRUCTURED_REFINEMENT_HIDE_PLACEHOLDERS
 
 
+# Tags that never end a block (an inline run). Anything else that closes or
+# self-closes (</p>, </li>, <br/>) ends the text before it.
+_INLINE_TAG_NAMES = frozenset({
+    'a', 'abbr', 'b', 'bdi', 'bdo', 'big', 'cite', 'code', 'data', 'del',
+    'dfn', 'em', 'font', 'i', 'ins', 'kbd', 'label', 'mark', 'q', 'rp', 'rt',
+    'ruby', 's', 'samp', 'small', 'span', 'strike', 'strong', 'sub', 'sup',
+    'time', 'tt', 'u', 'var', 'wbr',
+})
+_TAG_RE = re.compile(r"<[^<>]+>")
+_TAG_NAME_RE = re.compile(r'^<\s*/?\s*([A-Za-z][\w:.-]*)')
+
+
+def _ends_block(markup: str) -> bool:
+    """True when ``markup`` closes a block or breaks a line (</p>, </li>, <br/>)."""
+    for tag in _TAG_RE.findall(markup):
+        if not (tag.startswith("</") or tag.endswith("/>")):
+            continue
+        match = _TAG_NAME_RE.match(tag)
+        if not match:
+            return True
+        name = match.group(1).lower().split(':')[-1]
+        if name not in _INLINE_TAG_NAMES:
+            return True
+    return False
+
+
+def reattach_block_closing_punctuation(source: str, translated: str,
+                                       local_tag_map: Dict[str, str]) -> str:
+    """Pull full-width closing punctuation back inside the block it ends.
+
+    A reply such as "[id0]こんにちは[id1]。[id2]" (``[id1]`` = ``</p><p>``) renders the
+    "。" at the start of the next paragraph. Any run of placeholders holding a
+    block end that is directly followed by CJK closing punctuation gets that
+    punctuation moved before it. A chunk whose source itself starts a block
+    with such punctuation is left alone (see ``reattach_closing_punctuation``).
+    (Ported from upstream c7a7acc0.)
+    """
+    block_placeholders = [ph for ph, markup in local_tag_map.items() if _ends_block(markup)]
+    if not block_placeholders:
+        return translated
+    fmt = PlaceholderFormat.from_config()
+    any_placeholder = rf"{re.escape(fmt.prefix)}\d+{re.escape(fmt.suffix)}"
+    block = "|".join(re.escape(ph) for ph in block_placeholders)
+    # The whole run of adjacent placeholders around the block end ("</em></p><p>").
+    boundary = rf"(?:{any_placeholder})*?(?:{block})(?:{any_placeholder})*"
+    return reattach_closing_punctuation(translated, boundary, source)
+
+
+def _has_source_residue(source_text: str, translated_text: str, source_language: str,
+                        target_language: str, log_callback: Optional[Callable]) -> bool:
+    """True, with a warning logged, when a translation kept source text.
+
+    ``generate_translation_request`` already retried once; what is left is
+    kept, since it is still the most translated version, and the caller
+    records the chunk as failed so a resume or a retry pass picks it up.
+    (Ported from upstream c2330c52.)
+    """
+    report = detect_blocking_residue(source_text, translated_text,
+                                     source_language, target_language)
+    if report is None:
+        return False
+    if log_callback:
+        log_callback(
+            "source_residue_kept",
+            f"⚠️ {residue_log_message(report, source_language)} - chunk marked "
+            "failed, it will be retried")
+    return True
+
+
 async def translate_chunk_with_fallback(
     chunk_text: str,
     local_tag_map: Dict[str, str],
@@ -298,6 +371,15 @@ async def translate_chunk_with_fallback(
         # Validate placeholders
         validation_result = validate_placeholders(translated, local_tag_map)
 
+        # Placeholders alone do not prove the text came back: "[id0][id1]"
+        # passes them for a whole paragraph. Route such replies to a retry.
+        survival_problem = text_survival_problem(chunk_text, translated) if validation_result else None
+        if survival_problem:
+            _log_error(log_callback, "chunk_text_lost",
+                       f"Attempt {attempt + 1}/{max_retries}: rejected translation, {survival_problem}")
+            stats.retry_attempts += 1
+            continue
+
         if validation_result:
             # Optional 2-pass Senior Translation Editor reflection & repair pass
             if translated and (prompt_options or {}).get("reflection_mode"):
@@ -360,8 +442,17 @@ async def translate_chunk_with_fallback(
 
             quality_status = getattr(translated, "quality_status", "passed")
             editor_validation = getattr(translated, "editor_validation", None)
-            result = placeholder_mgr.restore_to_global(translated, global_indices)
+            result = placeholder_mgr.restore_to_global(
+                reattach_block_closing_punctuation(chunk_text, translated, local_tag_map),
+                global_indices,
+            )
             stats.record_processed()  # Mark chunk as fully processed
+            if _has_source_residue(chunk_text, translated, source_language,
+                                   target_language, log_callback):
+                # Kept as the most translated text, but recorded as failed so
+                # a resume or a retry pass translates it again.
+                stats.fallback_used += 1
+                return _ChunkTranslationOutcome(result, succeeded=False)
             if quality_status == "review_required":
                 stats.review_required_chunks += 1
             return _ChunkTranslationOutcome(
@@ -416,6 +507,10 @@ async def translate_chunk_with_fallback(
             if translated_clean is None:
                 raise Exception("LLM returned None for clean translation")
 
+            survival_problem = text_survival_problem(clean_text, translated_clean)
+            if survival_problem:
+                raise Exception(f"rejected clean translation, {survival_problem}")
+
             # 3. Initialize aligner (lazy loading, cached on function)
             if not hasattr(translate_chunk_with_fallback, '_aligner'):
                 from .token_alignment_fallback import TokenAlignmentFallback
@@ -438,8 +533,16 @@ async def translate_chunk_with_fallback(
                     log_callback("phase2_warning", "⚠️ Note: Proportional repositioning may cause minor layout imperfections")
 
                 # 6. Restore global indices and return
-                result = placeholder_mgr.restore_to_global(result_with_placeholders, global_indices)
+                result = placeholder_mgr.restore_to_global(
+                    reattach_block_closing_punctuation(
+                        chunk_text, result_with_placeholders, local_tag_map),
+                    global_indices,
+                )
                 stats.record_processed()  # Mark chunk as fully processed
+                if _has_source_residue(chunk_text, result_with_placeholders,
+                                       source_language, target_language, log_callback):
+                    stats.fallback_used += 1
+                    return _ChunkTranslationOutcome(result, succeeded=False)
                 return _ChunkTranslationOutcome(result, succeeded=True)
             else:
                 _log_error(log_callback, "phase2_validation_failed", "✗ Phase 2 validation failed")

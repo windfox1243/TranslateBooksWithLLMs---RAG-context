@@ -15,6 +15,10 @@ Used by the EPUB and DOCX adapters when prompt_options['plain_text_mode'] is Tru
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from src.common.cjk_punctuation import (
+    PARAGRAPH_BREAK_PATTERN,
+    reattach_closing_punctuation,
+)
 from src.core.chunking.decorative_separator import is_decorative_separator
 from src.core.chunking.token_chunker import TokenChunker
 from src.core.common.parallel import aclosing, iter_ordered_concurrent
@@ -24,6 +28,7 @@ from src.core.common.resume_context import (
     resume_context_from_chunk_data,
     resume_context_from_seed,
 )
+from src.core.common.source_residue import detect_blocking_residue, residue_log_message
 from src.core.context.analysis import analyze_unit_context
 from src.core.context.commit import commit_pending_context, save_committed_context
 from src.core.epub.translation_metrics import TranslationMetrics
@@ -42,6 +47,8 @@ from src.utils.relationship_sync import (
 
 PARAGRAPH_SEPARATOR = "\n\n"
 _RESPLIT_REGEX = re.compile(r"\n{2,}")
+# A blank line inside one source paragraph (code in a <pre> block).
+_INNER_BLANK_LINE_REGEX = re.compile(r"\n[ \t]*\n")
 _MARKUP_TAG_REGEX = re.compile(r"</?[A-Za-z][A-Za-z0-9]*(?:\s[^<>]*?)?/?>")
 
 
@@ -67,20 +74,22 @@ def _split_translated_back_to_paragraphs(translated_text: str) -> List[str]:
 def _reconcile_paragraph_counts(
     translated_paragraphs: List[str],
     expected_count: int,
-) -> List[str]:
+) -> List[Optional[str]]:
     """
     Best-effort alignment when the LLM merged or split paragraphs inside one
     segment. The blast radius is the segment, never the whole document.
 
     - translated == expected: return as-is
-    - translated < expected: pad with empty strings
+    - translated < expected: pad with None, which _reassemble resolves to the
+      source paragraph (an empty string would erase the paragraph)
+      (ported from upstream dde993ee)
     - translated > expected: merge surplus into the last slot
     """
     got = len(translated_paragraphs)
     if got == expected_count:
         return translated_paragraphs
     if got < expected_count:
-        return translated_paragraphs + [""] * (expected_count - got)
+        return translated_paragraphs + [None] * (expected_count - got)
     head = translated_paragraphs[:expected_count - 1]
     tail = " ".join(translated_paragraphs[expected_count - 1:])
     return head + [tail]
@@ -177,6 +186,25 @@ def build_plain_segments(
 
         tokens = chunker.count_tokens(text)
 
+        if (len(text_indices) == 1 and tokens <= chunker.max_tokens
+                and _INNER_BLANK_LINE_REGEX.search(text.strip())):
+            # A paragraph that itself holds blank lines (a <pre> block kept
+            # verbatim) cannot share a segment: the segment's answer is split
+            # on blank lines, so it would always break the paragraph count
+            # and lose its own blank lines. Alone in a 'partial' segment, its
+            # answer goes back into its single slot untouched.
+            # (Ported from upstream dde993ee.)
+            flush()
+            chapter_index, chapter_title = chapter_by_index.get(idx, (0, ""))
+            segments.append({
+                'indices': text_indices,
+                'text': text,
+                'partial': True,
+                'chapter_index': chapter_index,
+                'chapter_title': chapter_title,
+            })
+            continue
+
         if tokens > chunker.max_tokens:
             flush()
             if len(text_indices) > 1:
@@ -231,7 +259,8 @@ def _reassemble(
     Write each segment's translation back to the source indices it covers.
 
     Empty source slots keep their original (empty) value; pieces of an
-    oversized paragraph are concatenated in order into its single slot.
+    oversized paragraph are concatenated in order into its single slot. A slot
+    the model's answer did not cover keeps its source paragraph.
     """
     out: List[Optional[str]] = [None] * len(source_paragraphs)
     partial_pieces: Dict[int, List[str]] = {}
@@ -253,6 +282,19 @@ def _reassemble(
         slot if slot is not None else source_paragraphs[i]
         for i, slot in enumerate(out)
     ]
+
+
+def reattach_paragraph_closing_punctuation(translated: str, source: str) -> str:
+    """Move CJK closing punctuation that opens a paragraph back to the one before.
+
+    A model that answers "こんにちは\\n\\n。お元気ですか？" puts the "。" of the
+    first paragraph at the start of the second one once the blob is split on
+    blank lines. Full-width closing punctuation never opens a paragraph (see
+    src/common/cjk_punctuation.py), so it is moved back before the break. A
+    source with a paragraph that does start with such a mark disarms it.
+    (Ported from upstream c7a7acc0.)
+    """
+    return reattach_closing_punctuation(translated, PARAGRAPH_BREAK_PATTERN, source)
 
 
 async def translate_paragraphs_plain(
@@ -727,6 +769,22 @@ async def translate_paragraphs_plain(
                 placeholder_format=None,
                 on_raw_fallback=_count_raw_fallback,
             )
+        # Plain mode has no placeholders to validate, so a truncated answer
+        # (or a runaway one) would otherwise be written as the translation.
+        # Treat it like a failed call: the segment keeps its source text, is
+        # counted, and stays retryable. An empty answer is left to the
+        # paragraph-count repair. Checked before the editor pass, which would
+        # only polish a broken draft. (Ported from upstream 3713b911.)
+        if translated is not None and translated.strip():
+            from src.core.epub.text_survival import text_survival_problem
+            problem = text_survival_problem(main_content, translated)
+            if problem:
+                if log_callback:
+                    log_callback(
+                        "plain_text_chunk_rejected",
+                        f"Chunk {i + 1}/{len(chunks)}: rejected translation, {problem}"
+                    )
+                return ('done', None)
         if translated and (prompt_options or {}).get("reflection_mode"):
             from src.core.translator import (
                 ReflectionValidationError,
@@ -857,7 +915,7 @@ async def translate_paragraphs_plain(
                     chunk_succeeded = True
                 elif kind == 'editor_failed':
                     preserved = getattr(value, "draft_translation", "")
-                    translated_parts[i] = clean_translated_text(preserved) or main_content
+                    translated_parts[i] = clean_translated_text(preserved, target_language=target_language) or main_content
                     review_required_indices.add(i)
                     stats.review_required_chunks = (
                         baseline_review_required + len(review_required_indices)
@@ -886,22 +944,47 @@ async def translate_paragraphs_plain(
                     stats.failed_chunks = len(failed_indices)
                 else:
                     quality_status = getattr(value, "quality_status", "passed")
-                    cleaned = clean_translated_text(value)
+                    if _INNER_BLANK_LINE_REGEX.search(main_content.strip()):
+                        # Verbatim block (see build_plain_segments): its
+                        # layout is the content, so no whitespace clean-up.
+                        cleaned = value.strip('\r\n')
+                    else:
+                        cleaned = clean_translated_text(value, target_language=target_language)
                     cleaned = strip_hallucinated_markup(
                         cleaned, chunks[i].get('main_content', ''))
+                    cleaned = reattach_paragraph_closing_punctuation(
+                        cleaned, chunks[i].get('main_content', ''))
                     translated_parts[i] = cleaned
-                    completed_translations_by_index[
-                        global_chunk_offset + i
-                    ] = cleaned
-                    stats.successful_first_try += 1
-                    chunk_succeeded = True
-                    if quality_status == "review_required":
-                        review_required_indices.add(i)
-                        stats.review_required_chunks = (
-                            baseline_review_required + len(review_required_indices)
-                        )
-                    if sequential:
-                        previous_translation_context = previous_context_tail(cleaned)
+                    # Text left in the source language: the request already
+                    # retried once, so keep the most translated answer but
+                    # record the segment as failed, which is what makes a
+                    # resume or a retry pass translate it again.
+                    # (Ported from upstream c2330c52.)
+                    residue = detect_blocking_residue(
+                        main_content, cleaned, source_language, target_language)
+                    if residue is not None:
+                        if log_callback:
+                            log_callback(
+                                "source_residue_kept",
+                                f"⚠️ Chunk {i + 1}/{len(chunks)}: "
+                                f"{residue_log_message(residue, source_language)} - "
+                                "segment marked failed, it will be retried"
+                            )
+                        failed_indices.add(i)
+                        stats.failed_chunks = len(failed_indices)
+                    else:
+                        completed_translations_by_index[
+                            global_chunk_offset + i
+                        ] = cleaned
+                        stats.successful_first_try += 1
+                        chunk_succeeded = True
+                        if quality_status == "review_required":
+                            review_required_indices.add(i)
+                            stats.review_required_chunks = (
+                                baseline_review_required + len(review_required_indices)
+                            )
+                        if sequential:
+                            previous_translation_context = previous_context_tail(cleaned)
 
             if chunk_succeeded:
                 _commit_context_state(i)
@@ -991,7 +1074,7 @@ async def translate_paragraphs_plain(
                 stats.failed_chunks = len(failed_indices)
             elif kind == 'editor_failed':
                 preserved = getattr(value, "draft_translation", "")
-                translated_parts[i] = clean_translated_text(preserved) or main_content
+                translated_parts[i] = clean_translated_text(preserved, target_language=target_language) or main_content
                 review_required_indices.add(i)
                 stats.review_required_chunks = (
                     baseline_review_required + len(review_required_indices)
@@ -1004,23 +1087,41 @@ async def translate_paragraphs_plain(
                 continue
             elif value is not None:
                 quality_status = getattr(value, "quality_status", "passed")
-                cleaned = clean_translated_text(value)
+                if _INNER_BLANK_LINE_REGEX.search(main_content.strip()):
+                    cleaned = value.strip('\r\n')
+                else:
+                    cleaned = clean_translated_text(value, target_language=target_language)
                 cleaned = strip_hallucinated_markup(
                     cleaned, chunks[i].get('main_content', ''))
+                cleaned = reattach_paragraph_closing_punctuation(
+                    cleaned, chunks[i].get('main_content', ''))
                 translated_parts[i] = cleaned
-                chunk_succeeded = True
-                failed_indices.discard(i)
-                stats.failed_chunks = len(failed_indices)
-                if quality_status == "review_required":
-                    review_required_indices.add(i)
-                    stats.review_required_chunks = (
-                        baseline_review_required + len(review_required_indices)
-                    )
-                if log_callback:
-                    log_callback(
-                        "failed_chunk_retry_success",
-                        f"Failed plain-text chunk {i + 1}/{len(chunks)} translated successfully on retry.",
-                    )
+                residue = detect_blocking_residue(
+                    main_content, cleaned, source_language, target_language)
+                if residue is not None:
+                    # Still source text after the retry: keep the answer, the
+                    # chunk stays failed for a resume.
+                    if log_callback:
+                        log_callback(
+                            "source_residue_kept",
+                            f"⚠️ Chunk {i + 1}/{len(chunks)}: "
+                            f"{residue_log_message(residue, source_language)} - "
+                            "segment stays failed"
+                        )
+                else:
+                    chunk_succeeded = True
+                    failed_indices.discard(i)
+                    stats.failed_chunks = len(failed_indices)
+                    if quality_status == "review_required":
+                        review_required_indices.add(i)
+                        stats.review_required_chunks = (
+                            baseline_review_required + len(review_required_indices)
+                        )
+                    if log_callback:
+                        log_callback(
+                            "failed_chunk_retry_success",
+                            f"Failed plain-text chunk {i + 1}/{len(chunks)} translated successfully on retry.",
+                        )
             else:
                 translated_parts[i] = main_content
 

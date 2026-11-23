@@ -22,6 +22,13 @@ from src.core.epub.translator import (
 from src.core.llm.base import LLMResponse
 from src.persistence.checkpoint_manager import CheckpointManager
 
+# The EPUB text-survival guard rejects a reply far shorter than its source, so
+# the mock translations carry roughly a paragraph of text.
+PLAUSIBLE_TRANSLATION = (
+    "Ceci est un paragraphe traduit. Il contient assez de texte pour remplacer "
+    "un paragraphe source. Le renard brun rapide saute par-dessus le chien paresseux."
+)
+
 
 def create_mock_llm_response(content: str) -> LLMResponse:
     """Create a proper LLMResponse object for testing."""
@@ -106,7 +113,7 @@ def temp_epub_dir(tmp_path):
 @pytest.fixture
 def mock_llm_client():
     """Create a mock LLM client."""
-    return create_mock_llm_client_with_response("Texte traduit")
+    return create_mock_llm_client_with_response("Texte traduit. " + PLAUSIBLE_TRANSLATION)
 
 
 @pytest.fixture
@@ -137,7 +144,7 @@ class TestSingleFileInterruption:
 
         async def track_translation(*args, **kwargs):
             chunks_processed[0] += 1
-            return create_mock_llm_response(f"Chunk {chunks_processed[0]} traduit")
+            return create_mock_llm_response(f"Chunk {chunks_processed[0]} traduit. {PLAUSIBLE_TRANSLATION}")
 
         mock_llm_client.generate = track_translation
         mock_llm_client.extract_translation = lambda response: response

@@ -52,6 +52,9 @@ class LanguageProfile:
     narrator_default_policy: NarratorDefaultPolicy = field(
         default_factory=NarratorDefaultPolicy
     )
+    # Typography requires a space before ! ? ; : (French), so the
+    # post-processor must not remove it.
+    space_before_high_punctuation: bool = False
 
 
 LATIN_POLICY = TextMatchPolicy(latin_word_boundaries=True)
@@ -63,7 +66,7 @@ THAI_POLICY = TextMatchPolicy(no_space_script=True)
 
 _PROFILES: Dict[str, LanguageProfile] = {
     "en": LanguageProfile("en", "English", frozenset({"english", "en"}), script="latin", match_policy=LATIN_POLICY, residue_social_terms=frozenset({"aunt", "brother", "captain", "commander", "dad", "daughter", "elder", "father", "lord", "master", "mother", "professor", "senior", "sister", "son", "teacher", "uncle", "younger"})),
-    "fr": LanguageProfile("fr", "French", frozenset({"french", "fr", "français", "francais"}), script="latin", match_policy=LATIN_POLICY, addressing_family="romance", has_formality_register=True, has_grammatical_gender=True, prompt_style="romance", residue_social_terms=frozenset({"frère", "soeur", "père", "mère", "oncle", "tante", "maître", "professeur"})),
+    "fr": LanguageProfile("fr", "French", frozenset({"french", "fr", "français", "francais"}), script="latin", match_policy=LATIN_POLICY, addressing_family="romance", has_formality_register=True, has_grammatical_gender=True, prompt_style="romance", residue_social_terms=frozenset({"frère", "soeur", "père", "mère", "oncle", "tante", "maître", "professeur"}), space_before_high_punctuation=True),
     "es": LanguageProfile("es", "Spanish", frozenset({"spanish", "es", "español", "espanol"}), script="latin", match_policy=LATIN_POLICY, addressing_family="romance", has_formality_register=True, has_grammatical_gender=True, prompt_style="romance", residue_social_terms=frozenset({"hermano", "hermana", "padre", "madre", "tío", "tía", "maestro", "profesor"})),
     "de": LanguageProfile("de", "German", frozenset({"german", "de", "deutsch"}), script="latin", match_policy=LATIN_POLICY, addressing_family="germanic", has_formality_register=True, has_grammatical_gender=True, prompt_style="germanic", residue_social_terms=frozenset({"bruder", "schwester", "vater", "mutter", "onkel", "tante", "meister", "lehrer"})),
     "vi": LanguageProfile("vi", "Vietnamese", frozenset({"vietnamese", "vietnamien", "viet", "vi", "tiếng việt", "tieng viet"}), script="latin", match_policy=LATIN_POLICY, addressing_family="vietnamese", has_formality_register=True, prompt_style="vietnamese", residue_social_terms=frozenset({"anh", "chị", "em", "ông", "bà", "cha", "mẹ", "thầy", "cô"})),
