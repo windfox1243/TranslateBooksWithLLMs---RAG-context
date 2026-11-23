@@ -66,6 +66,7 @@ from src.utils.relationship_sync import (
 )
 from src.utils.unified_logger import LogLevel, LogType
 
+from ..common.source_residue import detect_blocking_residue, residue_log_message
 from ..context_optimizer import (
     CONTEXT_STEP,
     INITIAL_CONTEXT_SIZE,
@@ -265,6 +266,27 @@ def reattach_block_closing_punctuation(source: str, translated: str,
     return reattach_closing_punctuation(translated, boundary, source)
 
 
+def _has_source_residue(source_text: str, translated_text: str, source_language: str,
+                        target_language: str, log_callback: Optional[Callable]) -> bool:
+    """True, with a warning logged, when a translation kept source text.
+
+    ``generate_translation_request`` already retried once; what is left is
+    kept, since it is still the most translated version, and the caller
+    records the chunk as failed so a resume or a retry pass picks it up.
+    (Ported from upstream c2330c52.)
+    """
+    report = detect_blocking_residue(source_text, translated_text,
+                                     source_language, target_language)
+    if report is None:
+        return False
+    if log_callback:
+        log_callback(
+            "source_residue_kept",
+            f"⚠️ {residue_log_message(report, source_language)} - chunk marked "
+            "failed, it will be retried")
+    return True
+
+
 async def translate_chunk_with_fallback(
     chunk_text: str,
     local_tag_map: Dict[str, str],
@@ -425,6 +447,12 @@ async def translate_chunk_with_fallback(
                 global_indices,
             )
             stats.record_processed()  # Mark chunk as fully processed
+            if _has_source_residue(chunk_text, translated, source_language,
+                                   target_language, log_callback):
+                # Kept as the most translated text, but recorded as failed so
+                # a resume or a retry pass translates it again.
+                stats.fallback_used += 1
+                return _ChunkTranslationOutcome(result, succeeded=False)
             if quality_status == "review_required":
                 stats.review_required_chunks += 1
             return _ChunkTranslationOutcome(
@@ -511,6 +539,10 @@ async def translate_chunk_with_fallback(
                     global_indices,
                 )
                 stats.record_processed()  # Mark chunk as fully processed
+                if _has_source_residue(chunk_text, result_with_placeholders,
+                                       source_language, target_language, log_callback):
+                    stats.fallback_used += 1
+                    return _ChunkTranslationOutcome(result, succeeded=False)
                 return _ChunkTranslationOutcome(result, succeeded=True)
             else:
                 _log_error(log_callback, "phase2_validation_failed", "✗ Phase 2 validation failed")

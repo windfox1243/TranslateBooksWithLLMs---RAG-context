@@ -552,6 +552,9 @@ async def _translate(input_path: Path, output_path: Path, monkeypatch, client,
     so pinning it keeps the assertions deterministic); one test turns it on to
     exercise the real `_update_epub_metadata` signature interplay.
     """
+    # The echo client answers in the source language, which the source-residue
+    # check would rightly flag: switch it off, this test is about wiring.
+    monkeypatch.setattr("src.config.SOURCE_RESIDUE_CHECK_ENABLED", False)
     monkeypatch.setattr(translator_module, "_create_llm_client",
                         lambda **kwargs: client)
     if attribution:

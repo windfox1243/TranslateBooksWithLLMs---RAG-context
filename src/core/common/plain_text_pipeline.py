@@ -28,6 +28,7 @@ from src.core.common.resume_context import (
     resume_context_from_chunk_data,
     resume_context_from_seed,
 )
+from src.core.common.source_residue import detect_blocking_residue, residue_log_message
 from src.core.context.analysis import analyze_unit_context
 from src.core.context.commit import commit_pending_context, save_committed_context
 from src.core.epub.translation_metrics import TranslationMetrics
@@ -925,18 +926,36 @@ async def translate_paragraphs_plain(
                     cleaned = reattach_paragraph_closing_punctuation(
                         cleaned, chunks[i].get('main_content', ''))
                     translated_parts[i] = cleaned
-                    completed_translations_by_index[
-                        global_chunk_offset + i
-                    ] = cleaned
-                    stats.successful_first_try += 1
-                    chunk_succeeded = True
-                    if quality_status == "review_required":
-                        review_required_indices.add(i)
-                        stats.review_required_chunks = (
-                            baseline_review_required + len(review_required_indices)
-                        )
-                    if sequential:
-                        previous_translation_context = previous_context_tail(cleaned)
+                    # Text left in the source language: the request already
+                    # retried once, so keep the most translated answer but
+                    # record the segment as failed, which is what makes a
+                    # resume or a retry pass translate it again.
+                    # (Ported from upstream c2330c52.)
+                    residue = detect_blocking_residue(
+                        main_content, cleaned, source_language, target_language)
+                    if residue is not None:
+                        if log_callback:
+                            log_callback(
+                                "source_residue_kept",
+                                f"⚠️ Chunk {i + 1}/{len(chunks)}: "
+                                f"{residue_log_message(residue, source_language)} - "
+                                "segment marked failed, it will be retried"
+                            )
+                        failed_indices.add(i)
+                        stats.failed_chunks = len(failed_indices)
+                    else:
+                        completed_translations_by_index[
+                            global_chunk_offset + i
+                        ] = cleaned
+                        stats.successful_first_try += 1
+                        chunk_succeeded = True
+                        if quality_status == "review_required":
+                            review_required_indices.add(i)
+                            stats.review_required_chunks = (
+                                baseline_review_required + len(review_required_indices)
+                            )
+                        if sequential:
+                            previous_translation_context = previous_context_tail(cleaned)
 
             if chunk_succeeded:
                 _commit_context_state(i)
@@ -1045,19 +1064,32 @@ async def translate_paragraphs_plain(
                 cleaned = reattach_paragraph_closing_punctuation(
                     cleaned, chunks[i].get('main_content', ''))
                 translated_parts[i] = cleaned
-                chunk_succeeded = True
-                failed_indices.discard(i)
-                stats.failed_chunks = len(failed_indices)
-                if quality_status == "review_required":
-                    review_required_indices.add(i)
-                    stats.review_required_chunks = (
-                        baseline_review_required + len(review_required_indices)
-                    )
-                if log_callback:
-                    log_callback(
-                        "failed_chunk_retry_success",
-                        f"Failed plain-text chunk {i + 1}/{len(chunks)} translated successfully on retry.",
-                    )
+                residue = detect_blocking_residue(
+                    main_content, cleaned, source_language, target_language)
+                if residue is not None:
+                    # Still source text after the retry: keep the answer, the
+                    # chunk stays failed for a resume.
+                    if log_callback:
+                        log_callback(
+                            "source_residue_kept",
+                            f"⚠️ Chunk {i + 1}/{len(chunks)}: "
+                            f"{residue_log_message(residue, source_language)} - "
+                            "segment stays failed"
+                        )
+                else:
+                    chunk_succeeded = True
+                    failed_indices.discard(i)
+                    stats.failed_chunks = len(failed_indices)
+                    if quality_status == "review_required":
+                        review_required_indices.add(i)
+                        stats.review_required_chunks = (
+                            baseline_review_required + len(review_required_indices)
+                        )
+                    if log_callback:
+                        log_callback(
+                            "failed_chunk_retry_success",
+                            f"Failed plain-text chunk {i + 1}/{len(chunks)} translated successfully on retry.",
+                        )
             else:
                 translated_parts[i] = main_content
 
