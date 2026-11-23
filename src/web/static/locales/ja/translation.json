@@ -90,6 +90,7 @@
   "translation_rate_limited_msg": "⏸️ {{name}}: レート制限のため、翻訳を自動的に一時停止しました。準備ができたら下の再開ボタンを使用してください。",
   "translation_error_msg": "❌ {{name}}: エラー - {{error}}",
   "translation_unknown_error": "不明なエラーです。",
+  "translation_nothing_translated_msg": "❌ {{name}}: どの部分も翻訳できませんでした（モデルへのリクエストがすべて失敗しました）。ジョブは保持されており、再開可能なジョブの一覧から再開できます。",
   "translation_in_progress": "{{name}} の翻訳を実行中...",
   "translation_completed_card_title": "翻訳が完了しました",
   "translation_completed_review_card_title": "翻訳完了 — 確認を推奨",

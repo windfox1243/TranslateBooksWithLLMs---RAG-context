@@ -43,7 +43,8 @@ class JobRepository(DatabaseRepository):
         translation_id: str,
         file_type: str,
         config: Dict[str, Any],
-        server_session_id: Optional[str] = None
+        server_session_id: Optional[str] = None,
+        owner_pid: Optional[int] = None,
     ) -> bool:
         """
         Create a new translation job record.
@@ -78,15 +79,17 @@ class JobRepository(DatabaseRepository):
 
                 cursor.execute("""
                     INSERT INTO translation_jobs
-                    (translation_id, status, file_type, config, progress, server_session_id)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (translation_id, status, file_type, config, progress, server_session_id,
+                     owner_pid)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (
                     translation_id,
                     'running',
                     file_type,
                     json.dumps(sanitize_config_secrets(config)),
                     json.dumps(progress),
-                    server_session_id
+                    server_session_id,
+                    owner_pid,
                 ))
 
                 conn.commit()

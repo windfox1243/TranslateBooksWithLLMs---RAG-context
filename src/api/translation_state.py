@@ -19,6 +19,21 @@ def generate_server_session_id() -> str:
     return str(int(time.time()))
 
 
+# In-memory job logs are a rolling window: the status endpoint returns the last
+# 100 entries and the live view gets every entry over WebSocket, so keeping a
+# whole book's worth only grew memory and the deep copies made per request.
+# (Ported from upstream ed9a8c14.)
+MAX_STORED_LOG_ENTRIES = 500
+
+
+def _append_bounded(logs: list, entry: Any) -> None:
+    """Append in place, dropping the oldest entries beyond the cap."""
+    logs.append(entry)
+    overflow = len(logs) - MAX_STORED_LOG_ENTRIES
+    if overflow > 0:
+        del logs[:overflow]
+
+
 class TranslationStateManager:
     """Thread-safe manager for translation state"""
 
@@ -32,6 +47,38 @@ class TranslationStateManager:
         )
         self.glossary_store: Optional["GlossaryStore"] = None
         self._glossary_lock = threading.Lock()
+        # Jobs with a live worker thread (running, queued for a slot, or asleep
+        # before an auto-resume after a rate limit). Guards against two workers
+        # on one job; see try_claim_worker(). (Ported from upstream d0bc2a3b.)
+        self._active_workers: set = set()
+        self._workers_lock = threading.Lock()
+
+    def try_claim_worker(self, translation_id: str) -> bool:
+        """Atomically reserve the job for one new worker.
+
+        Returns False when a worker already owns it (a double-clicked resume,
+        or a manual resume while the job waits to auto-resume). The caller
+        must call release_worker() if it ends up not starting the worker.
+        """
+        with self._workers_lock:
+            if translation_id in self._active_workers:
+                return False
+            self._active_workers.add(translation_id)
+            return True
+
+    def mark_worker_active(self, translation_id: str) -> None:
+        """Record a live worker without the exclusivity check (fresh jobs)."""
+        with self._workers_lock:
+            self._active_workers.add(translation_id)
+
+    def release_worker(self, translation_id: str) -> None:
+        """Forget the job's worker. Called when the worker thread exits."""
+        with self._workers_lock:
+            self._active_workers.discard(translation_id)
+
+    def is_worker_active(self, translation_id: str) -> bool:
+        with self._workers_lock:
+            return translation_id in self._active_workers
 
     def create_translation(self, translation_id: str, config: Dict[str, Any]) -> None:
         """Create a new translation entry"""
@@ -77,7 +124,7 @@ class TranslationStateManager:
             if 'log' in updates:
                 if 'logs' not in translation:
                     translation['logs'] = []
-                translation['logs'].append(updates['log'])
+                _append_bounded(translation['logs'], updates['log'])
                 updates = {k: v for k, v in updates.items() if k != 'log'}
 
             # Update remaining fields
@@ -107,14 +154,14 @@ class TranslationStateManager:
             self._translations[translation_id][field] = value
             return True
 
-    def append_log(self, translation_id: str, log_entry: str) -> bool:
-        """Append a log entry to translation"""
+    def append_log(self, translation_id: str, log_entry: Any) -> bool:
+        """Append a log entry to the job's bounded in-memory log."""
         with self._lock:
             if translation_id not in self._translations:
                 return False
             if 'logs' not in self._translations[translation_id]:
                 self._translations[translation_id]['logs'] = []
-            self._translations[translation_id]['logs'].append(log_entry)
+            _append_bounded(self._translations[translation_id]['logs'], log_entry)
             return True
 
     def update_stats(self, translation_id: str, stats_update: Dict[str, Any]) -> bool:

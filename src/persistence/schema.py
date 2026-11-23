@@ -31,7 +31,7 @@ import hashlib
 from typing import Any, Callable
 
 # Bump whenever _create_tables_and_migrate_columns changes.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def _evidence_fingerprint(*parts: Any) -> str:
@@ -101,6 +101,11 @@ def _create_tables_and_migrate_columns(cursor: Any) -> None:
             "ALTER TABLE translation_jobs ADD COLUMN quality_status "
             "TEXT NOT NULL DEFAULT 'not_checked'"
         )
+    # PID of the process that created the job, so a server restart does not
+    # flip the row of a job another live process (the CLI, a second server)
+    # is still running. (Ported from upstream e4efe87d.)
+    if 'owner_pid' not in columns:
+        cursor.execute("ALTER TABLE translation_jobs ADD COLUMN owner_pid INTEGER")
 
     # Checkpoint chunks table
     cursor.execute("""

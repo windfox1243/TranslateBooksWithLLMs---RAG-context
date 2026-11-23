@@ -14,7 +14,7 @@ import os
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 from urllib.parse import unquote
 
 import aiofiles
@@ -46,6 +46,7 @@ from ..context_optimizer import (
 from ..post_processor import clean_residual_tag_placeholders
 from .cjk_typography import apply_script_normalization_to_epub_directory
 from .epub_translation_adapter import EpubTranslationAdapter
+from .html_utils import is_text_free_chunk
 from .lang_support import apply_target_language_to_xhtml_directory, get_language_code
 from .metadata_translator import translate_opf_metadata
 from .rtl_support import apply_rtl_to_epub_directory, is_rtl_language
@@ -882,6 +883,24 @@ async def _translate_single_xhtml_file(
         return None, False, None
 
 
+class ChunkPrecount(NamedTuple):
+    """Chunk counts of the source book, before any file is translated.
+
+    Attributes:
+        total_chunks: Chunks of the whole book.
+        chunks_per_file: Chunks per content file (0 for a missing or broken file).
+        text_free_chunks: Chunks with no translatable character, which the
+            chunk loop passes through without an LLM call (placeholder mode
+            only; 0 in Plain Text Mode). The job verdict needs them to tell
+            "nothing could be translated" from "some units needed no work".
+            (Ported from upstream bec5fe93.)
+    """
+
+    total_chunks: int
+    chunks_per_file: List[int]
+    text_free_chunks: int = 0
+
+
 async def _precount_chunks(
     content_files: list,
     opf_dir: str,
@@ -889,7 +908,7 @@ async def _precount_chunks(
     log_callback: Optional[Callable] = None,
     plain_text_mode: bool = False,
     chapter_mode: bool = False,
-) -> Tuple[int, List[int]]:
+) -> ChunkPrecount:
     """
     Pre-count chunks across all XHTML files for accurate progress tracking.
 
@@ -897,12 +916,13 @@ async def _precount_chunks(
     joined by \\n\\n then chunked by TokenChunker) instead of the HTML-aware chunker.
 
     Returns:
-        (total_chunks, chunks_per_file)
+        A ChunkPrecount (total_chunks, chunks_per_file, text_free_chunks).
     """
     from .epub_translation_adapter import EpubTranslationAdapter
 
     chunks_per_file = []
     total_chunks = 0
+    text_free_chunks = 0
 
     if log_callback:
         log_callback("epub_precount_start", f"📊 Analyzing {len(content_files)} files for progress tracking...")
@@ -939,7 +959,7 @@ async def _precount_chunks(
                 chunks_per_file.append(0)
                 continue
 
-            text_with_placeholders, structure_map, _ = adapter.preserve_structure(
+            text_with_placeholders, structure_map, placeholder_format = adapter.preserve_structure(
                 raw_content, context, None
             )
 
@@ -954,6 +974,10 @@ async def _precount_chunks(
             chunk_count = len(chunks)
             chunks_per_file.append(chunk_count)
             total_chunks += chunk_count
+            text_free_chunks += sum(
+                1 for chunk in chunks
+                if is_text_free_chunk(chunk.get('text', ''), placeholder_format)
+            )
 
         except Exception:
             chunks_per_file.append(0)
@@ -962,7 +986,7 @@ async def _precount_chunks(
         log_callback("epub_precount_complete",
                      f"📊 Found {total_chunks} total chunks across {len(content_files)} files")
 
-    return total_chunks, chunks_per_file
+    return ChunkPrecount(total_chunks, chunks_per_file, text_free_chunks)
 
 
 def _precount_chunks_plain_text(
@@ -999,7 +1023,8 @@ def _precount_chunks_plain_text(
         return 0
 
 
-def _global_stats_payload(total_chunks, completed_chunks, acc, file_stats=None):
+def _global_stats_payload(total_chunks, completed_chunks, acc, file_stats=None,
+                          skipped_chunks=0):
     """Build the EPUB global-stats dict emitted to the progress callback.
 
     Single source of the cross-file payload shape, shared by the resume-initial
@@ -1007,11 +1032,14 @@ def _global_stats_payload(total_chunks, completed_chunks, acc, file_stats=None):
     rebuilt this ~10-key dict by hand). ``completed_chunks`` / ``total_chunks``
     are computed by the caller (they differ per site); the cumulative counters
     come from ``acc`` (a TranslationMetrics) plus, when given, the current
-    file's not-yet-merged ``file_stats`` dict.
+    file's not-yet-merged ``file_stats`` dict. ``skipped_chunks`` is the
+    precount's text-free chunk count, static for a book: the job verdict
+    subtracts it before deciding that no unit at all was translated.
     """
     fs = file_stats or {}
     return {
         'total_chunks': total_chunks,
+        'skipped_chunks': max(0, int(skipped_chunks or 0)),
         'completed_chunks': completed_chunks,
         'failed_chunks': acc.failed_chunks + fs.get('failed_chunks', 0),
         'token_alignment_used': acc.token_alignment_used + fs.get('token_alignment_used', 0),
@@ -1045,7 +1073,7 @@ async def _process_all_content_files(
     prompt_options: Optional[Dict] = None,
     restored_docs: Optional[Dict[str, etree._Element]] = None,
     parallel_workers: int = 1,
-    precomputed_chunk_counts: Optional[Tuple[int, List[int]]] = None,
+    precomputed_chunk_counts: Optional[Tuple] = None,
     continuation_base_id: Optional[str] = None,
 ) -> Dict:
     """
@@ -1085,7 +1113,7 @@ async def _process_all_content_files(
         chapter_mode = bool(
             prompt_options and prompt_options.get('chapter_mode')
         )
-        total_chunks, chunks_per_file = await _precount_chunks(
+        precomputed_chunk_counts = await _precount_chunks(
             content_files,
             opf_dir,
             max_tokens_per_chunk,
@@ -1093,9 +1121,9 @@ async def _process_all_content_files(
             plain_text_mode=plain_text_mode,
             chapter_mode=chapter_mode,
         )
-    else:
-        total_chunks, chunks_per_file = precomputed_chunk_counts
-        chunks_per_file = list(chunks_per_file)
+    total_chunks, chunks_per_file = precomputed_chunk_counts[:2]
+    chunks_per_file = list(chunks_per_file)
+    skipped_chunks = getattr(precomputed_chunk_counts, 'text_free_chunks', 0)
 
     # The progress denominator is the translation chunk count. In-translation
     # refinement (CLI --refine) is a per-file polish pass reported via logs; it
@@ -1173,6 +1201,7 @@ async def _process_all_content_files(
             effective_total_chunks,
             completed_chunks_global + partial_file_completed,
             accumulated_stats,
+            skipped_chunks=skipped_chunks,
         ))
 
     for file_idx, content_href in enumerate(content_files):
@@ -1212,7 +1241,8 @@ async def _process_all_content_files(
             # Report combined stats (accumulated + current file). The fallback
             # counters are included so the Fallbacks stat card updates live.
             stats_callback(_global_stats_payload(
-                total_chunks, global_completed, accumulated_stats, file_stats_dict))
+                total_chunks, global_completed, accumulated_stats, file_stats_dict,
+                skipped_chunks=skipped_chunks))
 
         # Translate using orchestrator WITH checkpoint support
         doc_root, success, file_stats = await _translate_single_xhtml_file(
@@ -1260,7 +1290,8 @@ async def _process_all_content_files(
         # Report stats if callback provided
         if stats_callback and file_stats:
             stats_callback(_global_stats_payload(
-                effective_total_chunks, completed_chunks_global, accumulated_stats))
+                effective_total_chunks, completed_chunks_global, accumulated_stats,
+                skipped_chunks=skipped_chunks))
 
         # Save the document if translation succeeded
         if success and doc_root is not None:
