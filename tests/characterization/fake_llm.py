@@ -114,5 +114,19 @@ def install(monkeypatch) -> None:
     """
     import src.config
     monkeypatch.setattr(src.config, "SOURCE_RESIDUE_CHECK_ENABLED", False)
+    allow_echo(monkeypatch)
     for target in _PATCH_TARGETS:
         monkeypatch.setattr(target, _fake_create_llm_provider, raising=True)
+
+
+def allow_echo(monkeypatch) -> None:
+    """Accept an answer equal to its source.
+
+    The echo provider copies the source back by design, which the TXT/SRT/PGN
+    acceptance rules reject when source and target languages differ
+    (``answer_acceptance.tagged_answer_problem``). With this fake installed,
+    the languages are treated as equal for that one rule, so the
+    characterization runs keep exercising the happy path.
+    """
+    monkeypatch.setattr("src.core.answer_acceptance.languages_differ",
+                        lambda *_args, **_kwargs: False, raising=True)

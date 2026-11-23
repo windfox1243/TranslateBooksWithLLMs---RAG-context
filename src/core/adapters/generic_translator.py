@@ -621,6 +621,13 @@ class GenericTranslator:
             sequential = workers == 1
             max_validation_attempts = 1 + max(0, UNIT_VALIDATION_RETRIES)
 
+            # Acceptance of a well-tagged answer: a refusal, a cut-off or
+            # runaway answer, or the source copied back when the languages
+            # differ is rejected and retried like a validation failure, never
+            # saved as translated. (Ported from upstream fe17ae1c.)
+            from src.core import answer_acceptance
+            reject_echo = answer_acceptance.languages_differ(source_language, target_language)
+
             last_context = ""
             failed_count = len(restored_failed)
             completed_count = len(restored_completed)
@@ -664,7 +671,11 @@ class GenericTranslator:
                 Results failing adapter validation (e.g. SRT [N] markers
                 dropped by the LLM) are retried with a reinforced prompt up
                 to max_validation_attempts; after exhaustion the best-effort
-                content is returned wrapped in _ValidationFailed."""
+                content is returned wrapped in _ValidationFailed.
+
+                A rejected answer (refusal, cut off, runaway, source copied
+                back) is retried the same way; if the last attempt was still
+                rejected, the unit fails (None): nothing of it is saved."""
                 unit = units[i]
                 if log_callback:
                     log_callback("unit_start",
@@ -687,6 +698,7 @@ class GenericTranslator:
                 base_instructions = (prompt_options or {}).get('custom_instructions', '')
                 attempt_options = prompt_options
                 result = None
+                answer_rejected = False
 
                 should_analyze_context = (
                     analyze_context
@@ -861,6 +873,27 @@ class GenericTranslator:
                     if not result:
                         return result
 
+                    rejection = answer_acceptance.tagged_answer_problem(
+                        str(result), unit.content, reject_echo=reject_echo)
+                    if rejection:
+                        # The answer came back but was not a translation.
+                        answer_rejected = True
+                        feedback = f"answer rejected: {rejection}"
+                        if log_callback:
+                            log_callback("unit_answer_rejected",
+                                f"Unit {i+1}/{total_units}: {feedback} "
+                                f"(attempt {attempt+1}/{max_validation_attempts})")
+                        reinforced = self.adapter.get_rejection_retry_instructions(feedback)
+                        attempt_options = {
+                            **(prompt_options or {}),
+                            'custom_instructions': (
+                                f"{base_instructions}\n\n{reinforced}"
+                                if base_instructions else reinforced
+                            ),
+                        }
+                        continue
+                    answer_rejected = False
+
                     # Optional 2-pass Senior Translation Editor reflection & repair pass
                     if result and (prompt_options or {}).get("reflection_mode"):
                         from src.core.translator import (
@@ -921,6 +954,14 @@ class GenericTranslator:
                             if base_instructions else reinforced
                         ),
                     }
+
+                if answer_rejected:
+                    if log_callback:
+                        log_callback("unit_answer_rejected_exhausted",
+                            f"Unit {i+1}/{total_units}: every answer was rejected after "
+                            f"{max_validation_attempts} attempts — the unit keeps its "
+                            f"source text, is marked failed and will be retried on resume")
+                    return None
 
                 if log_callback:
                     log_callback("unit_validation_exhausted",
