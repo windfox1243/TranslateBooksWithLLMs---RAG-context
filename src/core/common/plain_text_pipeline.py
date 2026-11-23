@@ -29,7 +29,7 @@ from src.core.context.commit import commit_pending_context, save_committed_conte
 from src.core.epub.translation_metrics import TranslationMetrics
 from src.core.llm.exceptions import RateLimitError
 from src.core.post_processor import clean_translated_text
-from src.core.translator import generate_translation_request
+from src.core.translator import generate_translation_request, previous_context_tail
 from src.utils.db_addressing import (
     apply_db_addressing_to_session,
     sync_markdown_addressing_to_db,
@@ -901,10 +901,7 @@ async def translate_paragraphs_plain(
                             baseline_review_required + len(review_required_indices)
                         )
                     if sequential:
-                        words = cleaned.split()
-                        previous_translation_context = (
-                            " ".join(words[-25:]) if len(words) > 25 else cleaned
-                        )
+                        previous_translation_context = previous_context_tail(cleaned)
 
             if chunk_succeeded:
                 _commit_context_state(i)

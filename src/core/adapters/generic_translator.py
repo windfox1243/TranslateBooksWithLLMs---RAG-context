@@ -437,7 +437,10 @@ class GenericTranslator:
 
             # 5. Create LLM client
             from src.core.llm.runtime import build_draft_and_editor_clients
-            from src.core.translator import generate_translation_request
+            from src.core.translator import (
+                generate_translation_request,
+                previous_context_tail,
+            )
 
             prompt_options = llm_kwargs.get('prompt_options', {})
             (
@@ -1154,11 +1157,7 @@ class GenericTranslator:
 
                         if sequential:
                             completed_translations_by_index[i] = translated_content
-                            last_context = (
-                                translated_content[-200:]
-                                if len(translated_content) > 200
-                                else translated_content
-                            )
+                            last_context = previous_context_tail(translated_content)
 
                         if log_callback:
                             log_callback("unit_complete",
