@@ -53,7 +53,7 @@ export const EditorModelManager = {
 
         this.initialized = true;
         attachProviderSearchable(provider, {
-            placeholder: t('settings:search_providers_placeholder'),
+            placeholderKey: 'settings:search_providers_placeholder',
             onChange: (value) => {
                 this.rememberSelection(value || '', '', true);
                 model.value = '';
@@ -64,7 +64,7 @@ export const EditorModelManager = {
             },
         });
         attachModelSearchable(model, {
-            placeholder: t('settings:search_models_placeholder'),
+            placeholderKey: 'settings:search_models_placeholder',
             onChange: (value) => {
                 this.rememberSelection(this.selectedProvider(), value || '', true);
                 window.dispatchEvent(new CustomEvent('editorModelChanged'));
