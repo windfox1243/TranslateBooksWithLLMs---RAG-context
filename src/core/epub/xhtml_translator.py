@@ -84,6 +84,10 @@ from .tag_preservation import TagPreserver
 from .text_survival import text_survival_problem
 from .translation_metrics import TranslationMetrics
 
+# Technical content protection (code, formulas, measurements hidden behind
+# placeholders) for the translation pass. Disabled on purpose for now.
+TECHNICAL_PROTECTION_ENABLED = False
+
 
 def _log_error(log_callback: Optional[Callable], event_name: str, message: str):
     """Report an error to the job that produced it.
@@ -747,6 +751,7 @@ async def _translate_all_chunks_with_checkpoint(
     parallel_workers: int = 1,
     failed_chunk_indices: Optional[List[int]] = None,
     continuation_base_id: Optional[str] = None,
+    protect_technical: bool = False,
 ) -> Tuple[List[str], TranslationMetrics, bool]:
     """
     Translate all chunks with checkpoint support.
@@ -781,6 +786,8 @@ async def _translate_all_chunks_with_checkpoint(
         original_chunks: Original chunks (for bilingual mode)
         global_total_chunks: Total chunks across all XHTML files (for EPUB)
         global_completed_chunks: Chunks completed in previous files (for EPUB)
+        protect_technical: Whether the chunks were built with technical content
+            protection. Only recorded in the partial state.
 
     Returns:
         Tuple of (translated_chunks, statistics, was_interrupted)
@@ -1097,7 +1104,7 @@ async def _translate_all_chunks_with_checkpoint(
             prompt_options=prompt_options,
             bilingual=bilingual,
             original_chunks=original_chunks,
-            protect_technical=True,
+            protect_technical=protect_technical,
             failed_chunk_indices=sorted(failed_indices),
             created_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
             updated_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + 'Z',
@@ -2507,6 +2514,13 @@ async def translate_xhtml_simplified(
         from src.config import MAX_TOKENS_PER_CHUNK
         max_tokens_per_chunk = MAX_TOKENS_PER_CHUNK
 
+    # Technical content protection is currently disabled for translation (it
+    # was turned off on purpose; the refine pass still uses it). The log line
+    # and the persisted state must report the real setting. Partial states
+    # written before this fix always claimed True, so a resumed state's flag
+    # is not trusted. (Ported from upstream 033c8a8f.)
+    protect_technical = TECHNICAL_PROTECTION_ENABLED
+
     # === RESUME FROM PARTIAL STATE ===
     if resume_state:
         if log_callback:
@@ -2575,10 +2589,7 @@ async def translate_xhtml_simplified(
             return False, TranslationMetrics()
 
         # 2. Tag Preservation
-        # Technical protection is now always enabled
-        protect_technical = False
-
-        if log_callback:
+        if log_callback and protect_technical:
             log_callback("technical_protection_auto",
                          "🔒 Technical content protection active (code, formulas, measurements will be auto-detected and preserved)")
 
@@ -2702,6 +2713,7 @@ async def translate_xhtml_simplified(
         parallel_workers=parallel_workers,
         failed_chunk_indices=failed_chunk_indices,
         continuation_base_id=continuation_base_id,
+        protect_technical=protect_technical,
     )
 
     # If interrupted, return without reconstruction
