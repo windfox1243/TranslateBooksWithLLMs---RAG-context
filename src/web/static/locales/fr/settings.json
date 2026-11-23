@@ -269,5 +269,6 @@
   "provider_name_mistral": "Mistral",
   "provider_name_deepseek": "DeepSeek",
   "provider_name_poe": "Poe",
-  "provider_name_nim": "NVIDIA NIM"
+  "provider_name_nim": "NVIDIA NIM",
+  "model_context_tooltip": "Contexte : {{tokens}} tokens"
 }
