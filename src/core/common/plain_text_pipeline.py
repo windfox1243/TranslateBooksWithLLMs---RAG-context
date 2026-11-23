@@ -727,6 +727,22 @@ async def translate_paragraphs_plain(
                 placeholder_format=None,
                 on_raw_fallback=_count_raw_fallback,
             )
+        # Plain mode has no placeholders to validate, so a truncated answer
+        # (or a runaway one) would otherwise be written as the translation.
+        # Treat it like a failed call: the segment keeps its source text, is
+        # counted, and stays retryable. An empty answer is left to the
+        # paragraph-count repair. Checked before the editor pass, which would
+        # only polish a broken draft. (Ported from upstream 3713b911.)
+        if translated is not None and translated.strip():
+            from src.core.epub.text_survival import text_survival_problem
+            problem = text_survival_problem(main_content, translated)
+            if problem:
+                if log_callback:
+                    log_callback(
+                        "plain_text_chunk_rejected",
+                        f"Chunk {i + 1}/{len(chunks)}: rejected translation, {problem}"
+                    )
+                return ('done', None)
         if translated and (prompt_options or {}).get("reflection_mode"):
             from src.core.translator import (
                 ReflectionValidationError,
