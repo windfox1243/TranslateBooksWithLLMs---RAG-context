@@ -126,6 +126,14 @@ export const ApiClient = {
         return await apiRequest('/api/config');
     },
 
+    /**
+     * Get the MAX_TOKENS_PER_CHUNK setting
+     * @returns {Promise<Object>} { max_tokens_per_chunk }
+     */
+    async getMaxTokensConfig() {
+        return await apiRequest('/api/config/max-tokens');
+    },
+
     // ========================================
     // Translation Operations
     // ========================================
@@ -755,6 +763,15 @@ export const ApiClient = {
      */
     async getTTSGPUStatus() {
         return await apiRequest('/api/tts/gpu-status');
+    },
+
+    /**
+     * Install FFmpeg through winget (Windows only)
+     * @returns {Promise<Object>} { success, message } — a failed install throws
+     *   an error carrying the server's message and HTTP status
+     */
+    async installFFmpeg() {
+        return await apiRequest('/api/tts/ffmpeg/install', { method: 'POST' });
     },
 
     /**
