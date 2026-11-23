@@ -107,6 +107,19 @@ def _log_error(log_callback: Optional[Callable], event_name: str, message: str):
         pass
 
 
+def _keep_edge_whitespace(source: str, translated: str) -> str:
+    """Give ``translated`` the leading/trailing whitespace of ``source``.
+
+    Chunks are joined back with ''.join(), so the whitespace at the edge of a
+    chunk cut inside a paragraph is the only separator between two sentences.
+    LLM replies are stripped on the way back, which glued them together.
+    (Ported from upstream 136f57c1.)
+    """
+    leading = source[:len(source) - len(source.lstrip())]
+    trailing = source[len(source.rstrip()):]
+    return leading + translated.strip() + trailing
+
+
 class PlaceholderManager:
     """
     Manages placeholder indexing during chunk processing.
@@ -377,6 +390,11 @@ async def translate_chunk_with_fallback(
             stats.retry_attempts += 1
             continue  # Try again
 
+        # The reply comes back stripped; a chunk cut inside a paragraph must
+        # keep the space that separates it from the next chunk.
+        # (Ported from upstream 136f57c1.)
+        translated = _keep_edge_whitespace(chunk_text, translated)
+
         # Validate placeholders
         validation_result = validate_placeholders(translated, local_tag_map)
 
@@ -533,6 +551,7 @@ async def translate_chunk_with_fallback(
                 translated_without_placeholders=translated_clean,
                 placeholders=placeholders_list
             )
+            result_with_placeholders = _keep_edge_whitespace(chunk_text, result_with_placeholders)
 
             # 5. Validate (should always pass, but check anyway)
             if validate_placeholders(result_with_placeholders, local_tag_map):
@@ -2388,6 +2407,8 @@ async def _refine_epub_chunks(
                 global_indices,
                 placeholder_format,
             )
+            refined_with_global_indices = _keep_edge_whitespace(
+                translated_text, refined_with_global_indices)
             refined_chunks.append(refined_with_global_indices)
             persisted_refined_text = refined_with_global_indices
             persisted_refinement_status = "completed"
