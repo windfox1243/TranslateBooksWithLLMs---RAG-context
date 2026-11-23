@@ -768,6 +768,22 @@ async def _restore_checkpoint_files(
     return restored_docs
 
 
+async def _reparse_unmodified(file_path: str, fallback_root):
+    """Parse ``file_path`` again as it is on disk, or return ``fallback_root``.
+
+    Used to write a failed file back unmodified: the tree the pipeline worked
+    on has been edited in place. If the file cannot be read again, the
+    worked-on tree is still better than losing the file.
+    """
+    try:
+        async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+            content = await f.read()
+        parser = etree.XMLParser(encoding='utf-8', recover=True, remove_blank_text=False)
+        return etree.fromstring(content.encode('utf-8'), parser)
+    except Exception:
+        return fallback_root
+
+
 async def _translate_single_xhtml_file(
     file_path: str,
     content_href: str,
@@ -1298,10 +1314,15 @@ async def _process_all_content_files(
             parsed_xhtml_docs[file_path] = doc_root
             completed_files += 1
         elif not success and doc_root is not None:
-            # Save the best-effort document, but stop at this file. EPUB file
-            # checkpoints must advance contiguously; translating later files
-            # would move the resume pointer past retryable failed chunks.
-            parsed_xhtml_docs[file_path] = doc_root
+            # A failed (or interrupted) file is written back exactly as it was
+            # read: the translated tree went through boilerplate removal and
+            # ruby folding, so writing it would drop content the source still
+            # has. For a re-entered file the text on disk is the restored
+            # translated copy, which is what has to be kept. Stop at this
+            # file: EPUB file checkpoints must advance contiguously, and its
+            # failed chunks are retried on resume.
+            # (Ported from upstream 0db1a0d7.)
+            parsed_xhtml_docs[file_path] = await _reparse_unmodified(file_path, doc_root)
             failed_files += 1
             if log_callback:
                 log_callback("epub_file_translate_failed",
