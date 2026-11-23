@@ -1,4 +1,6 @@
-"""Regression tests for the DOCX Plain Text Mode extractor and rebuilder."""
+"""Regression tests for the DOCX Plain Text Mode extractor and rebuilder.
+(Ported from upstream fb91eb64.)
+"""
 import io
 import struct
 import zlib
