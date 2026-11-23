@@ -427,5 +427,18 @@
   "context_narrator_locked": "locked", "context_narrator_unlocked": "unlocked", "context_narrator_lock": "Lock", "context_narrator_unlock": "Unlock",
   "context_narrator_conflict": "Chunk {{chunk}}: {{reason}}", "context_narrator_accept": "Accept transition", "context_narrator_reject": "Reject transition", "context_narrator_editor_title": "Narrator Voice Profile",
   "context_narrator_diagnostics": "Completed units: {{completed}} · analysis attempts: {{attempts}} · next retry: {{next}} · backfill pending: {{pending}}", "context_relationship_summary": "{{source}} → {{target}}\n  {{type}} · {{hierarchy}} · {{scope}}\n  {{status}} · evidence: {{evidence}} · supporting units: {{units}} · reason: {{reason}}", "context_relationship_status_accepted": "Accepted from source evidence", "context_relationship_status_provisional": "Awaiting corroboration", "context_relationship_status_quarantined": "Quarantined because of a semantic contradiction", "context_relationship_status_unknown": "Unknown validation state",
-  "context_narrator_field_narrator_key": "Narrator key", "context_narrator_field_narrator_identity": "Narrator identity", "context_narrator_field_point_of_view": "Point of view", "context_narrator_field_self_reference": "Self-reference", "context_narrator_field_formality": "Formality / politeness", "context_narrator_field_speech_level": "Speech level", "context_narrator_field_gender": "Gender", "context_narrator_field_number": "Number", "context_narrator_field_dialect": "Dialect / regional register", "context_narrator_field_tense": "Narrative tense", "context_narrator_field_stylistic_markers": "Stylistic markers (comma-separated)", "context_narrator_field_start_chunk_index": "Start chunk index", "context_narrator_field_end_chunk_index": "End chunk index (blank for open-ended)"
+  "context_narrator_field_narrator_key": "Narrator key", "context_narrator_field_narrator_identity": "Narrator identity", "context_narrator_field_point_of_view": "Point of view", "context_narrator_field_self_reference": "Self-reference", "context_narrator_field_formality": "Formality / politeness", "context_narrator_field_speech_level": "Speech level", "context_narrator_field_gender": "Gender", "context_narrator_field_number": "Number", "context_narrator_field_dialect": "Dialect / regional register", "context_narrator_field_tense": "Narrative tense", "context_narrator_field_stylistic_markers": "Stylistic markers (comma-separated)", "context_narrator_field_start_chunk_index": "Start chunk index", "context_narrator_field_end_chunk_index": "End chunk index (blank for open-ended)",
+  "completion_cost_tokens": "{{cost}} · {{tokens}} tokens",
+  "file_status_queued": "Queued",
+  "file_status_preparing": "Preparing...",
+  "file_status_submitted": "Submitted",
+  "file_status_processing": "Processing",
+  "file_status_completed": "Completed",
+  "file_status_partial": "Partial",
+  "file_status_interrupted": "Interrupted",
+  "file_status_rate_limited": "Rate limited",
+  "file_status_error": "Error",
+  "file_status_missing_api_key": "Error: missing API key",
+  "file_status_path_error": "Path error",
+  "file_status_initiation_error": "Failed to start"
 }

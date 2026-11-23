@@ -269,5 +269,16 @@
   "provider_name_mistral": "Mistral",
   "provider_name_deepseek": "DeepSeek",
   "provider_name_poe": "Poe",
-  "provider_name_nim": "NVIDIA NIM"
+  "provider_name_nim": "NVIDIA NIM",
+  "model_context_tooltip": "컨텍스트: {{tokens}} 토큰",
+  "provider_desc_local": "로컬",
+  "provider_desc_multi": "멀티 제공자",
+  "provider_desc_cloud_api": "클라우드 API",
+  "provider_desc_cloud": "클라우드",
+  "provider_desc_compatible": "호환",
+  "provider_desc_many_models": "200개 이상의 모델",
+  "model_limit_na": "없음",
+  "model_token_limits_tooltip": "입력: {{input}} 토큰, 출력: {{output}} 토큰",
+  "model_label_price_per_request": "{{name}} ({{price}}/요청)",
+  "model_label_price_per_million": "{{name}} (입력: {{input}}/M, 출력: {{output}}/M)"
 }

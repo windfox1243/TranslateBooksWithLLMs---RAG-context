@@ -7,7 +7,6 @@
 
 import { StateManager } from '../core/state-manager.js';
 import { ApiClient } from '../core/api-client.js';
-import { WebSocketManager } from '../core/websocket-manager.js';
 import { MessageLogger } from '../ui/message-logger.js';
 import { t } from '../i18n/i18n.js';
 
@@ -77,8 +76,8 @@ export const LifecycleManager = {
                 if (healthData.supported_formats) {
                     MessageLogger.addLog(t('common:supported_formats', { formats: healthData.supported_formats.join(', ') }));
                 }
-
-                this.initializeConnection();
+                // The WebSocket is opened once by index.js, right after its
+                // handlers are wired; connecting here as well was redundant.
 
             } catch (error) {
                 MessageLogger.showMessage(
@@ -161,17 +160,6 @@ export const LifecycleManager = {
         }
     },
 
-    /**
-     * Initialize WebSocket connection
-     */
-    initializeConnection() {
-        if (typeof WebSocketManager !== 'undefined') {
-            WebSocketManager.connect();
-        } else {
-            console.warn('WebSocketManager not available');
-        }
-    },
-
     setupBeforeUnloadHandler() {
     },
 
@@ -181,20 +169,20 @@ export const LifecycleManager = {
             const currentJob = StateManager.getState('translation.currentJob');
 
             if (isBatchActive && currentJob && currentJob.translationId) {
-                const interruptUrl = `${ApiClient.getBaseUrl()}/api/translation/${currentJob.translationId}/interrupt`;
-
-                if (navigator.sendBeacon) {
-                    const blob = new Blob(['{}'], { type: 'application/json' });
-                    navigator.sendBeacon(interruptUrl, blob);
-                } else {
-                    try {
-                        const xhr = new XMLHttpRequest();
-                        xhr.open('POST', interruptUrl, false);
-                        xhr.setRequestHeader('Content-Type', 'application/json');
-                        xhr.send('{}');
-                    } catch (error) {
-                        console.error('Error interrupting translation on page close:', error);
-                    }
+                // sendBeacon cannot carry the X-API-Token header the server
+                // requires, so use a keepalive fetch: it survives page unload
+                // and goes through the globally patched fetch that adds the
+                // token header.
+                const interruptUrl = `${ApiClient.getBaseUrl()}/api/translation/${encodeURIComponent(currentJob.translationId)}/interrupt`;
+                try {
+                    fetch(interruptUrl, {
+                        method: 'POST',
+                        keepalive: true,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: '{}'
+                    }).catch(() => { /* page is going away; nothing to report */ });
+                } catch (error) {
+                    console.error('Error interrupting translation on page close:', error);
                 }
             }
         });
@@ -235,7 +223,7 @@ export const LifecycleManager = {
                 }));
             }
         } catch (error) {
-            if (error.message && error.message.includes('404')) {
+            if (error.status === 404) {
                 MessageLogger.addLog(t('common:translation_job_missing'));
                 window.dispatchEvent(new CustomEvent('resetUIToIdle'));
             } else {

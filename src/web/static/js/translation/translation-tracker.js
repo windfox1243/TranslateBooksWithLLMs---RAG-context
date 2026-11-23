@@ -29,6 +29,18 @@ const TRANSLATION_STATE_STORAGE_KEY = `${STORAGE_KEY_PREFIX}_v${STORAGE_VERSION}
  * @param {any} data - Data to validate
  * @returns {boolean} True if valid
  */
+/**
+ * Last segment of a path, splitting on both separators: a Windows path keeps
+ * its backslashes in the API payload. (Ported from upstream 6f42ef07.)
+ * @param {string} path
+ * @returns {string}
+ */
+function basenameOf(path) {
+    if (typeof path !== 'string' || !path) return '';
+    const parts = path.split(/[\\/]/);
+    return parts[parts.length - 1] || '';
+}
+
 function validateTranslationState(data) {
     if (!data || typeof data !== 'object') return false;
 
@@ -341,6 +353,56 @@ export const TranslationTracker = {
     },
 
     /**
+     * Re-read the current job from the server after a WebSocket re-connect:
+     * updates pushed while the socket was down are lost, so progress would
+     * stay stale until the next push. A job the server no longer knows (404)
+     * resets the UI; a finished one goes through the normal terminal path.
+     * Never throws. (Ported from upstream 6f42ef07.)
+     */
+    async resyncCurrentJob() {
+        try {
+            const currentJob = StateManager.getState('translation.currentJob');
+            const translationId = currentJob?.translationId;
+            if (!translationId) return;
+
+            let data;
+            try {
+                data = await ApiClient.getTranslationStatus(translationId);
+            } catch (error) {
+                if (error?.status === 404) {
+                    if (StateManager.getState('translation.currentJob')?.translationId === translationId) {
+                        this.resetUIToIdle();
+                    }
+                } else {
+                    console.warn('Resync: failed to read translation status:', error);
+                }
+                return;
+            }
+
+            // The await above can race a live update changing the current job.
+            if (!data || StateManager.getState('translation.currentJob')?.translationId !== translationId) {
+                return;
+            }
+
+            const terminal = ['completed', 'partial', 'error', 'interrupted', 'rate_limited'];
+            if (terminal.includes(data.status)) {
+                this.handleTranslationUpdate({
+                    translation_id: translationId,
+                    status: data.status,
+                    result: data.result_preview || `[${data.status}]`,
+                    error: data.error,
+                    error_code: data.error_code,
+                    stats: data.stats
+                });
+            } else if ((data.status === 'running' || data.status === 'queued') && data.stats) {
+                this.updateStats(currentJob.fileRef?.fileType, data.stats);
+            }
+        } catch (error) {
+            console.warn('Failed to resync current job:', error);
+        }
+    },
+
+    /**
      * Restore active translation state if there's one running on the server
      */
     async restoreActiveTranslation() {
@@ -354,13 +416,31 @@ export const TranslationTracker = {
 
             // Find matching file in our queue
             const filesToProcess = StateManager.getState('files.toProcess') || [];
+            const persistedJob = StateManager.getState('translation.currentJob');
 
             for (const job of activeJobs) {
-                let matchingFile = filesToProcess.find(f =>
-                    f.translationId === job.translation_id ||
-                    f.filePath === job.input_file ||
-                    f.name === job.input_file?.split('/').pop()
-                );
+                // `input_filename` is what /api/translations returns (a display
+                // basename); `input_file` is kept for older payloads. Either
+                // may carry a Windows path, hence basenameOf. Matching on
+                // input_file.split('/') never succeeded.
+                const jobFileName = basenameOf(job.input_filename || job.input_file);
+
+                let matchingFile = filesToProcess.find(f => f.translationId === job.translation_id);
+
+                // The submitted file is removed from files.toProcess, so the
+                // persisted fileRef is usually the best description of the
+                // job this tab was running.
+                if (!matchingFile && persistedJob?.fileRef
+                    && persistedJob.translationId === job.translation_id) {
+                    matchingFile = persistedJob.fileRef;
+                }
+
+                if (!matchingFile && jobFileName) {
+                    matchingFile = filesToProcess.find(f =>
+                        (job.input_file && f.filePath === job.input_file) ||
+                        f.name === jobFileName
+                    );
+                }
 
                 // If no matching file found, create a virtual file reference from server data
                 // This allows restoration after browser refresh even if filesToProcess is empty
@@ -368,7 +448,7 @@ export const TranslationTracker = {
                     matchingFile = {
                         // output_filename keeps older jobs restorable when
                         // their config predates input-filename persistence.
-                        name: job.input_filename || job.output_filename,
+                        name: jobFileName || job.input_filename || job.output_filename,
                         translationId: job.translation_id,
                         status: 'Processing',
                         type: job.file_type || 'txt',
@@ -956,7 +1036,10 @@ export const TranslationTracker = {
         }
 
         if (cost > 0 || totalTokens > 0) {
-            items.push(`$${cost.toFixed(4)} · ${totalTokens.toLocaleString()} tokens`);
+            items.push(t('translation:completion_cost_tokens', {
+                cost: `${stats.openrouter_cost_estimated ? '~' : ''}$${Number(cost).toFixed(4)}`,
+                tokens: Number(totalTokens).toLocaleString(),
+            }));
         }
 
         if (items.length === 0) return '';
